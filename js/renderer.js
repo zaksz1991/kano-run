@@ -1,86 +1,117 @@
-```js
 // Kano Run - Canvas Renderer
+// Complete replacement renderer.
+// Deliberately avoids template literals and other syntax that previously
+// caused Vercel/Rollup parsing failures.
 
 export class Renderer {
   constructor(game) {
     this.game = game;
-    this.canvas = game.canvas;
-    this.ctx = this.canvas.getContext('2d');
-    this.width = this.canvas.width;
-    this.height = this.canvas.height;
+    this.ctx = game.canvas.getContext('2d');
+
+    this.lastWidth = 0;
+    this.lastHeight = 0;
   }
 
   draw() {
+    var canvas = this.game.canvas;
     var ctx = this.ctx;
-    var canvas = this.canvas;
 
-    this.width = canvas.width;
-    this.height = canvas.height;
+    var w = canvas.width;
+    var h = canvas.height;
 
-    ctx.clearRect(0, 0, this.width, this.height);
+    if (!w || !h) {
+      return;
+    }
 
-    ctx.save();
+    this.lastWidth = w;
+    this.lastHeight = h;
+
+    ctx.clearRect(0, 0, w, h);
 
     this.drawSky();
     this.drawRoad();
-    this.drawBillboards();
     this.drawRoadCondition();
-    this.drawSpeedLines();
+    this.drawBillboards();
     this.drawEntities();
     this.drawParticles();
+    this.drawSpeedLines();
+    this.drawKeke();
     this.drawSpeedHUD();
-
-    ctx.restore();
   }
 
   drawSky() {
     var ctx = this.ctx;
-    var w = this.width;
-    var h = this.height;
+    var w = this.lastWidth;
+    var h = this.lastHeight;
 
-    var tod = 0.35;
+    var tod = 0.5;
 
-    if (typeof this.game.getTimeOfDay === 'function') {
-      tod = this.game.getTimeOfDay();
+    if (
+      this.game &&
+      typeof this.game.timeOfDay === 'number' &&
+      isFinite(this.game.timeOfDay)
+    ) {
+      tod = this.game.timeOfDay;
     }
 
-    var skyTop = '#1e40af';
-    var skyBottom = '#93c5fd';
-
-    if (tod > 0.45 && tod < 0.7) {
-      skyTop = '#312e81';
-      skyBottom = '#f59e0b';
-    } else if (tod >= 0.7) {
-      skyTop = '#0c4a6e';
-      skyBottom = '#155e75';
+    if (tod < 0) {
+      tod = 0;
     }
 
-    var gradient = ctx.createLinearGradient(0, 0, 0, h * 0.65);
-
-    gradient.addColorStop(0, skyTop);
-    gradient.addColorStop(1, skyBottom);
-
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, w, h * 0.65);
-
-    if (tod < 0.75) {
-      var sunX = w * 0.78;
-      var sunY = h * 0.18;
-      var sunRadius = Math.max(20, w * 0.035);
-
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
-      ctx.fillStyle = '#fbbf24';
-      ctx.fill();
+    if (tod > 1) {
+      tod = 1;
     }
+
+    var skyGradient = ctx.createLinearGradient(0, 0, 0, h * 0.62);
+
+    if (tod < 0.25) {
+      skyGradient.addColorStop(0, '#020617');
+      skyGradient.addColorStop(1, '#172554');
+    } else if (tod < 0.48) {
+      skyGradient.addColorStop(0, '#0f172a');
+      skyGradient.addColorStop(0.55, '#2563eb');
+      skyGradient.addColorStop(1, '#f59e0b');
+    } else if (tod < 0.72) {
+      skyGradient.addColorStop(0, '#38bdf8');
+      skyGradient.addColorStop(0.65, '#7dd3fc');
+      skyGradient.addColorStop(1, '#fde68a');
+    } else {
+      skyGradient.addColorStop(0, '#1e293b');
+      skyGradient.addColorStop(0.55, '#475569');
+      skyGradient.addColorStop(1, '#fb923c');
+    }
+
+    ctx.fillStyle = skyGradient;
+    ctx.fillRect(0, 0, w, h * 0.62);
+
+    var horizonY = h * 0.46;
+
+    ctx.fillStyle = '#64748b';
+
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY + 35);
+    ctx.lineTo(w * 0.08, horizonY + 12);
+    ctx.lineTo(w * 0.18, horizonY + 28);
+    ctx.lineTo(w * 0.3, horizonY + 5);
+    ctx.lineTo(w * 0.42, horizonY + 30);
+    ctx.lineTo(w * 0.55, horizonY + 8);
+    ctx.lineTo(w * 0.7, horizonY + 27);
+    ctx.lineTo(w * 0.82, horizonY + 5);
+    ctx.lineTo(w, horizonY + 32);
+    ctx.lineTo(w, horizonY + 80);
+    ctx.lineTo(0, horizonY + 80);
+    ctx.closePath();
+    ctx.fill();
 
     if (tod > 0.48) {
       var alpha = Math.min(1, (tod - 0.48) * 1.9);
-      var starColor = 'rgba(255, 255, 255, ' + alpha + ')';
+      var starColor = 'rgba(255,255,255,' + alpha + ')';
 
       ctx.fillStyle = starColor;
 
-      for (var i = 0; i < 60; i++) {
+      var i;
+
+      for (i = 0; i < 60; i += 1) {
         var starX = (i * 83) % Math.max(1, w);
         var starY = (i * 47) % Math.max(1, h * 0.4);
 
@@ -88,510 +119,597 @@ export class Renderer {
       }
     }
 
-    ctx.fillStyle = '#334155';
-    ctx.fillRect(0, h * 0.58, w, h * 0.07);
+    var sunX = w * 0.78;
+    var sunY = h * 0.22;
+
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 34, 0, Math.PI * 2);
+
+    if (tod < 0.72) {
+      ctx.fillStyle = '#fbbf24';
+    } else {
+      ctx.fillStyle = '#f8fafc';
+    }
+
+    ctx.fill();
+
+    if (tod > 0.5) {
+      var moonX = w * 0.18;
+      var moonY = h * 0.2;
+
+      ctx.beginPath();
+      ctx.arc(moonX, moonY, 24, 0, Math.PI * 2);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(moonX + 9, moonY - 5, 21, 0, Math.PI * 2);
+      ctx.fillStyle = '#172554';
+      ctx.fill();
+    }
   }
 
   drawRoad() {
     var ctx = this.ctx;
-    var w = this.width;
-    var h = this.height;
+    var w = this.lastWidth;
+    var h = this.lastHeight;
 
-    var horizonY = h * 0.58;
+    var horizon = h * 0.46;
+    var bottom = h;
+
+    var roadTopWidth = Math.max(80, w * 0.12);
+    var roadBottomWidth = w * 0.96;
+
+    var center = w * 0.5;
+
+    ctx.fillStyle = '#365314';
+
+    ctx.beginPath();
+    ctx.moveTo(0, horizon);
+    ctx.lineTo(w, horizon);
+    ctx.lineTo(w, bottom);
+    ctx.lineTo(0, bottom);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#1f2937';
+
+    ctx.beginPath();
+    ctx.moveTo(center - roadTopWidth / 2, horizon);
+    ctx.lineTo(center + roadTopWidth / 2, horizon);
+    ctx.lineTo(center + roadBottomWidth / 2, bottom);
+    ctx.lineTo(center - roadBottomWidth / 2, bottom);
+    ctx.closePath();
+    ctx.fill();
 
     ctx.fillStyle = '#475569';
 
     ctx.beginPath();
-    ctx.moveTo(0, h);
-    ctx.lineTo(w, h);
-    ctx.lineTo(w * 0.64, horizonY);
-    ctx.lineTo(w * 0.36, horizonY);
+    ctx.moveTo(center - roadTopWidth / 2 - 4, horizon);
+    ctx.lineTo(center - roadTopWidth / 2 - 12, horizon);
+    ctx.lineTo(center - roadBottomWidth / 2 - 18, bottom);
+    ctx.lineTo(center - roadBottomWidth / 2, bottom);
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = '#f8fafc';
-    ctx.lineWidth = Math.max(2, w * 0.004);
-
     ctx.beginPath();
-    ctx.moveTo(0, h);
-    ctx.lineTo(w * 0.36, horizonY);
-    ctx.stroke();
+    ctx.moveTo(center + roadTopWidth / 2 + 4, horizon);
+    ctx.lineTo(center + roadTopWidth / 2 + 12, horizon);
+    ctx.lineTo(center + roadBottomWidth / 2 + 18, bottom);
+    ctx.lineTo(center + roadBottomWidth / 2, bottom);
+    ctx.closePath();
+    ctx.fill();
 
-    ctx.beginPath();
-    ctx.moveTo(w, h);
-    ctx.lineTo(w * 0.64, horizonY);
-    ctx.stroke();
-
-    var laneCount = 3;
-
-    for (var lane = 1; lane < laneCount; lane++) {
-      var bottomX = (w / laneCount) * lane;
-      var topX = w * (0.36 + (0.28 * lane) / laneCount);
-
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth = Math.max(2, w * 0.003);
-      ctx.setLineDash([18, 18]);
-
-      ctx.beginPath();
-      ctx.moveTo(bottomX, h);
-      ctx.lineTo(topX, horizonY);
-      ctx.stroke();
-
-      ctx.setLineDash([]);
-    }
+    this.drawLaneMarkers();
   }
 
-  drawRoadCondition() {
+  drawLaneMarkers() {
     var ctx = this.ctx;
-    var w = this.width;
-    var h = this.height;
+    var w = this.lastWidth;
+    var h = this.lastHeight;
 
-    var condition = this.game.roadCondition || 'normal';
+    var horizon = h * 0.46;
+    var center = w * 0.5;
 
-    if (condition === 'dust') {
-      ctx.fillStyle = 'rgba(217, 180, 120, 0.12)';
-      ctx.fillRect(0, h * 0.55, w, h * 0.45);
-    }
+    var roadTopWidth = Math.max(80, w * 0.12);
+    var roadBottomWidth = w * 0.96;
 
-    if (condition === 'rain') {
-      ctx.strokeStyle = 'rgba(147, 197, 253, 0.35)';
-      ctx.lineWidth = 1;
+    var lanePositions = [1 / 3, 2 / 3];
 
-      for (var i = 0; i < 50; i++) {
-        var x = (i * 97) % Math.max(1, w);
-        var y = (i * 53) % Math.max(1, h);
+    var i;
+
+    for (i = 0; i < lanePositions.length; i += 1) {
+      var lane = lanePositions[i];
+
+      var topX =
+        center - roadTopWidth / 2 +
+        roadTopWidth * lane;
+
+      var bottomX =
+        center - roadBottomWidth / 2 +
+        roadBottomWidth * lane;
+
+      var markerCount = 9;
+      var j;
+
+      for (j = 0; j < markerCount; j += 1) {
+        var start = j / markerCount;
+        var end = start + 0.045;
+
+        var y1 = horizon + (h - horizon) * start;
+        var y2 = horizon + (h - horizon) * Math.min(1, end);
+
+        var x1 = topX + (bottomX - topX) * start;
+        var x2 = topX + (bottomX - topX) * Math.min(1, end);
+
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = Math.max(2, 1 + start * 7);
 
         ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x - 4, y + 12);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
         ctx.stroke();
       }
     }
   }
 
+  drawRoadCondition() {
+    var ctx = this.ctx;
+    var w = this.lastWidth;
+    var h = this.lastHeight;
+
+    var weather = this.game && this.game.weather
+      ? String(this.game.weather).toLowerCase()
+      : '';
+
+    if (
+      weather.indexOf('rain') !== -1 ||
+      weather.indexOf('storm') !== -1
+    ) {
+      ctx.strokeStyle = 'rgba(191,219,254,0.35)';
+      ctx.lineWidth = 1;
+
+      var i;
+
+      for (i = 0; i < 90; i += 1) {
+        var x = (i * 97) % Math.max(1, w);
+        var y = (i * 53) % Math.max(1, h);
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 3, y + 12);
+        ctx.stroke();
+      }
+    }
+
+    if (
+      weather.indexOf('dust') !== -1 ||
+      weather.indexOf('harmattan') !== -1
+    ) {
+      ctx.fillStyle = 'rgba(245,158,11,0.08)';
+      ctx.fillRect(0, 0, w, h);
+    }
+  }
+
   drawSpeedLines() {
     var ctx = this.ctx;
-    var w = this.width;
-    var h = this.height;
+    var w = this.lastWidth;
+    var h = this.lastHeight;
 
-    var speed = Number(this.game.speed || 0);
+    var speed = 0;
 
-    if (speed < 4) {
+    if (this.game && typeof this.game.speed === 'number') {
+      speed = Math.abs(this.game.speed);
+    }
+
+    if (speed < 5) {
       return;
     }
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = 1;
+    var intensity = Math.min(35, Math.floor(speed * 1.5));
 
-    for (var i = 0; i < 16; i++) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 2;
+
+    var i;
+
+    for (i = 0; i < intensity; i += 1) {
       var x = (i * 137) % Math.max(1, w);
-      var y = h * 0.35 + ((i * 71) % Math.max(1, h * 0.45));
+      var y = (i * 71) % Math.max(1, h);
 
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x - 2, y + speed * 2);
+      ctx.lineTo(x, y + 10 + speed);
       ctx.stroke();
     }
   }
 
   drawBillboards() {
     var ctx = this.ctx;
-    var w = this.width;
-    var h = this.height;
+    var w = this.lastWidth;
+    var h = this.lastHeight;
 
-    var horizonY = h * 0.58;
+    var horizon = h * 0.46;
 
-    var billboards = [
-      {
-        x: w * 0.08,
-        y: horizonY - h * 0.12,
-        width: w * 0.18,
-        height: h * 0.08,
-        text: 'KANO RUN'
-      },
-      {
-        x: w * 0.74,
-        y: horizonY - h * 0.15,
-        width: w * 0.18,
-        height: h * 0.08,
-        text: 'KANO'
-      }
-    ];
+    this.drawBillboard(
+      w * 0.09,
+      horizon + h * 0.05,
+      'KANO',
+      '#1e40af'
+    );
 
-    for (var i = 0; i < billboards.length; i++) {
-      var board = billboards[i];
+    this.drawBillboard(
+      w * 0.86,
+      horizon + h * 0.1,
+      'RUN',
+      '#f59e0b'
+    );
+  }
 
-      ctx.fillStyle = '#78350f';
-      ctx.fillRect(
-        board.x + board.width * 0.45,
-        board.y + board.height,
-        board.width * 0.08,
-        h * 0.12
-      );
+  drawBillboard(x, y, text, background) {
+    var ctx = this.ctx;
 
-      ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(
-        board.x,
-        board.y,
-        board.width,
-        board.height
-      );
+    var width = 72;
+    var height = 42;
 
-      ctx.strokeStyle = '#1e293b';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(
-        board.x,
-        board.y,
-        board.width,
-        board.height
-      );
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(x + 5, y + height, 5, 35);
+    ctx.fillRect(x + width - 10, y + height, 5, 35);
 
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold ' + Math.max(10, w * 0.018) + 'px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+    ctx.fillStyle = background;
+    ctx.fillRect(x, y, width, height);
 
-      ctx.fillText(
-        board.text,
-        board.x + board.width / 2,
-        board.y + board.height / 2
-      );
-    }
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, width, height);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + width / 2, y + height / 2);
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
   }
 
   drawEntities() {
-    var entities = this.game.entities || [];
+    var entities = [];
 
-    for (var i = 0; i < entities.length; i++) {
-      var entity = entities[i];
-
-      if (!entity) {
-        continue;
-      }
-
-      if (entity.type === 'keke' || entity.type === 'player') {
-        this.drawKeke(entity);
-      } else if (
-        entity.type === 'police' ||
-        entity.type === 'karota' ||
-        entity.type === 'car'
-      ) {
-        this.drawObstacle(entity);
-      } else if (entity.type === 'coin') {
-        this.drawCoin(entity);
-      } else if (entity.type === 'zone') {
-        this.drawZone(entity);
-      }
+    if (this.game && Array.isArray(this.game.entities)) {
+      entities = this.game.entities;
+    } else if (this.game && Array.isArray(this.game.obstacles)) {
+      entities = this.game.obstacles;
     }
 
-    if (this.game.player) {
-      this.drawKeke(this.game.player, true);
+    var i;
+
+    for (i = entities.length - 1; i >= 0; i -= 1) {
+      this.drawEntity(entities[i]);
     }
   }
 
-  drawKeke(entity, isPlayer) {
+  drawEntity(entity) {
+    if (!entity) {
+      return;
+    }
+
+    var x = this.getEntityX(entity);
+    var y = this.getEntityY(entity);
+
+    var type = entity.type
+      ? String(entity.type).toLowerCase()
+      : '';
+
+    if (
+      type.indexOf('coin') !== -1 ||
+      type.indexOf('bonus') !== -1
+    ) {
+      this.drawCoin(x, y, entity);
+      return;
+    }
+
+    if (
+      type.indexOf('zone') !== -1 ||
+      type.indexOf('checkpoint') !== -1
+    ) {
+      this.drawZone(x, y, entity);
+      return;
+    }
+
+    this.drawObstacle(x, y, entity);
+  }
+
+  getEntityX(entity) {
+    var w = this.lastWidth;
+
+    if (typeof entity.x === 'number') {
+      return entity.x;
+    }
+
+    if (typeof entity.lane === 'number') {
+      var lane = Math.max(0, Math.min(2, entity.lane));
+      return w * (0.25 + lane * 0.25);
+    }
+
+    return w * 0.5;
+  }
+
+  getEntityY(entity) {
+    var h = this.lastHeight;
+
+    if (typeof entity.y === 'number') {
+      return entity.y;
+    }
+
+    if (typeof entity.z === 'number') {
+      return h * 0.46 + entity.z;
+    }
+
+    return h * 0.7;
+  }
+
+  drawObstacle(x, y, entity) {
     var ctx = this.ctx;
 
-    var x = Number(entity.x || this.width / 2);
-    var y = Number(entity.y || this.height * 0.8);
+    var type = entity && entity.type
+      ? String(entity.type).toLowerCase()
+      : '';
 
-    var scale = Math.max(
-      0.45,
-      Math.min(1.6, Number(entity.scale || 1))
-    );
+    var scale = 1;
 
-    var width = 58 * scale;
+    if (typeof entity.scale === 'number') {
+      scale = Math.max(0.35, Math.min(2.5, entity.scale));
+    }
+
+    var width = 62 * scale;
     var height = 82 * scale;
 
-    ctx.save();
-    ctx.translate(x, y);
+    if (type.indexOf('police') !== -1) {
+      this.drawPoliceCar(x, y, width, height);
+      return;
+    }
 
-    ctx.fillStyle = '#111827';
+    if (
+      type.indexOf('karota') !== -1 ||
+      type.indexOf('keke') !== -1
+    ) {
+      this.drawKarota(x, y, width, height);
+      return;
+    }
 
-    ctx.beginPath();
-    ctx.arc(
-      -width * 0.34,
-      height * 0.25,
-      width * 0.13,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
+    if (type.indexOf('truck') !== -1) {
+      this.drawVehicle(
+        x,
+        y,
+        width * 1.2,
+        height * 1.15,
+        '#475569'
+      );
+      return;
+    }
 
-    ctx.beginPath();
-    ctx.arc(
-      width * 0.34,
-      height * 0.25,
-      width * 0.13,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
+    if (
+      type.indexOf('pedestrian') !== -1 ||
+      type.indexOf('person') !== -1
+    ) {
+      this.drawPedestrian(x, y, scale);
+      return;
+    }
 
-    ctx.fillStyle = isPlayer ? '#f59e0b' : '#fbbf24';
-
-    ctx.beginPath();
-    ctx.roundRect(
-      -width / 2,
-      -height / 2,
+    this.drawVehicle(
+      x,
+      y,
       width,
       height,
-      8 * scale
+      '#dc2626'
     );
-    ctx.fill();
+  }
 
-    ctx.fillStyle = '#0f172a';
+  drawVehicle(x, y, width, height, bodyColor) {
+    var ctx = this.ctx;
+
+    var left = x - width / 2;
+    var top = y - height;
+
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(
+      left - 3,
+      top + height * 0.15,
+      width + 6,
+      height * 0.8
+    );
+
+    ctx.fillStyle = bodyColor;
 
     ctx.beginPath();
     ctx.roundRect(
-      -width * 0.36,
-      -height * 0.31,
-      width * 0.72,
-      height * 0.27,
-      5 * scale
+      left,
+      top,
+      width,
+      height,
+      Math.min(10, width * 0.12)
     );
     ctx.fill();
 
-    ctx.fillStyle = '#92400e';
+    ctx.fillStyle = '#bfdbfe';
+    ctx.fillRect(
+      left + width * 0.17,
+      top + height * 0.14,
+      width * 0.66,
+      height * 0.25
+    );
+
+    ctx.fillStyle = '#f8fafc';
 
     ctx.fillRect(
-      -width * 0.42,
-      -height * 0.48,
-      width * 0.84,
+      left + width * 0.13,
+      top + height * 0.68,
+      width * 0.18,
       height * 0.1
     );
 
-    ctx.fillStyle = '#fef3c7';
+    ctx.fillRect(
+      left + width * 0.69,
+      top + height * 0.68,
+      width * 0.18,
+      height * 0.1
+    );
+
+    ctx.fillStyle = '#020617';
 
     ctx.fillRect(
-      -width * 0.38,
-      height * 0.28,
-      width * 0.18,
-      height * 0.08
+      left - 5,
+      top + height * 0.25,
+      7,
+      height * 0.18
     );
 
     ctx.fillRect(
-      width * 0.20,
-      height * 0.28,
-      width * 0.18,
-      height * 0.08
+      left + width - 2,
+      top + height * 0.25,
+      7,
+      height * 0.18
     );
-
-    if (isPlayer) {
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold ' + Math.max(9, 11 * scale) + 'px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('KANO', 0, height * 0.08);
-    }
-
-    ctx.restore();
   }
 
-  drawObstacle(entity) {
+  drawPoliceCar(x, y, width, height) {
     var ctx = this.ctx;
 
-    var x = Number(entity.x || this.width / 2);
-    var y = Number(entity.y || this.height * 0.7);
-
-    var scale = Math.max(
-      0.35,
-      Math.min(1.5, Number(entity.scale || 1))
+    this.drawVehicle(
+      x,
+      y,
+      width,
+      height,
+      '#1e40af'
     );
 
-    var width = 64 * scale;
-    var height = 72 * scale;
+    var top = y - height;
 
-    ctx.save();
-    ctx.translate(x, y);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(
+      x - width * 0.22,
+      top - height * 0.04,
+      width * 0.2,
+      height * 0.08
+    );
 
-    if (entity.type === 'police') {
-      ctx.fillStyle = '#1e40af';
+    ctx.fillStyle = '#3b82f6';
+    ctx.fillRect(
+      x + width * 0.02,
+      top - height * 0.04,
+      width * 0.2,
+      height * 0.08
+    );
 
-      ctx.beginPath();
-      ctx.roundRect(
-        -width / 2,
-        -height / 2,
-        width,
-        height,
-        7 * scale
-      );
-      ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold ' + Math.max(8, Math.floor(width * 0.16)) + 'px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('POLICE', x, top + height * 0.56);
+    ctx.textAlign = 'left';
+  }
 
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(
-        -width * 0.16,
-        -height * 0.58,
-        width * 0.32,
-        height * 0.14
-      );
+  drawKarota(x, y, width, height) {
+    var ctx = this.ctx;
 
-      ctx.fillStyle = '#93c5fd';
-      ctx.fillRect(
-        -width * 0.34,
-        -height * 0.27,
-        width * 0.68,
-        height * 0.23
-      );
+    this.drawVehicle(
+      x,
+      y,
+      width,
+      height,
+      '#f59e0b'
+    );
 
-      ctx.fillStyle = '#ef4444';
-      ctx.fillRect(
-        -width * 0.22,
-        -height * 0.57,
-        width * 0.14,
-        height * 0.08
-      );
+    var top = y - height;
 
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(
-        width * 0.08,
-        -height * 0.57,
-        width * 0.14,
-        height * 0.08
-      );
-    } else if (entity.type === 'karota') {
-      ctx.fillStyle = '#f59e0b';
+    ctx.fillStyle = '#ef4444';
 
-      ctx.beginPath();
-      ctx.roundRect(
-        -width / 2,
-        -height / 2,
-        width,
-        height,
-        7 * scale
-      );
-      ctx.fill();
+    ctx.fillRect(
+      x - width * 0.34,
+      top + height * 0.72,
+      width * 0.16,
+      height * 0.09
+    );
 
-      ctx.fillStyle = '#111827';
-      ctx.fillRect(
-        -width * 0.34,
-        -height * 0.27,
-        width * 0.68,
-        height * 0.23
-      );
-
-      ctx.fillStyle = '#ef4444';
-
-      ctx.fillRect(
-        -width * 0.22,
-        height * 0.28,
-        width * 0.14,
-        height * 0.08
-      );
-
-      ctx.fillRect(
-        width * 0.08,
-        height * 0.28,
-        width * 0.14,
-        height * 0.08
-      );
-
-      ctx.fillStyle = '#111827';
-      ctx.font = 'bold ' + Math.max(8, 10 * scale) + 'px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('KAROTA', 0, height * 0.08);
-    } else {
-      ctx.fillStyle = '#dc2626';
-
-      ctx.beginPath();
-      ctx.roundRect(
-        -width / 2,
-        -height / 2,
-        width,
-        height,
-        7 * scale
-      );
-      ctx.fill();
-
-      ctx.fillStyle = '#fca5a5';
-
-      ctx.fillRect(
-        -width * 0.34,
-        -height * 0.27,
-        width * 0.68,
-        height * 0.23
-      );
-
-      ctx.fillStyle = '#fef2f2';
-
-      ctx.fillRect(
-        -width * 0.36,
-        height * 0.28,
-        width * 0.16,
-        height * 0.08
-      );
-
-      ctx.fillRect(
-        width * 0.20,
-        height * 0.28,
-        width * 0.16,
-        height * 0.08
-      );
-    }
+    ctx.fillRect(
+      x + width * 0.18,
+      top + height * 0.72,
+      width * 0.16,
+      height * 0.09
+    );
 
     ctx.fillStyle = '#111827';
-
-    ctx.beginPath();
-    ctx.arc(
-      -width * 0.36,
-      height * 0.28,
-      width * 0.12,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(
-      width * 0.36,
-      height * 0.28,
-      width * 0.12,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-
-    ctx.restore();
+    ctx.font = 'bold ' + Math.max(8, Math.floor(width * 0.15)) + 'px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('KEKE', x, top + height * 0.55);
+    ctx.textAlign = 'left';
   }
 
-  drawZone(entity) {
+  drawPedestrian(x, y, scale) {
     var ctx = this.ctx;
 
-    var x = Number(entity.x || this.width / 2);
-    var y = Number(entity.y || this.height * 0.6);
+    var headRadius = 8 * scale;
 
-    ctx.save();
-
-    ctx.strokeStyle = 'rgba(251,191,36,0.45)';
-    ctx.lineWidth = 3;
+    ctx.fillStyle = '#d4a373';
 
     ctx.beginPath();
     ctx.arc(
       x,
-      y,
-      Math.max(20, Number(entity.radius || 35)),
+      y - 52 * scale,
+      headRadius,
       0,
       Math.PI * 2
     );
-    ctx.stroke();
+    ctx.fill();
 
-    ctx.restore();
-  }
+    ctx.fillStyle = '#2563eb';
 
-  drawCoin(entity) {
-    var ctx = this.ctx;
-
-    var x = Number(entity.x || this.width / 2);
-    var y = Number(entity.y || this.height * 0.7);
-
-    var radius = Math.max(
-      5,
-      Number(entity.radius || 10)
+    ctx.fillRect(
+      x - 10 * scale,
+      y - 42 * scale,
+      20 * scale,
+      30 * scale
     );
 
-    ctx.save();
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = Math.max(2, 3 * scale);
+
+    ctx.beginPath();
+    ctx.moveTo(x - 5 * scale, y - 12 * scale);
+    ctx.lineTo(x - 10 * scale, y + 12 * scale);
+    ctx.moveTo(x + 5 * scale, y - 12 * scale);
+    ctx.lineTo(x + 10 * scale, y + 12 * scale);
+    ctx.stroke();
+  }
+
+  drawZone(x, y, entity) {
+    var ctx = this.ctx;
+
+    var radius = 35;
+
+    if (entity && typeof entity.radius === 'number') {
+      radius = Math.max(15, Math.min(100, entity.radius));
+    }
+
+    ctx.strokeStyle = 'rgba(59,130,246,0.75)';
+    ctx.lineWidth = 4;
+
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(59,130,246,0.12)';
+    ctx.fill();
+  }
+
+  drawCoin(x, y, entity) {
+    var ctx = this.ctx;
+
+    var radius = 12;
+
+    if (entity && typeof entity.radius === 'number') {
+      radius = Math.max(6, Math.min(24, entity.radius));
+    }
 
     ctx.fillStyle = '#fbbf24';
 
@@ -608,67 +726,315 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('N', x, y);
-
-    ctx.restore();
-
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
   }
 
   drawParticles() {
-    var ctx = this.ctx;
-    var particles = this.game.particles || [];
+    var particles = [];
 
-    for (var i = 0; i < particles.length; i++) {
+    if (
+      this.game &&
+      Array.isArray(this.game.particles)
+    ) {
+      particles = this.game.particles;
+    }
+
+    var ctx = this.ctx;
+    var i;
+
+    for (i = 0; i < particles.length; i += 1) {
       var particle = particles[i];
 
       if (!particle) {
         continue;
       }
 
-      var x = Number(particle.x || 0);
-      var y = Number(particle.y || 0);
-      var size = Math.max(1, Number(particle.size || 2));
+      var x = typeof particle.x === 'number'
+        ? particle.x
+        : 0;
 
-      var alpha = 1;
+      var y = typeof particle.y === 'number'
+        ? particle.y
+        : 0;
 
-      if (particle.alpha !== undefined) {
-        alpha = Math.max(
+      var size = typeof particle.size === 'number'
+        ? Math.max(1, particle.size)
+        : 3;
+
+      ctx.fillStyle = particle.color
+        ? String(particle.color)
+        : '#fbbf24';
+
+      ctx.globalAlpha =
+        typeof particle.alpha === 'number'
+          ? Math.max(0, Math.min(1, particle.alpha))
+          : 1;
+
+      ctx.fillRect(
+        x - size / 2,
+        y - size / 2,
+        size,
+        size
+      );
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  drawKeke() {
+    var ctx = this.ctx;
+    var w = this.lastWidth;
+    var h = this.lastHeight;
+
+    var x = w * 0.5;
+    var y = h * 0.93;
+
+    if (this.game) {
+      if (typeof this.game.playerX === 'number') {
+        x = this.game.playerX;
+      } else if (typeof this.game.kekeX === 'number') {
+        x = this.game.kekeX;
+      } else if (typeof this.game.lane === 'number') {
+        var lane = Math.max(
           0,
-          Math.min(1, Number(particle.alpha))
+          Math.min(2, this.game.lane)
         );
+
+        x = w * (0.25 + lane * 0.25);
       }
 
-      ctx.fillStyle = 'rgba(255,255,255,' + alpha + ')';
-      ctx.fillRect(x, y, size, size);
+      if (typeof this.game.playerY === 'number') {
+        y = this.game.playerY;
+      }
     }
+
+    var width = Math.min(120, w * 0.22);
+    var height = width * 1.35;
+
+    ctx.save();
+
+    if (
+      this.game &&
+      typeof this.game.shake === 'number' &&
+      this.game.shake > 0
+    ) {
+      var shakeX =
+        (Math.random() - 0.5) *
+        Math.min(12, this.game.shake);
+
+      var shakeY =
+        (Math.random() - 0.5) *
+        Math.min(8, this.game.shake);
+
+      ctx.translate(shakeX, shakeY);
+    }
+
+    var left = x - width / 2;
+    var top = y - height;
+
+    ctx.fillStyle = '#111827';
+
+    ctx.beginPath();
+    ctx.roundRect(
+      left,
+      top,
+      width,
+      height,
+      12
+    );
+    ctx.fill();
+
+    ctx.fillStyle = '#f59e0b';
+
+    ctx.beginPath();
+    ctx.roundRect(
+      left + 5,
+      top + 5,
+      width - 10,
+      height - 10,
+      10
+    );
+    ctx.fill();
+
+    ctx.fillStyle = '#0f172a';
+
+    ctx.beginPath();
+    ctx.moveTo(
+      left + width * 0.15,
+      top + height * 0.12
+    );
+
+    ctx.lineTo(
+      left + width * 0.85,
+      top + height * 0.12
+    );
+
+    ctx.lineTo(
+      left + width * 0.78,
+      top + height * 0.42
+    );
+
+    ctx.lineTo(
+      left + width * 0.22,
+      top + height * 0.42
+    );
+
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#bfdbfe';
+
+    ctx.fillRect(
+      left + width * 0.25,
+      top + height * 0.17,
+      width * 0.5,
+      height * 0.18
+    );
+
+    ctx.fillStyle = '#ef4444';
+
+    ctx.fillRect(
+      left + width * 0.13,
+      top + height * 0.74,
+      width * 0.2,
+      height * 0.1
+    );
+
+    ctx.fillRect(
+      left + width * 0.67,
+      top + height * 0.74,
+      width * 0.2,
+      height * 0.1
+    );
+
+    ctx.fillStyle = '#111827';
+
+    ctx.beginPath();
+    ctx.arc(
+      left + width * 0.18,
+      top + height * 0.9,
+      width * 0.1,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(
+      left + width * 0.82,
+      top + height * 0.9,
+      width * 0.1,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold ' + Math.max(9, Math.floor(width * 0.15)) + 'px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      'KANO RUN',
+      x,
+      top + height * 0.6
+    );
+
+    ctx.textAlign = 'left';
+
+    ctx.restore();
   }
 
   drawSpeedHUD() {
     var ctx = this.ctx;
-    var w = this.width;
+    var w = this.lastWidth;
+    var h = this.lastHeight;
 
-    var speed = Math.round(Number(this.game.speed || 0));
-    var score = Math.round(Number(this.game.score || 0));
+    var speed = 0;
 
-    ctx.save();
+    if (
+      this.game &&
+      typeof this.game.speed === 'number'
+    ) {
+      speed = Math.max(0, this.game.speed);
+    }
 
-    ctx.fillStyle = 'rgba(15,23,42,0.75)';
-    ctx.fillRect(
-      14,
-      14,
-      Math.min(230, w - 28),
-      66
+    var displaySpeed = Math.round(speed);
+
+    ctx.fillStyle = 'rgba(15,23,42,0.78)';
+
+    ctx.beginPath();
+    ctx.roundRect(
+      16,
+      16,
+      145,
+      55,
+      10
+    );
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px Arial';
+    ctx.fillText(
+      'SPEED',
+      28,
+      37
+    );
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 22px Arial';
+    ctx.fillText(
+      String(displaySpeed),
+      28,
+      60
     );
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px Arial';
-    ctx.textAlign = 'left';
+    ctx.font = '12px Arial';
+    ctx.fillText(
+      ' km/h',
+      76,
+      60
+    );
 
-    ctx.fillText('Speed: ' + speed, 28, 39);
-    ctx.fillText('Score: ' + score, 28, 62);
+    if (
+      this.game &&
+      typeof this.game.score === 'number'
+    ) {
+      ctx.fillStyle = 'rgba(15,23,42,0.78)';
 
-    ctx.restore();
+      ctx.beginPath();
+      ctx.roundRect(
+        w - 160,
+        16,
+        144,
+        55,
+        10
+      );
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px Arial';
+      ctx.fillText(
+        'SCORE',
+        w - 148,
+        37
+      );
+
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 22px Arial';
+      ctx.fillText(
+        String(Math.floor(this.game.score)),
+        w - 148,
+        60
+      );
+    }
+
+    ctx.fillStyle = 'rgba(15,23,42,0.55)';
+    ctx.font = '11px Arial';
+    ctx.fillText(
+      'KANO RUN',
+      18,
+      h - 18
+    );
   }
 }
-```
