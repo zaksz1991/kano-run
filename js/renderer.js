@@ -11,8 +11,8 @@ export class Renderer {
   }
 
   draw() {
-    const ctx = this.ctx;
-    const canvas = this.canvas;
+    var ctx = this.ctx;
+    var canvas = this.canvas;
 
     this.width = canvas.width;
     this.height = canvas.height;
@@ -34,17 +34,18 @@ export class Renderer {
   }
 
   drawSky() {
-    const ctx = this.ctx;
-    const w = this.width;
-    const h = this.height;
+    var ctx = this.ctx;
+    var w = this.width;
+    var h = this.height;
 
-    const tod =
-      typeof this.game.getTimeOfDay === 'function'
-        ? this.game.getTimeOfDay()
-        : 0.35;
+    var tod = 0.35;
 
-    let skyTop = '#1e40af';
-    let skyBottom = '#93c5fd';
+    if (typeof this.game.getTimeOfDay === 'function') {
+      tod = this.game.getTimeOfDay();
+    }
+
+    var skyTop = '#1e40af';
+    var skyBottom = '#93c5fd';
 
     if (tod > 0.45 && tod < 0.7) {
       skyTop = '#312e81';
@@ -54,49 +55,49 @@ export class Renderer {
       skyBottom = '#155e75';
     }
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, h * 0.65);
+    var gradient = ctx.createLinearGradient(0, 0, 0, h * 0.65);
+
     gradient.addColorStop(0, skyTop);
     gradient.addColorStop(1, skyBottom);
 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, w, h * 0.65);
 
-    // Sun
     if (tod < 0.75) {
-      const sunX = w * 0.78;
-      const sunY = h * 0.18;
+      var sunX = w * 0.78;
+      var sunY = h * 0.18;
+      var sunRadius = Math.max(20, w * 0.035);
 
       ctx.beginPath();
-      ctx.arc(sunX, sunY, Math.max(20, w * 0.035), 0, Math.PI * 2);
+      ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
       ctx.fillStyle = '#fbbf24';
       ctx.fill();
     }
 
-    // Stars
     if (tod > 0.48) {
-      const alpha = Math.min(1, (tod - 0.48) * 1.9);
+      var alpha = Math.min(1, (tod - 0.48) * 1.9);
+      var starColor = 'rgba(255, 255, 255, ' + alpha + ')';
 
-      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+      ctx.fillStyle = starColor;
 
-      for (let i = 0; i < 60; i++) {
-        const x = ((i * 83) % Math.max(1, w));
-        const y = ((i * 47) % Math.max(1, h * 0.4));
+      for (var i = 0; i < 60; i++) {
+        var starX = (i * 83) % Math.max(1, w);
+        var starY = (i * 47) % Math.max(1, h * 0.4);
 
-        ctx.fillRect(x, y, 1.5, 1.5);
+        ctx.fillRect(starX, starY, 1.5, 1.5);
       }
     }
 
-    // Horizon
     ctx.fillStyle = '#334155';
     ctx.fillRect(0, h * 0.58, w, h * 0.07);
   }
 
   drawRoad() {
-    const ctx = this.ctx;
-    const w = this.width;
-    const h = this.height;
+    var ctx = this.ctx;
+    var w = this.width;
+    var h = this.height;
 
-    const horizonY = h * 0.58;
+    var horizonY = h * 0.58;
 
     ctx.fillStyle = '#475569';
 
@@ -108,7 +109,6 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
 
-    // Road edges
     ctx.strokeStyle = '#f8fafc';
     ctx.lineWidth = Math.max(2, w * 0.004);
 
@@ -122,16 +122,14 @@ export class Renderer {
     ctx.lineTo(w * 0.64, horizonY);
     ctx.stroke();
 
-    // Lane markings
-    const laneCount = 3;
+    var laneCount = 3;
 
-    for (let lane = 1; lane < laneCount; lane++) {
-      const bottomX = (w / laneCount) * lane;
-      const topX = w * (0.36 + (0.28 * lane) / laneCount);
+    for (var lane = 1; lane < laneCount; lane++) {
+      var bottomX = (w / laneCount) * lane;
+      var topX = w * (0.36 + (0.28 * lane) / laneCount);
 
       ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = Math.max(2, w * 0.003);
-
       ctx.setLineDash([18, 18]);
 
       ctx.beginPath();
@@ -144,11 +142,11 @@ export class Renderer {
   }
 
   drawRoadCondition() {
-    const ctx = this.ctx;
-    const w = this.width;
-    const h = this.height;
+    var ctx = this.ctx;
+    var w = this.width;
+    var h = this.height;
 
-    const condition = this.game.roadCondition || 'normal';
+    var condition = this.game.roadCondition || 'normal';
 
     if (condition === 'dust') {
       ctx.fillStyle = 'rgba(217, 180, 120, 0.12)';
@@ -159,9 +157,9 @@ export class Renderer {
       ctx.strokeStyle = 'rgba(147, 197, 253, 0.35)';
       ctx.lineWidth = 1;
 
-      for (let i = 0; i < 50; i++) {
-        const x = (i * 97) % Math.max(1, w);
-        const y = (i * 53) % Math.max(1, h);
+      for (var i = 0; i < 50; i++) {
+        var x = (i * 97) % Math.max(1, w);
+        var y = (i * 53) % Math.max(1, h);
 
         ctx.beginPath();
         ctx.moveTo(x, y);
@@ -172,11 +170,11 @@ export class Renderer {
   }
 
   drawSpeedLines() {
-    const ctx = this.ctx;
-    const w = this.width;
-    const h = this.height;
+    var ctx = this.ctx;
+    var w = this.width;
+    var h = this.height;
 
-    const speed = Number(this.game.speed || 0);
+    var speed = Number(this.game.speed || 0);
 
     if (speed < 4) {
       return;
@@ -185,9 +183,9 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(255,255,255,0.18)';
     ctx.lineWidth = 1;
 
-    for (let i = 0; i < 16; i++) {
-      const x = (i * 137) % Math.max(1, w);
-      const y = h * 0.35 + ((i * 71) % Math.max(1, h * 0.45));
+    for (var i = 0; i < 16; i++) {
+      var x = (i * 137) % Math.max(1, w);
+      var y = h * 0.35 + ((i * 71) % Math.max(1, h * 0.45));
 
       ctx.beginPath();
       ctx.moveTo(x, y);
@@ -197,13 +195,13 @@ export class Renderer {
   }
 
   drawBillboards() {
-    const ctx = this.ctx;
-    const w = this.width;
-    const h = this.height;
+    var ctx = this.ctx;
+    var w = this.width;
+    var h = this.height;
 
-    const horizonY = h * 0.58;
+    var horizonY = h * 0.58;
 
-    const billboards = [
+    var billboards = [
       {
         x: w * 0.08,
         y: horizonY - h * 0.12,
@@ -220,7 +218,9 @@ export class Renderer {
       }
     ];
 
-    for (const board of billboards) {
+    for (var i = 0; i < billboards.length; i++) {
+      var board = billboards[i];
+
       ctx.fillStyle = '#78350f';
       ctx.fillRect(
         board.x + board.width * 0.45,
@@ -247,7 +247,7 @@ export class Renderer {
       );
 
       ctx.fillStyle = '#0f172a';
-      ctx.font = `bold ${Math.max(10, w * 0.018)}px Arial`;
+      ctx.font = 'bold ' + Math.max(10, w * 0.018) + 'px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
@@ -263,9 +263,11 @@ export class Renderer {
   }
 
   drawEntities() {
-    const entities = this.game.entities || [];
+    var entities = this.game.entities || [];
 
-    for (const entity of entities) {
+    for (var i = 0; i < entities.length; i++) {
+      var entity = entities[i];
+
       if (!entity) {
         continue;
       }
@@ -290,35 +292,45 @@ export class Renderer {
     }
   }
 
-  drawKeke(entity, isPlayer = false) {
-    const ctx = this.ctx;
+  drawKeke(entity, isPlayer) {
+    var ctx = this.ctx;
 
-    const x = Number(entity.x || this.width / 2);
-    const y = Number(entity.y || this.height * 0.8);
+    var x = Number(entity.x || this.width / 2);
+    var y = Number(entity.y || this.height * 0.8);
 
-    const scale = Math.max(
+    var scale = Math.max(
       0.45,
       Math.min(1.6, Number(entity.scale || 1))
     );
 
-    const width = 58 * scale;
-    const height = 82 * scale;
+    var width = 58 * scale;
+    var height = 82 * scale;
 
     ctx.save();
     ctx.translate(x, y);
 
-    // Wheels
     ctx.fillStyle = '#111827';
 
     ctx.beginPath();
-    ctx.arc(-width * 0.34, height * 0.25, width * 0.13, 0, Math.PI * 2);
+    ctx.arc(
+      -width * 0.34,
+      height * 0.25,
+      width * 0.13,
+      0,
+      Math.PI * 2
+    );
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(width * 0.34, height * 0.25, width * 0.13, 0, Math.PI * 2);
+    ctx.arc(
+      width * 0.34,
+      height * 0.25,
+      width * 0.13,
+      0,
+      Math.PI * 2
+    );
     ctx.fill();
 
-    // Main body
     ctx.fillStyle = isPlayer ? '#f59e0b' : '#fbbf24';
 
     ctx.beginPath();
@@ -331,7 +343,6 @@ export class Renderer {
     );
     ctx.fill();
 
-    // Windshield
     ctx.fillStyle = '#0f172a';
 
     ctx.beginPath();
@@ -344,7 +355,6 @@ export class Renderer {
     );
     ctx.fill();
 
-    // Roof
     ctx.fillStyle = '#92400e';
 
     ctx.fillRect(
@@ -354,7 +364,6 @@ export class Renderer {
       height * 0.1
     );
 
-    // Headlights
     ctx.fillStyle = '#fef3c7';
 
     ctx.fillRect(
@@ -373,7 +382,7 @@ export class Renderer {
 
     if (isPlayer) {
       ctx.fillStyle = '#ffffff';
-      ctx.font = `bold ${Math.max(9, 11 * scale)}px Arial`;
+      ctx.font = 'bold ' + Math.max(9, 11 * scale) + 'px Arial';
       ctx.textAlign = 'center';
       ctx.fillText('KANO', 0, height * 0.08);
     }
@@ -382,24 +391,23 @@ export class Renderer {
   }
 
   drawObstacle(entity) {
-    const ctx = this.ctx;
+    var ctx = this.ctx;
 
-    const x = Number(entity.x || this.width / 2);
-    const y = Number(entity.y || this.height * 0.7);
+    var x = Number(entity.x || this.width / 2);
+    var y = Number(entity.y || this.height * 0.7);
 
-    const scale = Math.max(
+    var scale = Math.max(
       0.35,
       Math.min(1.5, Number(entity.scale || 1))
     );
 
-    const width = 64 * scale;
-    const height = 72 * scale;
+    var width = 64 * scale;
+    var height = 72 * scale;
 
     ctx.save();
     ctx.translate(x, y);
 
     if (entity.type === 'police') {
-      // Police vehicle
       ctx.fillStyle = '#1e40af';
 
       ctx.beginPath();
@@ -428,7 +436,6 @@ export class Renderer {
         height * 0.23
       );
 
-      // Blue/red emergency lights
       ctx.fillStyle = '#ef4444';
       ctx.fillRect(
         -width * 0.22,
@@ -445,7 +452,6 @@ export class Renderer {
         height * 0.08
       );
     } else if (entity.type === 'karota') {
-      // KAROTA enforcement vehicle
       ctx.fillStyle = '#f59e0b';
 
       ctx.beginPath();
@@ -483,11 +489,10 @@ export class Renderer {
       );
 
       ctx.fillStyle = '#111827';
-      ctx.font = `bold ${Math.max(8, 10 * scale)}px Arial`;
+      ctx.font = 'bold ' + Math.max(8, 10 * scale) + 'px Arial';
       ctx.textAlign = 'center';
       ctx.fillText('KAROTA', 0, height * 0.08);
     } else {
-      // Regular traffic car
       ctx.fillStyle = '#dc2626';
 
       ctx.beginPath();
@@ -526,7 +531,6 @@ export class Renderer {
       );
     }
 
-    // Wheels
     ctx.fillStyle = '#111827';
 
     ctx.beginPath();
@@ -553,10 +557,10 @@ export class Renderer {
   }
 
   drawZone(entity) {
-    const ctx = this.ctx;
+    var ctx = this.ctx;
 
-    const x = Number(entity.x || this.width / 2);
-    const y = Number(entity.y || this.height * 0.6);
+    var x = Number(entity.x || this.width / 2);
+    var y = Number(entity.y || this.height * 0.6);
 
     ctx.save();
 
@@ -577,12 +581,12 @@ export class Renderer {
   }
 
   drawCoin(entity) {
-    const ctx = this.ctx;
+    var ctx = this.ctx;
 
-    const x = Number(entity.x || this.width / 2);
-    const y = Number(entity.y || this.height * 0.7);
+    var x = Number(entity.x || this.width / 2);
+    var y = Number(entity.y || this.height * 0.7);
 
-    const radius = Math.max(
+    var radius = Math.max(
       5,
       Number(entity.radius || 10)
     );
@@ -600,10 +604,10 @@ export class Renderer {
     ctx.stroke();
 
     ctx.fillStyle = '#78350f';
-    ctx.font = `bold ${Math.max(8, radius)}px Arial`;
+    ctx.font = 'bold ' + Math.max(8, radius) + 'px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('₦', x, y);
+    ctx.fillText('N', x, y);
 
     ctx.restore();
 
@@ -612,45 +616,57 @@ export class Renderer {
   }
 
   drawParticles() {
-    const ctx = this.ctx;
-    const particles = this.game.particles || [];
+    var ctx = this.ctx;
+    var particles = this.game.particles || [];
 
-    for (const particle of particles) {
+    for (var i = 0; i < particles.length; i++) {
+      var particle = particles[i];
+
       if (!particle) {
         continue;
       }
 
-      const x = Number(particle.x || 0);
-      const y = Number(particle.y || 0);
-      const size = Math.max(1, Number(particle.size || 2));
-      const alpha =
-        particle.alpha === undefined
-          ? 1
-          : Math.max(0, Math.min(1, Number(particle.alpha)));
+      var x = Number(particle.x || 0);
+      var y = Number(particle.y || 0);
+      var size = Math.max(1, Number(particle.size || 2));
 
-      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      var alpha = 1;
+
+      if (particle.alpha !== undefined) {
+        alpha = Math.max(
+          0,
+          Math.min(1, Number(particle.alpha))
+        );
+      }
+
+      ctx.fillStyle = 'rgba(255,255,255,' + alpha + ')';
       ctx.fillRect(x, y, size, size);
     }
   }
 
   drawSpeedHUD() {
-    const ctx = this.ctx;
-    const w = this.width;
+    var ctx = this.ctx;
+    var w = this.width;
 
-    const speed = Math.round(Number(this.game.speed || 0));
-    const score = Math.round(Number(this.game.score || 0));
+    var speed = Math.round(Number(this.game.speed || 0));
+    var score = Math.round(Number(this.game.score || 0));
 
     ctx.save();
 
     ctx.fillStyle = 'rgba(15,23,42,0.75)';
-    ctx.fillRect(14, 14, Math.min(230, w - 28), 66);
+    ctx.fillRect(
+      14,
+      14,
+      Math.min(230, w - 28),
+      66
+    );
 
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 16px Arial';
     ctx.textAlign = 'left';
 
-    ctx.fillText(`Speed: ${speed}`, 28, 39);
-    ctx.fillText(`Score: ${score}`, 28, 62);
+    ctx.fillText('Speed: ' + speed, 28, 39);
+    ctx.fillText('Score: ' + score, 28, 62);
 
     ctx.restore();
   }
