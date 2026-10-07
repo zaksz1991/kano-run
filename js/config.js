@@ -5,16 +5,14 @@ export const CONFIG = {
 
   PAINTS: {
     classic: { body: '#fbbf24', roof: '#fde047', accent: '#ca8a04', name: 'Classic Yellow', price: 0 },
-    green:   { body: '#22c55e', roof: '#4ade80', accent: '#16a34a', name: 'Kano Green', price: 950 },
-    blue:    { body: '#3b82f6', roof: '#60a5fa', accent: '#2563eb', name: 'Arewa Blue', price: 950 },
-    white:   { body: '#f1f5f9', roof: '#e2e8f0', accent: '#94a3b8', name: 'Clean White', price: 750 },
-    red:     { body: '#ef4444', roof: '#f87171', accent: '#dc2626', name: 'Emir Red', price: 1150 },
-    black:   { body: '#1e293b', roof: '#334155', accent: '#0f172a', name: 'Night Black', price: 1350 },
-    purple:  { body: '#a855f7', roof: '#c084fc', accent: '#7e22ce', name: 'Royal Purple', price: 1600 }
+    green: { body: '#22c55e', roof: '#4ade80', accent: '#16a34a', name: 'Kano Green', price: 950 },
+    blue: { body: '#3b82f6', roof: '#60a5fa', accent: '#2563eb', name: 'Arewa Blue', price: 950 },
+    white: { body: '#f1f5f9', roof: '#e2e8f0', accent: '#94a3b8', name: 'Clean White', price: 750 },
+    red: { body: '#ef4444', roof: '#f87171', accent: '#dc2626', name: 'Emir Red', price: 1150 },
+    black: { body: '#1e293b', roof: '#334155', accent: '#0f172a', name: 'Night Black', price: 1350 },
+    purple: { body: '#a855f7', roof: '#c084fc', accent: '#7e22ce', name: 'Royal Purple', price: 1600 }
   },
 
-  // Driver appearance (Dressing mode)
-  // Selectable drivers (characters)
   DRIVERS: {
     musa: {
       id: 'musa',
@@ -118,7 +116,7 @@ export const CONFIG = {
     kabiru: {
       id: 'kabiru',
       name: 'Kabiru',
-      title: 'The People's Driver',
+      title: "The People's Driver",
       desc: 'Everyone wants to ride with him. +1 capacity.',
       color: '#84cc16',
       bonus: { capacity: 1, speed: 0, horn: 0 },
@@ -137,10 +135,10 @@ export const CONFIG = {
 
   DRIVER_STYLES: {
     classic: { name: 'Classic Cap', price: 0, color: '#1e293b' },
-    kaftan:  { name: 'White Kaftan', price: 600, color: '#f8fafc' },
-    jalabiya:{ name: 'Blue Jalabiya', price: 800, color: '#3b82f6' },
-    modern:  { name: 'Modern Jacket', price: 900, color: '#0f172a' },
-    sport:   { name: 'Sport Cap', price: 500, color: '#ef4444' }
+    kaftan: { name: 'White Kaftan', price: 600, color: '#f8fafc' },
+    jalabiya: { name: 'Blue Jalabiya', price: 800, color: '#3b82f6' },
+    modern: { name: 'Modern Jacket', price: 900, color: '#0f172a' },
+    sport: { name: 'Sport Cap', price: 500, color: '#ef4444' }
   },
 
   UPGRADES: {
@@ -167,7 +165,6 @@ export const CONFIG = {
     }
   },
 
-// Popular & busy Kano routes
   ROUTES: {
     panshekara: {
       id: 'panshekara',
@@ -291,8 +288,6 @@ export const CONFIG = {
     }
   },
 
-
-  // Kano radio stations
   RADIO_STATIONS: [
     { id: 'freedom', name: 'Freedom Radio 99.5 FM', freq: '99.5' },
     { id: 'arewa', name: 'Arewa Radio 93.1 FM', freq: '93.1' },
@@ -303,7 +298,6 @@ export const CONFIG = {
     { id: 'pyramid', name: 'Pyramid FM Kano', freq: '102.7' }
   ],
 
-  // Dialogue lines for negotiation
   NEGOTIATION: {
     passenger: [
       "Driver, how much to the junction?",
@@ -369,7 +363,6 @@ export const CONFIG = {
     { id: 'daily_route', text: 'Complete a run on 3 different routes', target: 3, reward: 1000, type: 'routes' }
   ],
 
-  // Virtual billboards / brand placements (for monetization)
   BILLBOARDS: [
     { id: 'bb1', brand: 'Centre of Commerce', text: 'Centre of Commerce 🇳🇬', color: '#eab308', active: true },
     { id: 'bb2', brand: 'Arewa Fresh', text: 'Arewa Fresh – Drink Local', color: '#22c55e', active: true },
@@ -378,16 +371,15 @@ export const CONFIG = {
     { id: 'bb5', brand: 'Freedom Radio', text: 'Freedom Radio 99.5 FM', color: '#a855f7', active: true }
   ],
 
-  // Sponsored liveries (brands can buy keke skins)
   SPONSORED_LIVERIES: {
     classic: { name: 'Classic Yellow', price: 0, body: '#fbbf24', roof: '#fde047', accent: '#ca8a04' },
-    arewa:   { name: 'Arewa Fresh Green', price: 0, body: '#16a34a', roof: '#4ade80', accent: '#15803d', sponsored: true },
-    dala:    { name: 'Dala Cement Orange', price: 0, body: '#ea580c', roof: '#fb923c', accent: '#c2410c', sponsored: true },
+    arewa: { name: 'Arewa Fresh Green', price: 0, body: '#16a34a', roof: '#4ade80', accent: '#15803d', sponsored: true },
+    dala: { name: 'Dala Cement Orange', price: 0, body: '#ea580c', roof: '#fb923c', accent: '#c2410c', sponsored: true },
     freedom: { name: 'Freedom Radio Purple', price: 0, body: '#7e22ce', roof: '#c084fc', accent: '#6b21a8', sponsored: true }
   },
 
   STREAK: {
-    rewards: [0, 200, 400, 700, 1100, 1600, 2200]  // reward for day 1,2,3...
+    rewards: [0, 200, 400, 700, 1100, 1600, 2200]
   },
 
   KAROTA_LINES: {
@@ -467,5 +459,5 @@ export const STATE = {
   OVER: 2,
   GARAGE: 3,
   ROUTE_SELECT: 4,
-  EVENT: 5   // for negotiation / payment scenes
+  EVENT: 5
 };
