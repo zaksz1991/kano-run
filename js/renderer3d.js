@@ -1,4 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
+import { TrafficWorld } from './trafficWorld.js';
 
 // Kano Run — Adaidaita Sahu
 // Renderer Upgrade — detailed procedural 3D world
@@ -178,17 +179,6 @@ export class Renderer3D {
     this.playerWheels = [];
     this.playerSteering = null;
     this.playerShadow = null;
-    this.passengerPool = [];
-    this.passengerGroup = null;
-    this.exitedPassengerIds = new Set();
-    this.passengerStyles = {
-      standard: { shirt: 0x7d5a3b, cloth: 0x9a7a55, skin: 0x6a432e, bag: null },
-      student: { shirt: 0x2f5870, cloth: 0x263746, skin: 0x6a432e, bag: 0x8a5a2b },
-      worker: { shirt: 0x496b52, cloth: 0x343c35, skin: 0x6a432e, bag: 0x4a4d50 },
-      market: { shirt: 0x9a4d35, cloth: 0x4d3028, skin: 0x6a432e, bag: 0x7c5a32 },
-      elder: { shirt: 0x6f6f72, cloth: 0x45464b, skin: 0x704a35, bag: null },
-      hajiya: { shirt: 0x7b416c, cloth: 0x3f2d45, skin: 0x6a432e, bag: 0x5a3b25 },
-    };
 
     this.world = null;
     this.city = null;
@@ -199,6 +189,7 @@ export class Renderer3D {
     this.effectsGroup = null;
     this.weatherGroup = null;
     this.openingGroup = null;
+    this.trafficWorld = null;
 
     this.roadOffset = 0;
     this.targetCameraX = 0;
@@ -277,11 +268,13 @@ export class Renderer3D {
     this.buildRoad();
     this.buildCityscape();
     this.buildPlayer();
-    this.buildPassengerOccupancy();
     this.buildTrafficPool();
     this.buildZonePool();
     this.buildCoinPool();
     this.buildPedestrians();
+    // Ambient traffic and walking roadside life are visual-only and do not replace
+    // game.js collision, passenger, mission, or scoring logic.
+    this.trafficWorld = new TrafficWorld(THREE, this, { quality: this.quality });
     this.buildEffects();
     this.buildWeather();
 
@@ -874,6 +867,10 @@ export class Renderer3D {
     group.userData.wheels = [];
     group.userData.steering = null;
     group.userData.patrolLamp = null;
+    group.userData.brakeLights = [];
+    group.userData.indicators = [];
+    group.userData.suspension = 0;
+    group.userData.lastSpeed = info.speed;
 
     const mainColor = type === 'taxi'
       ? 0xe6ca3f
@@ -929,8 +926,18 @@ export class Renderer3D {
     addBox(group, [info.w * 0.78, 0.08, info.l * 0.43], [0, 1.64, 0.22], dark);
 
     for (const sx of [-info.w * 0.38, info.w * 0.38]) {
-      addSphere(group, 0.09, [sx, 0.79, -info.l * 0.47], head, [1.15, 0.8, 0.5]);
-      addSphere(group, 0.075, [sx, 0.74, info.l * 0.47], tail, [1.15, 0.8, 0.5]);
+      const headLamp = addSphere(group, 0.09, [sx, 0.79, -info.l * 0.47], head, [1.15, 0.8, 0.5]);
+      const tailLamp = addSphere(group, 0.075, [sx, 0.74, info.l * 0.47], tail, [1.15, 0.8, 0.5]);
+      group.userData.brakeLights.push(tailLamp);
+      group.userData.headLights = group.userData.headLights || [];
+      group.userData.headLights.push(headLamp);
+    }
+
+    const indicatorMat = makeMat(0xffb21c, 0.25, 0.08, { emissive: 0x8a4d00, emissiveIntensity: 0.15 });
+    for (const sx of [-info.w * 0.38, info.w * 0.38]) {
+      const front = addSphere(group, 0.045, [sx, 0.81, -info.l * 0.495], indicatorMat, [1.35, 0.8, 0.5]);
+      const rear = addSphere(group, 0.04, [sx, 0.76, info.l * 0.495], indicatorMat, [1.35, 0.8, 0.5]);
+      group.userData.indicators.push(front, rear);
     }
 
     const wheelZ = info.l * 0.34;
@@ -939,6 +946,7 @@ export class Renderer3D {
         const wheel = new THREE.Group();
         wheel.position.set(x, 0.45, z);
         wheel.rotation.z = Math.PI / 2;
+        wheel.userData.steer = (z < 0);
         const tire = new THREE.Mesh(new THREE.CylinderGeometry(type === 'bus' ? 0.44 : 0.32, type === 'bus' ? 0.44 : 0.32, 0.16, 18), wheelMat);
         tire.castShadow = true;
         tire.receiveShadow = true;
@@ -1082,143 +1090,6 @@ export class Renderer3D {
       g.userData.ring = ring;
       this.zoneGroup.add(g);
       this.zonePool.push(g);
-    }
-  }
-
-  buildPassengerOccupancy() {
-    this.passengerGroup = new THREE.Group();
-    this.passengerGroup.name = 'player-passengers';
-    this.player?.add(this.passengerGroup);
-
-    for (let i = 0; i < 3; i += 1) {
-      const passenger = this.makePassenger('standard', i);
-      passenger.visible = false;
-      passenger.userData.seatIndex = i;
-      passenger.userData.phase = i * 1.7;
-      passenger.userData.state = 'empty';
-      this.passengerGroup.add(passenger);
-      this.passengerPool.push(passenger);
-    }
-  }
-
-  makePassenger(type = 'standard', seatIndex = 0) {
-    const style = this.passengerStyles[type] || this.passengerStyles.standard;
-    const g = new THREE.Group();
-    g.userData.type = type;
-
-    const skin = makeMat(style.skin, 0.98, 0);
-    const shirt = makeMat(style.shirt, 0.94, 0);
-    const cloth = makeMat(style.cloth, 0.96, 0);
-    const shoe = makeMat(0x17191b, 0.98, 0);
-
-    addSphere(g, 0.145, [0, 0.62, 0], skin, [0.95, 1.05, 0.95]);
-    addBox(g, [0.27, 0.42, 0.22], [0, 0.34, 0], shirt);
-    addBox(g, [0.10, 0.34, 0.085], [-0.19, 0.36, -0.01], skin, [0, 0, -0.12]);
-    addBox(g, [0.10, 0.34, 0.085], [0.19, 0.36, -0.01], skin, [0, 0, 0.12]);
-    addBox(g, [0.10, 0.34, 0.09], [-0.09, 0.09, 0.02], cloth, [0, 0, 0.04]);
-    addBox(g, [0.10, 0.34, 0.09], [0.09, 0.09, 0.02], cloth, [0, 0, -0.04]);
-    addBox(g, [0.13, 0.07, 0.18], [-0.09, -0.08, -0.01], shoe);
-    addBox(g, [0.13, 0.07, 0.18], [0.09, -0.08, -0.01], shoe);
-
-    if (style.bag != null) {
-      const bag = makeMat(style.bag, 0.88, 0);
-      addBox(g, [0.22, 0.25, 0.08], [0.18, 0.38, 0.14], bag, [0.05, 0, -0.12]);
-      g.userData.bag = g.children[g.children.length - 1];
-    }
-
-    g.userData.head = g.children[0];
-    g.userData.leftArm = g.children[2];
-    g.userData.rightArm = g.children[3];
-    g.userData.body = g.children[1];
-    g.userData.baseScale = g.scale.clone();
-    return g;
-  }
-
-  updatePassengerOccupancy(dt, g) {
-    if (!this.passengerPool.length || !this.player) return;
-
-    const passengers = Array.isArray(g?.currentPassengers) ? g.currentPassengers : [];
-    const activeIds = new Set(passengers.map((p) => p?.id));
-    const seatX = [-0.40, 0, 0.40];
-    const seatZ = [0.36, 0.48, 0.36];
-
-    for (let i = 0; i < this.passengerPool.length; i += 1) {
-      const mesh = this.passengerPool[i];
-      const passenger = passengers[i];
-      if (passenger) {
-        const type = passenger.type || 'standard';
-        if (mesh.userData.type !== type) {
-          const replacement = this.makePassenger(type, i);
-          replacement.userData.seatIndex = i;
-          replacement.userData.phase = mesh.userData.phase || i * 1.7;
-          replacement.userData.state = mesh.userData.state || 'boarding';
-          this.passengerGroup.remove(mesh);
-          this.passengerGroup.add(replacement);
-          this.passengerPool[i] = replacement;
-          mesh.visible = false;
-          continue;
-        }
-
-        mesh.visible = true;
-        const boardingFrame = Number(passenger.boardedFrame);
-        const framesSinceBoarding = Number.isFinite(boardingFrame) && Number.isFinite(g?.frame) ? Math.max(0, Number(g.frame) - boardingFrame) : 999;
-        mesh.userData.state = framesSinceBoarding < 22 ? 'boarding' : 'seated';
-        const phase = (mesh.userData.phase || 0) + dt * 3.2;
-        mesh.userData.phase = phase;
-        const bob = Math.sin(phase) * 0.012;
-        const target = new THREE.Vector3(seatX[i], 1.18 + bob, seatZ[i]);
-        const boarding = mesh.userData.state === 'boarding';
-        if (boarding && mesh.userData._wasBoarding !== true) {
-          mesh.position.set(seatX[i] * 0.35, 0.74, 1.45);
-          mesh.scale.setScalar(0.72);
-        }
-        mesh.userData._wasBoarding = boarding;
-        mesh.position.lerp(target, Math.min(dt * (boarding ? 3.6 : 8), 1));
-        if (boarding) mesh.scale.lerp(mesh.userData.baseScale, Math.min(dt * 3.2, 1));
-        mesh.rotation.y = Math.sin(phase * 0.42) * 0.035;
-        mesh.rotation.x = clamp((Number(g?.brake) || 0) * 0.12, -0.08, 0.12);
-        mesh.scale.lerp(mesh.userData.baseScale, Math.min(dt * 7, 1));
-        if (mesh.userData.leftArm) mesh.userData.leftArm.rotation.z = -0.12 + Math.sin(phase * 0.8) * 0.025;
-        if (mesh.userData.rightArm) mesh.userData.rightArm.rotation.z = 0.12 - Math.sin(phase * 0.8) * 0.025;
-      } else {
-        mesh.visible = false;
-        mesh.userData.state = 'empty';
-      }
-    }
-
-    // Briefly visualize the passenger exiting immediately after game.js removes them.
-    const drops = Array.isArray(g?.dropZones) ? g.dropZones : [];
-    const nowFrame = Number(g?.frame) || 0;
-    for (const drop of drops) {
-      if (!drop?.used || !drop.passenger || !drop.passengerId) continue;
-      const age = nowFrame - Number(drop.passenger?.dropoffFrame || drop._rendererDropoffFrame || nowFrame);
-      const near = Math.abs(Number(drop.y) - Number(g?.playerY || 520)) < 95;
-      if (!near || age > 48 || this.exitedPassengerIds.has(drop.passengerId)) continue;
-      const slot = this.passengerPool.find((item) => !item.visible);
-      if (!slot) continue;
-      if (slot.userData.exitId === drop.passengerId) continue;
-      slot.userData.exitId = drop.passengerId;
-      this.exitedPassengerIds.add(drop.passengerId);
-      slot.visible = true;
-      slot.userData.state = 'exiting';
-      slot.position.set(0, 1.18, 0.50);
-      slot.scale.setScalar(0.9);
-      slot.userData.exitStart = this.elapsed;
-    }
-
-    for (const mesh of this.passengerPool) {
-      if (mesh.userData.state !== 'exiting') continue;
-      const p = clamp((this.elapsed - (mesh.userData.exitStart || this.elapsed)) / 0.72, 0, 1);
-      mesh.position.x = THREE.MathUtils.lerp(mesh.position.x, (mesh.userData.seatIndex - 1) * 0.95, p);
-      mesh.position.y = 1.18 + Math.sin(p * Math.PI) * 0.16;
-      mesh.position.z = THREE.MathUtils.lerp(mesh.position.z, 1.55, p);
-      mesh.rotation.y = THREE.MathUtils.lerp(mesh.rotation.y, Math.PI * 0.5, p);
-      mesh.scale.setScalar(0.9 - p * 0.28);
-      if (p >= 1) {
-        mesh.visible = false;
-        mesh.userData.state = 'empty';
-        mesh.userData.exitId = null;
-      }
     }
   }
 
@@ -1450,6 +1321,8 @@ export class Renderer3D {
 
   updateTraffic(dt, g) {
     const obs = Array.isArray(g?.obs) ? g.obs : [];
+    const playerX = this.player?.position.x || 0;
+
     for (let i = 0; i < this.vehiclePool.length; i += 1) {
       const mesh = this.vehiclePool[i];
       const o = obs[i];
@@ -1460,25 +1333,68 @@ export class Renderer3D {
 
       mesh.visible = true;
       const lane = Math.round(Number(o.lane) || 0);
-      mesh.position.x = this.laneToX(lane);
-      mesh.position.z = this.screenYToZ(Number(o.y) || 0, Number(g.playerY) || 520);
-      mesh.position.y = 0.02 + Math.abs(Math.sin(this.elapsed * 5 + mesh.userData.animSeed)) * 0.012;
+      const targetX = this.laneToX(lane);
+      const targetZ = this.screenYToZ(Number(o.y) || 0, Number(g.playerY) || 520);
+      const oldX = mesh.position.x;
+      const oldZ = mesh.position.z;
+      mesh.position.x = THREE.MathUtils.lerp(oldX, targetX, Math.min(dt * 14, 1));
+      mesh.position.z = THREE.MathUtils.lerp(oldZ, targetZ, Math.min(dt * 18, 1));
 
-      const dx = mesh.position.x - (this.player?.position.x || 0);
-      const targetRot = clamp(-dx * 0.018, -0.06, 0.06);
-      mesh.rotation.z = THREE.MathUtils.lerp(mesh.rotation.z, targetRot, Math.min(dt * 6, 1));
-      mesh.rotation.y = Math.PI + clamp(-Number(o.laneCooldown || 0) * 0.02, -0.07, 0.07);
+      const speed = Math.max(0, Number(o.speedOff) || mesh.userData.speed || 0.1);
+      const previousSpeed = Number(mesh.userData.lastSpeed) || speed;
+      const braking = speed < previousSpeed - 0.035 || Number(o.brake) > 0.15;
+      const acceleration = speed > previousSpeed + 0.035;
+      mesh.userData.lastSpeed = THREE.MathUtils.lerp(previousSpeed, speed, Math.min(dt * 5, 1));
 
-      const speed = Number(o.speedOff) || mesh.userData.speed || 0.1;
-      for (const wheel of mesh.userData.wheels || []) wheel.rotation.x -= speed * dt * 8.0;
+      const dx = mesh.position.x - playerX;
+      const laneChange = Math.abs(targetX - oldX) > 0.025 || Math.abs(Number(o.laneCooldown) || 0) > 0.05;
+      const steerTarget = clamp(-dx * 0.018 - (targetX - oldX) * 0.11, -0.11, 0.11);
+      mesh.rotation.z = THREE.MathUtils.lerp(mesh.rotation.z, steerTarget, Math.min(dt * 7, 1));
+      mesh.rotation.y = THREE.MathUtils.lerp(mesh.rotation.y, Math.PI + clamp(-Number(o.laneCooldown || 0) * 0.025, -0.09, 0.09), Math.min(dt * 7, 1));
+
+      // Small chassis movement makes the procedural vehicles feel suspended rather than rigid.
+      const load = braking ? 0.035 : acceleration ? -0.018 : 0;
+      const bob = Math.sin(this.elapsed * (5.5 + speed * 0.35) + (mesh.userData.animSeed || 0)) * 0.008;
+      mesh.userData.suspension = THREE.MathUtils.lerp(Number(mesh.userData.suspension) || 0, load, Math.min(dt * 10, 1));
+      mesh.position.y = 0.02 + bob - mesh.userData.suspension;
+
+      for (const wheel of mesh.userData.wheels || []) {
+        wheel.rotation.x -= speed * dt * 8.0;
+        if (wheel.userData.steer) wheel.rotation.z = THREE.MathUtils.lerp(wheel.rotation.z, steerTarget * 2.5, Math.min(dt * 8, 1));
+      }
+
+      const brakeIntensity = braking ? 1.25 : 0.16;
+      for (const lamp of mesh.userData.brakeLights || []) {
+        if (lamp.material?.emissiveIntensity != null) lamp.material.emissiveIntensity = brakeIntensity;
+      }
+
+      const signal = laneChange ? Math.sin(this.elapsed * 9) > 0 : false;
+      for (const lamp of mesh.userData.indicators || []) {
+        if (lamp.material?.emissiveIntensity != null) lamp.material.emissiveIntensity = signal ? 1.0 : 0.08;
+      }
+
+      if (mesh.userData.steering) {
+        mesh.userData.steering.rotation.z = THREE.MathUtils.lerp(
+          mesh.userData.steering.rotation.z,
+          -steerTarget * 1.8,
+          Math.min(dt * 8, 1),
+        );
+      }
+
+      if (mesh.userData.type === 'motorcycle') {
+        const rider = mesh.children.find((child) => child.type === 'Group' && child.children.length >= 2);
+        if (rider) rider.rotation.z = THREE.MathUtils.lerp(rider.rotation.z, steerTarget * 0.9, Math.min(dt * 6, 1));
+      }
 
       if (mesh.userData.type === 'police') {
         const lamp = mesh.userData.patrolLamp;
-        if (lamp && mesh.children.length) {
+        if (lamp) {
           const blink = Math.sin(this.elapsed * 10) > 0;
           for (const child of mesh.children) {
             if (!child.isMesh) continue;
-            if (child.material === lamp.blue || child.material === lamp.red) child.material.emissiveIntensity = blink ? 0.85 : 0.15;
+            if (child.material === lamp.blue || child.material === lamp.red) {
+              child.material.emissiveIntensity = blink ? 0.95 : 0.12;
+            }
           }
         }
       }
@@ -1741,8 +1657,11 @@ export class Renderer3D {
 
     this.updateRoad(delta, g);
     this.updatePlayerAnimation(delta, g);
-    this.updatePassengerOccupancy(delta, g);
     this.updateTraffic(delta, g);
+    if (this.trafficWorld) {
+      const ambientSpeed = Number(g.speed) || Number(g.speedOff) || 1;
+      this.trafficWorld.update(delta, ambientSpeed, Number(g.roadOff) || Number(g.dist) || 0);
+    }
     this.updateZones(delta, g);
     this.updatePedestrians(delta);
     this.updateCoins(delta, g);
@@ -1771,6 +1690,8 @@ export class Renderer3D {
     } catch {
       // ignore
     }
+    this.trafficWorld?.dispose?.();
+    this.trafficWorld = null;
     this.renderer?.dispose?.();
     this.ready = false;
   }
