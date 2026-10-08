@@ -8,7 +8,7 @@ const canvas = document.getElementById('c');
 
 // Preload asset pack (canvas fallback if missing)
 Assets.load().then(() => {
-  console.log('Assets ready', Object.keys(Assets.images).length, 'images');
+  console.log('Assets ready', Assets.loaded, 'loaded,', Assets.failed, 'failed');
 });
 const game = new Game(canvas);
 const ui = new UI(game);

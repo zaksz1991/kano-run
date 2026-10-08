@@ -366,15 +366,15 @@ export class Renderer {
     if (isPlayer) {
       const spr = Assets.get('player');
       if (spr) {
-        const sw = 118, sh = 148;
-        ctx.drawImage(spr, -sw / 2, -sh + 48, sw, sh);
+        const sw = 128, sh = 160;
+        ctx.drawImage(spr, -sw / 2, -sh + 50, sw, sh);
         if (paxCount > 0) {
           const colors = ['#fcd34d', '#f9a8d4', '#93c5fd', '#86efac', '#c4b5fd'];
           for (let i = 0; i < Math.min(paxCount, 5); i++) {
             const px = -18 + i * 12;
             ctx.fillStyle = colors[i % colors.length];
             ctx.beginPath();
-            ctx.arc(px, -30, 6, 0, Math.PI * 2);
+            ctx.arc(px, -36, 6.5, 0, Math.PI * 2);
             ctx.fill();
           }
         }
@@ -546,6 +546,24 @@ export class Renderer {
     const g = this.game;
     const x = g.laneX(o.lane);
     const y = o.y + o.h / 2;
+    const ctx = this.ctx;
+
+    // Prefer sprites when loaded
+    let spr = null;
+    if (o.type === 'keke') spr = Assets.get('kekeYellow') || Assets.get('kekeBlue');
+    else if (o.type === 'karota') spr = Assets.get('karota');
+    else if (o.type === 'police') spr = Assets.get('police');
+    else if (o.type === 'car') spr = Assets.get('car') || Assets.get('taxi');
+
+    if (spr) {
+      const sw = o.type === 'keke' ? 72 : 80;
+      const sh = o.type === 'keke' ? 90 : 58;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.drawImage(spr, -sw / 2, -sh / 2, sw, sh);
+      ctx.restore();
+      return;
+    }
 
     if (o.type === 'keke') {
       this.drawKeke(x, y, false, CONFIG.PAINTS.classic, 0, false);
