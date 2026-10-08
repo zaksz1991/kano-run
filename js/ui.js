@@ -1,4 +1,3 @@
-```javascript
 import { CONFIG, STATE } from './config.js';
 import { Storage } from './storage.js';
 
@@ -1158,4 +1157,3 @@ export class UI {
     }
   }
 }
-```
