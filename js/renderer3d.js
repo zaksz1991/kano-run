@@ -1,6 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { TrafficWorld } from './trafficWorld.js';
 import { PassengerWorld } from './passengerWorld.js';
+import { KarotaWorld } from './karotaWorld.js';
 
 // Kano Run — Adaidaita Sahu
 // Renderer Upgrade — detailed procedural 3D world
@@ -192,6 +193,7 @@ export class Renderer3D {
     this.openingGroup = null;
     this.trafficWorld = null;
     this.passengerWorld = null;
+    this.karotaWorld = null;
 
     this.roadOffset = 0;
     this.targetCameraX = 0;
@@ -278,6 +280,7 @@ export class Renderer3D {
     // game.js collision, passenger, mission, or scoring logic.
     this.trafficWorld = new TrafficWorld(THREE, this, { quality: this.quality });
     this.passengerWorld = new PassengerWorld(THREE, this, { quality: this.quality });
+    this.karotaWorld = new KarotaWorld(THREE, this, { quality: this.quality });
     this.buildEffects();
     this.buildWeather();
 
@@ -1615,6 +1618,7 @@ export class Renderer3D {
       for (const z of Array.isArray(g?.dropZones) ? g.dropZones : []) passengerZones.push({ ...z, kind: 'dropoff' });
       this.passengerWorld.update(delta, g, passengerZones);
     }
+    if (this.karotaWorld) this.karotaWorld.update(delta, g);
     this.updateCoins(delta, g);
     this.updateWeather(delta);
     this.updateDust(delta);
@@ -1645,7 +1649,9 @@ export class Renderer3D {
     this.trafficWorld = null;
     this.passengerWorld?.dispose?.();
     this.passengerWorld = null;
+    this.karotaWorld = null;
     this.passengerWorld = null;
+    this.karotaWorld = null;
     this.renderer?.dispose?.();
     this.ready = false;
   }
