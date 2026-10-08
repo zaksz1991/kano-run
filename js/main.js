@@ -2,8 +2,14 @@
 import { Game } from './game.js';
 import { Renderer } from './renderer.js';
 import { UI } from './ui.js';
+import { Assets } from './assets.js';
 
 const canvas = document.getElementById('c');
+
+// Preload asset pack (canvas fallback if missing)
+Assets.load().then(() => {
+  console.log('Assets ready', Object.keys(Assets.images).length, 'images');
+});
 const game = new Game(canvas);
 const ui = new UI(game);
 const renderer = new Renderer(game);

@@ -1,5 +1,6 @@
-// Kano Run - Rendering System
+// Stronger 2D renderer — polished Canvas visuals for Kano Run
 import { CONFIG } from './config.js';
+import { Assets } from './assets.js';
 
 export class Renderer {
   constructor(game) {
@@ -11,853 +12,701 @@ export class Renderer {
     const g = this.game;
     const ctx = this.ctx;
 
-    let shakeX = 0;
-    let shakeY = 0;
-
+    let shakeX = 0, shakeY = 0;
     if (g.shake > 0) {
-      shakeX = (Math.random() - 0.5) * (g.shakeMag || 0);
-      shakeY = (Math.random() - 0.5) * (g.shakeMag || 0);
+      shakeX = (Math.random() - 0.5) * g.shakeMag;
+      shakeY = (Math.random() - 0.5) * g.shakeMag;
     }
-
     ctx.save();
     ctx.translate(shakeX, shakeY);
 
+    this.drawSky();
+    this.drawCityscape();
     this.drawRoad();
     this.drawRoadCondition();
+    this.drawBillboards();
     this.drawSpeedLines();
     this.drawEntities();
     this.drawParticles();
-    this.drawBillboards();
-    this.drawKeke();
-    this.drawSpeedHUD();
+
+    if (g.state === 1 || g.state === 2) {
+      this.drawKeke(
+        g.playerX,
+        g.playerY,
+        true,
+        CONFIG.PAINTS[g.currentPaint] || CONFIG.PAINTS.classic,
+        g.paxOnBoard,
+        g.inv > 0
+      );
+    }
+    if (g.state === 1) this.drawSpeedHUD();
 
     ctx.restore();
   }
 
-  drawRoadCondition() {
+  // ——— Atmosphere ———
+  drawSky() {
     const g = this.game;
     const ctx = this.ctx;
+    const w = g.canvas.clientWidth;
+    const h = g.canvas.clientHeight;
+    const tod = g.getTimeOfDay();
 
-    if (
-      !g.roadCondition ||
-      g.roadCondition === 'normal' ||
-      !g.mudTimer ||
-      g.mudTimer <= 0
-    ) {
-      return;
+    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.42);
+    if (tod < 0.28) {
+      sky.addColorStop(0, '#0ea5e9');
+      sky.addColorStop(0.55, '#38bdf8');
+      sky.addColorStop(1, '#7dd3fc');
+    } else if (tod < 0.5) {
+      sky.addColorStop(0, '#1e3a5f');
+      sky.addColorStop(0.5, '#312e81');
+      sky.addColorStop(1, '#4c1d95');
+    } else {
+      sky.addColorStop(0, '#020617');
+      sky.addColorStop(0.6, '#0f172a');
+      sky.addColorStop(1, '#1e1b4b');
     }
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h * 0.4);
 
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
-
-    ctx.save();
-
-    if (g.roadCondition === 'mud') {
-      ctx.fillStyle = 'rgba(120, 72, 35, 0.12)';
-      ctx.fillRect(0, h * 0.48, w, h * 0.52);
-    }
-
-    if (g.roadCondition === 'wet') {
-      ctx.fillStyle = 'rgba(80, 130, 170, 0.10)';
-      ctx.fillRect(0, h * 0.48, w, h * 0.52);
-    }
-
-    if (g.roadCondition === 'dust') {
-      ctx.fillStyle = 'rgba(210, 170, 110, 0.12)';
-      ctx.fillRect(0, h * 0.42, w, h * 0.58);
-    }
-
-    ctx.restore();
-  }
-
-  drawSpeedLines() {
-    const g = this.game;
-    const ctx = this.ctx;
-
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
-    const speed = Number(g.speed) || 0;
-
-    if (speed < 12) {
-      return;
-    }
-
-    const intensity = Math.min(0.32, (speed - 12) / 120);
-    const frame = Number(g.frame) || 0;
-    const roadOffset = Number(g.roadOff) || 0;
-
-    ctx.save();
-    ctx.globalAlpha = intensity;
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-    ctx.lineWidth = 1.5;
-
-    for (let i = 0; i < 14; i += 1) {
-      const x =
-        ((i * 113 + roadOffset * 0.7) % Math.max(1, w));
-
-      const y =
-        h * 0.48 +
-        ((i * 67 + frame * (speed * 0.12)) % Math.max(1, h * 0.48));
-
-      const length = 8 + speed * 0.12;
-
+    // Sun / moon
+    if (tod < 0.3) {
+      const sx = w * 0.78, sy = h * 0.1;
+      const glow = ctx.createRadialGradient(sx, sy, 4, sx, sy, 40);
+      glow.addColorStop(0, 'rgba(253,224,71,0.9)');
+      glow.addColorStop(0.4, 'rgba(253,224,71,0.25)');
+      glow.addColorStop(1, 'rgba(253,224,71,0)');
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x, y + length);
-      ctx.stroke();
+      ctx.arc(sx, sy, 40, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 14, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (tod > 0.55) {
+      const mx = w * 0.82, my = h * 0.09;
+      ctx.fillStyle = 'rgba(248,250,252,0.9)';
+      ctx.beginPath();
+      ctx.arc(mx, my, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(248,250,252,0.15)';
+      ctx.beginPath();
+      ctx.arc(mx, my, 22, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    ctx.restore();
+    // Stars at night
+    if (tod > 0.5) {
+      ctx.fillStyle = `rgba(255,255,255,${(tod - 0.5) * 1.6})`;
+      for (let i = 0; i < 55; i++) {
+        const sx = (i * 97 + 30) % w;
+        const sy = (i * 53 + 12) % (h * 0.28);
+        const r = 0.7 + (i % 3) * 0.5;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Harmattan haze overlay on sky
+    if (g.weather === 'dust' || g.weather === 'haze') {
+      ctx.fillStyle = g.weather === 'dust'
+        ? 'rgba(212, 185, 140, 0.18)'
+        : 'rgba(148, 163, 184, 0.14)';
+      ctx.fillRect(0, 0, w, h * 0.4);
+    }
+  }
+
+  drawCityscape() {
+    const g = this.game;
+    const ctx = this.ctx;
+    const w = g.canvas.clientWidth;
+    const h = g.canvas.clientHeight;
+    const tod = g.getTimeOfDay();
+    const baseY = h * 0.34;
+
+    // Far hills / city silhouette
+    ctx.fillStyle = tod > 0.5 ? 'rgba(15,23,42,0.85)' : 'rgba(30,41,59,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(0, baseY);
+    for (let i = 0; i <= 12; i++) {
+      const x = (i / 12) * w;
+      const y = baseY - 18 - Math.sin(i * 0.9 + g.roadOff * 0.01) * 12 - (i % 3) * 8;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(w, baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Buildings — varied heights, some with minaret / roof character
+    for (let i = 0; i < 16; i++) {
+      const bx = ((i * 62 + g.roadOff * 0.22) % (w + 100)) - 50;
+      const bw = 36 + (i % 4) * 10;
+      const bh = 28 + (i % 7) * 16 + (i % 2) * 10;
+      const by = baseY - bh;
+
+      // Building body
+      const shade = tod > 0.5 ? 20 + (i % 4) * 8 : 45 + (i % 5) * 12;
+      ctx.fillStyle = `rgb(${shade},${shade + 8},${shade + 18})`;
+      ctx.fillRect(bx, by, bw, bh);
+
+      // Roof edge
+      ctx.fillStyle = tod > 0.5 ? '#1e293b' : '#475569';
+      ctx.fillRect(bx - 2, by - 4, bw + 4, 5);
+
+      // Minaret-style top on some
+      if (i % 5 === 0) {
+        ctx.fillStyle = tod > 0.5 ? '#334155' : '#64748b';
+        ctx.fillRect(bx + bw * 0.35, by - 22, bw * 0.3, 22);
+        ctx.beginPath();
+        ctx.moveTo(bx + bw * 0.3, by - 22);
+        ctx.lineTo(bx + bw * 0.5, by - 34);
+        ctx.lineTo(bx + bw * 0.7, by - 22);
+        ctx.fill();
+      }
+
+      // Windows
+      if (tod > 0.48) {
+        ctx.fillStyle = 'rgba(253,224,71,0.35)';
+        for (let wy = 8; wy < bh - 10; wy += 12) {
+          for (let wx = 6; wx < bw - 10; wx += 12) {
+            if ((i + wx + wy) % 3 !== 0) {
+              ctx.fillRect(bx + wx, by + wy, 6, 7);
+            }
+          }
+        }
+      } else {
+        ctx.fillStyle = 'rgba(15,23,42,0.25)';
+        for (let wy = 8; wy < bh - 10; wy += 12) {
+          for (let wx = 6; wx < bw - 10; wx += 12) {
+            ctx.fillRect(bx + wx, by + wy, 6, 7);
+          }
+        }
+      }
+    }
   }
 
   drawRoad() {
     const g = this.game;
     const ctx = this.ctx;
+    const w = g.canvas.clientWidth;
+    const h = g.canvas.clientHeight;
+    const tod = g.getTimeOfDay();
+    const rt = h * 0.34;
 
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
-
-    const tod =
-      typeof g.getTimeOfDay === 'function'
-        ? g.getTimeOfDay()
-        : 0.25;
-
-    const roadOffset = Number(g.roadOff) || 0;
-
-    ctx.clearRect(0, 0, w, h);
-
-    // Sky
-    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.58);
-
-    if (tod < 0.22) {
-      sky.addColorStop(0, '#071426');
-      sky.addColorStop(1, '#263c58');
-    } else if (tod < 0.32) {
-      sky.addColorStop(0, '#173a63');
-      sky.addColorStop(1, '#e08a55');
-    } else if (tod < 0.72) {
-      sky.addColorStop(0, '#55a8d9');
-      sky.addColorStop(1, '#d9edf4');
-    } else if (tod < 0.82) {
-      sky.addColorStop(0, '#d8794e');
-      sky.addColorStop(1, '#f4c27b');
+    // Road surface with perspective gradient
+    const roadGrad = ctx.createLinearGradient(0, rt, 0, h);
+    if (tod > 0.55) {
+      roadGrad.addColorStop(0, '#1e293b');
+      roadGrad.addColorStop(0.5, '#0f172a');
+      roadGrad.addColorStop(1, '#020617');
     } else {
-      sky.addColorStop(0, '#081a31');
-      sky.addColorStop(1, '#253d59');
+      roadGrad.addColorStop(0, '#475569');
+      roadGrad.addColorStop(0.4, '#334155');
+      roadGrad.addColorStop(1, '#1e293b');
     }
+    ctx.fillStyle = roadGrad;
+    ctx.fillRect(0, rt, w, h - rt);
 
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h);
+    // Shoulder / curb
+    ctx.fillStyle = tod > 0.55 ? '#334155' : '#64748b';
+    ctx.fillRect(0, rt, 14, h - rt);
+    ctx.fillRect(w - 14, rt, 14, h - rt);
 
-    // Stars at night
-    if (tod > 0.48) {
-      const alpha = Math.min(
-        1,
-        Math.max(0, (tod - 0.48) * 1.9)
-      );
-
-      ctx.fillStyle =
-        'rgba(255,255,255,' + alpha + ')';
-
-      for (let i = 0; i < 60; i += 1) {
-        const starX = (i * 83) % Math.max(1, w);
-        const starY =
-          (i * 47) %
-          Math.max(1, h * 0.4);
-
-        ctx.fillRect(starX, starY, 1.5, 1.5);
-      }
-    }
-
-    // Distant skyline
-    const horizon = h * 0.46;
-
-    ctx.fillStyle = '#6b7280';
-
-    for (let i = 0; i < 28; i += 1) {
-      const buildingWidth = 35 + ((i * 17) % 55);
-      const buildingHeight = 25 + ((i * 29) % 95);
-
-      const x =
-        ((i * 97 - roadOffset * 0.12) %
-          (w + buildingWidth * 2)) -
-        buildingWidth;
-
-      ctx.fillRect(
-        x,
-        horizon - buildingHeight,
-        buildingWidth,
-        buildingHeight
-      );
-
-      ctx.fillStyle =
-        i % 3 === 0
-          ? '#7c8794'
-          : '#596572';
-    }
-
-    // Road
-    const roadTop = h * 0.48;
-    const roadBottom = h;
-
-    const roadGradient = ctx.createLinearGradient(
-      0,
-      roadTop,
-      0,
-      roadBottom
-    );
-
-    roadGradient.addColorStop(0, '#4b5563');
-    roadGradient.addColorStop(1, '#151a20');
-
-    ctx.fillStyle = roadGradient;
-
+    // Yellow edge lines
+    ctx.strokeStyle = '#eab308';
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(w * 0.36, roadTop);
-    ctx.lineTo(w * 0.64, roadTop);
-    ctx.lineTo(w * 0.96, h);
-    ctx.lineTo(w * 0.04, h);
-    ctx.closePath();
-    ctx.fill();
-
-    // Road shoulders
-    ctx.strokeStyle = '#d8b56b';
-    ctx.lineWidth = 5;
-
-    ctx.beginPath();
-    ctx.moveTo(w * 0.36, roadTop);
-    ctx.lineTo(w * 0.04, h);
+    ctx.moveTo(16, rt);
+    ctx.lineTo(16, h);
+    ctx.moveTo(w - 16, rt);
+    ctx.lineTo(w - 16, h);
     ctx.stroke();
 
-    ctx.beginPath();
-    ctx.moveTo(w * 0.64, roadTop);
-    ctx.lineTo(w * 0.96, h);
-    ctx.stroke();
+    // Lane dashes with perspective (wider at bottom)
+    ctx.strokeStyle = tod > 0.55 ? '#ca8a04' : '#fbbf24';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([16, 18]);
+    ctx.lineDashOffset = -g.roadOff;
+    for (let i = 1; i < 3; i++) {
+      const x = g.laneX(i - 0.5);
+      ctx.beginPath();
+      ctx.moveTo(x, rt);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
 
-    // Lane markings
-    const laneCount = 3;
+    // Subtle center sheen
+    const sheen = ctx.createLinearGradient(w * 0.3, rt, w * 0.7, h);
+    sheen.addColorStop(0, 'rgba(255,255,255,0)');
+    sheen.addColorStop(0.5, 'rgba(255,255,255,0.03)');
+    sheen.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(20, rt, w - 40, h - rt);
+  }
 
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(255,255,255,0.72)';
+  drawRoadCondition() {
+    const g = this.game;
+    if (g.roadCondition === 'normal' || g.mudTimer <= 0) return;
+    const ctx = this.ctx;
+    const w = g.canvas.clientWidth;
+    const h = g.canvas.clientHeight;
 
-    for (let lane = 1; lane < laneCount; lane += 1) {
-      const topX =
-        w * (0.36 + (0.28 * lane) / laneCount);
-
-      const bottomX =
-        w * (0.04 + (0.92 * lane) / laneCount);
-
-      const dashOffset =
-        roadOffset % 70;
-
-      for (
-        let y = roadTop + dashOffset - 70;
-        y < h;
-        y += 70
-      ) {
-        const progress =
-          (y - roadTop) /
-          Math.max(1, h - roadTop);
-
-        const x =
-          topX +
-          (bottomX - topX) * progress;
-
-        const dashLength =
-          12 + progress * 28;
-
+    if (g.roadCondition === 'muddy') {
+      ctx.fillStyle = 'rgba(120, 80, 40, 0.2)';
+      ctx.fillRect(0, h * 0.34, w, h * 0.66);
+      ctx.fillStyle = 'rgba(90, 55, 25, 0.3)';
+      for (let i = 0; i < 7; i++) {
+        const x = (i * 100 + g.roadOff * 0.55) % (w + 80) - 40;
         ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(
-          x +
-            ((bottomX - topX) /
-              Math.max(1, h - roadTop)) *
-              dashLength,
-          y + dashLength
-        );
+        ctx.ellipse(x, h * 0.68 + (i % 3) * 28, 38, 11, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (g.roadCondition === 'bad') {
+      ctx.fillStyle = 'rgba(20, 20, 20, 0.12)';
+      ctx.fillRect(0, h * 0.34, w, h * 0.66);
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 2.5;
+      for (let i = 0; i < 6; i++) {
+        const x = (i * 120 + g.roadOff * 0.35) % w;
+        ctx.beginPath();
+        ctx.moveTo(x, h * 0.48);
+        ctx.lineTo(x + 18, h * 0.62);
+        ctx.lineTo(x - 8, h * 0.78);
         ctx.stroke();
       }
     }
-
-    // Road texture
-    ctx.globalAlpha = 0.12;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1;
-
-    for (let i = 0; i < 30; i += 1) {
-      const y =
-        roadTop +
-        ((i * 91 + roadOffset * 0.8) %
-          Math.max(1, h - roadTop));
-
-      const progress =
-        (y - roadTop) /
-        Math.max(1, h - roadTop);
-
-      const left =
-        w * (0.36 - progress * 0.32);
-
-      const right =
-        w * (0.64 + progress * 0.32);
-
-      ctx.beginPath();
-      ctx.moveTo(left, y);
-      ctx.lineTo(right, y);
-      ctx.stroke();
-    }
-
-    ctx.globalAlpha = 1;
   }
 
-  drawKeke() {
+  drawBillboards() {
     const g = this.game;
     const ctx = this.ctx;
+    const w = g.canvas.clientWidth;
+    const h = g.canvas.clientHeight;
+    const bbs = (CONFIG.BILLBOARDS || []).filter(b => b.active);
+    if (!bbs.length) return;
 
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
+    const spacing = 400;
+    const baseY = h * 0.2;
 
-    const centerX = w / 2;
-    const baseY = h * 0.82;
+    for (let i = 0; i < 4; i++) {
+      const offset = ((g.roadOff * 0.38) + i * spacing) % (spacing * 3);
+      const x = w + 40 - offset;
+      if (x < -130 || x > w + 90) continue;
+      const bb = bbs[i % bbs.length];
 
-    const scale = Math.min(
-      1.25,
-      Math.max(0.78, w / 700)
-    );
+      // Pole
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(x + 50, baseY + 8, 6, 52);
 
-    const width = 128 * scale;
-    const height = 150 * scale;
-
-    const steer =
-      Number(g.steer) ||
-      Number(g.laneTarget) ||
-      0;
-
-    const x =
-      centerX +
-      steer * Math.min(85, w * 0.12);
-
-    const y = baseY;
-
-    ctx.save();
-    ctx.translate(x, y);
-
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.38)';
-    ctx.beginPath();
-    ctx.ellipse(
-      0,
-      10 * scale,
-      width * 0.52,
-      width * 0.17,
-      0,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-
-    // Rear body
-    ctx.fillStyle = '#e5a900';
-
-    ctx.beginPath();
-    ctx.roundRect(
-      -width * 0.48,
-      -height * 0.48,
-      width * 0.96,
-      height * 0.78,
-      16 * scale
-    );
-    ctx.fill();
-
-    // Black lower chassis
-    ctx.fillStyle = '#171717';
-
-    ctx.beginPath();
-    ctx.roundRect(
-      -width * 0.46,
-      height * 0.13,
-      width * 0.92,
-      height * 0.22,
-      8 * scale
-    );
-    ctx.fill();
-
-    // Roof
-    ctx.fillStyle = '#161616';
-
-    ctx.beginPath();
-    ctx.roundRect(
-      -width * 0.45,
-      -height * 0.62,
-      width * 0.9,
-      height * 0.22,
-      10 * scale
-    );
-    ctx.fill();
-
-    // Rear window
-    ctx.fillStyle = '#1f4b5c';
-
-    ctx.beginPath();
-    ctx.roundRect(
-      -width * 0.36,
-      -height * 0.45,
-      width * 0.72,
-      height * 0.3,
-      8 * scale
-    );
-    ctx.fill();
-
-    // Window reflection
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
-    ctx.fillRect(
-      -width * 0.29,
-      -height * 0.4,
-      width * 0.13,
-      height * 0.2
-    );
-
-    // Side supports
-    ctx.strokeStyle = '#0b0b0b';
-    ctx.lineWidth = 5 * scale;
-
-    ctx.beginPath();
-    ctx.moveTo(-width * 0.37, -height * 0.48);
-    ctx.lineTo(-width * 0.37, height * 0.15);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(width * 0.37, -height * 0.48);
-    ctx.lineTo(width * 0.37, height * 0.15);
-    ctx.stroke();
-
-    // Passenger silhouettes
-    const passengerCount = Math.min(
-      Number(g.passengers) || 0,
-      Number(g.capacity) || 3
-    );
-
-    for (let i = 0; i < passengerCount; i += 1) {
-      const passengerX =
-        -width * 0.22 +
-        i * width * 0.22;
-
-      ctx.fillStyle = '#242424';
-
+      // Board shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
       ctx.beginPath();
-      ctx.arc(
-        passengerX,
-        -height * 0.2,
-        8 * scale,
-        0,
-        Math.PI * 2
-      );
+      ctx.roundRect(x + 3, baseY - 36, 108, 46, 6);
       ctx.fill();
 
-      ctx.fillRect(
-        passengerX - 7 * scale,
-        -height * 0.12,
-        14 * scale,
-        22 * scale
-      );
+      // Board
+      ctx.fillStyle = bb.color || '#eab308';
+      ctx.beginPath();
+      ctx.roundRect(x, baseY - 40, 108, 46, 7);
+      ctx.fill();
+
+      // Inner frame
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      const t = bb.text || bb.brand || '';
+      ctx.fillText(t.slice(0, 14), x + 54, baseY - 18);
+      if (t.length > 14) {
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.fillText(t.slice(14, 28), x + 54, baseY - 4);
+      }
+    }
+  }
+
+  drawSpeedLines() {
+    const g = this.game;
+    if (g.speed < 8.5 || g.state !== 1) return;
+    const ctx = this.ctx;
+    const w = g.canvas.clientWidth;
+    const h = g.canvas.clientHeight;
+    const intensity = Math.min(1, (g.speed - 8.5) / 5);
+
+    ctx.strokeStyle = `rgba(255,255,255,${0.06 + intensity * 0.12})`;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 8 + intensity * 6; i++) {
+      const x = (i * 97 + g.frame * 16) % (w + 40) - 20;
+      const len = 16 + intensity * 26;
+      const yBase = 90 + (i * 67) % (h - 180);
+      ctx.beginPath();
+      ctx.moveTo(x, yBase);
+      ctx.lineTo(x - len, yBase + len * 0.25);
+      ctx.stroke();
+    }
+  }
+
+  // ——— Vehicles ———
+  drawKeke(x, y, isPlayer, paint, paxCount = 0, invuln = false) {
+    const g = this.game;
+    const ctx = this.ctx;
+    const p = paint || CONFIG.PAINTS.classic;
+
+    ctx.save();
+    const bounce = isPlayer && g.bounce > 0 ? Math.sin(g.bounce * 0.9) * 2.8 : 0;
+    ctx.translate(x, y + bounce);
+    if (isPlayer && invuln && Math.floor(g.frame / 3) % 2 === 0) ctx.globalAlpha = 0.4;
+
+    // Sprite pack for player
+    if (isPlayer) {
+      const spr = Assets.get('player');
+      if (spr) {
+        const sw = 118, sh = 148;
+        ctx.drawImage(spr, -sw / 2, -sh + 48, sw, sh);
+        if (paxCount > 0) {
+          const colors = ['#fcd34d', '#f9a8d4', '#93c5fd', '#86efac', '#c4b5fd'];
+          for (let i = 0; i < Math.min(paxCount, 5); i++) {
+            const px = -18 + i * 12;
+            ctx.fillStyle = colors[i % colors.length];
+            ctx.beginPath();
+            ctx.arc(px, -30, 6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+        return;
+      }
     }
 
-    // Rear plate
-    ctx.fillStyle = '#eeeeee';
-    ctx.fillRect(
-      -width * 0.17,
-      height * 0.18,
-      width * 0.34,
-      height * 0.075
-    );
+    // Canvas-drawn polished keke
+    const wr = g.wheelRot || 0;
 
-    ctx.fillStyle = '#111111';
-    ctx.font =
-      'bold ' +
-      Math.max(8, 9 * scale) +
-      'px Arial';
+    // Soft shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(0, 44, 36, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Rear wheels
+    for (const side of [-24, 24]) {
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(side, 32, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(side, 32, 6.5, wr, wr + Math.PI * 1.3);
+      ctx.stroke();
+      ctx.fillStyle = '#1e293b';
+      ctx.beginPath();
+      ctx.arc(side, 32, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Body
+    const body = isPlayer ? p.body : '#eab308';
+    const roof = isPlayer ? p.roof : '#fde047';
+    const accent = isPlayer ? p.accent : '#ca8a04';
+
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.roundRect(-30, -40, 60, 64, 10);
+    ctx.fill();
+
+    // Side highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(-26, -36, 12, 50);
+
+    // Accent stripe
+    ctx.fillStyle = accent;
+    ctx.fillRect(-30, 4, 60, 6);
+
+    // Canopy
+    ctx.fillStyle = roof;
+    ctx.beginPath();
+    ctx.roundRect(-32, -52, 64, 20, 8);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(-28, -48, 56, 5);
+
+    // Front panel
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.roundRect(-24, -28, 48, 17, 5);
+    ctx.fill();
+
+    // Windows
+    ctx.fillStyle = 'rgba(148,163,184,0.28)';
+    ctx.beginPath();
+    ctx.roundRect(-26, -12, 17, 22, 3);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.roundRect(9, -12, 17, 22, 3);
+    ctx.fill();
+
+    // Front wheel
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(0, 36, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 36, 5.5, wr * 1.2, wr * 1.2 + Math.PI);
+    ctx.stroke();
+
+    // Headlights + beams at night
+    if (g.getTimeOfDay() > 0.48) {
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(-15, -32, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(15, -32, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(253,224,71,0.07)';
+      ctx.beginPath();
+      ctx.moveTo(-20, -32);
+      ctx.lineTo(-58, -95);
+      ctx.lineTo(-6, -95);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(20, -32);
+      ctx.lineTo(6, -95);
+      ctx.lineTo(58, -95);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Plate
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.roundRect(-18, 14, 36, 13, 3);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 9px system-ui';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(
-      'KANO',
-      0,
-      height * 0.217
-    );
+    ctx.fillText('KN 24', 0, 24);
 
-    // Tail lights
-    ctx.fillStyle = '#ef4444';
-
-    ctx.beginPath();
-    ctx.arc(
-      -width * 0.34,
-      height * 0.18,
-      6 * scale,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(
-      width * 0.34,
-      height * 0.18,
-      6 * scale,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-
-    // Wheels
-    const wheelY = height * 0.34;
-    const wheelX = width * 0.44;
-
-    ctx.fillStyle = '#080808';
-
-    ctx.beginPath();
-    ctx.arc(
-      -wheelX,
-      wheelY,
-      13 * scale,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(
-      wheelX,
-      wheelY,
-      13 * scale,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
+    // Passengers
+    if (isPlayer && paxCount > 0) {
+      const colors = ['#fcd34d', '#f9a8d4', '#93c5fd', '#86efac', '#c4b5fd'];
+      for (let i = 0; i < Math.min(paxCount, 5); i++) {
+        const px = -18 + i * 12;
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.beginPath();
+        ctx.arc(px, -10, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.roundRect(px - 5, -4, 10, 15, 3);
+        ctx.fill();
+      }
+    }
 
     ctx.restore();
   }
 
   drawEntities() {
     const g = this.game;
+    const all = [
+      ...g.obs.map(o => ({ t: 'o', y: o.y, d: o })),
+      ...g.paxZones.map(p => ({ t: 'p', y: p.y, d: p })),
+      ...g.dropZones.map(d => ({ t: 'd', y: d.y, d: d })),
+      ...g.coins.map(c => ({ t: 'c', y: c.y, d: c }))
+    ].sort((a, b) => a.y - b.y);
 
-    if (Array.isArray(g.obs)) {
-      for (const obstacle of g.obs) {
-        this.drawObstacle(obstacle);
-      }
-    }
-
-    if (Array.isArray(g.paxZones)) {
-      for (const zone of g.paxZones) {
-        this.drawZone(zone, '#22c55e');
-      }
-    }
-
-    if (Array.isArray(g.dropZones)) {
-      for (const zone of g.dropZones) {
-        this.drawZone(zone, '#38bdf8');
-      }
-    }
-
-    if (Array.isArray(g.coins)) {
-      for (const coin of g.coins) {
-        this.drawCoin(coin);
-      }
+    for (const e of all) {
+      if (e.t === 'o') this.drawObstacle(e.d);
+      else if (e.t === 'p' && !e.d.taken) {
+        if (e.d.vip) this.drawZone(e.d, '#fbbf24', '👑 VIP');
+        else {
+          const col = (e.d.pType && e.d.pType.color) || '#4ade80';
+          const label = (e.d.pType && e.d.pType.label) ? e.d.pType.label.slice(0, 6) : 'PICK';
+          this.drawZone(e.d, col, label);
+        }
+      } else if (e.t === 'd' && !e.d.used) this.drawZone(e.d, '#fbbf24', 'DROP');
+      else if (e.t === 'c') this.drawCoin(e.d);
     }
   }
 
   drawObstacle(o) {
     const g = this.game;
-    const ctx = this.ctx;
+    const x = g.laneX(o.lane);
+    const y = o.y + o.h / 2;
 
-    if (!o) {
-      return;
+    if (o.type === 'keke') {
+      this.drawKeke(x, y, false, CONFIG.PAINTS.classic, 0, false);
+    } else if (o.type === 'karota' || o.type === 'police') {
+      this.drawEnforcer(x, y, o.type);
+    } else if (o.type === 'car') {
+      this.drawCar(x, y, '#dc2626');
+    } else {
+      this.drawCart(x, y);
     }
+  }
 
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
-
-    const z = Number(o.z) || 0.5;
-    const scale =
-      Math.max(0.25, Math.min(1.35, 1 - z));
-
-    const lane =
-      Number(o.lane) ||
-      Number(o.x) ||
-      0;
-
-    const x =
-      w / 2 +
-      lane * w * 0.12;
-
-    const y =
-      h * (0.48 + (1 - z) * 0.42);
-
-    const objectWidth =
-      42 + scale * 45;
-
-    const objectHeight =
-      26 + scale * 55;
-
+  drawEnforcer(x, y, type) {
+    const ctx = this.ctx;
     ctx.save();
     ctx.translate(x, y);
-
-    if (o.type === 'karota') {
-      ctx.fillStyle = '#f59e0b';
-
-      ctx.beginPath();
-      ctx.roundRect(
-        -objectWidth / 2,
-        -objectHeight / 2,
-        objectWidth,
-        objectHeight,
-        8
-      );
-      ctx.fill();
-
-      ctx.fillStyle = '#222222';
-      ctx.fillRect(
-        -objectWidth * 0.33,
-        -objectHeight * 0.22,
-        objectWidth * 0.66,
-        objectHeight * 0.3
-      );
-
-      ctx.fillStyle = '#ef4444';
-
-      ctx.beginPath();
-      ctx.arc(
-        -objectWidth * 0.34,
-        objectHeight * 0.25,
-        Math.max(3, scale * 5),
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(
-        objectWidth * 0.34,
-        objectHeight * 0.25,
-        Math.max(3, scale * 5),
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-    } else if (o.type === 'police') {
-      ctx.fillStyle = '#1e40af';
-
-      ctx.beginPath();
-      ctx.roundRect(
-        -objectWidth / 2,
-        -objectHeight / 2,
-        objectWidth,
-        objectHeight,
-        7
-      );
-      ctx.fill();
-
-      ctx.fillStyle = '#111827';
-      ctx.fillRect(
-        -objectWidth * 0.32,
-        -objectHeight * 0.18,
-        objectWidth * 0.64,
-        objectHeight * 0.27
-      );
-
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(
-        -objectWidth * 0.23,
-        -objectHeight * 0.48,
-        objectWidth * 0.2,
-        objectHeight * 0.08
-      );
-
-      ctx.fillStyle = '#ef4444';
-      ctx.fillRect(
-        objectWidth * 0.03,
-        -objectHeight * 0.48,
-        objectWidth * 0.2,
-        objectHeight * 0.08
-      );
-    } else if (o.type === 'car') {
-      ctx.fillStyle =
-        o.color || '#dc2626';
-
-      ctx.beginPath();
-      ctx.roundRect(
-        -objectWidth / 2,
-        -objectHeight / 2,
-        objectWidth,
-        objectHeight,
-        7
-      );
-      ctx.fill();
-
-      ctx.fillStyle = '#263b4a';
-
-      ctx.fillRect(
-        -objectWidth * 0.32,
-        -objectHeight * 0.22,
-        objectWidth * 0.64,
-        objectHeight * 0.3
-      );
-
-      ctx.fillStyle = '#fef3c7';
-
-      ctx.fillRect(
-        -objectWidth * 0.38,
-        objectHeight * 0.25,
-        objectWidth * 0.16,
-        objectHeight * 0.12
-      );
-
-      ctx.fillRect(
-        objectWidth * 0.22,
-        objectHeight * 0.25,
-        objectWidth * 0.16,
-        objectHeight * 0.12
-      );
-    } else if (o.type === 'keke') {
-      ctx.fillStyle = '#e5a900';
-
-      ctx.beginPath();
-      ctx.roundRect(
-        -objectWidth / 2,
-        -objectHeight / 2,
-        objectWidth,
-        objectHeight,
-        8
-      );
-      ctx.fill();
-
-      ctx.fillStyle = '#111111';
-
-      ctx.fillRect(
-        -objectWidth * 0.3,
-        -objectHeight * 0.25,
-        objectWidth * 0.6,
-        objectHeight * 0.32
-      );
-    } else {
-      ctx.fillStyle = '#8b5e34';
-
-      ctx.fillRect(
-        -objectWidth / 2,
-        -objectHeight / 2,
-        objectWidth,
-        objectHeight
-      );
-    }
-
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(0, 36, 34, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = type === 'karota' ? '#f59e0b' : '#1e40af';
+    ctx.beginPath();
+    ctx.roundRect(-30, -32, 60, 56, 8);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(type === 'karota' ? 'KAROTA' : 'POLICE', 0, 2);
+    ctx.fillStyle = type === 'karota' ? '#ef4444' : '#3b82f6';
+    ctx.beginPath();
+    ctx.arc(-15, -24, 5, 0, Math.PI * 2);
+    ctx.arc(15, -24, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(-18, 30, 10, 0, Math.PI * 2);
+    ctx.arc(18, 30, 10, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 
-  drawZone(zone, color) {
+  drawCar(x, y, color) {
     const g = this.game;
     const ctx = this.ctx;
-
-    if (!zone) {
-      return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(0, 36, 36, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(-32, -30, 64, 54, 9);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.roundRect(-26, -20, 52, 18, 4);
+    ctx.fill();
+    if (g.getTimeOfDay() > 0.48) {
+      ctx.fillStyle = 'rgba(253,224,71,0.75)';
+      ctx.beginPath();
+      ctx.arc(-18, -24, 4.5, 0, Math.PI * 2);
+      ctx.arc(18, -24, 4.5, 0, Math.PI * 2);
+      ctx.fill();
     }
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(-22, 30, 11, 0, Math.PI * 2);
+    ctx.arc(22, 30, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
+  drawCart(x, y) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(0, 32, 30, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#a16207';
+    ctx.beginPath();
+    ctx.roundRect(-26, -16, 52, 38, 5);
+    ctx.fill();
+    ctx.fillStyle = '#854d0e';
+    ctx.fillRect(-30, -26, 60, 14);
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.arc(-12, -10, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(10, -8, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(-18, 28, 9, 0, Math.PI * 2);
+    ctx.arc(18, 28, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
-    const z = Number(zone.z) || 0.5;
-    const lane =
-      Number(zone.lane) ||
-      Number(zone.x) ||
-      0;
-
-    const x =
-      w / 2 +
-      lane * w * 0.12;
-
-    const y =
-      h * (0.48 + (1 - z) * 0.42);
-
-    const width =
-      48 +
-      Math.max(0.2, 1 - z) * 55;
+  drawZone(z, color, label) {
+    const g = this.game;
+    const ctx = this.ctx;
+    const x = g.laneX(z.lane);
+    const pulse = 1 + Math.sin(g.frame * 0.11) * 0.1;
 
     ctx.save();
-
+    ctx.translate(x, z.y + 25);
+    ctx.scale(pulse, pulse);
     ctx.fillStyle = color + '18';
-    ctx.strokeStyle = color + 'aa';
-    ctx.lineWidth = 2;
-
     ctx.beginPath();
-    ctx.ellipse(
-      x,
-      y,
-      width,
-      width * 0.32,
-      0,
-      0,
-      Math.PI * 2
-    );
+    ctx.arc(0, 0, 40, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = color + '30';
+    ctx.beginPath();
+    ctx.arc(0, 0, 34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 31, 0, Math.PI * 2);
     ctx.stroke();
-
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.font = 'bold 11px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, 0, 4);
     ctx.restore();
   }
 
-  drawCoin(coin) {
+  drawCoin(c) {
+    if (c.taken) return;
     const g = this.game;
     const ctx = this.ctx;
-
-    if (!coin) {
-      return;
-    }
-
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
-
-    const z = Number(coin.z) || 0.5;
-    const lane =
-      Number(coin.lane) ||
-      Number(coin.x) ||
-      0;
-
-    const x =
-      w / 2 +
-      lane * w * 0.12;
-
-    const y =
-      h * (0.48 + (1 - z) * 0.42);
-
-    const radius =
-      5 +
-      Math.max(0.2, 1 - z) * 12;
+    const x = g.laneX(c.lane);
+    const bob = Math.sin(c.bob) * 4.5;
 
     ctx.save();
-
-    ctx.fillStyle = '#fbbf24';
-    ctx.strokeStyle = '#fff4b0';
-    ctx.lineWidth = 2;
-
+    ctx.translate(x, c.y + bob);
+    ctx.fillStyle = 'rgba(251,191,36,0.22)';
     ctx.beginPath();
-    ctx.arc(
-      x,
-      y,
-      radius,
-      0,
-      Math.PI * 2
-    );
+    ctx.arc(0, 0, 20, 0, Math.PI * 2);
     ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#8a5b00';
-    ctx.font =
-      'bold ' +
-      Math.max(7, radius) +
-      'px Arial';
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ca8a04';
+    ctx.beginPath();
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 13px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(
-      'N',
-      x,
-      y
-    );
-
+    ctx.fillText('₦', 0, 1);
     ctx.restore();
   }
 
@@ -865,198 +714,56 @@ export class Renderer {
     const g = this.game;
     const ctx = this.ctx;
 
-    const collections = [
-      g.particles,
-      g.dust,
-      g.weatherParticles
-    ];
+    for (const p of g.particles) {
+      const a = p.life / p.max;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
 
-    for (const list of collections) {
-      if (!Array.isArray(list)) {
-        continue;
-      }
+    for (const d of g.dust) {
+      const a = d.life / 28;
+      ctx.globalAlpha = a * 0.4;
+      ctx.fillStyle = '#94a3b8';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.size * a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
 
-      for (const p of list) {
-        if (!p) {
-          continue;
-        }
-
-        const x = Number(p.x) || 0;
-        const y = Number(p.y) || 0;
-
-        const size =
-          Number(p.size) ||
-          Number(p.r) ||
-          2;
-
-        const alpha =
-          p.alpha !== undefined
-            ? Math.max(
-                0,
-                Math.min(1, Number(p.alpha))
-              )
-            : 1;
-
-        ctx.save();
-
-        ctx.globalAlpha = alpha;
-
-        ctx.fillStyle =
-          p.color ||
-          'rgba(255,255,255,0.7)';
-
+    for (const p of g.weatherParticles) {
+      if (p.haze) {
+        ctx.globalAlpha = (p.life / 80) * 0.12;
+        ctx.fillStyle = '#94a3b8';
         ctx.beginPath();
-        ctx.arc(
-          x,
-          y,
-          size,
-          0,
-          Math.PI * 2
-        );
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
-
-        ctx.restore();
+      } else {
+        ctx.globalAlpha = (p.life / 70) * 0.45;
+        ctx.fillStyle = '#d4d4d8';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
+    ctx.globalAlpha = 1;
   }
 
   drawSpeedHUD() {
     const g = this.game;
     const ctx = this.ctx;
+    const w = g.canvas.clientWidth;
 
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
-
-    const speed = Math.max(
-      0,
-      Math.round(Number(g.speed) || 0)
-    );
-
-    ctx.save();
-
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = 'rgba(10,15,28,0.8)';
     ctx.beginPath();
-    ctx.roundRect(
-      w - 125,
-      h - 65,
-      105,
-      45,
-      10
-    );
+    ctx.roundRect(w / 2 - 44, 58, 88, 26, 13);
     ctx.fill();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 22px Arial';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-
-    ctx.fillText(
-      speed + ' km/h',
-      w - 32,
-      h - 42
-    );
-
-    ctx.restore();
-  }
-
-  drawBillboards() {
-    const g = this.game;
-    const ctx = this.ctx;
-
-    if (
-      !CONFIG ||
-      !Array.isArray(CONFIG.BILLBOARDS)
-    ) {
-      return;
-    }
-
-    const w = g.canvas.clientWidth || g.canvas.width;
-    const h = g.canvas.clientHeight || g.canvas.height;
-
-    const roadOffset = Number(g.roadOff) || 0;
-
-    for (
-      let i = 0;
-      i < CONFIG.BILLBOARDS.length;
-      i += 1
-    ) {
-      const billboard =
-        CONFIG.BILLBOARDS[i];
-
-      if (!billboard) {
-        continue;
-      }
-
-      const z =
-        ((i * 0.31 + roadOffset * 0.0007) %
-          1);
-
-      const depth =
-        Math.max(0.1, 1 - z);
-
-      const side =
-        i % 2 === 0
-          ? -1
-          : 1;
-
-      const x =
-        w / 2 +
-        side *
-          (w * (0.31 + depth * 0.24));
-
-      const y =
-        h * (0.34 + depth * 0.24);
-
-      const bw =
-        42 + depth * 75;
-
-      const bh =
-        20 + depth * 38;
-
-      ctx.save();
-
-      ctx.fillStyle = '#5b4636';
-
-      ctx.fillRect(
-        x - 2,
-        y,
-        4,
-        55 * depth
-      );
-
-      ctx.fillStyle =
-        billboard.color ||
-        '#fbbf24';
-
-      ctx.fillRect(
-        x - bw / 2,
-        y - bh,
-        bw,
-        bh
-      );
-
-      ctx.fillStyle = '#111827';
-
-      ctx.font =
-        'bold ' +
-        Math.max(7, 8 + depth * 5) +
-        'px Arial';
-
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      const label =
-        billboard.text ||
-        billboard.title ||
-        'KANO';
-
-      ctx.fillText(
-        String(label),
-        x,
-        y - bh / 2
-      );
-
-      ctx.restore();
-    }
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(g.speed.toFixed(1) + ' km/h', w / 2, 75);
   }
 }

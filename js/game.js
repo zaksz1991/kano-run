@@ -1,39 +1,130 @@
-// Kano Run — Advanced Game Core
+// Core game logic
 import { CONFIG, STATE } from './config.js';
 import { Storage } from './storage.js';
 import { Audio } from './audio.js';
 
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const pick = list => list[Math.floor(Math.random() * list.length)];
-
 export class Game {
-  constructor(canvas, ui = null) {
+  constructor(canvas, ui) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.ui = ui;
+    this.dpr = 1;
 
     this.state = STATE.START;
-    this.running = true;
-    this.paused = false;
-    this.gameOver = false;
-
     this.score = 0;
     this.dist = 0;
+    this.paxOnBoard = 0;
     this.totalPax = 0;
     this.dropCount = 0;
     this.hornCount = 0;
-    this.continuesLeft = CONFIG.STARTING_LIVES;
+    this.continuesLeft = 3;
     this.combo = 0;
     this.comboTimer = 0;
     this.maxCombo = 0;
-    this.nearMisses = 0;
+    this.nearMissCooldown = 0;
+    this.shake = 0;
+    this.shakeMag = 0;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.shake = 0;
+    this.shakeMag = 0;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
 
-    this.speed = CONFIG.START_SPEED;
-    this.speedBoost = Storage.getSpeedBoost();
-    this.hornPower = Storage.getHornPower();
-    this.fareBonus = 0;
+    this.speed = 4.8;
+    this.frame = 0;
+    this.roadOff = 0;
+    this.playerLane = 1;
+    this.playerX = 0;
+    this.targetX = 0;
+    this.playerY = 0;
+    this.inv = 0;
+    this.bounce = 0;
+    this.wheelRot = 0;
 
     this.capacity = Storage.getCapacity();
+    this.
+  driverSay(type) {
+    const lines = CONFIG.DRIVER_REACTIONS[type];
+    if (!lines || !lines.length) return;
+    const line = lines[Math.floor(Math.random() * lines.length)];
+    const driver = CONFIG.DRIVERS[this.selectedDriver];
+    const name = driver ? driver.name : 'Driver';
+    this.ui.showMissionToast(`${name}: "${line}"`);
+  }
+
+  triggerShake(frames = 12, mag = 6) {
+    this.shake = frames;
+    this.shakeMag = mag;
+  }
+
+  addCombo(amount = 1) {
+    this.combo += amount;
+    this.comboTimer = 180; // frames before combo resets
+    if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+    if (this.combo >= 5 && this.combo % 5 === 0) {
+      this.ui.showMissionToast(`🔥 ${this.combo}x COMBO!`);
+      Audio.missionComplete();
+      if (Math.random() < 0.7) this.driverSay('combo');
+    }
+  }
+
+  getComboMultiplier() {
+    if (this.combo >= 20) return 2.5;
+    if (this.combo >= 12) return 2.0;
+    if (this.combo >= 7) return 1.6;
+    if (this.combo >= 4) return 1.3;
+    if (this.combo >= 2) return 1.15;
+    return 1.0;
+  }
+
+  applyDriverBonuses();
+    this.speedBoost = Storage.getSpeedBoost();
+    this.hornPower = Storage.getHornPower();
     this.currentPaint = Storage.getPaint();
     this.driverStyle = Storage.getDriverStyle();
     this.selectedDriver = Storage.getSelectedDriver();
@@ -41,25 +132,125 @@ export class Game {
     this.currentRadio = Storage.getRadioStation();
     this.money = Storage.getMoney();
     this.high = Storage.getHighScore();
-
-    this.playerLane = 1;
-    this.targetLane = 1;
-    this.steer = 0;
-    this.laneTarget = 0;
-    this.playerY = 0;
-
-    this.roadOff = 0;
-    this.frame = 0;
+    this.eventCooldown = 0;
+    this.karotaCooldown = 0;
+    this.continuesLeft = 3;
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.maxCombo = 0;
+    this.nearMissCooldown = 0;
     this.shake = 0;
     this.shakeMag = 0;
-    this.inv = 0;
-    this.bounce = 0;
-    this.wheelRot = 0;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.shake = 0;
+    this.shakeMag = 0;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;   // Life Saver ×3
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.maxCombo = 0;
+    this.nearMissCooldown = 0;
+    this.shake = 0;
+    this.shakeMag = 0;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.shake = 0;
+    this.shakeMag = 0;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
 
+    this.radioOn = false;
     this.weather = 'clear';
     this.weatherTimer = 0;
-    this.roadCondition = 'normal';
-    this.mudTimer = 0;
 
     this.obs = [];
     this.paxZones = [];
@@ -69,649 +260,843 @@ export class Game {
     this.dust = [];
     this.weatherParticles = [];
 
-    this.spawnTimer = 0;
-    this.paxTimer = 1.8;
-    this.coinTimer = 1.2;
-    this.eventTimer = 10;
-    this.landmarkTimer = 0;
-    this.routeProgress = 0;
-
-    this.worldEvent = null;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.trafficJamTimer = 0;
-
-    this.dailyMission = null;
-    this.streak = Storage.getStreak();
+    this.landmarkT = 0;
     this.activeMission = null;
-    this.missionProgress = 0;
 
-    this.fuel = 100;
-    this.damage = 0;
-    this.fuelSpent = 0;
-
-    this.lastDriverSay = 0;
-    this.width = window.innerWidth;
-    this.height = window.innerHeight;
-
-    this.route = this.getRoute();
-    this.district = this.route.name;
-    this.applyDriverBonuses();
-    this.initDaily();
-  }
-
-  getRoute() {
-    return CONFIG.ROUTES[this.selectedRoute] ||
-      CONFIG.ROUTES.citycenter ||
-      Object.values(CONFIG.ROUTES)[0];
+    this.lastTime = 0;
   }
 
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.width = window.innerWidth;
-    this.height = window.innerHeight;
-    this.canvas.width = Math.floor(this.width * dpr);
-    this.canvas.height = Math.floor(this.height * dpr);
-    this.canvas.style.width = `${this.width}px`;
-    this.canvas.style.height = `${this.height}px`;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.playerY = this.height * .82;
+    const r = this.canvas.parentElement.getBoundingClientRect();
+    this.dpr = Math.min(devicePixelRatio || 1, 2);
+    this.canvas.width = r.width * this.dpr;
+    this.canvas.height = r.height * this.dpr;
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.canvas.style.width = r.width + 'px';
+    this.canvas.style.height = r.height + 'px';
+  }
+
+  laneX(l) {
+    const pad = 18;
+    const lw = (this.canvas.clientWidth - pad * 2) / CONFIG.LANES;
+    return pad + l * lw + lw / 2;
   }
 
   start() {
-    this.route = this.getRoute();
     this.state = STATE.PLAY;
-    this.running = true;
-    this.paused = false;
-    this.gameOver = false;
-
     this.score = 0;
     this.dist = 0;
+    this.paxOnBoard = 0;
     this.totalPax = 0;
     this.dropCount = 0;
     this.hornCount = 0;
-    this.continuesLeft = CONFIG.STARTING_LIVES;
+    this.continuesLeft = 3;
     this.combo = 0;
     this.comboTimer = 0;
     this.maxCombo = 0;
-    this.nearMisses = 0;
-
-    this.speed = CONFIG.START_SPEED + (this.speedBoost * .7) + (this.driverSpeed || 0);
-    this.fuel = 100;
-    this.damage = 0;
-    this.fuelSpent = 0;
-
-    this.playerLane = 1;
-    this.targetLane = 1;
-    this.steer = 0;
-    this.laneTarget = 0;
-    this.roadOff = 0;
-    this.frame = 0;
+    this.nearMissCooldown = 0;
     this.shake = 0;
-    this.inv = 0;
-
-    this.obs.length = 0;
-    this.paxZones.length = 0;
-    this.dropZones.length = 0;
-    this.coins.length = 0;
-    this.particles.length = 0;
-    this.dust.length = 0;
-    this.weatherParticles.length = 0;
-
-    this.spawnTimer = .25;
-    this.paxTimer = 1.2;
-    this.coinTimer = .9;
-    this.eventTimer = 8;
-    this.routeProgress = 0;
-
-    this.worldEvent = null;
+    this.shakeMag = 0;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
     this.lastmaActive = false;
     this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.vipActive = false;
     this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.shake = 0;
+    this.shakeMag = 0;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.vipActive = false;
+    this.trafficJamTimer = 0;
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.karotaCheckpoint = 0;
+    this.mudTimer = 0;
+    this.roadCondition = 'normal';
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.lastmaTimer = 0;
+    this.lastmaActive = false;
+    this.speed = 4.8 + this.speedBoost * 0.7;
+    this.frame = 0;
+    this.playerLane = 1;
+    this.inv = 0;
+    this.bounce = 0;
+    this.obs = [];
+    this.paxZones = [];
+    this.dropZones = [];
+    this.coins = [];
+    this.particles = [];
+    this.dust = [];
+    this.weatherParticles = [];
+    this.roadOff = 0;
+    this.landmarkT = 0;
+    this.wheelRot = 0;
+    this.weather = 'clear';
+    this.weatherTimer = 0;
+    this.capacity = Storage.getCapacity();
+    this.applyDriverBonuses();
 
-    this.activeMission = pick(CONFIG.MISSIONS);
-    this.missionProgress = 0;
+    this.activeMission = {
+      ...CONFIG.MISSIONS[Math.floor(Math.random() * CONFIG.MISSIONS.length)],
+      progress: 0
+    };
 
-    this.weather = this.pickWeather();
-    this.applyWeather();
+    this.ui.showPlaying();
+    this.ui.setMission(this.activeMission.text);
+    this.ui.setWeather(CONFIG.WEATHER.clear);
+    if (this.radioOn) this.ui.showRadio(true);
 
-    if (this.ui?.showPlaying) this.ui.showPlaying();
-    if (this.ui?.updateHUD) this.ui.updateHUD(this);
-    if (this.ui?.setMission && this.activeMission) this.ui.setMission(this.activeMission.text);
-    if (this.ui?.setWeather) this.ui.setWeather(CONFIG.WEATHER[this.weather] || '☀️ Clear');
-
-    try { Audio.startEngine?.(); } catch {}
+    Audio.startEngine();
+    this.initDaily();
+    this.ui.updateHUD(this);
+    this.ui.updateDailyUI(this);
   }
 
-  restart() { this.start(); }
+  gameOver() {
+    Audio.crash();
+    this.triggerShake(18, 9);
 
-  continueGame() {
-    this.paused = false;
-    this.running = true;
-    this.state = STATE.PLAY;
-  }
+    this.state = STATE.EVENT;
 
-  pause() {
-    this.paused = true;
-  }
+    if (this.continuesLeft > 0) {
+      // Free Life Savers remaining
+      this.ui.showEvent(
+        '💥 CRASHED!',
+        `You still have ${this.continuesLeft} free Life Saver${this.continuesLeft > 1 ? 's' : ''} left.\nContinue from here?`,
+        [
+          {
+            label: `Use Free Life Saver (${this.continuesLeft} left)`,
+            action: () => this.useContinue(false)
+          },
+          {
+            label: 'End Run',
+            action: () => this.finalGameOver()
+          }
+        ]
+      );
+    } else {
+      // No free lives left — offer paid continue
+      const cost = this.getContinueCost();
+      const canAfford = this.score >= cost;
 
-  changeLane(direction) {
-    if (this.state !== STATE.PLAY) return;
-    this.targetLane = clamp(this.targetLane + Math.sign(direction), 0, CONFIG.LANES - 1);
-  }
-
-  horn() {
-    this.hornCount++;
-    this.combo = Math.min(CONFIG.COMBO_MAX, this.combo + 1);
-    this.comboTimer = 3;
-    this.clearNearbyTraffic();
-    this.driverSay('horn');
-    try { Audio.horn?.(); } catch {}
-  }
-
-  cycleRadio() {
-    const stations = CONFIG.RADIO_STATIONS;
-    const index = Math.max(0, stations.findIndex(s => s.id === this.currentRadio));
-    this.currentRadio = stations[(index + 1) % stations.length].id;
-    Storage.setRadioStation(this.currentRadio);
-    this.ui?.showRadio?.(true);
-    setTimeout(() => this.ui?.showRadio?.(false), 1800);
-  }
-
-  radio() { this.cycleRadio(); }
-
-  applyDriverBonuses() {
-    const driver = CONFIG.DRIVERS[this.selectedDriver] || CONFIG.DRIVERS.musa;
-    const b = driver.bonus || {};
-    this.driverSpeed = Number(b.speed || 0);
-    this.fareBonus = Number(b.fareBonus || 0);
-    this.driverHorn = Number(b.horn || 0);
-    this.capacity = Math.max(3, Storage.getCapacity() + Number(b.capacity || 0));
-    return b;
-  }
-
-  update(dt) {
-    if (this.state !== STATE.PLAY || this.paused || this.gameOver) return;
-
-    const seconds = Math.min(32, Number(dt) || 0) / 1000;
-    this.frame++;
-    this.roadOff += this.speed * seconds * 24;
-    this.wheelRot += this.speed * seconds * 2;
-
-    this.updateClock(seconds);
-    this.updateMovement(seconds);
-    this.updateTraffic(seconds);
-    this.updatePassengers(seconds);
-    this.updateCoins(seconds);
-    this.updateWorldEvents(seconds);
-    this.updateParticles(seconds);
-    this.updateFuelAndEconomy(seconds);
-    this.updateMission();
-    this.updateDistrict();
-    this.updateHUD();
-
-    this.dist += this.speed * seconds * .018;
-    this.routeProgress += this.speed * seconds * .12;
-    this.score += Math.floor(this.speed * seconds * 2.2 * this.getComboMultiplier());
-
-    if (this.comboTimer > 0) {
-      this.comboTimer -= seconds;
-      if (this.comboTimer <= 0) this.combo = 0;
+      this.ui.showEvent(
+        '💥 CRASHED! No Free Lives Left',
+        canAfford
+          ? `Pay ₦${cost.toLocaleString()} from your score to get another Life Saver?`
+          : `You need ₦${cost.toLocaleString()} to buy another Life Saver.\nYou only have ₦${this.score.toLocaleString()}.`,
+        canAfford
+          ? [
+              {
+                label: `Pay ₦${cost.toLocaleString()} & Continue`,
+                action: () => this.useContinue(true)
+              },
+              {
+                label: 'End Run',
+                action: () => this.finalGameOver()
+              }
+            ]
+          : [
+              {
+                label: 'End Run',
+                action: () => this.finalGameOver()
+              }
+            ]
+      );
     }
+  }
+
+  getContinueCost() {
+    // Cost increases with how many paid continues already used this run
+    // Base 400, then +250 each time
+    const paidUsed = Math.max(0, 3 - this.continuesLeft); // after free ones are gone
+    return 400 + (paidUsed * 250);
+  }
+
+  useContinue(isPaid) {
+    if (isPaid) {
+      const cost = this.getContinueCost();
+      if (this.score < cost) {
+        this.finalGameOver();
+        return;
+      }
+      this.score -= cost;
+    } else {
+      this.continuesLeft--;
+      // small score penalty for free continue
+      this.score = Math.max(0, this.score - 100);
+    }
+
+    this.inv = 100;          // brief invincibility
+    this.obs = [];           // clear nearby obstacles
+    this.paxZones = this.paxZones.filter(p => p.y > this.playerY - 80);
+    this.dropZones = this.dropZones.filter(d => d.y > this.playerY - 80);
+    this.state = STATE.PLAY;
+    this.ui.hideEvent();
+    this.ui.showPlaying();
+    this.ui.updateHUD(this);
+    Audio.startEngine();
+  }
+
+  finalGameOver() {
+    this.state = STATE.OVER;
+    Audio.stopEngine();
+
+    this.money += Math.floor(this.score * 0.2);
+    Storage.setMoney(this.money);
 
     if (this.score > this.high) {
       this.high = this.score;
       Storage.setHighScore(this.high);
     }
 
-    if (this.shake > 0) this.shake -= seconds;
-    if (this.inv > 0) this.inv -= seconds;
+    this.ui.showGameOver(this);
   }
 
-  updateHUD() {
-    this.ui?.updateHUD?.(this);
-    this.ui?.updateRouteLabel?.();
-    if (this.ui?.setMission && this.activeMission) {
-      this.ui.setMission(`${this.activeMission.text} (${Math.floor(this.missionProgress)}/${this.activeMission.target})`);
+  changeLane(dir) {
+    const next = this.playerLane + dir;
+    if (next >= 0 && next < CONFIG.LANES) {
+      this.playerLane = next;
+      this.bounce = 10;
+      Audio.laneChange();
     }
   }
 
-  updateClock(seconds) {
-    this.eventTimer -= seconds;
-    this.weatherTimer -= seconds;
-    this.landmarkTimer -= seconds;
+  horn() {
+    if (this.state !== STATE.PLAY) return;
+    const range = 170 + this.hornPower * 45;
 
-    if (this.weatherTimer <= 0) {
-      this.weather = this.pickWeather();
-      this.weatherTimer = 28 + Math.random() * 35;
-      this.applyWeather();
-    }
-
-    if (this.landmarkTimer <= 0) {
-      const list = this.route.landmarks || [];
-      if (list.length) this.ui?.showLandmark?.(pick(list));
-      this.landmarkTimer = 9 + Math.random() * 9;
-    }
-  }
-
-  updateMovement(seconds) {
-    const max = CONFIG.MAX_SPEED + this.speedBoost * 1.5 + this.driverSpeed;
-    const acceleration = 3.2 + this.speedBoost * .45;
-    this.speed = clamp(this.speed + acceleration * seconds, CONFIG.START_SPEED, max);
-
-    const target = (this.targetLane - 1);
-    this.laneTarget = target;
-    this.steer += (target - this.steer) * Math.min(1, seconds * 10);
-    this.playerLane += (this.targetLane - this.playerLane) * Math.min(1, seconds * 8);
-  }
-
-  updateTraffic(seconds) {
-    this.spawnTimer -= seconds;
-    const eventTraffic = this.worldEvent?.traffic || 1;
-    const routeTraffic = this.route.traffic || 1;
-    const difficulty = this.route.difficulty || 1;
-
-    if (this.spawnTimer <= 0) {
-      this.spawnTraffic();
-      const density = Math.max(.22, 1.05 - difficulty * .15);
-      this.spawnTimer = density / (routeTraffic * eventTraffic) * (.65 + Math.random() * .5);
-    }
-
-    for (let i = this.obs.length - 1; i >= 0; i--) {
-      const o = this.obs[i];
-      o.z -= seconds * (.22 + this.speed * .012) * (o.relativeSpeed || 1);
-      o.wobble += seconds * (o.behaviour === 'motorcycle' ? 6 : 2);
-
-      if (o.behaviour === 'overtake') {
-        o.lane += Math.sin(o.wobble) * seconds * .08;
-        o.lane = clamp(o.lane, -1.15, 1.15);
+    this.obs = this.obs.filter(o => {
+      if (Math.round(o.lane) === this.playerLane && Math.abs(o.y - this.playerY) < range) {
+        this.score += 55;
+        this.spawnParticles(this.laneX(o.lane), o.y + 30, '#fbbf24', 9);
+        return false;
       }
+      return true;
+    });
 
-      if (o.z < -.12) {
-        if (!o.passed) this.checkNearMiss(o);
-        this.obs.splice(i, 1);
-        continue;
-      }
+    this.inv = (this.driverAbility === "ghost" ? 32 : (this.driverAbility === "careful" ? 26 : 18)) + this.hornPower * 5;
+    this.hornCount++;
+    if (this.activeMission?.id === 'horn3') {
+      this.activeMission.progress = this.hornCount;
+      this.checkMission();
+    }
+    Audio.horn(this.hornPower);
+  }
 
-      if (o.type === 'karota' && o.z < .55 && o.z > .28 && Math.abs(o.lane - this.laneTarget) < .18) {
-        this.triggerKarota();
-      }
+  toggleRadio() {
+    this.radioOn = !this.radioOn;
+    this.ui.showRadio(this.radioOn);
+    if (this.radioOn) Audio.radioOn();
+  }
 
-      this.checkCollision(o);
+  spawnParticles(x, y, color, n = 6) {
+    for (let i = 0; i < n; i++) {
+      this.particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * 6.5,
+        vy: (Math.random() - 0.5) * 6 - 2,
+        life: 24 + Math.random() * 22,
+        max: 46,
+        color,
+        size: 2.4 + Math.random() * 3.8
+      });
     }
   }
 
-  spawnTraffic() {
-    const pool = CONFIG.TRAFFIC_TYPES;
-    const total = pool.reduce((sum, x) => sum + x.weight, 0);
-    let roll = Math.random() * total;
-    let selected = pool[0];
-
-    for (const item of pool) {
-      roll -= item.weight;
-      if (roll <= 0) { selected = item; break; }
-    }
-
-    const routeFactor = this.route.traffic || 1;
-    let lane = Math.floor(Math.random() * CONFIG.LANES) - 1;
-    if (Math.random() < .18 * routeFactor) lane = clamp(lane + (Math.random() < .5 ? -1 : 1), -1, 1);
-
-    const behaviour = Math.random() < .2 ? 'overtake' : Math.random() < .2 ? 'slow' : 'normal';
-    const colors = ['#dc2626','#2563eb','#16a34a','#f97316','#64748b','#f8fafc','#111827'];
-
-    this.obs.push({
-      type: selected.type,
-      lane,
-      z: 1.02,
-      relativeSpeed: selected.type === 'truck' ? .75 : selected.type === 'motorcycle' ? 1.18 : .9 + Math.random() * .35,
-      behaviour,
-      wobble: Math.random() * 10,
-      color: pick(colors),
-      passed: false
+  spawnDust(x, y) {
+    this.dust.push({
+      x: x + (Math.random() - 0.5) * 22,
+      y: y + 22,
+      vx: (Math.random() - 0.5) * 1.8,
+      vy: -0.6 - Math.random() * 1.2,
+      life: 18 + Math.random() * 16,
+      size: 2.5 + Math.random() * 4
     });
   }
 
-  checkCollision(o) {
-    if (this.inv > 0 || !o || o.z > .18 || o.z < -.02) return;
-    const hit = Math.abs(o.lane - this.laneTarget) < (o.type === 'motorcycle' ? .16 : .28);
-    if (hit) this.collision(o);
+  updateWeather() {
+    this.weatherTimer++;
+    if (this.weatherTimer > 450) {
+      this.weatherTimer = 0;
+      const r = Math.random();
+      if (r < 0.55) this.weather = 'clear';
+      else if (r < 0.8) this.weather = 'dust';
+      else this.weather = 'haze';
+      this.ui.setWeather(CONFIG.WEATHER[this.weather]);
+    }
+
+    if (this.weather === 'dust' && this.frame % 3 === 0) {
+      this.weatherParticles.push({
+        x: Math.random() * this.canvas.clientWidth,
+        y: -10,
+        vx: -1.2 - Math.random() * 1.5,
+        vy: 1.5 + Math.random() * 2,
+        life: 60 + Math.random() * 40,
+        size: 1.5 + Math.random() * 2.5
+      });
+    }
+    if (this.weather === 'haze' && this.frame % 8 === 0) {
+      this.weatherParticles.push({
+        x: Math.random() * this.canvas.clientWidth,
+        y: Math.random() * this.canvas.clientHeight * 0.5,
+        vx: -0.3,
+        vy: 0.2,
+        life: 80,
+        size: 8 + Math.random() * 12,
+        haze: true
+      });
+    }
+
+    this.weatherParticles.forEach(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life--;
+    });
+    this.weatherParticles = this.weatherParticles.filter(p => p.life > 0);
   }
 
-  checkNearMiss(o) {
-    o.passed = true;
-    if (Math.abs(o.lane - this.laneTarget) < .48 && Math.abs(o.lane - this.laneTarget) > .22) {
-      this.nearMisses++;
-      this.addCombo(1);
-      this.score += 120 * this.getComboMultiplier();
-      this.addMoney(25);
-      this.ui?.showMissionToast?.(`Near miss +₦25 • ${this.combo}x`);
-      this.shake = .12;
-      this.shakeMag = 3;
+  checkMission() {
+    if (!this.activeMission) return;
+
+    const m = this.activeMission;
+    if (m.id === 'pax5') m.progress = this.totalPax;
+    if (m.id === 'dist3') m.progress = this.dist;
+    if (m.id === 'score2k') m.progress = this.score;
+    if (m.id === 'horn3') m.progress = this.hornCount;
+    if (m.id === 'drop10') m.progress = this.dropCount;
+
+    if (m.progress >= m.target) {
+      this.score += m.reward;
+      this.ui.showMissionToast(`Mission complete! +₦${m.reward}`);
+      Audio.missionComplete();
+      this.activeMission = null;
+      this.ui.setMission('Mission done!');
+    } else {
+      this.ui.setMission(`${m.text} (${Math.floor(m.progress)}/${m.target})`);
     }
   }
 
-  collision(o) {
-    if (this.inv > 0) return;
-    this.continuesLeft--;
-    this.damage = clamp(this.damage + 22, 0, 100);
-    this.inv = 1.35 + this.driverHorn * .2;
-    this.shake = .4;
-    this.shakeMag = 10;
-    this.speed *= .62;
-    this.combo = 0;
-    this.addMoney(-CONFIG.COMMERCE.maintenanceCostPerCrash);
-    this.driverSay('crash');
+  update(dt) {
+    if (this.state !== STATE.PLAY) return;
 
-    if (this.continuesLeft <= 0 || this.damage >= 100) this.endGame();
-  }
+    this.frame++;
+    if (this.inv > 0) this.inv--;
+    if (this.bounce > 0) this.bounce--;
 
-  addCombo(amount = 1) {
-    this.combo = clamp(this.combo + amount, 0, CONFIG.COMBO_MAX);
-    this.comboTimer = 4;
-    this.maxCombo = Math.max(this.maxCombo, this.combo);
-    if (this.combo > 1 && this.combo % 5 === 0) this.driverSay('combo');
-  }
+    const baseTop = 12.2 + this.speedBoost * 1.35 + (this.driverAbility === "aggressive" ? 0.9 : 0);
+    this.speed = Math.min(baseTop, 4.8 + this.speedBoost * 0.7 + this.dist * 0.08);
+    this.roadOff = (this.roadOff + this.speed * 2.15) % 58;
+    this.dist += this.speed * 0.0069;
+    this.score += Math.floor(this.speed * 0.28);
+    this.wheelRot += this.speed * 0.28;
 
-  getComboMultiplier() {
-    if (this.combo >= 20) return 2.5;
-    if (this.combo >= 12) return 2;
-    if (this.combo >= 7) return 1.6;
-    if (this.combo >= 4) return 1.3;
-    return 1;
-  }
-
-  updatePassengers(seconds) {
-    this.paxTimer -= seconds;
-
-    if (this.paxTimer <= 0 && this.paxOnBoard < this.capacity) {
-      this.spawnPassenger();
-      this.paxTimer = Math.max(1.6, 4.5 / (this.route.traffic || 1)) + Math.random() * 2;
+    Audio.updateEngine(this.speed);
+    this.updateWeather();
+    this.applyAbilityEffects();
+    if (this.trafficJamTimer > 0) {
+      this.trafficJamTimer--;
+      this.speed *= 0.72;
     }
 
-    for (let i = this.paxZones.length - 1; i >= 0; i--) {
-      const p = this.paxZones[i];
-      p.z -= seconds * (.22 + this.speed * .012);
-      if (p.z < -.1) { this.paxZones.splice(i, 1); continue; }
+    // LASTMA checkpoint logic
+    if (this.lastmaTimer > 0) {
+      this.lastmaTimer--;
+      if (this.lastmaActive && this.speed > 9.5) {
+        // Speeding through checkpoint → fine
+        this.lastmaActive = false;
+        const fine = 350 + Math.floor(Math.random() * 250);
+        this.score = Math.max(0, this.score - fine);
+        this.ui.showMissionToast(`🚨 LASTMA FINE! -₦${fine}`);
+        this.triggerShake(14, 7);
+        Audio.crash();
+      }
+      if (this.lastmaTimer <= 0 && this.lastmaActive) {
+        // Successfully slowed down
+        this.lastmaActive = false;
+        this.score += 180;
+        this.ui.showMissionToast('✅ Checkpoint cleared! +₦180');
+        Audio.coin();
+      }
+    }
+    if (this.comboTimer > 0) {
+      this.comboTimer--;
+      if (this.comboTimer <= 0) this.combo = 0;
+    }
+    if (this.nearMissCooldown > 0) this.nearMissCooldown--;
+    if (this.shake > 0) this.shake--;
+    if (this.eventCooldown > 0) this.eventCooldown--;
+    if (this.karotaCooldown > 0) this.karotaCooldown--;
+    this.tryTriggerEvent();
+    if (this.frame % 180 === 0) this.spawnEnforcer();
 
-      if (!p.collected && p.z < .16 && Math.abs(p.lane - this.laneTarget) < .36) {
-        p.collected = true;
+    this.targetX = this.laneX(this.playerLane);
+    this.playerX += (this.targetX - this.playerX) * 0.24;
+    this.playerY = this.canvas.clientHeight - 195 +
+      (this.bounce > 0 ? Math.sin(this.bounce * 0.85) * 3.2 : 0);
+
+    if (this.frame % 5 === 0) this.spawnDust(this.playerX, this.playerY);
+
+    // Spawns
+    if (this.frame % Math.max(17, 46 - Math.floor(this.speed * 2.3)) === 0 && Math.random() < 0.76) {
+      const lane = Math.floor(Math.random() * 3);
+      this.obs.push({
+        lane, targetLane: lane,
+        y: -105,
+        type: Math.random() < 0.57 ? 'keke' : (Math.random() < 0.55 ? 'car' : 'cart'),
+        w: 48, h: 64,
+        speedOff: (Math.random() - 0.5) * 0.9,
+        laneChangeTimer: 90 + Math.random() * 130
+      });
+    }
+    if (this.frame % (this.driverAbility === "popular" ? 65 : 90) === 0) {
+      const isVIP = Math.random() < 0.11;
+      let pType = CONFIG.PASSENGER_TYPES[Math.floor(Math.random() * CONFIG.PASSENGER_TYPES.length)];
+
+      // Mayen Mata: strongly prefer female passengers
+      if (this.driverAbility === 'women_only') {
+        const females = CONFIG.PASSENGER_TYPES.filter(t => t.gender === 'female');
+        if (Math.random() < 0.85 && females.length) {
+          pType = females[Math.floor(Math.random() * females.length)];
+        }
+      }
+
+      // Uztaz: avoid low-pay female types more often
+      if (this.driverAbility === 'careful_women' && pType.lowPay && Math.random() < 0.7) {
+        const safe = CONFIG.PASSENGER_TYPES.filter(t => !t.lowPay);
+        pType = safe[Math.floor(Math.random() * safe.length)];
+      }
+
+      this.paxZones.push({
+        lane: Math.floor(Math.random() * 3),
+        y: -85,
+        taken: false,
+        vip: isVIP,
+        pType: isVIP ? null : pType
+      });
+    }
+
+    // Traffic jam
+    if (this.frame % 520 === 0 && Math.random() < 0.4 && this.trafficJamTimer <= 0) {
+      this.trafficJamTimer = 160;
+      this.ui.showMissionToast('🚦 TRAFFIC JAM! Slow down!');
+      this.triggerShake(8, 3);
+    }
+
+    // KAROTA Checkpoint
+    if (this.frame % 680 === 0 && Math.random() < 0.45 && this.karotaCheckpoint <= 0) {
+      this.karotaCheckpoint = 200;
+      this.triggerShake(10, 5);
+      this.startKarotaCheckpoint();
+    }
+
+    // Muddy / bad road sections
+    if (this.frame % 400 === 0 && Math.random() < 0.35 && this.mudTimer <= 0) {
+      this.mudTimer = 140;
+      this.roadCondition = Math.random() < 0.5 ? 'muddy' : 'bad';
+      this.ui.showMissionToast(this.roadCondition === 'muddy' ? '🟤 MUDDY ROAD!' : '⚠️ BAD ROAD!');
+    }
+
+    // LASTMA Checkpoint
+    if (this.frame % 680 === 0 && Math.random() < 0.35 && this.lastmaTimer <= 0 && this.dist > 1.2) {
+      this.lastmaTimer = 200;
+      this.lastmaActive = true;
+      this.ui.showMissionToast('🚨 LASTMA CHECKPOINT! Slow down or get fined!');
+      this.triggerShake(10, 4);
+    }
+    if (this.frame % 115 === 0) this.dropZones.push({ lane: Math.floor(Math.random() * 3), y: -85, used: false });
+    if (this.frame % 62 === 0) this.coins.push({ lane: Math.floor(Math.random() * 3), y: -55, taken: false, bob: Math.random() * Math.PI * 2 });
+
+    const mv = this.speed * 1.52;
+
+    // Move obstacles with simple AI
+    for (const o of this.obs) {
+      o.y += mv + o.speedOff;
+      o.laneChangeTimer--;
+      if (o.laneChangeTimer <= 0 && Math.random() < 0.28) {
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        const nl = Math.round(o.lane) + dir;
+        if (nl >= 0 && nl < 3) o.targetLane = nl;
+        o.laneChangeTimer = 110 + Math.random() * 110;
+      }
+      if (o.lane !== o.targetLane) {
+        o.lane += (o.targetLane - o.lane) * 0.07;
+        if (Math.abs(o.lane - o.targetLane) < 0.04) o.lane = o.targetLane;
+      }
+    }
+
+    this.paxZones.forEach(p => p.y += mv);
+    this.dropZones.forEach(d => d.y += mv);
+    this.coins.forEach(c => { c.y += mv; c.bob += 0.13; });
+
+    this.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.09; p.life--; });
+    this.particles = this.particles.filter(p => p.life > 0);
+    this.dust.forEach(d => { d.x += d.vx; d.y += d.vy; d.life--; });
+    this.dust = this.dust.filter(d => d.life > 0);
+
+    const h = this.canvas.clientHeight;
+    this.obs = this.obs.filter(o => o.y < h + 75);
+    this.paxZones = this.paxZones.filter(p => p.y < h + 55 && !p.taken);
+    this.dropZones = this.dropZones.filter(d => d.y < h + 55 && !d.used);
+    this.coins = this.coins.filter(c => c.y < h + 45 && !c.taken);
+
+    // Collisions
+    const pb = { x: this.playerX - 25, y: this.playerY - 40, w: 50, h: 76 };
+
+    if (this.inv <= 0) {
+      for (const o of this.obs) {
+        const ox = this.laneX(Math.round(o.lane)) - o.w / 2;
+        if (this.rectHit(pb, { x: ox, y: o.y, w: o.w, h: o.h })) {
+          this.spawnParticles(this.playerX, this.playerY, '#ef4444', 16);
+          this.gameOver();
+          return;
+        }
+      }
+    }
+
+    for (const p of this.paxZones) {
+      if (p.taken || this.paxOnBoard >= this.capacity) continue;
+      const px = this.laneX(p.lane) - 24;
+      if (this.rectHit(pb, { x: px, y: p.y, w: 48, h: 48 })) {
+        // Mayen Mata refuses male passengers
+        if (this.driverAbility === 'women_only' && p.pType && p.pType.gender === 'male' && !p.vip) {
+          p.taken = true; // remove zone
+          this.ui.showMissionToast('Mayen Mata: "I no dey carry man!"');
+          this.spawnParticles(this.laneX(p.lane), p.y + 22, '#f87171', 6);
+          return;
+        }
+
+        p.taken = true;
         this.paxOnBoard++;
         this.totalPax++;
-        this.addMoney(15);
-        this.addCombo(1);
-        this.driverSay('pickup');
-        this.dropZones.push({
-          lane: p.destinationLane,
-          z: .9,
-          type: p.type,
-          completed: false
-        });
+
+        if (p.vip) {
+          this.score += 420;
+          this.spawnParticles(this.laneX(p.lane), p.y + 22, '#fbbf24', 16);
+          this.spawnParticles(this.laneX(p.lane), p.y + 10, '#f97316', 10);
+          this.ui.showMissionToast('👑 VIP PASSENGER! +₦420');
+          this.addCombo(2);
+          const vipLine = CONFIG.VIP_LINES[Math.floor(Math.random() * CONFIG.VIP_LINES.length)];
+          this.ui.showMissionToast(vipLine);
+        } else if (p.pType && p.pType.lowPay) {
+          // Female passengers who want to pay little or nothing
+          const mult = p.pType.fareMult || 0;
+          const pay = Math.floor(150 * mult);
+          this.score += pay;
+          this.spawnParticles(this.laneX(p.lane), p.y + 22, '#f87171', 8);
+          if (pay === 0) {
+            this.ui.showMissionToast('Passenger: "Abeg, I no get change" (₦0)');
+          } else {
+            this.ui.showMissionToast(`Passenger: "I only get ₦${pay}"`);
+          }
+          this.addCombo(1);
+          // Small chance of argument unless Uztaz
+          if (this.driverAbility !== 'careful_women' && Math.random() < 0.35) {
+            this.ui.showMissionToast('Driver: "Haba! At least give something!"');
+          }
+        } else {
+          const mult = (p.pType && p.pType.fareMult) ? p.pType.fareMult : 1;
+          this.score += Math.floor(150 * mult);
+          this.spawnParticles(this.laneX(p.lane), p.y + 22, (p.pType && p.pType.color) || '#4ade80', 8);
+          this.addCombo(1);
+        }
+        Audio.pickup();
+        if (Math.random() < 0.45) this.driverSay('pickup');
+        this.checkMission();
       }
     }
 
-    for (let i = this.dropZones.length - 1; i >= 0; i--) {
-      const d = this.dropZones[i];
-      d.z -= seconds * (.20 + this.speed * .011);
-      if (d.z < -.1) { this.dropZones.splice(i, 1); continue; }
+    for (const d of this.dropZones) {
+      if (d.used || this.paxOnBoard <= 0) continue;
+      const dx = this.laneX(d.lane) - 24;
+      if (this.rectHit(pb, { x: dx, y: d.y, w: 48, h: 48 })) {
+        d.used = true;
+        const dropped = this.paxOnBoard;
+        this.paxOnBoard = 0;
+        this.dropCount += dropped;
+        const mult = this.getComboMultiplier();
+        this.score += Math.floor(dropped * 290 * (1 + (this.fareBonus || 0)) * mult);
+        this.addCombo(dropped);
+        if (Math.random() < 0.5) this.driverSay('drop');
+        const pCount = 12 + Math.min(this.combo, 20);
+        this.spawnParticles(this.laneX(d.lane), d.y + 22, '#fbbf24', pCount);
+        if (this.combo >= 8) this.spawnParticles(this.playerX, this.playerY, '#f97316', 10);
+        Audio.drop();
+        this.checkMission();
+      }
+    }
 
-      if (!d.completed && d.z < .16 && this.paxOnBoard > 0 && Math.abs(d.lane - this.laneTarget) < .38) {
-        d.completed = true;
-        this.paxOnBoard--;
-        this.dropCount++;
-        const passenger = CONFIG.PASSENGER_TYPES.find(x => x.id === d.type) || CONFIG.PASSENGER_TYPES[0];
-        const fare = Math.round(this.route.baseFare * (passenger.fareMult || 1) * (1 + this.fareBonus) * (this.worldEvent?.fare || 1));
-        this.addMoney(fare);
-        this.score += fare;
-        this.addCombo(1);
-        this.driverSay('drop');
+    for (const c of this.coins) {
+      if (c.taken) continue;
+      if (Math.hypot(this.playerX - this.laneX(c.lane), this.playerY - c.y) < 43) {
+        c.taken = true;
+        this.score += 75;
+        this.spawnParticles(this.laneX(c.lane), c.y, '#fbbf24', 7);
+        Audio.coin();
+      }
+    }
+
+    // Landmarks
+    this.landmarkT++;
+    if (this.landmarkT > 310) {
+      this.landmarkT = 0;
+      const name = CONFIG.LANDMARKS[Math.floor(Math.random() * CONFIG.LANDMARKS.length)];
+      this.ui.showLandmark(name);
+    }
+
+    this.checkMission();
+    this.updateDailyProgress();
+    this.checkNearMiss();
+    this.ui.updateHUD(this);
+  }
+
+  cycleRadio() {
+    const stations = CONFIG.RADIO_STATIONS;
+    const idx = stations.findIndex(s => s.id === this.currentRadio);
+    const next = stations[(idx + 1) % stations.length];
+    this.currentRadio = next.id;
+    Storage.setRadioStation(next.id);
+    this.radioOn = true;
+    this.ui.showRadio(true);
+    this.ui.updateRadioBar();
+    Audio.radioOn();
+  }
+
+  // Trigger random negotiation or payment event
+  tryTriggerEvent() {
+    if (this.eventCooldown > 0 || this.state !== STATE.PLAY) return;
+    if (this.paxOnBoard > 0 && Math.random() < 0.008) {
+      this.eventCooldown = 400;
+      const isDisagree = Math.random() < (this.driverAbility === "smooth_talker" ? 0.18 : 0.4);
+      if (isDisagree) {
+        const line = CONFIG.NEGOTIATION.disagreement[Math.floor(Math.random()*CONFIG.NEGOTIATION.disagreement.length)];
+        this.ui.showEvent('Payment Disagreement', line, [
+          { label: 'Accept lower fare (-₦50)', action: () => { this.score = Math.max(0, this.score - 50); } },
+          { label: 'Force full payment', action: () => { this.score += 80; } },
+          { label: 'Kick passenger out', action: () => { this.paxOnBoard = Math.max(0, this.paxOnBoard - 1); } }
+        ]);
+      } else {
+        const pLine = CONFIG.NEGOTIATION.passenger[Math.floor(Math.random()*CONFIG.NEGOTIATION.passenger.length)];
+        const dLine = CONFIG.NEGOTIATION.driver[Math.floor(Math.random()*CONFIG.NEGOTIATION.driver.length)];
+        this.ui.showEvent('Passenger Negotiation', pLine + '\n\nDriver: ' + dLine, [
+          { label: 'Agree & continue', action: () => { this.score += 40; } },
+          { label: 'Haggle harder', action: () => { this.score += Math.random() > 0.5 ? 90 : -20; } }
+        ]);
       }
     }
   }
 
-  spawnPassenger() {
-    const p = pick(CONFIG.PASSENGER_TYPES);
-    const vip = p.vip || Math.random() < .035;
-    const lane = Math.floor(Math.random() * CONFIG.LANES) - 1;
-    this.paxZones.push({
-      lane,
-      z: 1.03,
-      type: p.id,
-      vip,
-      collected: false,
-      destinationLane: Math.floor(Math.random() * CONFIG.LANES) - 1
-    });
-  }
-
-  updateCoins(seconds) {
-    this.coinTimer -= seconds;
-    if (this.coinTimer <= 0) {
-      this.coins.push({
-        lane: Math.floor(Math.random() * CONFIG.LANES) - 1,
-        z: 1.02,
-        value: Math.random() < .15 ? 50 : 10
+  // Spawn KAROTA / Police as special obstacles
+  spawnEnforcer() {
+    if (this.karotaCooldown > 0) return;
+    if (Math.random() < 0.15) {
+      this.karotaCooldown = 300;
+      const lane = Math.floor(Math.random() * 3);
+      this.obs.push({
+        lane, targetLane: lane,
+        y: -110,
+        type: Math.random() < 0.6 ? 'karota' : 'police',
+        w: 50, h: 68,
+        speedOff: -0.3,
+        laneChangeTimer: 999,
+        isEnforcer: true
       });
-      this.coinTimer = 1.3 + Math.random() * 2;
-    }
-
-    for (let i = this.coins.length - 1; i >= 0; i--) {
-      const c = this.coins[i];
-      c.z -= seconds * (.22 + this.speed * .012);
-      if (c.z < -.1) { this.coins.splice(i, 1); continue; }
-      if (c.z < .16 && Math.abs(c.lane - this.laneTarget) < .35) {
-        this.addMoney(c.value);
-        this.score += c.value;
-        this.coins.splice(i, 1);
-      }
     }
   }
 
-  clearNearbyTraffic() {
+  checkNearMiss() {
+    if (this.nearMissCooldown > 0 || this.inv > 0) return;
+    const pb = { x: this.playerX - 28, y: this.playerY - 45, w: 56, h: 85 };
     for (const o of this.obs) {
-      if (o.z < .55 && Math.abs(o.lane - this.laneTarget) < (.5 + this.driverHorn * .1)) {
-        o.z -= .18;
+      const ox = this.laneX(Math.round(o.lane)) - o.w / 2;
+      const dist = Math.abs((ox + o.w/2) - this.playerX) + Math.abs((o.y + o.h/2) - this.playerY);
+      // Close but not hitting
+      if (dist < 95 && dist > 55 && Math.round(o.lane) === this.playerLane) {
+        this.nearMissCooldown = 40;
+        this.score += Math.floor(60 * this.getComboMultiplier());
+        this.addCombo(1);
+        this.spawnParticles(this.playerX, this.playerY - 20, '#38bdf8', 8);
+        this.ui.showMissionToast('NEAR MISS! +₦' + Math.floor(60 * this.getComboMultiplier()));
+        this.triggerShake(6, 3);
+        if (Math.random() < 0.6) this.driverSay('nearMiss');
+        Audio.coin();
+        break;
       }
     }
   }
 
-  updateWorldEvents(seconds) {
-    this.eventTimer -= seconds;
-
-    if (this.eventTimer <= 0 && !this.worldEvent) {
-      const event = pick(CONFIG.WORLD_EVENTS);
-      this.worldEvent = event;
-      this.eventTimer = 18 + Math.random() * 20;
-      this.ui?.showMissionToast?.(`${event.name}: ${event.text}`);
-      if (event.id === 'checkpoint') this.lastmaActive = true;
-      if (event.id === 'trafficjam') this.trafficJamTimer = 6;
-    }
-
-    if (this.worldEvent) {
-      if (this.worldEvent.id === 'trafficjam') {
-        this.trafficJamTimer -= seconds;
-        if (this.trafficJamTimer <= 0) this.worldEvent = null;
-      } else if (Math.random() < seconds * .035) {
-        this.worldEvent = null;
-        this.lastmaActive = false;
-      }
-    }
-
-    if (this.lastmaActive) {
-      this.lastmaTimer -= seconds;
-      if (this.lastmaTimer <= 0) this.lastmaTimer = 3;
-    }
-  }
-
-  triggerKarota() {
-    if (this.lastmaActive || Math.random() > .18) return;
-    this.lastmaActive = true;
-    this.lastmaTimer = 4;
-    this.driverSay('karota');
-    this.ui?.showMissionToast?.('KAROTA checkpoint ahead — keep moving carefully');
-  }
-
-  updateFuelAndEconomy(seconds) {
-    const cost = CONFIG.COMMERCE.fuelCostPerKm;
-    this.fuel = clamp(this.fuel - this.speed * seconds * .035, 0, 100);
-    this.fuelSpent += this.speed * seconds * cost / 1000;
-
-    if (this.fuel <= 0) {
-      this.speed *= .995;
-      if (Math.random() < seconds * .2) this.ui?.showMissionToast?.('Fuel is almost finished');
-    }
-  }
-
-  updateMission() {
-    if (!this.activeMission) return;
-    const m = this.activeMission;
-    if (m.id === 'pax5') this.missionProgress = this.totalPax;
-    else if (m.id === 'dist5') this.missionProgress = this.dist;
-    else if (m.id === 'score3k') this.missionProgress = this.score;
-    else if (m.id === 'horn5') this.missionProgress = this.hornCount;
-    else if (m.id === 'drop10') this.missionProgress = this.dropCount;
-    else if (m.id === 'near5') this.missionProgress = this.nearMisses;
-    else if (m.id === 'routes') this.missionProgress = Math.floor(this.routeProgress / 5);
-    else if (m.id === 'survive') this.missionProgress = this.dist;
-
-    if (this.missionProgress >= m.target) {
-      this.addMoney(m.reward);
-      this.ui?.showMissionToast?.(`Mission complete +₦${m.reward}`);
-      this.activeMission = pick(CONFIG.MISSIONS);
-      this.missionProgress = 0;
-    }
-  }
-
-  updateDistrict() {
-    const index = Math.floor(this.dist / 1.1) % CONFIG.DISTRICTS.length;
-    this.district = CONFIG.DISTRICTS[index];
-  }
-
-  updateParticles(seconds) {
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.x += (p.vx || 0) * seconds;
-      p.y += (p.vy || 0) * seconds;
-      p.life -= seconds;
-      if (p.life <= 0) this.particles.splice(i, 1);
-    }
-
-    for (let i = this.dust.length - 1; i >= 0; i--) {
-      const p = this.dust[i];
-      p.y += (p.speed || 20) * seconds;
-      p.life -= seconds * .5;
-      if (p.life <= 0) this.dust.splice(i, 1);
-    }
-
-    if (this.weather === 'dust' && Math.random() < seconds * 35) {
-      this.dust.push({x:Math.random()*this.width,y:-10,speed:25+Math.random()*45,life:1});
-    }
-
-    if (this.weather === 'rain' || this.weather === 'storm') {
-      if (Math.random() < seconds * 70) {
-        this.weatherParticles.push({
-          x:Math.random()*this.width,y:-10,
-          vx:-20,vy:220+Math.random()*140,life:1
-        });
-      }
-    }
-
-    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
-      const p = this.weatherParticles[i];
-      p.x += p.vx * seconds;
-      p.y += p.vy * seconds;
-      p.life -= seconds;
-      if (p.life <= 0) this.weatherParticles.splice(i, 1);
-    }
-  }
-
-  pickWeather() {
-    const r = Math.random();
-    if (r < .58) return 'clear';
-    if (r < .77) return 'dust';
-    if (r < .9) return 'haze';
-    if (r < .98) return 'rain';
-    return 'storm';
-  }
-
-  applyWeather() {
-    if (this.weather === 'rain' || this.weather === 'storm') this.roadCondition = 'wet';
-    else if (this.weather === 'dust') this.roadCondition = 'dust';
-    else this.roadCondition = 'normal';
-    this.ui?.setWeather?.(CONFIG.WEATHER[this.weather] || '☀️ Clear');
+  rectHit(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   }
 
   getTimeOfDay() {
-    const cycle = (this.time || 0) % CONFIG.DAY_LENGTH_MS / CONFIG.DAY_LENGTH_MS;
-    if (cycle < .18) return .12;
-    if (cycle < .45) return .4;
-    if (cycle < .62) return .68;
-    if (cycle < .78) return .8;
-    return .92;
+    return Math.min(1, this.dist / 7.2);
   }
 
-  getTime() { return this.time || 0; }
-  getDate() { return new Date(); }
-  getDistrict() { return this.district; }
-
-  addMoney(amount) {
-    this.money = Math.max(0, Math.floor(this.money + Number(amount || 0)));
-    Storage.setMoney(this.money);
-  }
-
-  spendMoney(amount) {
-    if (this.money < amount) return false;
-    this.addMoney(-amount);
-    return true;
+  // ========== DAILY MISSIONS & STREAK ==========
+  getToday() {
+    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   }
 
   initDaily() {
-    const today = new Date().toISOString().slice(0,10);
-    if (Storage.getDailyDate() !== today) {
-      const mission = pick(CONFIG.DAILY_MISSIONS);
+    const today = this.
+  applyDriverBonuses() {
+    const driver = CONFIG.DRIVERS[this.selectedDriver] || CONFIG.DRIVERS.musa;
+    const bonus = driver.bonus || {};
+    this.capacity = (Storage.getCapacity() || 3) + (bonus.capacity || 0);
+    this.speedBoost = (Storage.getSpeedBoost() || 0) + (bonus.speed || 0);
+    this.hornPower = (Storage.getHornPower() || 0) + (bonus.horn || 0);
+    this.fareBonus = bonus.fareBonus || 0;
+    this.driverAbility = driver.ability || 'none';
+
+    // Ability: efficient - small starting score cushion
+    if (this.driverAbility === 'efficient' && this.score < 50) {
+      this.score += 80;
+    }
+  }
+
+  // Called during update for ongoing ability effects
+  applyAbilityEffects() {
+    const ability = this.driverAbility || 'none';
+
+    // Night Owl - extra speed at night
+    if (ability === 'night_owl' && this.getTimeOfDay() > 0.55) {
+      this.speed = Math.min(this.speed + 0.35, 14);
+    }
+
+    // Dust Proof / Focused - better in bad weather
+    if ((ability === 'dust_proof' || ability === 'focused') && (this.weather === 'dust' || this.weather === 'haze')) {
+      this.speed = Math.min(this.speed + 0.28, 13.5);
+    }
+
+    // Chaos Bonus
+    if (ability === 'chaos_bonus' && ['sabongari', 'fajir', 'gwale'].includes(this.selectedRoute)) {
+      if (this.frame % 40 === 0) this.score += 8;
+    }
+
+    // Route Master
+    if (ability === 'route_master' && ['zoo', 'panshekara', 'kumbotso'].includes(this.selectedRoute)) {
+      if (this.frame % 50 === 0) this.score += 6;
+    }
+
+    // Careful (Baba) - slightly slower but more stable, less random bounce
+    if (ability === 'careful') {
+      this.speed = Math.max(3.8, this.speed * 0.97);
+    }
+
+    // Eager (Sadiya) - builds speed a bit faster
+    if (ability === 'eager' && this.frame % 30 === 0) {
+      this.speed = Math.min(this.speed + 0.08, 13.8);
+    }
+  }
+
+  getToday();
+    const storedDate = Storage.getDailyDate();
+
+    if (storedDate !== today) {
+      // New day — pick a random daily mission
+      const missions = CONFIG.DAILY_MISSIONS;
+      const pick = missions[Math.floor(Math.random() * missions.length)];
       Storage.setDailyDate(today);
-      Storage.setDailyMissionId(mission.id);
+      Storage.setDailyMissionId(pick.id);
       Storage.setDailyProgress(0);
       Storage.setDailyClaimed(false);
+      this.dailyMission = { ...pick, progress: 0 };
+    } else {
+      const id = Storage.getDailyMissionId();
+      const m = CONFIG.DAILY_MISSIONS.find(x => x.id === id) || CONFIG.DAILY_MISSIONS[0];
+      this.dailyMission = {
+        ...m,
+        progress: Storage.getDailyProgress()
+      };
     }
-    const id = Storage.getDailyMissionId();
-    this.dailyMission = CONFIG.DAILY_MISSIONS.find(x => x.id === id) || CONFIG.DAILY_MISSIONS[0];
+
+    // Streak check
+    const last = Storage.getLastPlayDate();
+    if (last !== today) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yStr = yesterday.toISOString().slice(0, 10);
+      if (last === yStr) {
+        Storage.setStreak(Storage.getStreak() + 1);
+      } else if (last !== today) {
+        Storage.setStreak(1);
+      }
+      Storage.setLastPlayDate(today);
+    }
+    this.streak = Storage.getStreak();
   }
 
-  endGame() {
-    if (this.gameOver) return;
-    this.gameOver = true;
-    this.running = false;
-    this.state = STATE.OVER;
-    Storage.setHighScore(this.high);
+  updateDailyProgress() {
+    if (!this.dailyMission || Storage.isDailyClaimed()) return;
+
+    const m = this.dailyMission;
+    let prog = m.progress;
+
+    if (m.type === 'pax') prog = Math.max(prog, this.totalPax);
+    if (m.type === 'dist') prog = Math.max(prog, this.dist);
+    if (m.type === 'score') prog = Math.max(prog, this.score);
+    if (m.type === 'drop') prog = Math.max(prog, this.dropCount);
+    if (m.type === 'horn') prog = Math.max(prog, this.hornCount);
+
+    m.progress = prog;
+    Storage.setDailyProgress(prog);
+
+    if (prog >= m.target && !Storage.isDailyClaimed()) {
+      // Ready to claim
+      this.ui.showMissionToast(`Daily Mission Complete! Claim ₦${m.reward}`);
+    }
+  }
+
+  claimDaily() {
+    if (!this.dailyMission || Storage.isDailyClaimed()) return;
+    if (this.dailyMission.progress < this.dailyMission.target) return;
+
+    this.money += this.dailyMission.reward;
     Storage.setMoney(this.money);
-    try { Audio.stopEngine?.(); } catch {}
-    this.ui?.showGameOver?.(this);
+    Storage.setDailyClaimed(true);
+
+    // Streak bonus
+    const streakBonus = CONFIG.STREAK.rewards[Math.min(this.streak, CONFIG.STREAK.rewards.length - 1)] || 0;
+    if (streakBonus > 0) {
+      this.money += streakBonus;
+      Storage.setMoney(this.money);
+      this.ui.showMissionToast(`Daily claimed + Streak x${this.streak} bonus ₦${streakBonus}!`);
+    } else {
+      this.ui.showMissionToast(`Daily Mission claimed! +₦${this.dailyMission.reward}`);
+    }
+    Audio.missionComplete();
+    this.ui.updateStartMoney();
   }
 
-  driverSay(type) {
-    const lines = CONFIG.DRIVER_REACTIONS?.[type];
-    if (!lines?.length || !this.ui?.showMissionToast) return;
-    const now = performance.now();
-    if (now - this.lastDriverSay < 900) return;
-    this.lastDriverSay = now;
-    const driver = CONFIG.DRIVERS[this.selectedDriver];
-    this.ui.showMissionToast(`${driver?.name || 'Driver'}: "${pick(lines)}"`);
-  }
-
-  getMoney() { return this.money; }
-  setPaint(id) {
-    if (!CONFIG.PAINTS[id] && !CONFIG.SPONSORED_LIVERIES[id]) return false;
-    this.currentPaint = id;
-    Storage.setPaint(id);
-    return true;
-  }
-
-  setRoute(id) {
-    if (!CONFIG.ROUTES[id]) return false;
-    this.selectedRoute = id;
-    Storage.setSelectedRoute(id);
-    this.route = CONFIG.ROUTES[id];
-    return true;
-  }
 }
-
-export default Game;
