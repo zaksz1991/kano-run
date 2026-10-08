@@ -171,6 +171,7 @@ export class Renderer3D {
     this.zonePool = [];
     this.coinPool = [];
     this.pedestrianPool = [];
+    this.checkpointPool = [];
     this.roadSegments = [];
     this.environmentPool = [];
 
@@ -186,6 +187,7 @@ export class Renderer3D {
     this.zoneGroup = null;
     this.coinGroup = null;
     this.pedestrianGroup = null;
+    this.checkpointGroup = null;
     this.effectsGroup = null;
     this.weatherGroup = null;
     this.openingGroup = null;
@@ -271,6 +273,7 @@ export class Renderer3D {
     this.buildTrafficPool();
     this.buildZonePool();
     this.buildCoinPool();
+    this.buildCheckpointPool();
     this.buildPedestrians();
     // Ambient traffic and walking roadside life are visual-only and do not replace
     // game.js collision, passenger, mission, or scoring logic.
@@ -1044,6 +1047,97 @@ export class Renderer3D {
     return group;
   }
 
+  buildCheckpointPool() {
+    this.checkpointGroup = new THREE.Group();
+    this.checkpointGroup.name = 'checkpoint-visuals';
+    this.world.add(this.checkpointGroup);
+
+    const count = this.quality === 'low' ? 2 : 3;
+    for (let i = 0; i < count; i += 1) {
+      const root = new THREE.Group();
+      root.visible = false;
+      root.userData.index = i;
+      root.userData.lamp = [];
+
+      const dark = makeMat(0x22282b, 0.9, 0.02);
+      const yellow = makeMat(0xd7b52d, 0.58, 0.04);
+      const red = makeMat(0xb92d32, 0.38, 0.05, { emissive: 0x681015, emissiveIntensity: 0.18 });
+      const white = makeMat(0xe8e0cc, 0.82, 0);
+      const glass = makeMat(0x233c46, 0.22, 0.05, { transparent: true, opacity: 0.82 });
+
+      // Lane-local inspection gate and barrier.
+      addCylinder(root, 0.10, 2.7, [-2.2, 1.35, 0], dark, null, 10);
+      addCylinder(root, 0.10, 2.7, [2.2, 1.35, 0], dark, null, 10);
+      addBox(root, [4.55, 0.18, 0.18], [0, 2.58, 0], yellow);
+      addBox(root, [4.1, 0.12, 0.12], [0, 2.25, 0], white);
+
+      const barrier = addBox(root, [3.2, 0.12, 0.12], [0, 0.92, 0.0], red);
+      barrier.rotation.z = -0.05;
+      root.userData.barrier = barrier;
+
+      // KAROTA roadside booth.
+      const booth = new THREE.Group();
+      booth.position.set(4.35, 0, 0.65);
+      addBox(booth, [2.0, 2.1, 1.55], [0, 1.05, 0], white);
+      addBox(booth, [2.1, 0.18, 1.65], [0, 2.15, 0], yellow);
+      addBox(booth, [1.5, 0.82, 0.08], [0, 1.3, -0.79], glass, null, true, false);
+      const signTex = createCanvasTexture((ctx, w, h) => {
+        ctx.fillStyle = '#d7b52d';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#18262f';
+        ctx.font = 'bold 23px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('KAROTA', w / 2, h / 2);
+      });
+      addBox(booth, [1.55, 0.46, 0.08], [0, 1.82, -0.84], makeMat(0xffffff, 0.82, 0, { map: signTex }), null, true, false);
+      root.add(booth);
+
+      // Officer silhouette beside the inspection point.
+      const officer = new THREE.Group();
+      const skin = makeMat(0x69412d, 0.98, 0);
+      const uniform = makeMat(0x315447, 0.88, 0.01);
+      addSphere(officer, 0.18, [0, 1.52, 0], skin, [0.92, 1.0, 0.92]);
+      addBox(officer, [0.34, 0.65, 0.24], [0, 1.05, 0], uniform);
+      addBox(officer, [0.10, 0.45, 0.09], [-0.23, 0.98, 0], skin);
+      addBox(officer, [0.10, 0.45, 0.09], [0.23, 0.98, 0], skin);
+      addBox(officer, [0.11, 0.45, 0.10], [-0.10, 0.42, 0], dark);
+      addBox(officer, [0.11, 0.45, 0.10], [0.10, 0.42, 0], dark);
+      officer.position.set(2.65, 0, 0.15);
+      officer.userData.arm = officer.children[2];
+      root.add(officer);
+      root.userData.officer = officer;
+
+      // Alternating warning lamps.
+      for (const x of [-1.55, 1.55]) {
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), red);
+        lamp.position.set(x, 2.62, -0.02);
+        root.add(lamp);
+        root.userData.lamp.push(lamp);
+      }
+
+      // Cones along the approach.
+      const coneMat = makeMat(0xc75b2e, 0.86, 0);
+      for (const x of [-3.7, 3.7]) {
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 10), coneMat);
+        cone.position.set(x, 0.25, 0.35);
+        cone.castShadow = true;
+        root.add(cone);
+      }
+
+      // A compact patrol vehicle gives police checkpoints a different silhouette.
+      const patrol = this.makeVehicle('police', i + 11);
+      patrol.scale.setScalar(0.72);
+      patrol.position.set(-4.25, 0, 1.1);
+      patrol.rotation.y = Math.PI;
+      root.add(patrol);
+      root.userData.patrol = patrol;
+
+      this.checkpointGroup.add(root);
+      this.checkpointPool.push(root);
+    }
+  }
+
   buildPedestrians() {
     this.pedestrianGroup = new THREE.Group();
     this.pedestrianGroup.name = 'pedestrians';
@@ -1401,6 +1495,54 @@ export class Renderer3D {
     }
   }
 
+  updateCheckpoints(dt, g) {
+    const checkpoints = Array.isArray(g?.checkpoints) ? g.checkpoints : [];
+    for (let i = 0; i < this.checkpointPool.length; i += 1) {
+      const visual = this.checkpointPool[i];
+      const cp = checkpoints[i];
+      if (!cp) {
+        visual.visible = false;
+        continue;
+      }
+
+      visual.visible = true;
+      visual.position.x = this.laneToX(Number(cp.lane) || 0);
+      visual.position.z = this.screenYToZ(Number(cp.y) || 0, Number(g.playerY) || 520);
+      visual.position.y = 0;
+
+      const active = cp.active !== false && cp.handled !== true;
+      const police = cp.type === 'police';
+      visual.scale.setScalar(police ? 1.0 : 0.96);
+
+      const pulse = Math.sin(this.elapsed * (police ? 10 : 5.5)) > 0;
+      for (const lamp of visual.userData.lamp || []) {
+        lamp.material.emissiveIntensity = pulse ? 1.15 : 0.18;
+        lamp.material.opacity = active ? 1 : 0.35;
+      }
+
+      const barrier = visual.userData.barrier;
+      if (barrier) {
+        const approaching = Math.abs(visual.position.z - PLAYER_Z) < 16;
+        const raised = !active || !approaching;
+        const target = raised ? -0.72 : 0.02;
+        barrier.rotation.z = THREE.MathUtils.lerp(barrier.rotation.z, target, Math.min(dt * 4.5, 1));
+      }
+
+      const officer = visual.userData.officer;
+      if (officer) {
+        const near = Math.abs(visual.position.z - PLAYER_Z) < 12;
+        officer.userData.arm?.rotation.z = near ? Math.sin(this.elapsed * 5) * 0.18 - 0.35 : 0;
+        officer.position.y = Math.abs(Math.sin(this.elapsed * 3.2)) * 0.008;
+      }
+
+      const patrol = visual.userData.patrol;
+      if (patrol) {
+        patrol.visible = true;
+        patrol.userData.patrolLamp && (patrol.userData.patrolLamp.blue.emissiveIntensity = pulse ? 1.0 : 0.12);
+      }
+    }
+  }
+
   updateZones(dt, g) {
     const paxZones = Array.isArray(g?.paxZones) ? g.paxZones : [];
     const dropZones = Array.isArray(g?.dropZones) ? g.dropZones : [];
@@ -1662,6 +1804,7 @@ export class Renderer3D {
       const ambientSpeed = Number(g.speed) || Number(g.speedOff) || 1;
       this.trafficWorld.update(delta, ambientSpeed, Number(g.roadOff) || Number(g.dist) || 0);
     }
+    this.updateCheckpoints(delta, g);
     this.updateZones(delta, g);
     this.updatePedestrians(delta);
     this.updateCoins(delta, g);
