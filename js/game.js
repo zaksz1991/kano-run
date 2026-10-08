@@ -18,6 +18,7 @@ export class Game {
     this.dropCount = 0;
     this.hornCount = 0;
     this.continuesLeft = 3;
+    this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
     this.maxCombo = 0;
@@ -75,7 +76,7 @@ export class Game {
     this.lastmaTimer = 0;
     this.lastmaActive = false;
 
-    this.speed = 4.8;
+    this.speed = 3.6;
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
@@ -171,6 +172,7 @@ export class Game {
     this.dropCount = 0;
     this.hornCount = 0;
     this.continuesLeft = 3;
+    this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
     this.maxCombo = 0;
@@ -227,7 +229,7 @@ export class Game {
     this.lastmaActive = false;
     this.lastmaTimer = 0;
     this.lastmaActive = false;
-    this.speed = 4.8 + this.speedBoost * 0.7;
+    this.speed = 3.6 + this.speedBoost * 0.35;
     this.frame = 0;
     this.playerLane = 1;
     this.inv = 0;
@@ -317,35 +319,42 @@ export class Game {
   }
 
   getContinueCost() {
-    // Cost increases with how many paid continues already used this run
-    // Base 400, then +250 each time
-    const paidUsed = Math.max(0, 3 - this.continuesLeft); // after free ones are gone
-    return 400 + (paidUsed * 250);
+    const paidUsed = this.paidContinuesUsed || 0;
+    return 350 + (paidUsed * 200);
   }
 
   useContinue(isPaid) {
-    if (isPaid) {
-      const cost = this.getContinueCost();
-      if (this.score < cost) {
-        this.finalGameOver();
-        return;
+    try {
+      if (isPaid) {
+        const cost = this.getContinueCost();
+        if (this.score < cost) {
+          this.ui.showMissionToast('Not enough score to continue');
+          this.finalGameOver();
+          return;
+        }
+        this.score -= cost;
+        this.paidContinuesUsed = (this.paidContinuesUsed || 0) + 1;
+        this.continuesLeft = 1; // grant one life back for HUD
+        this.ui.showMissionToast(`Paid ₦${cost.toLocaleString()} — continue!`);
+      } else {
+        this.continuesLeft = Math.max(0, this.continuesLeft - 1);
+        this.score = Math.max(0, this.score - 80);
       }
-      this.score -= cost;
-    } else {
-      this.continuesLeft--;
-      // small score penalty for free continue
-      this.score = Math.max(0, this.score - 100);
-    }
 
-    this.inv = 100;          // brief invincibility
-    this.obs = [];           // clear nearby obstacles
-    this.paxZones = this.paxZones.filter(p => p.y > this.playerY - 80);
-    this.dropZones = this.dropZones.filter(d => d.y > this.playerY - 80);
-    this.state = STATE.PLAY;
-    this.ui.hideEvent();
-    this.ui.showPlaying();
-    this.ui.updateHUD(this);
-    Audio.startEngine();
+      this.inv = 120;
+      this.obs = [];
+      this.speed = Math.min(this.speed, 6.5); // calm speed after continue
+      this.paxZones = this.paxZones.filter(p => p.y > this.playerY - 80);
+      this.dropZones = this.dropZones.filter(d => d.y > this.playerY - 80);
+      this.ui.hideEvent();
+      this.state = STATE.PLAY;
+      this.ui.showPlaying();
+      this.ui.updateHUD(this);
+      Audio.startEngine();
+    } catch (e) {
+      console.error('useContinue error', e);
+      this.finalGameOver();
+    }
   }
 
   finalGameOver() {
@@ -494,8 +503,8 @@ export class Game {
     if (this.inv > 0) this.inv--;
     if (this.bounce > 0) this.bounce--;
 
-    const baseTop = 12.2 + this.speedBoost * 1.35 + (this.driverAbility === "aggressive" ? 0.9 : 0);
-    this.speed = Math.min(baseTop, 4.8 + this.speedBoost * 0.7 + this.dist * 0.08);
+    const baseTop = 8.5 + this.speedBoost * 0.7 + (this.driverAbility === "aggressive" ? 0.4 : 0);
+    this.speed = Math.min(baseTop, 3.8 + this.speedBoost * 0.4 + this.dist * 0.025);
     this.roadOff = (this.roadOff + this.speed * 2.15) % 58;
     this.dist += this.speed * 0.0069;
     this.score += Math.floor(this.speed * 0.28);
@@ -629,7 +638,7 @@ export class Game {
     if (this.frame % 115 === 0) this.dropZones.push({ lane: Math.floor(Math.random() * 3), y: -85, used: false });
     if (this.frame % 62 === 0) this.coins.push({ lane: Math.floor(Math.random() * 3), y: -55, taken: false, bob: Math.random() * Math.PI * 2 });
 
-    const mv = this.speed * 1.52;
+    const mv = this.speed * 1.15;
 
     // Move obstacles with simple AI
     for (const o of this.obs) {
@@ -916,8 +925,8 @@ export class Game {
     }
     if (ability === 'ruffneck') {
       if (this.frame % 25 === 0) this.score += 12;
-      this.speed = Math.min(this.speed + 0.05, 15.5);
-      if (this.getTimeOfDay() > 0.55) this.speed = Math.min(this.speed + 0.2, 15.5);
+      this.speed = Math.min(this.speed + 0.03, 9.2);
+      if (this.getTimeOfDay() > 0.55) this.speed = Math.min(this.speed + 0.08, 9.2);
     }
   }
 

@@ -371,24 +371,33 @@ export class UI {
     this.eventTitle.textContent = title;
     this.eventText.textContent = text;
     this.eventChoices.innerHTML = '';
+    this.eventBox.style.display = 'block';
+    this.eventBox.style.pointerEvents = 'auto';
+    this.game.state = STATE.EVENT;
+
     choices.forEach(c => {
       const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'btn';
-      btn.style.cssText = 'padding:8px 14px;font-size:0.85rem;margin:0;';
+      btn.style.cssText = 'padding:10px 14px;font-size:0.85rem;margin:0;pointer-events:auto;cursor:pointer;';
       btn.textContent = c.label;
-      btn.onclick = () => {
-        this.hideEvent();
-        if (c.action) c.action();
-      };
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Run action first, then close (prevents stuck state)
+        const act = c.action;
+        this.eventBox.style.display = 'none';
+        if (typeof act === 'function') {
+          try { act(); }
+          catch (err) { console.error(err); }
+        }
+      });
       this.eventChoices.appendChild(btn);
     });
-    this.eventBox.style.display = 'block';
-    this.game.state = STATE.EVENT;
   }
 
   hideEvent() {
     this.eventBox.style.display = 'none';
-    if (this.game.state === STATE.EVENT) this.game.state = STATE.PLAY;
   }
 
   // ========== SHARE RUN FEATURE ==========
