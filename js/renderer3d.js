@@ -150,7 +150,13 @@ function createCanvasTexture(drawer, w = 256, h = 128) {
 
 export class Renderer3D {
   constructor(canvas, game = null) {
-    this.canvas = canvas;
+    // Accept either an HTMLCanvasElement or a 2D rendering context.
+    // Three.js needs the actual DOM canvas because WebGLRenderer attaches
+    // pointer/context listeners to it.
+    this.canvas = canvas?.canvas || canvas;
+    if (!this.canvas || typeof this.canvas.addEventListener !== 'function') {
+      throw new TypeError('Renderer3D requires an HTMLCanvasElement or a canvas rendering context.');
+    }
     this.game = game;
 
     this.ctx = null;
