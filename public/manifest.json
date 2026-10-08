@@ -1,0 +1,11 @@
+{
+  "name": "Kano Run 3D",
+  "short_name": "Kano Run",
+  "description": "Drive an Adaidaita Sahu through Kano State",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0f1c",
+  "theme_color": "#0a0f1c",
+  "lang": "en",
+  "icons": []
+}

@@ -1,25 +1,19 @@
-# Kano Run 3D (Phase 1)
+# Kano Run 3D (Phase 9)
 
-Three.js / WebGL endless runner — Adaidaita Sahu through Kano.
+Three.js / WebGL — Adaidaita Sahu through Kano State.
 
-## Stack (free)
-- Three.js (vendored in `/vendor/three.module.js`)
-- Vite + Vercel
-- Existing game systems (routes, missions, life savers, HUD)
-
-## Dev
-```bash
-npm install
-npm run dev
-```
+## Phases 1–9
+1. 3D foundation  
+2. Vehicles  
+3. Kano world  
+4. Traffic AI  
+5. Visual polish  
+6. Routes / drivers / radio  
+7. Events / share  
+8. Daily / settings / VIP  
+9. **Identity & replay** — keke paints, local leaderboard, achievements, PWA manifest  
 
 ## Deploy
 ```bash
-npm run build
-vercel --prod
+npm install && npm run build && vercel --prod
 ```
-
-## Architecture
-- `game.js` — logic only
-- `renderer3d.js` — WebGL scene, camera, vehicles
-- HTML HUD overlays the canvas

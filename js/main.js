@@ -1,6 +1,10 @@
 import { Game } from './game.js';
 import { Renderer3D } from './renderer3d.js';
 import { UI } from './ui.js';
+import { Audio } from './audio.js';
+import { Storage } from './storage.js';
+
+Audio.muted = Storage.getMuted();
 
 const canvas = document.getElementById('c');
 const game = new Game(canvas);
