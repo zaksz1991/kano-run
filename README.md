@@ -140,4 +140,4 @@ MIT
 
 **Centre of Commerce** 🇳🇬  
 Built with love for Kano State.
-A browser-based endless runner
+A browser-based endless runner.
