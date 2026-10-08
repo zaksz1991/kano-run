@@ -82,7 +82,7 @@ export const Storage = {
   setSelectedDriver(id) { this.set('kanoDriverChar', id); },
 
   isDriverUnlocked(id) {
-    if (id === 'musa') return true;
+    if (id === 'musa' || id === 'ruffneck') return true;
     return this.get('kanoDriverUnlock_' + id) === 1 || this.get('kanoDriverUnlock_' + id) === '1';
   },
   unlockDriver(id) { this.set('kanoDriverUnlock_' + id, 1); }

@@ -505,7 +505,7 @@ export class Game {
       return true;
     });
 
-    this.inv = (this.driverAbility === "ghost" ? 32 : (this.driverAbility === "careful" ? 26 : 18)) + this.hornPower * 5;
+    this.inv = (this.driverAbility === "ruffneck" ? 40 : this.driverAbility === "ghost" ? 32 : (this.driverAbility === "careful" ? 26 : 18)) + this.hornPower * 5;
     this.hornCount++;
     if (this.activeMission?.id === 'horn3') {
       this.activeMission.progress = this.hornCount;
@@ -706,6 +706,18 @@ export class Game {
       });
     }
 
+    // Special: Aishat + daughter Hibba (popular passengers)
+    if (this.frame % 380 === 0 && Math.random() < 0.55) {
+      this.paxZones.push({
+        lane: Math.floor(Math.random() * 3),
+        y: -90,
+        taken: false,
+        vip: false,
+        aishat: true,
+        pType: { id: 'aishat', label: 'Aishat', color: '#f472b6', fareMult: 1.5, gender: 'female' }
+      });
+    }
+
     // Traffic jam
     if (this.frame % 520 === 0 && Math.random() < 0.4 && this.trafficJamTimer <= 0) {
       this.trafficJamTimer = 160;
@@ -788,6 +800,27 @@ export class Game {
       if (p.taken || this.paxOnBoard >= this.capacity) continue;
       const px = this.laneX(p.lane) - 24;
       if (this.rectHit(pb, { x: px, y: p.y, w: 48, h: 48 })) {
+        // Aishat + Hibba special pickup
+        if (p.aishat) {
+          p.taken = true;
+          // Mother + child take 2 seats if capacity allows
+          const seats = Math.min(2, Math.max(1, this.capacity - this.paxOnBoard));
+          this.paxOnBoard = Math.min(this.capacity, this.paxOnBoard + seats);
+          this.totalPax += seats;
+          this.score += 550;
+          this.spawnParticles(this.laneX(p.lane), p.y + 22, '#f472b6', 14);
+          this.spawnParticles(this.laneX(p.lane), p.y + 10, '#fde68a', 10);
+          this.addCombo(3);
+          const line = (CONFIG.AISHAT_LINES && CONFIG.AISHAT_LINES.length)
+            ? CONFIG.AISHAT_LINES[Math.floor(Math.random() * CONFIG.AISHAT_LINES.length)]
+            : 'Aishat & Hibba boarded!';
+          this.ui.showMissionToast('👩‍👧 ' + line);
+          this.ui.showMissionToast('Aishat + Hibba! +₦550');
+          Audio.pickup();
+          this.checkMission();
+          return;
+        }
+
         // Mayen Mata refuses male passengers
         if (this.driverAbility === 'women_only' && p.pType && p.pType.gender === 'male' && !p.vip) {
           p.taken = true; // remove zone
@@ -1017,6 +1050,13 @@ export class Game {
     // Eager (Sadiya) - builds speed a bit faster
     if (ability === 'eager' && this.frame % 30 === 0) {
       this.speed = Math.min(this.speed + 0.08, 13.8);
+    }
+
+    // Ruffneck — best of all worlds
+    if (ability === 'ruffneck') {
+      if (this.frame % 25 === 0) this.score += 12;
+      this.speed = Math.min(this.speed + 0.05, 15.5);
+      if (this.getTimeOfDay() > 0.55) this.speed = Math.min(this.speed + 0.2, 15.5);
     }
   }
 

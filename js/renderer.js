@@ -530,7 +530,8 @@ export class Renderer {
     for (const e of all) {
       if (e.t === 'o') this.drawObstacle(e.d);
       else if (e.t === 'p' && !e.d.taken) {
-        if (e.d.vip) this.drawZone(e.d, '#fbbf24', '👑 VIP');
+        if (e.d.aishat) this.drawZone(e.d, '#f472b6', 'Aishat+Hibba');
+        else if (e.d.vip) this.drawZone(e.d, '#fbbf24', '👑 VIP');
         else {
           const col = (e.d.pType && e.d.pType.color) || '#4ade80';
           const label = (e.d.pType && e.d.pType.label) ? e.d.pType.label.slice(0, 6) : 'PICK';
