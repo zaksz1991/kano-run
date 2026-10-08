@@ -1,25 +1,12 @@
 // Kano Run — Adaidaita Sahu
 // Asset-driven 3D renderer
 //
-// Uses only local assets from public/assets/.
+// Uses local assets from public/assets/.
 // Compatible with the existing Game class.
-//
-// Renderer contract:
-//   draw(game)
-//   render(game)
-//   resize()
-//   applyPaint(paint)
-//   applyQuality(value)
-//   startOpeningSequence(driverId, paint)
-//   updateOpeningSequence(sequence)
-//   setPaused(value)
-//   setWeather(weather)
-//   setTimeOfDay(value)
 
 import * as THREE from '../vendor/three.module.js';
 
 const LANE_X = [-2.4, 0, 2.4];
-
 const ROAD_LEN = 190;
 const PLAYER_Z = 5.5;
 
@@ -139,10 +126,9 @@ export class Renderer3D {
     this.scene = null;
     this.camera = null;
 
-    this.clock = new THREE.Clock();
-
     this.textures = new Map();
-    this.textureLoader = new THREE.TextureLoader();
+    this.textureLoader =
+      new THREE.TextureLoader();
 
     this.vehiclePool = [];
     this.zonePool = [];
@@ -174,9 +160,6 @@ export class Renderer3D {
     this.playerTargetX = 0;
     this.playerLane = 1;
 
-    this.lastGame = null;
-    this.lastRenderTime = 0;
-
     this.opening = {
       active: false,
       stage: 'idle',
@@ -187,6 +170,13 @@ export class Renderer3D {
 
     this.driverSprite = null;
     this.driverRoot = null;
+
+    // Prevent duplicate WebGL renders when game.js calls
+    // draw() and render() in the same game frame.
+    this.lastRenderedFrame = -1;
+    this.renderSequence = 0;
+
+    this.lastGame = null;
 
     this.init();
   }
@@ -287,6 +277,10 @@ export class Renderer3D {
     this.ready = true;
 
     this.resize();
+
+    // First frame must be drawable even before Game.update().
+    this.syncGame(this.game);
+    this.render(this.game);
   }
 
   setupLights() {
@@ -418,8 +412,7 @@ export class Renderer3D {
       roadGroup
     );
 
-    this.roadMarkings =
-      [];
+    this.roadMarkings = [];
 
     for (
       let lane = 0;
@@ -633,19 +626,13 @@ export class Renderer3D {
     const sprite =
       this.createSprite(
         path,
-        this.environmentScale(
-          path
-        ),
-        this.environmentScale(
-          path
-        ),
+        this.environmentScale(path),
+        this.environmentScale(path),
         `environment-${index}`
       );
 
     sprite.position.y =
-      this.environmentHeight(
-        path
-      );
+      this.environmentHeight(path);
 
     root.add(
       sprite
@@ -754,6 +741,12 @@ export class Renderer3D {
     this.playerRoot.name =
       'PlayerKeke';
 
+    this.playerRoot.position.set(
+      0,
+      0,
+      PLAYER_Z
+    );
+
     this.scene.add(
       this.playerRoot
     );
@@ -766,6 +759,8 @@ export class Renderer3D {
         'player-keke'
       );
 
+    // Child remains at local z=0.
+    // PLAYER_Z belongs to playerRoot.
     this.playerSprite.position.set(
       0,
       2.05,
@@ -802,9 +797,6 @@ export class Renderer3D {
       this.playerShadow
     );
 
-    // Opening-sequence driver.
-    // The local passenger artwork is used because there is no
-    // dedicated driver asset in public/assets/people/.
     this.driverRoot =
       new THREE.Group();
 
@@ -950,7 +942,7 @@ export class Renderer3D {
           }
 
           loaded.minFilter =
-            THREE.LinearMipmapLinearFilter;
+            THREE.LinearFilter;
 
           loaded.magFilter =
             THREE.LinearFilter;
@@ -975,7 +967,8 @@ export class Renderer3D {
         },
         undefined,
         () => {
-          // Keep rendering even if an individual local asset fails.
+          // Individual asset failures do not stop
+          // the 3D scene.
         }
       );
 
@@ -1001,7 +994,7 @@ export class Renderer3D {
         map: texture,
         transparent: true,
         opacity: 1,
-        depthTest: true,
+        depthTest: false,
         depthWrite: false
       });
 
@@ -1076,7 +1069,8 @@ export class Renderer3D {
       source: null,
       active: false,
       lane: 1,
-      bob: Math.random() *
+      bob:
+        Math.random() *
         Math.PI *
         2
     };
@@ -1187,7 +1181,8 @@ export class Renderer3D {
       coin,
       source: null,
       active: false,
-      spin: Math.random() *
+      spin:
+        Math.random() *
         Math.PI *
         2
     };
@@ -1222,7 +1217,8 @@ export class Renderer3D {
       root,
       sprite,
       active: false,
-      walk: Math.random() *
+      walk:
+        Math.random() *
         Math.PI *
         2,
 
@@ -1233,8 +1229,8 @@ export class Renderer3D {
 
       baseX:
         index % 2 === 0
-          ? -6.0
-          : 6.0,
+          ? -6
+          : 6,
 
       baseZ:
         -8 -
@@ -1272,7 +1268,10 @@ export class Renderer3D {
     };
   }
 
-  vehicleAsset(source, index) {
+  vehicleAsset(
+    source,
+    index
+  ) {
     const value =
       safeString(
         source?.type ||
@@ -1437,7 +1436,7 @@ export class Renderer3D {
       return clamp(
         num(source.z),
         -178,
-        9
+        8
       );
     }
 
@@ -1452,12 +1451,6 @@ export class Renderer3D {
           source.y
         );
 
-      // Game.js uses large negative screen-space Y values
-      // for newly spawned traffic/passengers.
-      //
-      // Convert them to real 3D depth rather than using
-      // the raw negative number. This keeps traffic visible
-      // inside the camera's useful range.
       const z =
         7 +
         y * 0.1;
@@ -1531,7 +1524,7 @@ export class Renderer3D {
         Math.round(
           num(
             game?.playerLane,
-            this.playerLane
+            1
           )
         ),
         0,
@@ -1561,8 +1554,7 @@ export class Renderer3D {
       (
         this.playerTargetX -
         this.playerCurrentX
-      ) *
-      0.2;
+      ) * 0.2;
 
     this.playerRoot.position.set(
       this.playerCurrentX,
@@ -1570,20 +1562,28 @@ export class Renderer3D {
       PLAYER_Z
     );
 
-    const damaged =
-      Boolean(
-        num(game?.shake, 0) > 0 &&
-        num(game?.inv, 0) <= 0
-      );
-
-    let asset =
-      ASSETS.player.normal;
-
     const difference =
       this.playerTargetX -
       this.playerCurrentX;
 
-    if (damaged) {
+    let asset =
+      ASSETS.player.normal;
+
+    const gameState =
+      num(
+        game?.state,
+        0
+      );
+
+    if (
+      gameState === 0
+    ) {
+      asset =
+        ASSETS.player.normal;
+    } else if (
+      num(game?.inv, 0) > 0 &&
+      num(game?.shake, 0) > 0
+    ) {
       asset =
         ASSETS.player.damaged;
     } else if (
@@ -1603,14 +1603,14 @@ export class Renderer3D {
         .material
         .map;
 
-    const currentSource =
+    const source =
       currentTexture
         ?.image
         ?.src ||
       '';
 
     if (
-      !currentSource.endsWith(
+      !source.endsWith(
         asset
       )
     ) {
@@ -1633,20 +1633,14 @@ export class Renderer3D {
         0
       );
 
-    const bounce =
+    this.playerSprite.position.y =
+      2.05 +
       Math.sin(
         performance.now() *
         0.012 +
         speed * 0.04
       ) *
-      (
-        0.035 +
-        speed * 0.001
-      );
-
-    this.playerSprite.position.y =
-      2.05 +
-      bounce;
+      0.04;
 
     this.playerSprite.rotation.z =
       clamp(
@@ -1656,29 +1650,25 @@ export class Renderer3D {
         0.1
       );
 
-    const shadowScale =
-      1 +
-      clamp(
-        speed / 120,
-        0,
-        0.35
-      );
-
     this.playerShadow.position.x =
       this.playerCurrentX;
 
-    this.playerShadow.scale.set(
-      shadowScale,
-      shadowScale,
-      1
-    );
+    this.playerShadow.position.z =
+      PLAYER_Z +
+      0.3;
+
+    const damaged =
+      num(game?.inv, 0) > 0 &&
+      num(game?.shake, 0) > 0;
 
     const blink =
       damaged &&
       Math.floor(
         performance.now() /
         70
-      ) % 2 === 0;
+      ) %
+        2 ===
+        0;
 
     this.playerRoot.visible =
       !blink;
@@ -1748,12 +1738,6 @@ export class Renderer3D {
           game
         );
 
-      vehicle.root.position.y =
-        num(
-          source.height,
-          0
-        );
-
       const asset =
         this.vehicleAsset(
           source,
@@ -1765,14 +1749,14 @@ export class Renderer3D {
           .material
           .map;
 
-      const currentSource =
+      const sourcePath =
         currentTexture
           ?.image
           ?.src ||
         '';
 
       if (
-        !currentSource.endsWith(
+        !sourcePath.endsWith(
           asset
         )
       ) {
@@ -1798,8 +1782,7 @@ export class Renderer3D {
       );
 
       vehicle.sprite.position.y =
-        scale *
-        0.48;
+        scale * 0.48;
 
       vehicle.shadow.scale.set(
         scale / 2.7,
@@ -1807,15 +1790,13 @@ export class Renderer3D {
         1
       );
 
-      const speed =
-        num(
-          source.speed,
-          num(game?.speed, 0)
-        );
-
       vehicle.bob +=
         0.07 +
-        speed * 0.001;
+        num(
+          source.speed,
+          0
+        ) *
+        0.001;
 
       vehicle.sprite.position.y +=
         Math.sin(
@@ -1837,9 +1818,6 @@ export class Renderer3D {
           -0.08,
           0.08
         );
-
-      vehicle.sprite.material.opacity =
-        1;
     }
   }
 
@@ -1881,20 +1859,19 @@ export class Renderer3D {
       zone.root.visible =
         true;
 
-      const lane =
-        clamp(
-          Math.round(
-            num(
-              source.lane,
-              1
-            )
-          ),
-          0,
-          2
-        );
-
       zone.root.position.x =
-        LANE_X[lane];
+        LANE_X[
+          clamp(
+            Math.round(
+              num(
+                source.lane,
+                1
+              )
+            ),
+            0,
+            2
+          )
+        ];
 
       zone.root.position.z =
         this.objectDepth(
@@ -2032,16 +2009,26 @@ export class Renderer3D {
       const person =
         this.peoplePool[i];
 
-      const z =
+      let z =
         person.baseZ +
         (
           roadOffset % 170
         );
 
+      while (
+        z > 10
+      ) {
+        z -= 170;
+      }
+
+      while (
+        z < -165
+      ) {
+        z += 170;
+      }
+
       person.root.position.z =
-        z > 8
-          ? z - 170
-          : z;
+        z;
 
       person.root.position.x =
         person.baseX;
@@ -2084,17 +2071,22 @@ export class Renderer3D {
           object.position.z
         );
 
-      object.userData.baseZ =
-        base;
-
       let z =
         base +
         (
           offset % 170
         );
 
-      if (z > 10) {
+      while (
+        z > 10
+      ) {
         z -= 170;
+      }
+
+      while (
+        z < -165
+      ) {
+        z += 170;
       }
 
       object.position.z =
@@ -2117,6 +2109,9 @@ export class Renderer3D {
           ) *
           0.45
         );
+
+      object.visible =
+        true;
     }
   }
 
@@ -2135,23 +2130,26 @@ export class Renderer3D {
       const marker =
         this.roadMarkings[i];
 
-      const base =
+      let z =
         7 -
         (
           i % 11
         ) *
-        9;
-
-      let z =
-        base +
+        9 +
         (
           offset % 99
         );
 
-      if (
+      while (
         z > 10
       ) {
         z -= 99;
+      }
+
+      while (
+        z < -90
+      ) {
+        z += 99;
       }
 
       marker.position.z =
@@ -2318,9 +2316,7 @@ export class Renderer3D {
       weather;
 
     if (
-      weather.includes(
-        'rain'
-      )
+      weather.includes('rain')
     ) {
       this.scene.background =
         new THREE.Color(
@@ -2347,12 +2343,8 @@ export class Renderer3D {
     }
 
     if (
-      weather.includes(
-        'dust'
-      ) ||
-      weather.includes(
-        'harmattan'
-      )
+      weather.includes('dust') ||
+      weather.includes('harmattan')
     ) {
       this.scene.background =
         new THREE.Color(
@@ -2559,8 +2551,7 @@ export class Renderer3D {
             : 0.8
         ),
         0.2,
-        PLAYER_Z +
-        0.9
+        PLAYER_Z + 0.9
       );
 
       effect.sprite.material.map =
@@ -2617,32 +2608,23 @@ export class Renderer3D {
         );
 
       const eased =
-        t * t *
+        t *
+        t *
         (
           3 -
           2 * t
         );
 
       this.driverRoot.position.x =
-        -4.6 +
-        (
-          4.6 *
-          eased
-        );
+        0;
 
       this.driverRoot.position.z =
-        PLAYER_Z +
-        2.4 -
-        (
-          1.9 *
-          eased
-        );
+        0;
 
-      this.driverSprite.rotation.z =
-        Math.sin(
-          frame * 0.22
-        ) *
-        0.08;
+      this.driverSprite.position.x =
+        -4.6 +
+        4.6 *
+        eased;
 
       this.driverSprite.position.y =
         1.05 +
@@ -2653,6 +2635,12 @@ export class Renderer3D {
         ) *
         0.07;
 
+      this.driverSprite.rotation.z =
+        Math.sin(
+          frame * 0.22
+        ) *
+        0.08;
+
       return;
     }
 
@@ -2660,43 +2648,34 @@ export class Renderer3D {
       frame < 120
     ) {
       const t =
-        (
-          frame -
-          75
-        ) /
-        45;
-
-      const eased =
         clamp(
-          t,
+          (
+            frame -
+            75
+          ) /
+          45,
           0,
           1
         );
 
-      this.driverRoot.position.x =
+      this.driverSprite.position.x =
         0.15 *
         Math.sin(
-          eased *
+          t *
           Math.PI
         );
 
-      this.driverRoot.position.z =
-        PLAYER_Z +
-        0.5 -
-        eased *
-        0.4;
-
       this.driverSprite.position.y =
         1.05 -
-        eased *
+        t *
         0.45;
 
       this.driverSprite.scale.set(
         1.9 -
-        eased *
+        t *
         0.9,
         1.9 -
-        eased *
+        t *
         0.9,
         1
       );
@@ -2769,8 +2748,14 @@ export class Renderer3D {
       true;
 
     this.driverRoot.position.set(
-      -4.6,
       0,
+      0,
+      0
+    );
+
+    this.driverSprite.position.set(
+      -4.6,
+      1.05,
       PLAYER_Z + 2.4
     );
 
@@ -2783,6 +2768,12 @@ export class Renderer3D {
     this.playerRoot.visible =
       true;
 
+    this.playerRoot.position.set(
+      0,
+      0,
+      PLAYER_Z
+    );
+
     this.playerRoot.scale.set(
       1,
       1,
@@ -2794,12 +2785,6 @@ export class Renderer3D {
 
     this.playerTargetX =
       0;
-
-    this.playerRoot.position.set(
-      0,
-      0,
-      PLAYER_Z
-    );
 
     this.applyPaint(
       paint
@@ -2839,6 +2824,7 @@ export class Renderer3D {
     } else {
       this.driverRoot.visible =
         false;
+
       this.playerRoot.scale.set(
         1,
         1,
@@ -2854,22 +2840,17 @@ export class Renderer3D {
       );
   }
 
-  updateWeatherDirect(value) {
+  setWeather(weather) {
     this.weather =
       safeString(
-        value,
+        weather,
         'clear'
       ).toLowerCase();
 
     this.updateWeather({
-      weather: this.weather
+      weather:
+        this.weather
     });
-  }
-
-  setWeather(weather) {
-    this.updateWeatherDirect(
-      weather
-    );
   }
 
   setTimeOfDay(time) {
@@ -2887,15 +2868,11 @@ export class Renderer3D {
 
   applyPaint(paint) {
     if (
-      !this.playerSprite ||
-      !this.playerSprite.material
+      !this.playerSprite?.material
     ) {
       return;
     }
 
-    // The supplied player PNG is the actual keke artwork.
-    // Keep its artwork intact rather than destroying it
-    // with a recolor pass.
     this.playerSprite.material.color.set(
       0xffffff
     );
@@ -2912,32 +2889,46 @@ export class Renderer3D {
         this.playerSprite.material.color.set(
           paint.color
         );
-
-        this.playerSprite.material.needsUpdate =
-          true;
       } catch {
         this.playerSprite.material.color.set(
           0xffffff
         );
       }
+
+      this.playerSprite.material.needsUpdate =
+        true;
     }
   }
 
   applyQuality(value) {
-    const quality =
-      safeString(
-        value,
-        'high'
-      ).toLowerCase();
+    let quality;
 
     if (
-      quality === 'low' ||
-      quality === 'medium' ||
-      quality === 'high'
+      typeof value === 'boolean'
     ) {
-      this.quality =
-        quality;
+      quality =
+        value
+          ? 'low'
+          : 'high';
+    } else {
+      quality =
+        safeString(
+          value,
+          'high'
+        ).toLowerCase();
     }
+
+    if (
+      quality !== 'low' &&
+      quality !== 'medium' &&
+      quality !== 'high'
+    ) {
+      quality =
+        'high';
+    }
+
+    this.quality =
+      quality;
 
     if (
       !this.renderer
@@ -2946,9 +2937,9 @@ export class Renderer3D {
     }
 
     const pixelRatio =
-      this.quality === 'low'
+      quality === 'low'
         ? 1
-        : this.quality === 'medium'
+        : quality === 'medium'
           ? Math.min(
               window.devicePixelRatio || 1,
               1.5
@@ -2979,6 +2970,9 @@ export class Renderer3D {
     ) {
       return;
     }
+
+    this.game =
+      game;
 
     this.syncPlayer(
       game
@@ -3051,12 +3045,20 @@ export class Renderer3D {
     this.syncGame(
       this.game
     );
+
+    // main.js calls draw(), not render().
+    // Therefore draw() must actually display the frame.
+    this.render(
+      this.game
+    );
   }
 
   render(game = this.game) {
     if (
       !this.ready ||
-      !this.renderer
+      !this.renderer ||
+      !this.scene ||
+      !this.camera
     ) {
       return;
     }
@@ -3070,13 +3072,33 @@ export class Renderer3D {
       );
     }
 
-    this.lastRenderTime =
-      performance.now();
+    const frame =
+      Number.isFinite(
+        Number(
+          this.game?.frame
+        )
+      )
+        ? Number(
+            this.game.frame
+          )
+        : -1;
+
+    if (
+      frame >= 0 &&
+      this.lastRenderedFrame === frame
+    ) {
+      return;
+    }
 
     this.renderer.render(
       this.scene,
       this.camera
     );
+
+    this.lastRenderedFrame =
+      frame;
+
+    this.renderSequence++;
   }
 
   resize() {
@@ -3118,6 +3140,10 @@ export class Renderer3D {
       height,
       false
     );
+
+    // Force the next draw to render after resize.
+    this.lastRenderedFrame =
+      -1;
   }
 
   destroy() {
