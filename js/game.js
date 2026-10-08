@@ -300,7 +300,6 @@ export class Game {
     this.generateMission();
 
     this._bindKeyboard();
-    this._bindTouchControls();
   }
 
   setUI(ui) {
@@ -446,29 +445,6 @@ export class Game {
     });
   }
 
-  _bindTouchControls() {
-    if (typeof document === 'undefined') return;
-    if (this._touchControlsBound) return;
-    this._touchControlsBound = true;
-
-    const bindPress = (id, handler) => {
-      const button = document.getElementById(id);
-      if (!button) return;
-      button.style.touchAction = 'manipulation';
-      const press = (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        handler();
-      };
-      button.addEventListener('pointerdown', press, { passive: false });
-    };
-
-    bindPress('left-btn', () => this.moveLeft());
-    bindPress('right-btn', () => this.moveRight());
-    bindPress('radio-btn', () => this.nextRadio());
-    bindPress('horn-btn', () => this.horn());
-  }
-
   // Mobile/control API. All devices use the same lane logic.
   moveLeft() {
     if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
@@ -482,13 +458,6 @@ export class Game {
     this.playerLane = clamp(this.playerLane + 1, MIN_LANE, MAX_LANE);
     this.targetX = this.laneX(this.playerLane);
     this._audio(['steer', 'playSteer']);
-  }
-
-  changeLane(direction = 0) {
-    const value = Number(direction);
-    if (!Number.isFinite(value) || value === 0) return;
-    if (value < 0) this.moveLeft();
-    else this.moveRight();
   }
 
   left() { this.moveLeft(); }
@@ -717,46 +686,8 @@ export class Game {
     this._audio(['ensure', 'start']);
     this._activateRadio();
     this._ui('showPlaying');
-    this._ui('showEvent', {
-      title: 'Kano Run',
-      text: `RuffNeck Adaidaita Sahu — ${this.selectedRoute?.name || 'Kano Route'}\n\nYour driver walks to the keke, boards and starts the engine.`,
-      actions: [
-        {
-          label: 'START ROUTE',
-          onClick: () => {
-            this.closeEvent();
-          }
-        }
-      ]
-    });
+    this._ui('showToast', 'Driver walking to the keke…');
     this._ui('updateHUD', this._hudPayload());
-  }
-
-  resize() {
-    const canvas = this.canvas;
-    if (!canvas) return;
-
-    const host = canvas.parentElement;
-    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
-    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const targetWidth = Math.max(Math.round(width * dpr), 1);
-    const targetHeight = Math.max(Math.round(height * dpr), 1);
-
-    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-    }
-
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    if (this.ctx) {
-      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-
-    this.renderer3d?.resize?.();
   }
 
   retry() {
@@ -778,56 +709,13 @@ export class Game {
     this._ui('showPlaying');
   }
 
-  showEvent(event = {}) {
+  showEvent(event) {
     this.eventOpen = true;
     this.state = STATE.EVENT;
     this._resumeStateAfterEvent = STATE.PLAY;
     this.eventType = event?.type || 'generic';
     this.eventContext = event?.context || null;
-
-    // Render event data defensively. Passing the whole object directly to a
-    // text node produces the literal "[object Object]" in the game UI.
-    const box = document.getElementById('event-box');
-    const title = document.getElementById('event-title');
-    const text = document.getElementById('event-text');
-    const choices = document.getElementById('event-choices');
-
-    if (box && title && text && choices) {
-      const safeText = (value) => {
-        if (value == null) return '';
-        if (typeof value === 'string' || typeof value === 'number') return String(value);
-        if (Array.isArray(value)) return value.map(safeText).join(' ');
-        if (typeof value === 'object') return value.text || value.label || value.name || '';
-        return String(value);
-      };
-
-      title.textContent = safeText(event.title) || 'Kano Run';
-      text.textContent = safeText(event.text);
-      choices.replaceChildren();
-
-      const actions = Array.isArray(event.actions) ? event.actions : [];
-      for (const action of actions) {
-        const button = document.createElement('button');
-        button.className = 'btn secondary';
-        button.type = 'button';
-        button.textContent = safeText(action?.label) || 'CONTINUE';
-        button.addEventListener('click', () => {
-          try {
-            if (typeof action?.onClick === 'function') action.onClick();
-          } catch (error) {
-            console.error('Kano Run event action failed:', error);
-          }
-        });
-        choices.appendChild(button);
-      }
-
-      box.style.display = 'block';
-    } else {
-      // Keep the existing UI controller as a fallback for older builds.
-      this._ui('showEvent', event);
-    }
-
-    this.renderer3d?.setPaused?.(true);
+    this._ui('showEvent', event);
   }
 
   updateOpeningSequence() {
