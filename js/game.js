@@ -25,8 +25,8 @@ const LANES = 3;
 const MIN_LANE = 0;
 const MAX_LANE = LANES - 1;
 
-const BASE_SPEED = 3.6;
-const BASE_MAX_SPEED = 7.2;
+const BASE_SPEED = 1.35;
+const BASE_MAX_SPEED = 5.2;
 const FRAME_MS = 1000 / 60;
 
 const COLLISION_Y = 36;
@@ -544,6 +544,7 @@ export class Game {
     this.selectedRoute = CONFIG.ROUTES[routeId];
     if (persist) this._saveSelection();
     this._ui('setRoute', this.selectedRoute);
+    this.renderer3d?.setRoute?.(this.selectedRoute);
     return true;
   }
 
@@ -666,7 +667,7 @@ export class Game {
     this.bestCombo = 0;
     this.nearMissCount = 0;
     this.crashes = 0;
-    this.speed = BASE_SPEED;
+    this.speed = 0.75;
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
@@ -682,13 +683,20 @@ export class Game {
     this.karotaWanted = false;
     this.policeChase = 0;
     this.checkpointCooldown = 0;
+    this.mission = null;
+    this.missionIndex = 0;
+    this.generateMission();
+    this.lastSpawnFrame = 0;
+    this.lastPassengerFrame = 55;
+    this.lastCoinFrame = 30;
+    this.lastCheckpointFrame = 0;
 
     const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
     const keke = KEKES[this.selectedKeke] || KEKES.standard;
 
     this.capacity = keke.capacity;
     this.maxSpeed = BASE_MAX_SPEED + (driver?.bonuses?.speed || 0) + (keke.speed || 0);
-    this.maxSpeed = Math.max(5.5, this.maxSpeed);
+    this.maxSpeed = Math.max(3.8, Math.min(5.2, this.maxSpeed));
 
     this.introSequence = {
       active: true,
@@ -701,6 +709,7 @@ export class Game {
     this.renderer3d?.applyPaint?.(this.selectedPaint);
     this.renderer3d?.setKeke?.(this.selectedKeke, keke);
     this.renderer3d?.startOpeningSequence?.(this.selectedDriver, this.selectedPaint, this.selectedKeke);
+    this.renderer3d?.setRoute?.(this.selectedRoute);
 
     this._audio(['ensure', 'start']);
     this._activateRadio();
@@ -853,7 +862,7 @@ export class Game {
       this.lastPassengerFrame = this.frame;
     }
 
-    if (this.frame - this.lastCoinFrame >= 85) {
+    if (this.frame - this.lastCoinFrame >= 145) {
       this.spawnCoin();
       this.lastCoinFrame = this.frame;
     }
@@ -895,21 +904,21 @@ export class Game {
     const driverSpeed = driver?.bonuses?.speed || 0;
 
     const effectiveThrottle = this.gasHeld || !this._externalThrottle ? 1 : this.throttle;
-    const targetCruise = BASE_SPEED + driverSpeed + keke.speed;
+    const targetCruise = BASE_SPEED + driverSpeed * 0.35 + keke.speed * 0.35;
 
     if (this.brakeHeld || this.brake > 0) {
-      this.speed -= 0.19 + this.speed * 0.018;
+      this.speed -= 0.11 + this.speed * 0.015;
     } else if (effectiveThrottle > 0) {
-      this.speed += (0.035 + effectiveThrottle * 0.025);
+      this.speed += (0.012 + effectiveThrottle * 0.012);
     } else {
-      this.speed -= 0.028;
+      this.speed -= 0.018;
     }
 
     if (this.speed < targetCruise * 0.75 && !(this.brakeHeld || this.brake > 0)) {
-      this.speed += 0.018;
+      this.speed += 0.008;
     }
 
-    this.speed = clamp(this.speed, 0.35, this.maxSpeed);
+    this.speed = clamp(this.speed, 0.25, this.maxSpeed);
   }
 
   updatePlayer() {
@@ -942,23 +951,23 @@ export class Game {
   }
 
   trafficSpawnInterval() {
-    return Math.max(34, 82 - this.level * 3 - Math.floor(this.speed));
+    return Math.max(76, 142 - this.level * 2 - Math.floor(this.speed * 2));
   }
 
   passengerSpawnInterval() {
-    return Math.max(105, 230 - this.level * 5);
+    return Math.max(170, 300 - this.level * 4);
   }
 
   checkpointInterval() {
-    return Math.max(520, 1050 - this.level * 15);
+    return Math.max(420, 560 - this.level * 8);
   }
 
   spawnTraffic() {
-    if (this.obs.length >= 18) return;
+    if (this.obs.length >= 8) return;
 
     const lane = Math.floor(Math.random() * LANES);
     const types = [
-      'keke', 'keke', 'car', 'car', 'taxi', 'bus',
+      'keke', 'car', 'car', 'taxi', 'bus',
       'motorcycle', 'truck'
     ];
 
@@ -968,7 +977,7 @@ export class Game {
     const type = pick(types);
 
     const tooClose = this.obs.some(
-      (o) => o.lane === lane && o.y < -120
+      (o) => o.lane === lane && o.y < -230
     );
 
     if (tooClose) return;

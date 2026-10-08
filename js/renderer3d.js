@@ -16,7 +16,7 @@ import { TrafficWorld } from './trafficWorld.js';
 const LANE_X = [-2.4, 0, 2.4];
 const ROAD_LEN = 180;
 const PLAYER_Z = 5.5;
-const MAX_TRAFFIC = 22;
+const MAX_TRAFFIC = 12;
 const MAX_ZONES = 12;
 const MAX_COINS = 20;
 const TAU = Math.PI * 2;
@@ -211,6 +211,8 @@ export class Renderer3D {
     this.trafficWorld = null;
 
     this.roadOffset = 0;
+    this.activeRoute = null;
+    this.routeDistrictOffset = 0;
     this.targetCameraX = 0;
     this.cameraShake = 0;
     this.cameraShakeStrength = 0;
@@ -461,7 +463,7 @@ export class Renderer3D {
     const count = this.quality === 'low' ? 4 : 6;
     const segLen = ROAD_LEN / 4;
     for (let i = 0; i < count; i += 1) {
-      const segment = this.addRoadSegment(i * segLen - segLen * 0.5, i % DISTRICTS.length);
+      const segment = this.addRoadSegment(i * segLen - segLen * 0.5, (i + this.routeDistrictOffset) % DISTRICTS.length);
       road.attach(segment);
     }
 
@@ -501,6 +503,7 @@ export class Renderer3D {
   }
 
   buildCityscape() {
+    if (this.city?.parent) this.city.parent.remove(this.city);
     this.city = new THREE.Group();
     this.city.name = 'cityscape';
     this.world.add(this.city);
@@ -510,7 +513,7 @@ export class Renderer3D {
 
     for (let i = 0; i < repeats; i += 1) {
       const z = -18 + i * (210 / repeats);
-      const districtIndex = i % DISTRICTS.length;
+      const districtIndex = (i + this.routeDistrictOffset) % DISTRICTS.length;
       this.addDistrictSlice(z, districtIndex, -1, i);
       this.addDistrictSlice(z + 8, (districtIndex + 2) % DISTRICTS.length, 1, i + 31);
     }
@@ -833,6 +836,18 @@ export class Renderer3D {
     // Roof canopy layers.
     addBox(group, [1.58, 0.18, 2.3], [0, 2.08, 0], bodyMat);
     addBox(group, [1.64, 0.08, 2.36], [0, 2.18, 0], darkMat);
+    // Distinctive three-wheel taxi canopy fascia and reinforced side bodywork.
+    addBox(group, [1.58, 0.12, 0.24], [0, 1.91, -1.02], bodyMat);
+    addBox(group, [1.54, 0.1, 0.2], [0, 1.9, 1.02], bodyMat);
+    addBox(group, [0.13, 0.42, 1.45], [-0.73, 1.18, 0.05], bodyMat);
+    addBox(group, [0.13, 0.42, 1.45], [0.73, 1.18, 0.05], bodyMat);
+    addBox(group, [0.72, 0.09, 0.08], [0, 1.68, -1.12], chrome);
+    // Visible side mirrors and bumper give the keke a less plank-like profile.
+    for (const sx of [-0.78, 0.78]) {
+      addBox(group, [0.08, 0.07, 0.18], [sx, 1.55, -0.88], darkMat, [0, 0, sx < 0 ? -0.18 : 0.18]);
+    }
+    addBox(group, [1.24, 0.11, 0.12], [0, 0.67, -1.31], chrome);
+    addBox(group, [1.2, 0.1, 0.1], [0, 0.66, 1.3], darkMat);
 
     // Passenger bench and driver seat.
     addBox(group, [1.2, 0.16, 0.66], [0, 1.13, 0.42], seatMat);
@@ -1335,6 +1350,49 @@ export class Renderer3D {
     this.cameraShake = 0.55;
     this.cameraShakeStrength = 0.32;
     this.spawnDust(position.x, position.z, 10);
+  }
+
+  setRoute(route) {
+    if (!route) return;
+    this.activeRoute = route;
+    const zone = String(route.zone || '').toLowerCase();
+    const zoneOffsets = { central: 2, west: 5, north: 3, east: 6, southwest: 7, south: 4, outer: 1 };
+    this.routeDistrictOffset = zoneOffsets[zone] ?? 0;
+    const env = String(route.environment || '').toLowerCase();
+    const environmentColors = {
+      'old-city': { sky: 0xb8c4c7, fog: 0xc4b49a },
+      'traditional-market': { sky: 0xb9c8c9, fog: 0xc6b18c },
+      'produce-market': { sky: 0xc0cbd0, fog: 0xc8b28d },
+      'industrial': { sky: 0xaebfc5, fog: 0xb5b1a7 },
+      'industrial-edge': { sky: 0xbac7c7, fog: 0xc9b99a },
+      'peri-urban': { sky: 0xc3d0d0, fog: 0xd0bf9f },
+      'urban-edge': { sky: 0xc2cece, fog: 0xcbbd9e },
+      'highway-edge': { sky: 0xaac7d5, fog: 0xbdbfae },
+      'modern-retail': { sky: 0xb6cbd8, fog: 0xbec6c8 },
+      'university': { sky: 0xb9cbd2, fog: 0xc4c0aa },
+      'civic': { sky: 0xb6c8d0, fog: 0xc2c1b2 },
+      'heritage': { sky: 0xbcc9c8, fog: 0xc9b99b },
+      'residential': { sky: 0xb9c9ce, fog: 0xc8bca5 },
+      'commercial': { sky: 0xb4c6d0, fog: 0xc5b99f },
+      'arterial': { sky: 0xb0c9d5, fog: 0xc3c1b2 },
+      'urban': { sky: 0x9ec9df, fog: 0xb7c8cc }
+    };
+    const colors = environmentColors[env] || environmentColors.urban;
+    if (this.scene?.background) this.scene.background.setHex(colors.sky);
+    if (this.scene?.fog) this.scene.fog.color.setHex(colors.fog);
+    if (this.city) this.buildCityscape();
+    // Route identity is also carried into the scenery cycle, so corridor changes
+    // alter visible district combinations instead of only changing the menu label.
+    if (this.roadGroup) {
+      this.roadGroup.clear();
+      const count = this.quality === 'low' ? 4 : 6;
+      const segLen = ROAD_LEN / 4;
+      this.roadSegments = [];
+      for (let i = 0; i < count; i += 1) {
+        const segment = this.addRoadSegment(i * segLen - segLen * 0.5, (i + this.routeDistrictOffset) % DISTRICTS.length);
+        this.roadGroup.add(segment);
+      }
+    }
   }
 
   applyPaint(paint) {

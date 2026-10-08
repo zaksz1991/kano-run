@@ -116,8 +116,8 @@ export class TrafficWorld {
   }
 
   build() {
-    const trafficCount = this.quality === 'low' ? 5 : this.quality === 'medium' ? 8 : 12;
-    const personCount = this.quality === 'low' ? 6 : this.quality === 'medium' ? 10 : 16;
+    const trafficCount = this.quality === 'low' ? 2 : this.quality === 'medium' ? 3 : 4;
+    const personCount = this.quality === 'low' ? 4 : this.quality === 'medium' ? 7 : 10;
 
     for (let i = 0; i < trafficCount; i += 1) {
       const isKeke = i % 3 === 0;
