@@ -460,6 +460,13 @@ export class Game {
     this._audio(['steer', 'playSteer']);
   }
 
+  changeLane(direction = 0) {
+    const value = Number(direction);
+    if (!Number.isFinite(value) || value === 0) return;
+    if (value < 0) this.moveLeft();
+    else this.moveRight();
+  }
+
   left() { this.moveLeft(); }
   right() { this.moveRight(); }
 
