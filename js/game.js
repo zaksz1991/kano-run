@@ -309,7 +309,6 @@ export class Game {
 
   setRenderer(renderer) {
     this.renderer3d = renderer;
-    this.renderer3d?.setGame?.(this);
     return this;
   }
 
@@ -542,7 +541,7 @@ export class Game {
     if (!CONFIG.PAINTS?.[paintId]) return false;
     this.selectedPaint = paintId;
     if (persist) this._saveSelection();
-    this.renderer3d?.applyPaint?.(CONFIG.PAINTS[paintId]);
+    this.renderer3d?.applyPaint?.(paintId);
     this._ui('setPaint', CONFIG.PAINTS[paintId]);
     return true;
   }
@@ -682,7 +681,7 @@ export class Game {
 
     this.renderer3d?.applyPaint?.(this.selectedPaint);
     this.renderer3d?.setKeke?.(this.selectedKeke, keke);
-    this.renderer3d?.startOpeningSequence?.(this.selectedDriver, keke.color ?? this.selectedPaint, this.selectedKeke);
+    this.renderer3d?.startOpeningSequence?.(this.selectedDriver, this.selectedPaint, this.selectedKeke);
 
     this._audio(['ensure', 'start']);
     this._activateRadio();
@@ -894,7 +893,6 @@ export class Game {
     const allowed = ['clear', 'harmattan', 'rain'];
     if (!allowed.includes(weather)) return;
     this.weatherState = weather;
-    this.renderer3d?.setWeather?.(weather);
   }
 
   trafficSpawnInterval() {
@@ -996,7 +994,9 @@ export class Game {
       y: -380 - Math.random() * 180,
       type: Math.random() < 0.52 ? 'karota' : 'police',
       active: true,
-      handled: false
+      handled: false,
+      prompted: false,
+      missed: false
     });
   }
 
@@ -1043,9 +1043,45 @@ export class Game {
   }
 
   updateCheckpoints() {
-    for (const cp of this.checkpoints) cp.y += this.speed;
+    for (const cp of this.checkpoints) {
+      cp.y += this.speed;
+
+      if (cp.handled || cp.missed || this.eventOpen) continue;
+
+      const dy = Math.abs(cp.y - PLAYER_Y);
+
+      // A checkpoint spans the road. The player must reduce speed before reaching it.
+      if (dy <= 96 && !cp.prompted) {
+        cp.prompted = true;
+        this._ui('showToast', cp.type === 'karota'
+          ? 'KAROTA ahead — slow down and stop for inspection.'
+          : 'Police checkpoint ahead — slow down and stop.');
+        this._audio(cp.type === 'karota'
+          ? ['karota', 'checkpoint']
+          : ['police', 'checkpoint']);
+      }
+
+      if (dy <= 58) {
+        if (this.speed <= 1.25) {
+          cp.handled = true;
+          this.speed = Math.min(this.speed, 0.55);
+          this.triggerCheckpointInteraction({ type: cp.type, source: cp });
+          continue;
+        }
+
+        if (this.speed > 1.25 && cp.y >= PLAYER_Y - 12) {
+          cp.missed = true;
+          this.karotaHeat += cp.type === 'karota' ? 2 : 1;
+          this.karotaWanted = true;
+          this.policeChase = 420 + this.level * 30;
+          this._audio(['siren', 'checkpoint']);
+          this._ui('showToast', 'Checkpoint missed — KAROTA/police pursuit started.');
+        }
+      }
+    }
+
     this.checkpoints = this.checkpoints.filter(
-      (cp) => cp.y < 700 && !cp.handled
+      (cp) => cp.y < 700 && !cp.handled && !cp.missed
     );
   }
 
@@ -1073,13 +1109,11 @@ export class Game {
 
       if (sameLane && dy <= COLLISION_Y) {
         if (obstacle.type === 'police' || obstacle.type === 'karota') {
-          this.renderer3d?.onCollision?.(this.renderer3d?.player?.position);
           this.triggerCheckpointInteraction({
             type: obstacle.type,
             source: obstacle
           });
         } else {
-          this.renderer3d?.onCollision?.(this.renderer3d?.player?.position);
           this.crash(obstacle);
         }
         return;
@@ -1120,7 +1154,6 @@ export class Game {
     this.shakeMag = 8;
     this.bounce = 10;
 
-    this.renderer3d?.onCollision?.(this.renderer3d?.player?.position);
     this._audio(['crash', 'collision', 'playCrash']);
     this._ui('showToast', 'CRASH!');
 
@@ -1382,6 +1415,8 @@ export class Game {
     this.checkpointCooldown = 240;
     this.eventType = type;
     this.eventContext = { source };
+    if (source?.id?.startsWith?.('karota-')) source.handled = true;
+    this.speed = Math.min(this.speed, 0.55);
 
     this.showEvent({
       type: 'karota',

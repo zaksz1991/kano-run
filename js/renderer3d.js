@@ -1,7 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { TrafficWorld } from './trafficWorld.js';
-import { PassengerWorld } from './passengerWorld.js';
-import { KarotaWorld } from './karotaWorld.js';
+import { EnforcementWorld } from './enforcementWorld.js';
 
 // Kano Run — Adaidaita Sahu
 // Renderer Upgrade — detailed procedural 3D world
@@ -192,8 +191,6 @@ export class Renderer3D {
     this.weatherGroup = null;
     this.openingGroup = null;
     this.trafficWorld = null;
-    this.passengerWorld = null;
-    this.karotaWorld = null;
 
     this.roadOffset = 0;
     this.targetCameraX = 0;
@@ -279,8 +276,7 @@ export class Renderer3D {
     // Ambient traffic and walking roadside life are visual-only and do not replace
     // game.js collision, passenger, mission, or scoring logic.
     this.trafficWorld = new TrafficWorld(THREE, this, { quality: this.quality });
-    this.passengerWorld = new PassengerWorld(THREE, this, { quality: this.quality });
-    this.karotaWorld = new KarotaWorld(THREE, this, { quality: this.quality });
+    this.enforcementWorld = new EnforcementWorld(THREE, this);
     this.buildEffects();
     this.buildWeather();
 
@@ -1376,9 +1372,7 @@ export class Renderer3D {
 
       const ped = this.pedestrianPool[i];
       if (ped) {
-        // PassengerWorld owns pickup passengers. Keep the older pedestrian pool
-        // available for general roadside use without rendering a duplicate person.
-        ped.visible = !this.passengerWorld && zdata.kind === 'pickup';
+        ped.visible = zdata.kind === 'pickup';
         ped.position.x = zone.position.x + (Number(zdata.lane) % 2 === 0 ? 0.8 : -0.8);
         ped.position.z = zone.position.z;
         ped.position.y = 0;
@@ -1612,14 +1606,8 @@ export class Renderer3D {
     }
     this.updateZones(delta, g);
     this.updatePedestrians(delta);
-    if (this.passengerWorld) {
-      const passengerZones = [];
-      for (const z of Array.isArray(g?.paxZones) ? g.paxZones : []) passengerZones.push({ ...z, kind: 'pickup' });
-      for (const z of Array.isArray(g?.dropZones) ? g.dropZones : []) passengerZones.push({ ...z, kind: 'dropoff' });
-      this.passengerWorld.update(delta, g, passengerZones);
-    }
-    if (this.karotaWorld) this.karotaWorld.update(delta, g);
     this.updateCoins(delta, g);
+    this.enforcementWorld?.update?.(delta, g);
     this.updateWeather(delta);
     this.updateDust(delta);
     this.updateImpact(delta);
@@ -1647,11 +1635,8 @@ export class Renderer3D {
     }
     this.trafficWorld?.dispose?.();
     this.trafficWorld = null;
-    this.passengerWorld?.dispose?.();
-    this.passengerWorld = null;
-    this.karotaWorld = null;
-    this.passengerWorld = null;
-    this.karotaWorld = null;
+    this.enforcementWorld?.dispose?.();
+    this.enforcementWorld = null;
     this.renderer?.dispose?.();
     this.ready = false;
   }
