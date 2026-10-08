@@ -460,13 +460,21 @@ export class Game {
     this._audio(['steer', 'playSteer']);
   }
 
-  /**
-   * Compatibility lane-control API used by the 3D renderer/control layer.
-   * direction < 0 moves left; direction > 0 moves right.
-   */
   changeLane(direction = 0) {
-    const value = Number(direction);
+    // Accept both numeric directions and browser/control events.
+    // The 3D/mobile control layer may forward the pointer/touch event itself.
+    let value = Number(direction);
+
+    if (!Number.isFinite(value) || value === 0) {
+      const code = direction?.code || direction?.key || '';
+      if (code === 'ArrowLeft' || code === 'KeyA' || code === 'left') value = -1;
+      else if (code === 'ArrowRight' || code === 'KeyD' || code === 'right') value = 1;
+      else if (direction?.direction != null) value = Number(direction.direction);
+    }
+
     if (!Number.isFinite(value) || value === 0) return;
+
+    // Preserve the established movement implementation.
     if (value < 0) this.moveLeft();
     else this.moveRight();
   }
