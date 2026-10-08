@@ -1,550 +1,239 @@
-// Kano Run - Game Configuration
-
+// Kano Run — Advanced Kano transport-world configuration
 export const STATE = {
-  MENU: 'menu',
-  PLAYING: 'playing',
-  PAUSED: 'paused',
-  GAME_OVER: 'gameover',
-  ROUTES: 'routes',
-  GARAGE: 'garage',
-  DRESSING: 'dressing',
-  RADIO: 'radio'
+  START: 0,
+  PLAY: 1,
+  OVER: 2,
+  GARAGE: 3,
+  ROUTE_SELECT: 4,
+  EVENT: 5
 };
+
+const route = (id, name, description, difficulty, baseFare, landmarks, zone, traffic = 1) => ({
+  id, name, description, difficulty, baseFare, landmarks, zone, traffic
+});
 
 export const CONFIG = {
   GAME_NAME: 'Kano Run',
-  GAME_SUBTITLE: 'Adaidaita Sahu',
-
-  VERSION: '1.0.0',
-
-  STARTING_LIVES: 3,
+  GAME_SUBTITLE: 'Adaidaita Sahu — Kano Transport Life',
+  VERSION: '2.0.0',
+  LANES: 3,
+  MAX_CAPACITY_BASE: 3,
   STARTING_CAPACITY: 3,
-
-  MAX_SPEED: 32,
-  START_SPEED: 8,
-
-  BASE_FARE: 50,
-  COMBO_MAX: 5,
-
-  ROUTES: [
-    {
-      id: 'kano-city',
-      name: 'Kano City',
-      description: 'Busy city streets, markets and dense traffic.',
-      difficulty: 1
-    },
-    {
-      id: 'sabongari',
-      name: 'Sabon Gari',
-      description: 'Commercial streets with heavy traffic and pedestrians.',
-      difficulty: 2
-    },
-    {
-      id: 'fagge',
-      name: 'Fagge',
-      description: 'Fast-moving urban traffic and busy roadside activity.',
-      difficulty: 2
-    },
-    {
-      id: 'dala',
-      name: 'Dala',
-      description: 'Historic Kano streets with tight roads and obstacles.',
-      difficulty: 3
-    },
-    {
-      id: 'tarauni',
-      name: 'Tarauni',
-      description: 'Longer roads with increasing traffic density.',
-      difficulty: 3
-    },
-    {
-      id: 'ungogo',
-      name: 'Ungogo',
-      description: 'Outer-city roads with mixed traffic and open stretches.',
-      difficulty: 3
-    }
-  ],
-
-  DISTRICTS: [
-    'Kano City',
-    'Sabon Gari',
-    'Fagge',
-    'Dala',
-    'Kumbotso',
-    'Nassarawa',
-    'Gwale',
-    'Tarauni',
-    'Ungogo'
-  ],
-
-  PAINTS: [
-    {
-      id: 'yellow',
-      name: 'Kano Yellow',
-      color: '#eab308',
-      price: 0
-    },
-    {
-      id: 'green',
-      name: 'Northern Green',
-      color: '#16a34a',
-      price: 500
-    },
-    {
-      id: 'blue',
-      name: 'Kano Blue',
-      color: '#2563eb',
-      price: 750
-    },
-    {
-      id: 'red',
-      name: 'Red Fire',
-      color: '#dc2626',
-      price: 1000
-    },
-    {
-      id: 'black',
-      name: 'Midnight',
-      color: '#171717',
-      price: 1500
-    },
-    {
-      id: 'white',
-      name: 'Clean White',
-      color: '#f8fafc',
-      price: 1800
-    }
-  ],
-
-  DRIVERS: [
-    {
-      id: 'hassan',
-      name: 'Hassan',
-      title: 'City Runner',
-      desc: 'Balanced driver for everyday Kano traffic.',
-      color: '#f59e0b',
-      capacity: 3
-    },
-    {
-      id: 'kabiru',
-      name: 'Kabiru',
-      title: "The People's Driver",
-      desc: 'Everyone wants to ride with him. +1 capacity.',
-      color: '#84cc16',
-      capacity: 4
-    },
-    {
-      id: 'sani',
-      name: 'Sani',
-      title: 'Road Master',
-      desc: 'Experienced on difficult roads. Better handling.',
-      color: '#3b82f6',
-      capacity: 3
-    },
-    {
-      id: 'mustapha',
-      name: 'Mustapha',
-      title: 'Speed Runner',
-      desc: 'Fast and aggressive. Higher top speed.',
-      color: '#ef4444',
-      capacity: 3
-    }
-  ],
-
-  UPGRADES: {
-    engine: {
-      id: 'engine',
-      name: 'Engine',
-      description: 'Increase acceleration and top speed.',
-      levels: [
-        {
-          level: 1,
-          price: 0,
-          bonus: 0
-        },
-        {
-          level: 2,
-          price: 1000,
-          bonus: 0.1
-        },
-        {
-          level: 3,
-          price: 2500,
-          bonus: 0.2
-        },
-        {
-          level: 4,
-          price: 5000,
-          bonus: 0.35
-        }
-      ]
-    },
-
-    capacity: {
-      id: 'capacity',
-      name: 'Passenger Capacity',
-      description: 'Carry more passengers and earn larger fares.',
-      levels: [
-        {
-          level: 1,
-          price: 0,
-          capacity: 3
-        },
-        {
-          level: 2,
-          price: 1500,
-          capacity: 4
-        },
-        {
-          level: 3,
-          price: 3500,
-          capacity: 5
-        },
-        {
-          level: 4,
-          price: 7000,
-          capacity: 6
-        }
-      ]
-    },
-
-    horn: {
-      id: 'horn',
-      name: 'Horn',
-      description: 'Upgrade your horn for stronger traffic response.',
-      levels: [
-        {
-          level: 1,
-          price: 0,
-          power: 1
-        },
-        {
-          level: 2,
-          price: 750,
-          power: 1.25
-        },
-        {
-          level: 3,
-          price: 1800,
-          power: 1.5
-        }
-      ]
-    },
-
-    handling: {
-      id: 'handling',
-      name: 'Handling',
-      description: 'Improve steering response and lane control.',
-      levels: [
-        {
-          level: 1,
-          price: 0,
-          bonus: 0
-        },
-        {
-          level: 2,
-          price: 1200,
-          bonus: 0.15
-        },
-        {
-          level: 3,
-          price: 2800,
-          bonus: 0.3
-        },
-        {
-          level: 4,
-          price: 5500,
-          bonus: 0.5
-        }
-      ]
-    }
+  STARTING_LIVES: 3,
+  START_SPEED: 5.2,
+  MAX_SPEED: 34,
+  BASE_FARE: 150,
+  COMBO_MAX: 25,
+  DAY_LENGTH_MS: 150000,
+  STORAGE_KEYS: {
+    MONEY: 'kanoMoney',
+    BEST_SCORE: 'kanoHigh',
+    PAINT: 'kanoPaint',
+    CAPACITY: 'kanoCap',
+    SPEED: 'kanoSpeed',
+    HORN: 'kanoHorn'
   },
 
+  PAINTS: {
+    classic: { body:'#fbbf24', roof:'#fde047', accent:'#ca8a04', name:'Classic Yellow', price:0 },
+    green: { body:'#22c55e', roof:'#4ade80', accent:'#16a34a', name:'Kano Green', price:950 },
+    blue: { body:'#3b82f6', roof:'#60a5fa', accent:'#2563eb', name:'Arewa Blue', price:950 },
+    white: { body:'#f1f5f9', roof:'#e2e8f0', accent:'#94a3b8', name:'Clean White', price:750 },
+    red: { body:'#ef4444', roof:'#f87171', accent:'#dc2626', name:'Emir Red', price:1150 },
+    black: { body:'#1e293b', roof:'#334155', accent:'#0f172a', name:'Night Black', price:1350 },
+    purple: { body:'#a855f7', roof:'#c084fc', accent:'#7e22ce', name:'Royal Purple', price:1600 },
+    sand: { body:'#c49a6c', roof:'#e2c39a', accent:'#8b6b45', name:'Harmattan Sand', price:1750 }
+  },
+
+  SPONSORED_LIVERIES: {
+    arewa: { name:'Arewa Fresh Green', price:0, body:'#16a34a', roof:'#4ade80', accent:'#15803d', sponsored:true },
+    dala: { name:'Dala Cement Orange', price:0, body:'#ea580c', roof:'#fb923c', accent:'#c2410c', sponsored:true },
+    freedom: { name:'Freedom Radio Purple', price:0, body:'#7e22ce', roof:'#c084fc', accent:'#6b21a8', sponsored:true }
+  },
+
+  DRIVERS: {
+    musa:{id:'musa',name:'Musa',title:'The Veteran',desc:'Experienced Kano driver with balanced handling.',color:'#eab308',bonus:{capacity:0,speed:0,horn:0,fareBonus:0},price:0},
+    aisha:{id:'aisha',name:'Aisha',title:'Queen of Panshekara',desc:'Strong negotiator with better fares.',color:'#ec4899',bonus:{capacity:0,speed:0.2,horn:0,fareBonus:.15},price:1200},
+    sani:{id:'sani',name:'Sani',title:'Night Rider',desc:'Fast and confident after dark.',color:'#3b82f6',bonus:{capacity:0,speed:.5,horn:0,fareBonus:0},price:1500},
+    bala:{id:'bala',name:'Bala',title:'Horn Master',desc:'Traffic clears faster after a strong horn.',color:'#22c55e',bonus:{capacity:0,speed:0,horn:1,fareBonus:0},price:1800},
+    hadiza:{id:'hadiza',name:'Hadiza',title:'Market Queen',desc:'Carries one extra passenger.',color:'#a855f7',bonus:{capacity:1,speed:0,horn:0,fareBonus:0},price:2000},
+    usman:{id:'usman',name:'Usman',title:'Sabon Gari Hustler',desc:'Thrives in dense commercial traffic.',color:'#f97316',bonus:{capacity:0,speed:.2,horn:0,fareBonus:.08},price:1600},
+    zainab:{id:'zainab',name:'Zainab',title:'Kurmi Trader',desc:'Higher rewards from market passengers.',color:'#14b8a6',bonus:{capacity:0,speed:0,horn:0,fareBonus:.2},price:2200},
+    ibrahim:{id:'ibrahim',name:'Ibrahim',title:'Dala Hill Climber',desc:'Strong engine for difficult routes.',color:'#ef4444',bonus:{capacity:0,speed:.7,horn:0,fareBonus:0},price:1900},
+    fatima:{id:'fatima',name:'Fatima',title:'Student Express',desc:'Quick acceleration and responsive handling.',color:'#8b5cf6',bonus:{capacity:0,speed:.5,horn:0,fareBonus:0},price:1400},
+    yusuf:{id:'yusuf',name:'Yusuf',title:'KAROTA Avoider',desc:'Longer recovery after enforcement encounters.',color:'#06b6d4',bonus:{capacity:0,speed:0,horn:.5,fareBonus:0},price:2100},
+    amina:{id:'amina',name:'Amina',title:'Zoo Road Regular',desc:'Extra fare on long corridors.',color:'#f43f5e',bonus:{capacity:0,speed:.3,horn:0,fareBonus:.1},price:1700},
+    kabiru:{id:'kabiru',name:'Kabiru',title:'The People’s Driver',desc:'Extra passenger capacity.',color:'#84cc16',bonus:{capacity:1,speed:0,horn:0,fareBonus:0},price:2300},
+    rukayya:{id:'rukayya',name:'Rukayya',title:'Harmattan Queen',desc:'Handles dusty conditions better.',color:'#d946ef',bonus:{capacity:0,speed:.25,horn:0,fareBonus:.12},price:2000}
+  },
+
+  DRIVER_STYLES: {
+    classic:{name:'Classic Cap',price:0,color:'#1e293b'},
+    kaftan:{name:'White Kaftan',price:600,color:'#f8fafc'},
+    jalabiya:{name:'Blue Jalabiya',price:800,color:'#3b82f6'},
+    modern:{name:'Modern Jacket',price:900,color:'#0f172a'},
+    sport:{name:'Sport Cap',price:500,color:'#ef4444'},
+    northern:{name:'Northern Kaftan',price:1000,color:'#c49a6c'}
+  },
+
+  UPGRADES: {
+    capacity:{name:'Extra Seat',desc:'+1 passenger capacity',levels:[3,4,5],prices:[0,1300,2700],key:'kanoCap'},
+    speed:{name:'Engine Tune',desc:'Higher top speed and acceleration',levels:[0,1,2,3],prices:[0,1600,3200,5200],key:'kanoSpeed'},
+    horn:{name:'Power Horn',desc:'Stronger traffic clear and recovery',levels:[0,1,2,3],prices:[0,1100,2400,3900],key:'kanoHorn'}
+  },
+
+  ROUTES: {
+    panshekara:route('panshekara','Panshekara Route','Very busy corridor with markets, junctions and heavy passenger traffic.',1.15,150,['Panshekara Market','Kumbotso Junction','Sharada','Hotoro Roundabout','Naibawa'],'west',1.15),
+    kumbotso:route('kumbotso','Kumbotso Route','Industrial and residential traffic with trucks and commercial vehicles.',1.05,140,['Kumbotso','Challawa','Sharada Industrial','Naibawa','Yankaba'],'southwest',1.05),
+    sabongari:route('sabongari','Sabon Gari Route','Commercial heart of Kano with dense pedestrians and chaotic traffic.',1.3,170,['Sabon Gari Market','Kantin Kwari','Wapa','France Road','Ado Bayero Mall'],'central',1.35),
+    citycenter:route('citycenter','City Centre / Emir Palace','Historic Kano core with tight roads and frequent enforcement.',1.2,180,["Emir's Palace",'Kurmi Market','Dala Hill','Kofar Mata Dye Pits','City Walls'],'central',1.3),
+    zoo:route('zoo','Zoo Road / Hotoro','Long high-speed corridor suited to distance runs.',1.0,140,['Zoo Road','Hotoro','Naibawa','Kawo','Ungogo'],'north',1.05),
+    tarauni:route('tarauni','Tarauni / Hotoro North','Dense residential and market traffic with constant stops.',1.1,145,['Tarauni Market','Hotoro North','Kawaji','Yan Awaki','Gama'],'north',1.15),
+    nassarawa:route('nassarawa','Nassarawa GRA / Airport Road','Mixed elite, airport and commercial traffic.',1.05,160,['Nassarawa GRA','Airport Road','Katsina Road','Badawa','Kurnar Asabe'],'east',1.0),
+    gwale:route('gwale','Gwale / Kofar Ruwa','Old city edge with busy markets and narrow streets.',1.2,155,['Gwale','Kofar Ruwa','Kofar Wambai','Jakara','Mandawari'],'west',1.2),
+    fajir:route('fajir','Fagge / Kantin Kwari','Textile-market chaos with high passenger turnover.',1.35,175,['Kantin Kwari','Fagge','Wapa','France Road','Sabon Gari'],'central',1.4),
+    dakata:route('dakata','Dakata / Yankaba','Eastern corridor with growing traffic and market activity.',1.0,135,['Dakata','Yankaba','Naibawa','Hotoro','Sharada'],'east',1.05),
+    rijiyarzaki:route('rijiyarzaki','Rijiyar Zaki / Kabuga','Western approach with mixed traffic and residential streets.',.95,130,['Rijiyar Zaki','Kabuga','Jaen','Dorayi','Unguwa Uku'],'west',.95),
+    kofarmata:route('kofarmata','Kofar Mata / Dye Pits','Historic tourist and local corridor with tight roads.',1.15,165,['Kofar Mata Dye Pits','Kurmi Market','Dala Hill',"Emir's Palace",'Jakara'],'central',1.2),
+    bungudu:route('bungudu','Bompai / Industrial Layout','Factory traffic, heavy trucks and commercial kekes.',1.1,140,['Bompai','Industrial Layout','Sharada','Challawa','Hotoro'],'east',1.25),
+    yanawaki:route('yanawaki','Yan Awaki / Gama','Dense residential corridor with frequent passenger stops.',1.25,150,['Yan Awaki','Gama','Tarauni','Kawaji','Hotoro North'],'north',1.2),
+    unguwauku:route('unguwauku','Unguwa Uku / Dorayi','Southern corridor with busy evening traffic.',1.05,140,['Unguwa Uku','Dorayi','Jaen','Kabuga','Rijiyar Zaki'],'southwest',1.05),
+
+    kawaji:route('kawaji','Kawaji / Gidan Ruwa','Residential-commercial corridor with school and market traffic.',1.1,145,['Kawaji','Gidan Ruwa','Tarauni','Hotoro North'],'north',1.15),
+    naibawa:route('naibawa','Naibawa / Zaria Road','Motor-park corridor with buses, trucks and heavy pickups.',1.3,165,['Naibawa Motor Park','Zaria Road','Kofar Nassarawa','Hotoro'],'north',1.35),
+    challawa:route('challawa','Challawa / Sharada Industrial','Industrial route with slow trucks and factory workers.',1.25,155,['Challawa Industrial','Sharada','Kumbotso','Naibawa'],'southwest',1.3),
+    wudil:route('wudil','Wudil Road Junction','Outer-city route with faster traffic and long open stretches.',1.05,170,['Wudil Road Junction','Kumbotso','Naibawa','Panshekara'],'south',1.0),
+    gwarzo:route('gwarzo','Gwarzo Road Corridor','Busy northern approach with mixed vehicles.',1.2,160,['Gwarzo Road','Ungogo','Kawo','Tarauni'],'north',1.2),
+    katsina:route('katsina','Katsina Road Corridor','Long mixed-use road with buses and commercial traffic.',1.15,160,['Katsina Road','Badawa','Nassarawa','Kofar Nassarawa'],'east',1.15),
+    hadejia:route('hadejia','Hadejia Road Corridor','Urban edge route with markets and motorcycles.',1.1,150,['Hadejia Road','Dakata','Yankaba','Kawo'],'east',1.1),
+    airport:route('airport','Airport Road Express','Faster premium route with airport passengers and taxis.',1.2,190,['Airport Road','Nassarawa GRA','Badawa','Katsina Road'],'east',1.05),
+    jaen:route('jaen','Jaen / Kabuga Loop','Residential loop with schools and neighbourhood stops.',1.0,135,['Jaen','Kabuga','Dorayi','Unguwa Uku'],'west',1.0),
+    dorayi:route('dorayi','Dorayi / Rijiyar Zaki','Southern-western corridor with evening congestion.',1.15,145,['Dorayi','Rijiyar Zaki','Kabuga','Jaen'],'west',1.1),
+    kawar:route('kawar','Kofar Wambai / Mandawari','Traditional market streets and narrow passages.',1.35,175,['Kofar Wambai','Mandawari','Jakara','Kofar Ruwa'],'central',1.45),
+    jakara:route('jakara','Jakara / Kofar Ruwa','Dense old-city route with pedestrians and market activity.',1.3,165,['Jakara River','Kofar Ruwa','Gwale','Kofar Wambai'],'central',1.35),
+    stadium:route('stadium','Sani Abacha Stadium / Nassarawa','Event-day traffic and large passenger surges.',1.25,175,['Sani Abacha Stadium','Nassarawa','Badawa','Airport Road'],'east',1.3),
+    bayero:route('bayero','Bayero University / Old Campus','Student corridor with peak-time traffic.',1.15,155,['Bayero University','Kofar Kabuga','Tarauni','Kawaji'],'north',1.2),
+    marketloop:route('marketloop','Kantin Kwari / Sabon Gari Loop','High-turnover commercial loop designed for passenger income.',1.4,185,['Kantin Kwari Market','Sabon Gari','Wapa','France Road'],'central',1.5),
+    outerkano:route('outerkano','Outer Kano Challenge','Long mixed corridor combining open roads and dense junctions.',1.5,210,['Panshekara','Kumbotso','Naibawa','Tarauni','Ungogo'],'outer',1.4)
+  },
+
+  DISTRICTS: [
+    'Kano City','Sabon Gari','Fagge','Dala','Kumbotso','Nassarawa','Gwale','Tarauni',
+    'Ungogo','Panshekara','Naibawa','Bompai','Sharada','Hotoro','Kawaji','Dakata',
+    'Yankaba','Kabuga','Dorayi','Gama','Yan Awaki','Kofar Wambai','Kofar Ruwa','Jakara',
+    'Airport Road','Zaria Road','Katsina Road','Hadejia Road','Challawa','Bayero University'
+  ],
+
   TRAFFIC_TYPES: [
-    {
-      type: 'car',
-      weight: 45
-    },
-    {
-      type: 'keke',
-      weight: 30
-    },
-    {
-      type: 'police',
-      weight: 10
-    },
-    {
-      type: 'truck',
-      weight: 8
-    },
-    {
-      type: 'bus',
-      weight: 7
-    }
-  ],
-
-  TRAFFIC_COLORS: [
-    '#dc2626',
-    '#2563eb',
-    '#16a34a',
-    '#f8fafc',
-    '#111827',
-    '#f97316',
-    '#a855f7',
-    '#64748b'
-  ],
-
-  OBSTACLES: [
-    {
-      type: 'karota',
-      name: 'KAROTA Checkpoint',
-      danger: 0.7
-    },
-    {
-      type: 'pothole',
-      name: 'Pothole',
-      danger: 0.55
-    },
-    {
-      type: 'barrier',
-      name: 'Road Barrier',
-      danger: 0.8
-    },
-    {
-      type: 'construction',
-      name: 'Road Construction',
-      danger: 0.75
-    }
+    {type:'car',weight:28},{type:'keke',weight:26},{type:'motorcycle',weight:15},
+    {type:'bus',weight:9},{type:'truck',weight:8},{type:'taxi',weight:7},
+    {type:'police',weight:3},{type:'karota',weight:2},{type:'ambulance',weight:1},{type:'obstacle',weight:1}
   ],
 
   PASSENGER_TYPES: [
-    {
-      id: 'worker',
-      name: 'Worker',
-      fareMultiplier: 1
-    },
-    {
-      id: 'student',
-      name: 'Student',
-      fareMultiplier: 0.8
-    },
-    {
-      id: 'business',
-      name: 'Business Passenger',
-      fareMultiplier: 1.4
-    },
-    {
-      id: 'family',
-      name: 'Family',
-      fareMultiplier: 1.25
-    },
-    {
-      id: 'visitor',
-      name: 'Visitor',
-      fareMultiplier: 1.5
-    }
-  ],
-
-  MISSIONS: [
-    {
-      id: 'first-fare',
-      title: 'First Fare',
-      description: 'Pick up and successfully deliver your first passenger.',
-      target: 1,
-      reward: 100
-    },
-    {
-      id: 'five-passengers',
-      title: 'Busy Driver',
-      description: 'Deliver five passengers.',
-      target: 5,
-      reward: 300
-    },
-    {
-      id: 'distance-1000',
-      title: 'Kano Cruiser',
-      description: 'Drive 1,000 metres.',
-      target: 1000,
-      reward: 500
-    },
-    {
-      id: 'distance-5000',
-      title: 'Long Haul',
-      description: 'Drive 5,000 metres.',
-      target: 5000,
-      reward: 1500
-    },
-    {
-      id: 'near-misses',
-      title: 'Traffic Master',
-      description: 'Perform ten near misses without crashing.',
-      target: 10,
-      reward: 750
-    },
-    {
-      id: 'coins',
-      title: 'Street Collector',
-      description: 'Collect twenty road coins.',
-      target: 20,
-      reward: 500
-    }
-  ],
-
-  DAILY_MISSIONS: [
-    {
-      id: 'daily-distance',
-      title: 'Daily Kano Drive',
-      description: 'Drive 2,000 metres today.',
-      target: 2000,
-      reward: 750
-    },
-    {
-      id: 'daily-fares',
-      title: 'Daily Passenger Run',
-      description: 'Complete ten passenger trips.',
-      target: 10,
-      reward: 1000
-    },
-    {
-      id: 'daily-coins',
-      title: 'Daily Collector',
-      description: 'Collect fifteen coins.',
-      target: 15,
-      reward: 500
-    }
+    {id:'worker',label:'Worker',color:'#64748b',fareMult:1.0,gender:'male'},
+    {id:'business',label:'Business Man',color:'#1e40af',fareMult:1.25,gender:'male'},
+    {id:'hijab',label:'Hajiya',color:'#0d9488',fareMult:1.1,gender:'female'},
+    {id:'lady',label:'Lady',color:'#ec4899',fareMult:1.15,gender:'female'},
+    {id:'youth',label:'Youth',color:'#8b5cf6',fareMult:.95,gender:'male'},
+    {id:'trader',label:'Trader',color:'#d97706',fareMult:1.2,gender:'male'},
+    {id:'student',label:'Student',color:'#2563eb',fareMult:1.05,gender:'mixed'},
+    {id:'vip',label:'VIP Passenger',color:'#fbbf24',fareMult:2.0,gender:'mixed',vip:true},
+    {id:'lowpay',label:'No Change',color:'#f87171',fareMult:.35,gender:'female',lowPay:true},
+    {id:'free',label:'Abeg Free',color:'#fb7185',fareMult:0,gender:'female',lowPay:true}
   ],
 
   RADIO_STATIONS: [
-    'Kano Run Radio',
-    'Arewa FM',
-    'City Drive',
-    'Hausa Beats',
-    'Northern Traffic',
-    'Kano Street Mix'
+    {id:'freedom',name:'Freedom Radio 99.5 FM',freq:'99.5'},
+    {id:'arewa',name:'Arewa Radio 93.1 FM',freq:'93.1'},
+    {id:'cool',name:'Cool FM Kano',freq:'96.9'},
+    {id:'dala',name:'Dala FM 88.5',freq:'88.5'},
+    {id:'wazobia',name:'Wazobia 95.1 FM Kano',freq:'95.1'},
+    {id:'liberty',name:'Liberty Radio 103.3',freq:'103.3'},
+    {id:'pyramid',name:'Pyramid FM Kano',freq:'102.7'}
   ],
 
-  BILLBOARDS: [
-    {
-      text: 'KANO RUN',
-      color: '#fbbf24'
-    },
-    {
-      text: 'Sannu Driver',
-      color: '#16a34a'
-    },
-    {
-      text: 'Kano City',
-      color: '#2563eb'
-    },
-    {
-      text: 'Arewa',
-      color: '#dc2626'
-    },
-    {
-      text: 'Safe Driving',
-      color: '#f8fafc'
-    },
-    {
-      text: 'Adaidaita Sahu',
-      color: '#eab308'
-    }
+  WEATHER: {
+    clear:'☀️ Clear',
+    dust:'🌬️ Harmattan Dust',
+    haze:'🌫️ Haze',
+    rain:'🌧️ Rain',
+    storm:'⛈️ Storm'
+  },
+
+  WORLD_EVENTS: [
+    {id:'market',name:'Market Rush',text:'Market activity is heavy. Passenger demand and pedestrian traffic increase.',traffic:1.35,fare:1.15},
+    {id:'school',name:'School Rush',text:'Students are moving between schools and neighbourhoods.',traffic:1.25,fare:1.05},
+    {id:'rain',name:'Rainfall',text:'Rain makes the road slippery and visibility lower.',traffic:.9,fare:1.2},
+    {id:'checkpoint',name:'KAROTA Checkpoint',text:'Enforcement activity is high on this corridor.',traffic:1.1,fare:1.0},
+    {id:'festival',name:'City Celebration',text:'Crowds are gathering. Passenger demand is unusually high.',traffic:1.45,fare:1.3},
+    {id:'trafficjam',name:'Traffic Jam',text:'A bottleneck is slowing traffic ahead.',traffic:1.6,fare:1.05}
   ],
+
+  MISSIONS: [
+    {id:'pax5',text:'Carry 5 passengers',target:5,reward:500},
+    {id:'dist5',text:'Drive 5 km',target:5,reward:700},
+    {id:'score3k',text:'Earn ₦3000 this run',target:3000,reward:650},
+    {id:'horn5',text:'Use horn 5 times',target:5,reward:350},
+    {id:'drop10',text:'Drop 10 passengers',target:10,reward:600},
+    {id:'near5',text:'Perform 5 near misses',target:5,reward:800},
+    {id:'routes',text:'Drive through 4 route segments',target:4,reward:900},
+    {id:'survive',text:'Survive 7 km',target:7,reward:1200}
+  ],
+
+  DAILY_MISSIONS: [
+    {id:'daily_pax',text:'Carry 12 passengers today',target:12,reward:800,type:'pax'},
+    {id:'daily_dist',text:'Drive 8 km today',target:8,reward:750,type:'dist'},
+    {id:'daily_score',text:'Earn ₦6000 in one run',target:6000,reward:900,type:'score'},
+    {id:'daily_drop',text:'Drop 15 passengers today',target:15,reward:850,type:'drop'},
+    {id:'daily_horn',text:'Use horn 12 times today',target:12,reward:600,type:'horn'},
+    {id:'daily_route',text:'Complete 3 different routes',target:3,reward:1000,type:'routes'}
+  ],
+
+  LANDMARKS: [
+    'Kurmi Market',"Emir's Palace",'Dala Hill','Kofar Mata Dye Pits','Ancient City Walls',
+    'Sabon Gari','Ado Bayero Mall','Sani Abacha Stadium','Bayero University',
+    'Kantin Kwari Market','Sharada Industrial Area','Kumbotso Bridge','Panshekara Junction',
+    'Tarauni Market','Gama Quarters','Kabuga Junction','Rijiyar Zaki','Bompai',
+    'Kofar Ruwa','Jakara River','Murtala Mohammed Library','Kano State History Museum',
+    'Triumph Publishing Company','Gandun Albasa','Kofar Nassarawa','Dorayi Quarters',
+    'Jaen','Unguwa Uku','Hotoro North','Kawaji','Yankaba','Challawa Industrial',
+    'Wudil Road Junction','Gwarzo Road','Zaria Road','Katsina Road','Hadejia Road',
+    'Kano Emirate Council','Gidan Makama Museum','Kofar Mazugal','Mandawari','Yakasai','Dakata'
+  ],
+
+  NEGOTIATION: {
+    passenger:['Driver, how much to the junction?','I will pay ₦100 only!','Last week it was cheaper!','Abeg reduce am small','I no get change o','Drop me for the next stop'],
+    driver:['My friend, that is the price','Fuel is expensive these days','Okay, enter make we go','No change? I go find am','KAROTA dey around, no waste time','God go bless you, enter'],
+    disagreement:['I no go pay that amount!','Driver you dey craze?','I go report you to KAROTA!','Take this ₦80 or leave am']
+  },
+
+  KAROTA_LINES: {
+    officer:['Park well! Where is your particulars?','This keke no get paper?','You dey overspeed!','Come down make we talk!','Your road worthiness expire!'],
+    driver:['Officer I dey go market!','I get all my papers!','Abeg no waste my time!','I just renew am last week!','Oga wetin I do?'],
+    quarrel:['You this KAROTA people too much!','Every day na checkpoint!','I no go give you anything!','God go judge una!']
+  },
 
   DRIVER_REACTIONS: {
-    start: [
-      'Bismillah. Kano Run!',
-      'Mu tafi!',
-      'Let us move.',
-      'Kano streets, here we come.'
-    ],
-
-    nearMiss: [
-      'Kai! That was close.',
-      'Sannu! Watch the road.',
-      'Kai, kai, kai!',
-      'That one nearly finished us.',
-      'Easy, easy!'
-    ],
-
-    crash: [
-      'Ah! Watch the road.',
-      'Kai! What happened?',
-      'That was a bad one.',
-      'Need to drive carefully.',
-      'Subhanallah!'
-    ],
-
-    checkpoint: [
-      'KAROTA ahead.',
-      'Watch the checkpoint.',
-      'Slow down near the officers.'
-    ],
-
-    passenger: [
-      'Welcome aboard.',
-      'Sannu. Where are you going?',
-      'Hop in.',
-      'Let us get you there.'
-    ],
-
-    dropoff: [
-      'Mun isa.',
-      'We have arrived.',
-      'Thank you.',
-      'Safe journey.'
-    ]
+    pickup:['Enter, my friend!','God bless you!','Wazobia!','Let’s go!','One more!','Kano style!','Sharp sharp!'],
+    passenger:['Enter, my friend!','Oya enter!','Make we move!'],
+    drop:['Thank you!','Safe journey!','Come again!','Next passenger!','Allah ya sakawa!','Oya next!'],
+    dropoff:['Thank you!','Safe journey!','Oya next!'],
+    nearMiss:['Almost!','Close one!','Watch it!','Haba!','Too close!'],
+    combo:['We are on fire!','Keep it coming!','Kano no dey carry last!','Unstoppable!'],
+    crash:['Astaghfirullah!','Not again!','Why me?!','Traffic in this place!'],
+    horn:['Make way!','Oga move!','Kai!'],
+    karota:['Ah KAROTA again!','Easy, easy!']
   },
 
-  WEATHER: [
-    {
-      id: 'clear',
-      name: 'Clear',
-      visibility: 1
-    },
-    {
-      id: 'harmattan',
-      name: 'Harmattan',
-      visibility: 0.72
-    },
-    {
-      id: 'dust',
-      name: 'Dusty',
-      visibility: 0.6
-    },
-    {
-      id: 'rain',
-      name: 'Rain',
-      visibility: 0.65
-    },
-    {
-      id: 'night',
-      name: 'Night',
-      visibility: 0.55
-    }
+  BILLBOARDS: [
+    {id:'bb1',brand:'Centre of Commerce',text:'Centre of Commerce 🇳🇬',color:'#eab308',active:true},
+    {id:'bb2',brand:'Arewa Fresh',text:'Arewa Fresh – Drink Local',color:'#22c55e',active:true},
+    {id:'bb3',brand:'Kano Solid Minerals',text:'Kano Solid Minerals',color:'#3b82f6',active:true},
+    {id:'bb4',brand:'Dala Cement',text:'Dala Cement – Build Strong',color:'#f97316',active:true},
+    {id:'bb5',brand:'Freedom Radio',text:'Freedom Radio 99.5 FM',color:'#a855f7',active:true}
   ],
 
-  DAY_LENGTH_MS: 120000,
-
-  SKY: {
-    DAY_TOP: '#55a8d9',
-    DAY_BOTTOM: '#d9edf4',
-    SUNSET_TOP: '#d8794e',
-    SUNSET_BOTTOM: '#f4c27b',
-    NIGHT_TOP: '#071426',
-    NIGHT_BOTTOM: '#263c58'
-  },
-
-  STORAGE_KEYS: {
-    BEST_SCORE: 'kano-run-best',
-    MONEY: 'kano-run-money',
-    CAPACITY: 'kano-run-capacity',
-    PAINT: 'kano-run-paint',
-    DRIVER: 'kano-run-driver',
-    ENGINE: 'kano-run-engine',
-    HORN: 'kano-run-horn',
-    HANDLING: 'kano-run-handling',
-    DAILY_MISSION: 'kano-run-daily-mission'
-  }
+  STREAK:{rewards:[0,200,400,700,1100,1600,2200]},
+  COMMERCE:{fuelCostPerKm:14,maintenanceCostPerCrash:120,bonusMultiplier:.08}
 };
-
-export default CONFIG;
