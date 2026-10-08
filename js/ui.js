@@ -149,28 +149,12 @@ export class UI {
       };
     }
 
-    /*
-     * MOBILE / ON-SCREEN DRIVING CONTROLS
-     *
-     * Important:
-     * Do NOT call game.changeLane().
-     *
-     * Game already exposes moveLeft() and moveRight().
-     * Game also owns the keyboard ArrowLeft/ArrowRight handling.
-     *
-     * Therefore:
-     * - buttons call moveLeft/moveRight directly
-     * - keyboard handling remains exclusively in game.js
-     * - no duplicate keyboard listener is installed here
-     */
+    // On-screen driving controls.
+    // game.js owns keyboard input; this binds only the buttons.
 
     const left = document.getElementById('left-btn');
     const right = document.getElementById('right-btn');
     const horn = document.getElementById('horn-btn');
-
-    const stopHold = (event) => {
-      if (event) event.preventDefault();
-    };
 
     const bindLaneButton = (element, movement) => {
       if (!element) return;
@@ -191,21 +175,16 @@ export class UI {
 
       const press = (event) => {
         if (event) event.preventDefault();
-
         if (active) return;
+
         active = true;
 
-        /*
-         * One movement immediately.
-         */
+        // Move immediately on button press.
         movement();
 
-        /*
-         * Holding the button continues steering at a controlled rate.
-         */
+        // Continue moving while the button is held.
         interval = window.setInterval(() => {
-          if (!active) return;
-          movement();
+          if (active) movement();
         }, 180);
       };
 
@@ -233,17 +212,11 @@ export class UI {
         passive: false
       });
 
-      /*
-       * Prevent the browser from interpreting the button as a
-       * text-selection / long-press interaction.
-       */
-      element.addEventListener('touchstart', stopHold, {
-        passive: false
-      });
-
-      element.addEventListener('dragstart', stopHold, {
-        passive: false
-      });
+      element.addEventListener(
+        'dragstart',
+        (event) => event.preventDefault(),
+        { passive: false }
+      );
     };
 
     bindLaneButton(left, () => {
@@ -268,21 +241,8 @@ export class UI {
       });
     }
 
-    /*
-     * DO NOT add ArrowLeft / ArrowRight keyboard listeners here.
-     *
-     * game.js already handles:
-     * ArrowLeft / A
-     * ArrowRight / D
-     * ArrowUp / W / Space
-     * ArrowDown / S
-     * P
-     * H
-     * R
-     *
-     * Having another keyboard listener here was causing duplicated
-     * movement and made debugging the controls harder.
-     */
+    // Do not add another keyboard listener here.
+    // game.js already handles steering and driving keys.
   }
 
   renderRoutes() {
@@ -332,7 +292,6 @@ export class UI {
       const selected = this.game.selectedDriver === d.id;
 
       const div = document.createElement('div');
-
       div.className = 'route-card';
 
       if (selected) {
@@ -351,7 +310,6 @@ export class UI {
         Storage.setDriver(d.id);
 
         this.renderDrivers();
-
         this.showMissionToast('Driver: ' + d.name);
       };
 
@@ -374,7 +332,6 @@ export class UI {
       const selected = this.game.selectedPaint === p.id;
 
       const div = document.createElement('div');
-
       div.className = 'route-card';
       div.style.padding = '10px';
 
@@ -382,8 +339,7 @@ export class UI {
         div.style.borderColor = '#f5c542';
       }
 
-      const hex =
-        '#' + p.color.toString(16).padStart(6, '0');
+      const hex = '#' + p.color.toString(16).padStart(6, '0');
 
       div.innerHTML = `
         <div
@@ -395,10 +351,7 @@ export class UI {
           "
         ></div>
 
-        <div
-          class="rname"
-          style="font-size:0.8rem"
-        >
+        <div class="rname" style="font-size:0.8rem">
           ${selected ? '✓ ' : ''}${p.name}
         </div>
       `;
@@ -412,7 +365,6 @@ export class UI {
         }
 
         this.renderPaints();
-
         this.showMissionToast('Paint: ' + p.name);
       };
 
@@ -468,6 +420,8 @@ export class UI {
 
   showStart() {
     this.game.state = STATE.START;
+    this.game.eventOpen = false;
+    this.game.paused = false;
 
     if (this.overScreen) {
       this.overScreen.style.display = 'none';
@@ -538,56 +492,47 @@ export class UI {
 
   updateHUD(game) {
     if (this.scoreEl) {
-      this.scoreEl.textContent =
-        Math.floor(game.score);
+      this.scoreEl.textContent = Math.floor(game.score);
     }
 
     if (this.distEl) {
-      this.distEl.textContent =
-        game.dist.toFixed(1);
+      this.distEl.textContent = game.dist.toFixed(1);
     }
 
     if (this.paxEl) {
-      this.paxEl.textContent =
-        game.paxOnBoard;
+      this.paxEl.textContent = game.paxOnBoard;
     }
 
     if (this.capEl) {
-      this.capEl.textContent =
-        game.capacity;
+      this.capEl.textContent = game.capacity;
     }
 
     if (this.livesEl) {
-      this.livesEl.textContent =
-        game.continuesLeft;
+      this.livesEl.textContent = game.continuesLeft;
     }
   }
 
   setMission(t) {
     if (this.missionLabel) {
-      this.missionLabel.textContent =
-        '🎯 ' + t;
+      this.missionLabel.textContent = '🎯 ' + t;
     }
   }
 
   setRouteLabel(t) {
     if (this.routeLabel) {
-      this.routeLabel.textContent =
-        t || '';
+      this.routeLabel.textContent = t || '';
     }
   }
 
   setRadio(t) {
     if (this.radioLabel) {
-      this.radioLabel.textContent =
-        '📻 ' + (t || '');
+      this.radioLabel.textContent = '📻 ' + (t || '');
     }
   }
 
   setDriverLabel(t) {
     if (this.driverLabel) {
-      this.driverLabel.textContent =
-        '👤 ' + (t || '');
+      this.driverLabel.textContent = '👤 ' + (t || '');
     }
   }
 
@@ -604,43 +549,100 @@ export class UI {
     }, 1600);
   }
 
-  showEvent(title, text, choices) {
-    if (!this.eventTitle ||
-        !this.eventText ||
-        !this.eventChoices ||
-        !this.eventBox) {
+  /*
+   * FIX:
+   * game.js passes an event object with title, text and actions.
+   * This method also supports the older three-argument format.
+   */
+  showEvent(eventOrTitle, text, choices) {
+    if (
+      !this.eventTitle ||
+      !this.eventText ||
+      !this.eventChoices ||
+      !this.eventBox
+    ) {
       return;
     }
 
-    this.eventTitle.textContent = title;
-    this.eventText.textContent = text;
-    this.eventChoices.innerHTML = '';
+    let title;
+    let body;
+    let options;
 
+    if (
+      eventOrTitle &&
+      typeof eventOrTitle === 'object' &&
+      !Array.isArray(eventOrTitle)
+    ) {
+      title = eventOrTitle.title || 'Kano Run';
+      body = eventOrTitle.text || '';
+
+      const actions = Array.isArray(eventOrTitle.actions)
+        ? eventOrTitle.actions
+        : Array.isArray(eventOrTitle.choices)
+          ? eventOrTitle.choices
+          : [];
+
+      options = actions.map((item) => ({
+        label: item.label || 'Continue',
+        action:
+          typeof item.onClick === 'function'
+            ? item.onClick
+            : typeof item.action === 'function'
+              ? item.action
+              : null
+      }));
+    } else {
+      title = eventOrTitle || 'Kano Run';
+      body = text || '';
+
+      options = Array.isArray(choices)
+        ? choices.map((item) => ({
+            label: item.label || 'Continue',
+            action:
+              typeof item.onClick === 'function'
+                ? item.onClick
+                : typeof item.action === 'function'
+                  ? item.action
+                  : null
+          }))
+        : [];
+    }
+
+    this.eventTitle.textContent = title;
+    this.eventText.textContent = body;
+    this.eventChoices.innerHTML = '';
     this.eventBox.style.display = 'block';
 
+    this.game.eventOpen = true;
+    this.game.eventType = this.game.eventType || 'generic';
+    this.game._resumeStateAfterEvent = STATE.PLAY;
     this.game.state = STATE.EVENT;
 
-    choices.forEach((c) => {
-      const btn = document.createElement('button');
+    options.forEach((option) => {
+      const button = document.createElement('button');
 
-      btn.type = 'button';
-      btn.textContent = c.label;
+      button.type = 'button';
+      button.textContent = option.label;
 
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
 
-        this.eventBox.style.display = 'none';
-
-        if (typeof c.action === 'function') {
+        if (typeof option.action === 'function') {
           try {
-            c.action();
-          } catch (err) {
-            console.error(err);
+            option.action();
+          } catch (error) {
+            console.error('Kano Run event action failed:', error);
           }
+        } else if (typeof this.game.closeEvent === 'function') {
+          this.game.closeEvent();
+        } else {
+          this.hideEvent();
+          this.game.eventOpen = false;
+          this.game.state = STATE.PLAY;
         }
       });
 
-      this.eventChoices.appendChild(btn);
+      this.eventChoices.appendChild(button);
     });
   }
 
@@ -649,17 +651,15 @@ export class UI {
     const qualityBtn = document.getElementById('quality-btn');
 
     if (muteBtn) {
-      muteBtn.textContent =
-        Storage.getMuted()
-          ? '🔇 Muted'
-          : '🔊 Sound';
+      muteBtn.textContent = Storage.getMuted()
+        ? '🔇 Muted'
+        : '🔊 Sound';
     }
 
     if (qualityBtn) {
-      qualityBtn.textContent =
-        Storage.getLowQuality()
-          ? '⚡ Performance'
-          : '✨ Quality';
+      qualityBtn.textContent = Storage.getLowQuality()
+        ? '⚡ Performance'
+        : '✨ Quality';
     }
   }
 
@@ -696,8 +696,7 @@ export class UI {
   }
 
   async shareRun(game) {
-    const route =
-      CONFIG.ROUTES[game.selectedRoute];
+    const route = CONFIG.ROUTES[game.selectedRoute];
 
     const driver =
       CONFIG.DRIVERS[game.selectedDriver] ||
@@ -723,10 +722,7 @@ export class UI {
 
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(text);
-        this.showMissionToast(
-          'Copied result to clipboard'
-        );
-
+        this.showMissionToast('Copied result to clipboard');
         return;
       }
 
@@ -735,18 +731,12 @@ export class UI {
       try {
         if (navigator.clipboard) {
           await navigator.clipboard.writeText(text);
-          this.showMissionToast(
-            'Copied to clipboard'
-          );
+          this.showMissionToast('Copied to clipboard');
         } else {
-          this.showMissionToast(
-            'Share cancelled'
-          );
+          this.showMissionToast('Share cancelled');
         }
       } catch {
-        this.showMissionToast(
-          'Share cancelled'
-        );
+        this.showMissionToast('Share cancelled');
       }
     }
   }
