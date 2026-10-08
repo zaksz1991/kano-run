@@ -87,9 +87,33 @@ export class Game {
     this.wheelRot = 0;
 
     this.capacity = Storage.getCapacity();
-    this.
+    this.speedBoost = Storage.getSpeedBoost();
+    this.hornPower = Storage.getHornPower();
+    this.currentPaint = Storage.getPaint();
+    this.driverStyle = Storage.getDriverStyle();
+    this.selectedDriver = Storage.getSelectedDriver();
+    this.selectedRoute = Storage.getSelectedRoute();
+    this.currentRadio = Storage.getRadioStation();
+    this.money = Storage.getMoney();
+    this.high = Storage.getHighScore();
+    this.eventCooldown = 0;
+    this.karotaCooldown = 0;
+    this.fareBonus = 0;
+    this.driverAbility = 'none';
+    this.obs = [];
+    this.paxZones = [];
+    this.dropZones = [];
+    this.coins = [];
+    this.particles = [];
+    this.dust = [];
+    this.weatherParticles = [];
+    this.weather = 'clear';
+    this.keys = {};
+    this.mission = null;
+  }
+
   driverSay(type) {
-    const lines = CONFIG.DRIVER_REACTIONS[type];
+    const lines = CONFIG.DRIVER_REACTIONS && CONFIG.DRIVER_REACTIONS[type];
     if (!lines || !lines.length) return;
     const line = lines[Math.floor(Math.random() * lines.length)];
     const driver = CONFIG.DRIVERS[this.selectedDriver];
@@ -104,7 +128,7 @@ export class Game {
 
   addCombo(amount = 1) {
     this.combo += amount;
-    this.comboTimer = 180; // frames before combo resets
+    this.comboTimer = 180;
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
     if (this.combo >= 5 && this.combo % 5 === 0) {
       this.ui.showMissionToast(`🔥 ${this.combo}x COMBO!`);
@@ -120,150 +144,6 @@ export class Game {
     if (this.combo >= 4) return 1.3;
     if (this.combo >= 2) return 1.15;
     return 1.0;
-  }
-
-  applyDriverBonuses();
-    this.speedBoost = Storage.getSpeedBoost();
-    this.hornPower = Storage.getHornPower();
-    this.currentPaint = Storage.getPaint();
-    this.driverStyle = Storage.getDriverStyle();
-    this.selectedDriver = Storage.getSelectedDriver();
-    this.selectedRoute = Storage.getSelectedRoute();
-    this.currentRadio = Storage.getRadioStation();
-    this.money = Storage.getMoney();
-    this.high = Storage.getHighScore();
-    this.eventCooldown = 0;
-    this.karotaCooldown = 0;
-    this.continuesLeft = 3;
-    this.combo = 0;
-    this.comboTimer = 0;
-    this.maxCombo = 0;
-    this.nearMissCooldown = 0;
-    this.shake = 0;
-    this.shakeMag = 0;
-    this.vipActive = false;
-    this.trafficJamTimer = 0;
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.vipActive = false;
-    this.trafficJamTimer = 0;
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.shake = 0;
-    this.shakeMag = 0;
-    this.vipActive = false;
-    this.trafficJamTimer = 0;
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.vipActive = false;
-    this.trafficJamTimer = 0;
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;   // Life Saver ×3
-    this.combo = 0;
-    this.comboTimer = 0;
-    this.maxCombo = 0;
-    this.nearMissCooldown = 0;
-    this.shake = 0;
-    this.shakeMag = 0;
-    this.vipActive = false;
-    this.trafficJamTimer = 0;
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.vipActive = false;
-    this.trafficJamTimer = 0;
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.shake = 0;
-    this.shakeMag = 0;
-    this.vipActive = false;
-    this.trafficJamTimer = 0;
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.vipActive = false;
-    this.trafficJamTimer = 0;
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.karotaCheckpoint = 0;
-    this.mudTimer = 0;
-    this.roadCondition = 'normal';
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-    this.lastmaTimer = 0;
-    this.lastmaActive = false;
-
-    this.radioOn = false;
-    this.weather = 'clear';
-    this.weatherTimer = 0;
-
-    this.obs = [];
-    this.paxZones = [];
-    this.dropZones = [];
-    this.coins = [];
-    this.particles = [];
-    this.dust = [];
-    this.weatherParticles = [];
-
-    this.landmarkT = 0;
-    this.activeMission = null;
-
-    this.lastTime = 0;
   }
 
   resize() {
@@ -998,11 +878,9 @@ export class Game {
 
   // ========== DAILY MISSIONS & STREAK ==========
   getToday() {
-    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    return new Date().toISOString().slice(0, 10);
   }
 
-  initDaily() {
-    const today = this.
   applyDriverBonuses() {
     const driver = CONFIG.DRIVERS[this.selectedDriver] || CONFIG.DRIVERS.musa;
     const bonus = driver.bonus || {};
@@ -1011,48 +889,31 @@ export class Game {
     this.hornPower = (Storage.getHornPower() || 0) + (bonus.horn || 0);
     this.fareBonus = bonus.fareBonus || 0;
     this.driverAbility = driver.ability || 'none';
-
-    // Ability: efficient - small starting score cushion
     if (this.driverAbility === 'efficient' && this.score < 50) {
       this.score += 80;
     }
   }
 
-  // Called during update for ongoing ability effects
   applyAbilityEffects() {
     const ability = this.driverAbility || 'none';
-
-    // Night Owl - extra speed at night
     if (ability === 'night_owl' && this.getTimeOfDay() > 0.55) {
       this.speed = Math.min(this.speed + 0.35, 14);
     }
-
-    // Dust Proof / Focused - better in bad weather
     if ((ability === 'dust_proof' || ability === 'focused') && (this.weather === 'dust' || this.weather === 'haze')) {
       this.speed = Math.min(this.speed + 0.28, 13.5);
     }
-
-    // Chaos Bonus
     if (ability === 'chaos_bonus' && ['sabongari', 'fajir', 'gwale'].includes(this.selectedRoute)) {
       if (this.frame % 40 === 0) this.score += 8;
     }
-
-    // Route Master
     if (ability === 'route_master' && ['zoo', 'panshekara', 'kumbotso'].includes(this.selectedRoute)) {
       if (this.frame % 50 === 0) this.score += 6;
     }
-
-    // Careful (Baba) - slightly slower but more stable, less random bounce
     if (ability === 'careful') {
       this.speed = Math.max(3.8, this.speed * 0.97);
     }
-
-    // Eager (Sadiya) - builds speed a bit faster
     if (ability === 'eager' && this.frame % 30 === 0) {
       this.speed = Math.min(this.speed + 0.08, 13.8);
     }
-
-    // Ruffneck — best of all worlds
     if (ability === 'ruffneck') {
       if (this.frame % 25 === 0) this.score += 12;
       this.speed = Math.min(this.speed + 0.05, 15.5);
@@ -1060,7 +921,8 @@ export class Game {
     }
   }
 
-  getToday();
+  initDaily() {
+    const today = this.getToday();
     const storedDate = Storage.getDailyDate();
 
     if (storedDate !== today) {

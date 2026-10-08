@@ -118,7 +118,7 @@ export const CONFIG = {
     kabiru: {
       id: 'kabiru',
       name: 'Kabiru',
-      title: 'The People's Driver',
+      title: "The People's Driver",
       desc: 'Everyone wants to ride with him. +1 capacity.',
       color: '#84cc16',
       bonus: { capacity: 1, speed: 0, horn: 0 },
