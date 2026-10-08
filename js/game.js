@@ -460,6 +460,17 @@ export class Game {
     this._audio(['steer', 'playSteer']);
   }
 
+  /**
+   * Compatibility lane-control API used by the 3D renderer/control layer.
+   * direction < 0 moves left; direction > 0 moves right.
+   */
+  changeLane(direction = 0) {
+    const value = Number(direction);
+    if (!Number.isFinite(value) || value === 0) return;
+    if (value < 0) this.moveLeft();
+    else this.moveRight();
+  }
+
   left() { this.moveLeft(); }
   right() { this.moveRight(); }
 
@@ -686,8 +697,46 @@ export class Game {
     this._audio(['ensure', 'start']);
     this._activateRadio();
     this._ui('showPlaying');
-    this._ui('showToast', 'Driver walking to the keke…');
+    this._ui('showEvent', {
+      title: 'Kano Run',
+      text: `RuffNeck Adaidaita Sahu — ${this.selectedRoute?.name || 'Kano Route'}\n\nYour driver walks to the keke, boards and starts the engine.`,
+      actions: [
+        {
+          label: 'START ROUTE',
+          onClick: () => {
+            this.closeEvent();
+          }
+        }
+      ]
+    });
     this._ui('updateHUD', this._hudPayload());
+  }
+
+  resize() {
+    const canvas = this.canvas;
+    if (!canvas) return;
+
+    const host = canvas.parentElement;
+    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
+    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const targetWidth = Math.max(Math.round(width * dpr), 1);
+    const targetHeight = Math.max(Math.round(height * dpr), 1);
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    if (this.ctx) {
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    this.renderer3d?.resize?.();
   }
 
   retry() {
@@ -826,33 +875,6 @@ export class Game {
 
     this.renderer3d?.draw?.(this);
     this._updateHUDEveryFrame();
-  }
-
-  resize() {
-    const canvas = this.canvas;
-    if (!canvas) return;
-
-    const host = canvas.parentElement;
-    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
-    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const targetWidth = Math.max(Math.round(width * dpr), 1);
-    const targetHeight = Math.max(Math.round(height * dpr), 1);
-
-    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-    }
-
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    if (this.ctx) {
-      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-
-    this.renderer3d?.resize?.();
   }
 
   draw() {
