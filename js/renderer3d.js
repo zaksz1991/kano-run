@@ -150,14 +150,25 @@ function createCanvasTexture(drawer, w = 256, h = 128) {
 
 export class Renderer3D {
   constructor(canvas, game = null) {
-    // Accept either an HTMLCanvasElement or a 2D rendering context.
-    // Three.js needs the actual DOM canvas because WebGLRenderer attaches
-    // pointer/context listeners to it.
-    this.canvas = canvas?.canvas || canvas;
-    if (!this.canvas || typeof this.canvas.addEventListener !== 'function') {
+    // The game canvas is already owned by Game and receives a 2D context.
+    // Three.js/WebGL must NEVER be initialized on that same canvas.
+    // Accept the historical constructor forms (canvas, context, or Game) but
+    // always create a dedicated WebGL canvas for the 3D renderer.
+    if (canvas && canvas.canvas && typeof canvas.getContext !== 'function' && !game) {
+      game = canvas;
+      canvas = canvas.canvas;
+    }
+
+    this.game = game || null;
+    this.gameCanvas = canvas?.canvas || canvas;
+
+    if (!this.gameCanvas || typeof this.gameCanvas.addEventListener !== 'function') {
       throw new TypeError('Renderer3D requires an HTMLCanvasElement or a canvas rendering context.');
     }
-    this.game = game;
+
+    this.canvas = null;
+    this.webglHost = null;
+    this.ownsCanvas = false;
 
     this.ctx = null;
     this.renderer = null;
@@ -230,6 +241,11 @@ export class Renderer3D {
   init() {
     const pixelRatio = this.quality === 'high' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
 
+    this.createWebGLCanvas();
+
+    const width = this.webglHost?.clientWidth || this.gameCanvas.clientWidth || window.innerWidth;
+    const height = this.webglHost?.clientHeight || this.gameCanvas.clientHeight || window.innerHeight;
+
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: true,
@@ -237,7 +253,7 @@ export class Renderer3D {
       powerPreference: 'high-performance',
     });
     this.renderer.setPixelRatio(pixelRatio);
-    this.renderer.setSize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight, false);
+    this.renderer.setSize(width, height, false);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -248,7 +264,7 @@ export class Renderer3D {
     this.scene.background = new THREE.Color(DAY.sky);
     this.scene.fog = new THREE.Fog(DAY.fog, 42, 175);
 
-    const aspect = Math.max((this.canvas.clientWidth || window.innerWidth) / Math.max(this.canvas.clientHeight || window.innerHeight, 1), 0.5);
+    const aspect = Math.max(width / Math.max(height, 1), 0.5);
     this.camera = new THREE.PerspectiveCamera(58, aspect, 0.1, 260);
     this.camera.position.set(0, 4.2, 13.5);
 
@@ -328,10 +344,53 @@ export class Renderer3D {
     }
   }
 
+  createWebGLCanvas() {
+    const host = this.gameCanvas.parentElement || document.body;
+    this.webglHost = host;
+
+    if (host && getComputedStyle(host).position === 'static') {
+      host.style.position = 'relative';
+    }
+
+    const existing = host?.querySelector?.('canvas[data-kano-run-webgl="true"]');
+    if (existing && existing !== this.gameCanvas) {
+      existing.remove();
+    }
+
+    const glCanvas = document.createElement('canvas');
+    glCanvas.dataset.kanoRunWebgl = 'true';
+    glCanvas.setAttribute('aria-hidden', 'true');
+    glCanvas.style.position = 'absolute';
+    glCanvas.style.inset = '0';
+    glCanvas.style.width = '100%';
+    glCanvas.style.height = '100%';
+    glCanvas.style.display = 'block';
+    glCanvas.style.zIndex = '0';
+    glCanvas.style.pointerEvents = 'none';
+    glCanvas.style.touchAction = 'none';
+
+    // Keep the original 2D canvas intact underneath. Game/HUD/fallback code
+    // continues to use gameCanvas and never touches this WebGL canvas.
+    if (this.gameCanvas.nextSibling) {
+      host.insertBefore(glCanvas, this.gameCanvas.nextSibling);
+    } else {
+      host.appendChild(glCanvas);
+    }
+
+    this.canvas = glCanvas;
+    this.ownsCanvas = true;
+
+    // Keep the existing HUD and touch controls above the 3D layer.
+    for (const id of ['ui-overlay', 'controls']) {
+      const element = document.getElementById(id);
+      if (element) element.style.zIndex = '10';
+    }
+  }
+
   resize() {
     if (!this.renderer || !this.camera) return;
-    const width = Math.max(this.canvas.clientWidth || window.innerWidth, 1);
-    const height = Math.max(this.canvas.clientHeight || window.innerHeight, 1);
+    const width = Math.max(this.webglHost?.clientWidth || this.gameCanvas.clientWidth || window.innerWidth, 1);
+    const height = Math.max(this.webglHost?.clientHeight || this.gameCanvas.clientHeight || window.innerHeight, 1);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
@@ -1842,6 +1901,12 @@ export class Renderer3D {
     this.trafficWorld?.dispose?.();
     this.trafficWorld = null;
     this.renderer?.dispose?.();
+    if (this.ownsCanvas && this.canvas?.dataset?.kanoRunWebgl === 'true') {
+      this.canvas.remove();
+    }
+    this.canvas = null;
+    this.webglHost = null;
+    this.ownsCanvas = false;
     this.ready = false;
   }
 }
