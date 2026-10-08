@@ -701,6 +701,33 @@ export class Game {
     this._ui('updateHUD', this._hudPayload());
   }
 
+  resize() {
+    const canvas = this.canvas;
+    if (!canvas) return;
+
+    const host = canvas.parentElement;
+    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
+    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const targetWidth = Math.max(Math.round(width * dpr), 1);
+    const targetHeight = Math.max(Math.round(height * dpr), 1);
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    if (this.ctx) {
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    this.renderer3d?.resize?.();
+  }
+
   retry() {
     this.start();
   }
@@ -994,9 +1021,7 @@ export class Game {
       y: -380 - Math.random() * 180,
       type: Math.random() < 0.52 ? 'karota' : 'police',
       active: true,
-      handled: false,
-      prompted: false,
-      missed: false
+      handled: false
     });
   }
 
@@ -1043,45 +1068,9 @@ export class Game {
   }
 
   updateCheckpoints() {
-    for (const cp of this.checkpoints) {
-      cp.y += this.speed;
-
-      if (cp.handled || cp.missed || this.eventOpen) continue;
-
-      const dy = Math.abs(cp.y - PLAYER_Y);
-
-      // A checkpoint spans the road. The player must reduce speed before reaching it.
-      if (dy <= 96 && !cp.prompted) {
-        cp.prompted = true;
-        this._ui('showToast', cp.type === 'karota'
-          ? 'KAROTA ahead — slow down and stop for inspection.'
-          : 'Police checkpoint ahead — slow down and stop.');
-        this._audio(cp.type === 'karota'
-          ? ['karota', 'checkpoint']
-          : ['police', 'checkpoint']);
-      }
-
-      if (dy <= 58) {
-        if (this.speed <= 1.25) {
-          cp.handled = true;
-          this.speed = Math.min(this.speed, 0.55);
-          this.triggerCheckpointInteraction({ type: cp.type, source: cp });
-          continue;
-        }
-
-        if (this.speed > 1.25 && cp.y >= PLAYER_Y - 12) {
-          cp.missed = true;
-          this.karotaHeat += cp.type === 'karota' ? 2 : 1;
-          this.karotaWanted = true;
-          this.policeChase = 420 + this.level * 30;
-          this._audio(['siren', 'checkpoint']);
-          this._ui('showToast', 'Checkpoint missed — KAROTA/police pursuit started.');
-        }
-      }
-    }
-
+    for (const cp of this.checkpoints) cp.y += this.speed;
     this.checkpoints = this.checkpoints.filter(
-      (cp) => cp.y < 700 && !cp.handled && !cp.missed
+      (cp) => cp.y < 700 && !cp.handled
     );
   }
 
@@ -1415,8 +1404,6 @@ export class Game {
     this.checkpointCooldown = 240;
     this.eventType = type;
     this.eventContext = { source };
-    if (source?.id?.startsWith?.('karota-')) source.handled = true;
-    this.speed = Math.min(this.speed, 0.55);
 
     this.showEvent({
       type: 'karota',
