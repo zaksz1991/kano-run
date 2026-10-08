@@ -1,42 +1,28 @@
-// Kano Run - Entry Point
 import { Game } from './game.js';
-import { Renderer } from './renderer.js';
+import { Renderer3D } from './renderer3d.js';
 import { UI } from './ui.js';
-import { Assets } from './assets.js';
 
 const canvas = document.getElementById('c');
-
-// Preload asset pack (canvas fallback if missing)
-Assets.load().then(() => {
-  console.log('Assets ready', Assets.loaded, 'loaded,', Assets.failed, 'failed');
-});
 const game = new Game(canvas);
 const ui = new UI(game);
-const renderer = new Renderer(game);
-
-// Link UI back to game (already done in constructor, but ensure)
 game.ui = ui;
 
-// Resize handling
-function onResize() {
-  game.resize();
-}
+const renderer = new Renderer3D(game);
+game.renderer3d = renderer;
+
+function onResize() { game.resize(); }
 window.addEventListener('resize', onResize);
 onResize();
 
-// Main loop
 let last = 0;
-function loop(timestamp) {
-  const dt = Math.min(32, timestamp - last);
-  last = timestamp;
-
+function loop(ts) {
+  const dt = Math.min(32, ts - last);
+  last = ts;
   game.update(dt);
   renderer.draw();
-
   requestAnimationFrame(loop);
 }
-
 requestAnimationFrame(loop);
 
-// Expose for debugging if needed
-window.KanoRun = { game, ui, renderer };
+window.KanoRun = { game, ui, renderer, mode: '3d' };
+console.log('Kano Run 3D (Three.js / WebGL) active');

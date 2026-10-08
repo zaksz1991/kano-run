@@ -1,15 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="description" content="Kano Run - Drive an Adaidaita Sahu through the streets of Kano State, Nigeria. Pick up passengers, negotiate fares, dodge KAROTA and survive the city.">
-  <meta name="theme-color" content="#0a0f1c">
-  <title>Kano Run — Adaidaita Sahu</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0f1c" />
+  <title>Kano Run — 3D Adaidaita Sahu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
   <div id="game-container">
@@ -20,49 +18,34 @@
         <div class="stat money">₦ <span id="score">0</span></div>
         <div class="stat dist"><span id="dist">0.0</span> km</div>
         <div class="stat pax">👥 <span id="pax">0</span>/<span id="capacity">3</span></div>
-        <div class="stat" style="color:#f87171;">❤️ <span id="lives">3</span></div>
+        <div class="stat" style="color:#f87171">❤️ <span id="lives">3</span></div>
       </div>
       <div class="mission-bar" id="mission-label">🎯 Ready</div>
-      <div id="radio-bar">📻 Freedom Radio 99.5 FM</div>
-      <div id="weather-label">☀️ Clear</div>
-      <div id="lastma-warning" style="position:absolute;top:120px;left:50%;transform:translateX(-50%);background:rgba(220,38,38,0.9);color:white;padding:6px 16px;border-radius:20px;font-size:0.85rem;font-weight:700;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:20;">🚨 LASTMA — SLOW DOWN!</div>
-      <div id="combo-display" style="position:absolute;top:90px;left:50%;transform:translateX(-50%);font-size:1.1rem;font-weight:800;color:#fbbf24;opacity:0;transition:opacity 0.2s;pointer-events:none;text-shadow:0 2px 8px rgba(0,0,0,0.6);"></div>
-      <div id="route-label" style="position:absolute;top:55px;left:12px;background:rgba(10,15,28,0.75);color:#fbbf24;padding:3px 9px;border-radius:10px;font-size:0.7rem;opacity:0.9;pointer-events:none;"></div>
-      <div class="landmark" id="landmark"></div>
+      <div id="route-label"></div>
+      <div id="combo-display"></div>
       <div id="mission-toast"></div>
-
-      <!-- Dialogue / Event box -->
-      <div id="event-box" style="display:none;position:absolute;bottom:160px;left:50%;transform:translateX(-50%);width:90%;max-width:340px;background:rgba(10,15,28,0.95);border:2px solid #eab308;border-radius:16px;padding:14px;z-index:25;pointer-events:auto;">
-        <div id="event-title" style="font-weight:800;color:#fbbf24;margin-bottom:8px;font-size:0.95rem;"></div>
-        <div id="event-text" style="color:#e2e8f0;font-size:0.88rem;line-height:1.4;margin-bottom:12px;"></div>
-        <div id="event-choices" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+      <div id="event-box">
+        <div id="event-title"></div>
+        <div id="event-text"></div>
+        <div id="event-choices"></div>
       </div>
     </div>
 
     <div id="controls">
-      <button class="ctrl-btn" id="left-btn">←</button>
-      <div style="display:flex;gap:10px;align-items:center;">
-        <button class="ctrl-btn radio" id="radio-btn">📻</button>
-        <button class="ctrl-btn horn" id="horn-btn">HORN</button>
-      </div>
-      <button class="ctrl-btn" id="right-btn">→</button>
+      <button class="ctrl-btn" id="left-btn" type="button">←</button>
+      <button class="ctrl-btn horn" id="horn-btn" type="button">HORN</button>
+      <button class="ctrl-btn" id="right-btn" type="button">→</button>
     </div>
 
-    <!-- Start Screen -->
     <div class="screen" id="start-screen">
       <h1>KANO RUN</h1>
-      <div class="sub">Adaidaita Sahu · Drive Kano</div>
-      <button class="btn" id="start-btn">START DRIVING</button>
-      <button class="btn secondary" id="route-btn">SELECT ROUTE</button>
-      <button class="btn secondary" id="garage-btn">GARAGE & DRESSING</button>
-      <div class="high">High Score: ₦ <span id="hs">0</span> • Garage ₦ <span id="g-money">0</span></div>
-      <div id="daily-mission" style="margin-top:12px;font-size:0.85rem;color:#94a3b8;max-width:320px;"></div>
-      <button class="btn secondary" id="claim-daily" style="display:none;margin-top:8px;padding:8px 18px;font-size:0.9rem;">CLAIM DAILY REWARD</button>
+      <div class="sub">3D Adaidaita · Kano State</div>
+      <button class="btn" id="start-btn" type="button">START DRIVING</button>
+      <button class="btn secondary" id="route-btn" type="button">SELECT ROUTE</button>
+      <div class="high">High Score: ₦ <span id="hs">0</span></div>
       <div class="instructions">
-        Green PICK zones load passengers<br>
-        Yellow DROP zones pay full fare<br>
-        Negotiate with passengers • Watch for KAROTA<br>
-        Multiple Kano radio stations available
+        Pick up passengers · Drop for fare<br />
+        Dodge traffic · 3 free Life Savers
       </div>
       <div id="sponsor-strip">
         <div>Sponsored</div>
@@ -71,58 +54,24 @@
       </div>
     </div>
 
-    <!-- Route Select -->
-    <div class="screen" id="route-screen" style="display:none;">
-      <h1 style="font-size:1.7rem;">SELECT ROUTE</h1>
-      <div class="sub">Choose your corridor in Kano</div>
-      <div id="route-list" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:8px;margin:12px 0;"></div>
-      <button class="btn" id="route-back">BACK</button>
+    <div class="screen" id="route-screen" style="display:none">
+      <h2 style="color:#f5c542;margin-bottom:12px">Select Route</h2>
+      <div id="route-list" class="route-panel"></div>
+      <button class="btn secondary" id="route-back" type="button">Back</button>
     </div>
 
-    <!-- Garage -->
-    <div class="screen" id="garage-screen" style="display:none;">
-      <h1 style="font-size:1.7rem;">GARAGE & DRESSING</h1>
-      <div class="sub" id="garage-money">₦0 available</div>
-      <div class="garage-section">
-        <h3>Keke Paint</h3>
-        <div class="garage-grid" id="paint-grid"></div>
-      </div>
-      <div class="garage-section">
-        <h3>Select Driver</h3>
-        <div class="garage-grid" id="driver-char-grid"></div>
-      </div>
-      <div class="garage-section">
-        <h3>Driver Dressing</h3>
-        <div class="garage-grid" id="driver-grid"></div>
-      </div>
-      <div class="garage-section">
-        <h3>Upgrades</h3>
-        <div class="garage-grid" id="upgrade-grid"></div>
-      </div>
-      <div class="garage-section">
-        <h3>Radio Station</h3>
-        <div id="radio-list" style="display:flex;flex-direction:column;gap:6px;"></div>
-      </div>
-      <button class="btn" id="garage-back">BACK</button>
-    </div>
-
-    <!-- Game Over -->
-    <div class="screen" id="over-screen" style="display:none;">
-      <h1 style="font-size:1.85rem;">CRASHED!</h1>
-      <div class="sub" id="final-stats"></div>
-      <button class="btn" id="retry-btn">DRIVE AGAIN</button>
-      <button class="btn secondary" id="share-btn">SHARE MY RUN</button>
-      <button class="btn secondary" id="over-garage">GARAGE</button>
+    <div class="screen" id="over-screen" style="display:none">
+      <h2>Run Over</h2>
+      <div id="final-stats"></div>
       <div class="high">High Score: ₦ <span id="final-hs">0</span></div>
-      <div id="sponsor-over" style="margin-top:14px;width:100%;max-width:300px;display:flex;flex-direction:column;gap:6px;">
-        <a href="https://ruffneck-entertainment.vercel.app" target="_blank" rel="noopener"
-           style="display:block;background:#e11d48;color:#fff;text-decoration:none;padding:8px 12px;border-radius:10px;font-size:0.8rem;font-weight:700;">🎬 Ruffneck Entertainment</a>
-        <a href="https://ruffneck-lms.vercel.app" target="_blank" rel="noopener"
-           style="display:block;background:#2563eb;color:#fff;text-decoration:none;padding:8px 12px;border-radius:10px;font-size:0.8rem;font-weight:700;">📚 Ruffneck LMS</a>
+      <button class="btn" id="retry-btn" type="button">DRIVE AGAIN</button>
+      <button class="btn secondary" id="home-btn" type="button">HOME</button>
+      <div id="sponsor-over">
+        <a href="https://ruffneck-entertainment.vercel.app" target="_blank" rel="noopener">🎬 Ruffneck Entertainment</a>
+        <a href="https://ruffneck-lms.vercel.app" target="_blank" rel="noopener">📚 Ruffneck LMS</a>
       </div>
     </div>
   </div>
-
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>
