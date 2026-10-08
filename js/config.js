@@ -1,12 +1,22 @@
 // Kano Run - Game Configuration
 
+export const STATE = {
+  MENU: 'menu',
+  PLAYING: 'playing',
+  PAUSED: 'paused',
+  GAME_OVER: 'gameover',
+  ROUTES: 'routes',
+  GARAGE: 'garage',
+  DRESSING: 'dressing',
+  RADIO: 'radio'
+};
+
 export const CONFIG = {
   GAME_NAME: 'Kano Run',
   GAME_SUBTITLE: 'Adaidaita Sahu',
 
   VERSION: '1.0.0',
 
-  // Core gameplay
   STARTING_LIVES: 3,
   STARTING_CAPACITY: 3,
 
@@ -14,56 +24,47 @@ export const CONFIG = {
   START_SPEED: 8,
 
   BASE_FARE: 50,
-
   COMBO_MAX: 5,
 
-  // Kano routes
   ROUTES: [
     {
       id: 'kano-city',
       name: 'Kano City',
-      description:
-        'Busy city streets, markets and dense traffic.',
+      description: 'Busy city streets, markets and dense traffic.',
       difficulty: 1
     },
     {
       id: 'sabongari',
       name: 'Sabon Gari',
-      description:
-        'Commercial streets with heavy traffic and pedestrians.',
+      description: 'Commercial streets with heavy traffic and pedestrians.',
       difficulty: 2
     },
     {
       id: 'fagge',
       name: 'Fagge',
-      description:
-        'Fast-moving urban traffic and busy roadside activity.',
+      description: 'Fast-moving urban traffic and busy roadside activity.',
       difficulty: 2
     },
     {
       id: 'dala',
       name: 'Dala',
-      description:
-        'Historic Kano streets with tight roads and obstacles.',
+      description: 'Historic Kano streets with tight roads and obstacles.',
       difficulty: 3
     },
     {
       id: 'tarauni',
       name: 'Tarauni',
-      description:
-        'Longer roads with increasing traffic density.',
+      description: 'Longer roads with increasing traffic density.',
       difficulty: 3
     },
     {
       id: 'ungogo',
       name: 'Ungogo',
-      description:
-        'Outer-city roads with mixed traffic and open stretches.',
+      description: 'Outer-city roads with mixed traffic and open stretches.',
       difficulty: 3
     }
   ],
 
-  // Kano districts used by the game world
   DISTRICTS: [
     'Kano City',
     'Sabon Gari',
@@ -76,7 +77,6 @@ export const CONFIG = {
     'Ungogo'
   ],
 
-  // Player paint jobs
   PAINTS: [
     {
       id: 'yellow',
@@ -116,14 +116,12 @@ export const CONFIG = {
     }
   ],
 
-  // Drivers
   DRIVERS: [
     {
       id: 'hassan',
       name: 'Hassan',
       title: 'City Runner',
-      desc:
-        'Balanced driver for everyday Kano traffic.',
+      desc: 'Balanced driver for everyday Kano traffic.',
       color: '#f59e0b',
       capacity: 3
     },
@@ -131,8 +129,7 @@ export const CONFIG = {
       id: 'kabiru',
       name: 'Kabiru',
       title: "The People's Driver",
-      desc:
-        'Everyone wants to ride with him. +1 capacity.',
+      desc: 'Everyone wants to ride with him. +1 capacity.',
       color: '#84cc16',
       capacity: 4
     },
@@ -140,8 +137,7 @@ export const CONFIG = {
       id: 'sani',
       name: 'Sani',
       title: 'Road Master',
-      desc:
-        'Experienced on difficult roads. Better handling.',
+      desc: 'Experienced on difficult roads. Better handling.',
       color: '#3b82f6',
       capacity: 3
     },
@@ -149,20 +145,17 @@ export const CONFIG = {
       id: 'mustapha',
       name: 'Mustapha',
       title: 'Speed Runner',
-      desc:
-        'Fast and aggressive. Higher top speed.',
+      desc: 'Fast and aggressive. Higher top speed.',
       color: '#ef4444',
       capacity: 3
     }
   ],
 
-  // Vehicle upgrades
   UPGRADES: {
     engine: {
       id: 'engine',
       name: 'Engine',
-      description:
-        'Increase acceleration and top speed.',
+      description: 'Increase acceleration and top speed.',
       levels: [
         {
           level: 1,
@@ -190,8 +183,7 @@ export const CONFIG = {
     capacity: {
       id: 'capacity',
       name: 'Passenger Capacity',
-      description:
-        'Carry more passengers and earn larger fares.',
+      description: 'Carry more passengers and earn larger fares.',
       levels: [
         {
           level: 1,
@@ -219,8 +211,7 @@ export const CONFIG = {
     horn: {
       id: 'horn',
       name: 'Horn',
-      description:
-        'Upgrade your horn for stronger traffic response.',
+      description: 'Upgrade your horn for stronger traffic response.',
       levels: [
         {
           level: 1,
@@ -243,8 +234,7 @@ export const CONFIG = {
     handling: {
       id: 'handling',
       name: 'Handling',
-      description:
-        'Improve steering response and lane control.',
+      description: 'Improve steering response and lane control.',
       levels: [
         {
           level: 1,
@@ -270,7 +260,6 @@ export const CONFIG = {
     }
   },
 
-  // Traffic
   TRAFFIC_TYPES: [
     {
       type: 'car',
@@ -305,7 +294,6 @@ export const CONFIG = {
     '#64748b'
   ],
 
-  // Road hazards
   OBSTACLES: [
     {
       type: 'karota',
@@ -329,7 +317,6 @@ export const CONFIG = {
     }
   ],
 
-  // Passenger system
   PASSENGER_TYPES: [
     {
       id: 'worker',
@@ -358,53 +345,46 @@ export const CONFIG = {
     }
   ],
 
-  // Missions
   MISSIONS: [
     {
       id: 'first-fare',
       title: 'First Fare',
-      description:
-        'Pick up and successfully deliver your first passenger.',
+      description: 'Pick up and successfully deliver your first passenger.',
       target: 1,
       reward: 100
     },
     {
       id: 'five-passengers',
       title: 'Busy Driver',
-      description:
-        'Deliver five passengers.',
+      description: 'Deliver five passengers.',
       target: 5,
       reward: 300
     },
     {
       id: 'distance-1000',
       title: 'Kano Cruiser',
-      description:
-        'Drive 1,000 metres.',
+      description: 'Drive 1,000 metres.',
       target: 1000,
       reward: 500
     },
     {
       id: 'distance-5000',
       title: 'Long Haul',
-      description:
-        'Drive 5,000 metres.',
+      description: 'Drive 5,000 metres.',
       target: 5000,
       reward: 1500
     },
     {
       id: 'near-misses',
       title: 'Traffic Master',
-      description:
-        'Perform ten near misses without crashing.',
+      description: 'Perform ten near misses without crashing.',
       target: 10,
       reward: 750
     },
     {
       id: 'coins',
       title: 'Street Collector',
-      description:
-        'Collect twenty road coins.',
+      description: 'Collect twenty road coins.',
       target: 20,
       reward: 500
     }
@@ -414,30 +394,26 @@ export const CONFIG = {
     {
       id: 'daily-distance',
       title: 'Daily Kano Drive',
-      description:
-        'Drive 2,000 metres today.',
+      description: 'Drive 2,000 metres today.',
       target: 2000,
       reward: 750
     },
     {
       id: 'daily-fares',
       title: 'Daily Passenger Run',
-      description:
-        'Complete ten passenger trips.',
+      description: 'Complete ten passenger trips.',
       target: 10,
       reward: 1000
     },
     {
       id: 'daily-coins',
       title: 'Daily Collector',
-      description:
-        'Collect fifteen coins.',
+      description: 'Collect fifteen coins.',
       target: 15,
       reward: 500
     }
   ],
 
-  // Radio stations
   RADIO_STATIONS: [
     'Kano Run Radio',
     'Arewa FM',
@@ -447,7 +423,6 @@ export const CONFIG = {
     'Kano Street Mix'
   ],
 
-  // Billboard content
   BILLBOARDS: [
     {
       text: 'KANO RUN',
@@ -475,7 +450,6 @@ export const CONFIG = {
     }
   ],
 
-  // Driver reactions
   DRIVER_REACTIONS: {
     start: [
       'Bismillah. Kano Run!',
@@ -521,7 +495,6 @@ export const CONFIG = {
     ]
   },
 
-  // Weather
   WEATHER: [
     {
       id: 'clear',
@@ -550,22 +523,17 @@ export const CONFIG = {
     }
   ],
 
-  // Day/night cycle
   DAY_LENGTH_MS: 120000,
 
-  // Visual environment
   SKY: {
     DAY_TOP: '#55a8d9',
     DAY_BOTTOM: '#d9edf4',
-
     SUNSET_TOP: '#d8794e',
     SUNSET_BOTTOM: '#f4c27b',
-
     NIGHT_TOP: '#071426',
     NIGHT_BOTTOM: '#263c58'
   },
 
-  // Persistent storage keys
   STORAGE_KEYS: {
     BEST_SCORE: 'kano-run-best',
     MONEY: 'kano-run-money',
