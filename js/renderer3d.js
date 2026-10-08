@@ -1,4 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
+import { TrafficWorld } from './trafficWorld.js';
 
 // Kano Run — Adaidaita Sahu
 // Renderer Upgrade — detailed procedural 3D world
@@ -188,6 +189,7 @@ export class Renderer3D {
     this.effectsGroup = null;
     this.weatherGroup = null;
     this.openingGroup = null;
+    this.trafficWorld = null;
 
     this.roadOffset = 0;
     this.targetCameraX = 0;
@@ -270,6 +272,9 @@ export class Renderer3D {
     this.buildZonePool();
     this.buildCoinPool();
     this.buildPedestrians();
+    // Ambient traffic and walking roadside life are visual-only and do not replace
+    // game.js collision, passenger, mission, or scoring logic.
+    this.trafficWorld = new TrafficWorld(THREE, this, { quality: this.quality });
     this.buildEffects();
     this.buildWeather();
 
@@ -1159,15 +1164,7 @@ export class Renderer3D {
   }
 
   applyPaint(paint) {
-    let value = typeof paint === 'number' ? paint : null;
-    if (paint && typeof paint === 'object') {
-      const candidate = paint.color ?? paint.hex ?? paint.value;
-      if (typeof candidate === 'number') value = candidate;
-      else if (typeof candidate === 'string') {
-        const parsedObject = Number.parseInt(candidate.replace('#', ''), 16);
-        if (Number.isFinite(parsedObject)) value = parsedObject;
-      }
-    }
+    const value = typeof paint === 'number' ? paint : null;
     if (value != null) this.paint = value;
     else if (typeof paint === 'string') {
       const parsed = Number.parseInt(paint.replace('#', ''), 16);
@@ -1185,39 +1182,6 @@ export class Renderer3D {
 
   setPaint(paint) {
     this.applyPaint(paint);
-  }
-
-  setKeke(kekeId = 'standard', kekeData = null) {
-    this.kekeId = kekeId || 'standard';
-    const color = typeof kekeData?.color === 'number' ? kekeData.color : this.paint;
-    const old = this.player;
-    const position = old?.position?.clone?.() || new THREE.Vector3(0, 0.13, PLAYER_Z);
-    const rotation = old?.rotation?.clone?.() || new THREE.Euler(0, Math.PI, 0);
-    if (old) this.world.remove(old);
-
-    const next = this.makeKeke(color, { usePlayerTexture: true, driverColor: 0x2f5870 });
-    next.position.copy(position);
-    next.rotation.copy(rotation);
-    next.userData.baseScale = next.scale.clone();
-    this.player = next;
-    this.playerWheels = next.userData.wheels || [];
-    this.playerSteering = next.userData.steering || null;
-    this.world.add(next);
-
-    if (this.playerShadow) {
-      this.playerShadow.position.x = next.position.x;
-      this.playerShadow.position.z = next.position.z + 0.25;
-    }
-    return next;
-  }
-
-  setPaused(value) {
-    this.paused = Boolean(value);
-  }
-
-  setGame(game) {
-    this.game = game;
-    return this;
   }
 
   setDriver(driverId, options = {}) {
@@ -1541,10 +1505,9 @@ export class Renderer3D {
     }
   }
 
-  startOpeningSequence(driverId = 'ruffneck', paint = this.paint, kekeId = this.kekeId) {
+  startOpeningSequence(driverId = 'ruffneck', paint = this.paint) {
     this.driverId = driverId;
     this.applyPaint(paint);
-    if (kekeId) this.kekeId = kekeId;
     this.opening.active = true;
     this.opening.phase = 'walk';
     this.opening.timer = 0;
@@ -1573,19 +1536,9 @@ export class Renderer3D {
     this.camera.position.set(-4.8, 3.35, PLAYER_Z + 8.5);
   }
 
-  updateOpeningSequence(sequenceOrDt = 0.016) {
-    const external = sequenceOrDt && typeof sequenceOrDt === 'object';
-
-    if (external) {
-      this.opening.active = Boolean(sequenceOrDt.active);
-      this.opening.phase = sequenceOrDt.stage || this.opening.phase;
-      this.opening.timer = (Number(sequenceOrDt.timer) || 0) / 60;
-      this.opening.driverId = sequenceOrDt.driverId || this.opening.driverId;
-    } else if (this.opening.active) {
-      this.opening.timer += Number(sequenceOrDt) || 0.016;
-    }
-
+  updateOpeningSequence(dt) {
     if (!this.opening.active || !this.opening.driver) return true;
+    this.opening.timer += dt;
     const t = this.opening.timer;
     const driver = this.opening.driver;
 
@@ -1635,10 +1588,6 @@ export class Renderer3D {
 
     const g = this.game || {};
     const delta = clamp(dt ?? this.clock.getDelta(), 0.001, 0.05);
-    if (this.paused) {
-      this.renderer.render(this.scene, this.camera);
-      return;
-    }
     this.elapsed += delta;
 
     if (typeof g.getTimeOfDay === 'function') this.updateTimeLighting(g.getTimeOfDay());
@@ -1649,6 +1598,10 @@ export class Renderer3D {
     this.updateRoad(delta, g);
     this.updatePlayerAnimation(delta, g);
     this.updateTraffic(delta, g);
+    if (this.trafficWorld) {
+      const ambientSpeed = Number(g.speed) || Number(g.speedOff) || 1;
+      this.trafficWorld.update(delta, ambientSpeed, Number(g.roadOff) || Number(g.dist) || 0);
+    }
     this.updateZones(delta, g);
     this.updatePedestrians(delta);
     this.updateCoins(delta, g);
@@ -1657,10 +1610,7 @@ export class Renderer3D {
     this.updateImpact(delta);
     this.updateCamera(delta, g);
 
-    if (this.opening.active) {
-      if (this.game?.introSequence?.active) this.updateOpeningSequence(this.game.introSequence);
-      else this.updateOpeningSequence(delta);
-    }
+    if (this.opening.active) this.updateOpeningSequence(delta);
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -1680,6 +1630,8 @@ export class Renderer3D {
     } catch {
       // ignore
     }
+    this.trafficWorld?.dispose?.();
+    this.trafficWorld = null;
     this.renderer?.dispose?.();
     this.ready = false;
   }
