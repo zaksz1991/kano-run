@@ -226,7 +226,7 @@ export class Game {
       // don't spawn on top of another in same lane near top
       const blocked = this.obs.some(o => Math.round(o.lane) === lane && o.y < 120);
       if (!blocked) {
-        const types = ['car', 'keke', 'car', 'keke', 'police', 'karota'];
+        const types = ['car', 'keke', 'keke', 'car', 'police', 'karota', 'keke'];
         this.obs.push({
           type: types[Math.floor(Math.random() * types.length)],
           lane,
