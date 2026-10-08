@@ -16,7 +16,6 @@ export class UI {
     this.routeLabel = document.getElementById('route-label');
     this.radioLabel = document.getElementById('radio-label');
     this.driverLabel = document.getElementById('driver-label');
-
     this.toast = document.getElementById('mission-toast');
 
     this.eventBox = document.getElementById('event-box');
@@ -30,6 +29,7 @@ export class UI {
     this.overScreen = document.getElementById('over-screen');
 
     this.bind();
+    this.addGarageStyles();
     this.renderRoutes();
     this.renderDrivers();
 
@@ -38,29 +38,20 @@ export class UI {
 
     this.syncSettingsButtons();
     this.updateDailyUI(game);
-    this.addGarageStyles();
   }
 
   bind() {
     const startBtn = document.getElementById('start-btn');
-    if (startBtn) {
-      startBtn.onclick = () => this.game.start();
-    }
+    if (startBtn) startBtn.onclick = () => this.game.start();
 
     const retryBtn = document.getElementById('retry-btn');
-    if (retryBtn) {
-      retryBtn.onclick = () => this.game.start();
-    }
+    if (retryBtn) retryBtn.onclick = () => this.game.start();
 
     const homeBtn = document.getElementById('home-btn');
-    if (homeBtn) {
-      homeBtn.onclick = () => this.showStart();
-    }
+    if (homeBtn) homeBtn.onclick = () => this.showStart();
 
     const shareBtn = document.getElementById('share-btn');
-    if (shareBtn) {
-      shareBtn.onclick = () => this.shareRun(this.game);
-    }
+    if (shareBtn) shareBtn.onclick = () => this.shareRun(this.game);
 
     const routeBtn = document.getElementById('route-btn');
     if (routeBtn) {
@@ -158,9 +149,7 @@ export class UI {
       };
     }
 
-    // On-screen steering controls.
-    // game.js remains responsible for keyboard controls.
-
+    // Pointer controls only. Keyboard controls remain in game.js.
     const left = document.getElementById('left-btn');
     const right = document.getElementById('right-btn');
     const horn = document.getElementById('horn-btn');
@@ -249,7 +238,7 @@ export class UI {
       });
     }
 
-    // Do not register another keyboard listener here.
+    // Do not add a second keyboard listener here.
   }
 
   // ---------------------------------------------------------------------------
@@ -280,10 +269,7 @@ export class UI {
 
   getCollectionEntries(collection) {
     if (Array.isArray(collection)) {
-      return collection.map((entry, index) => [
-        String(index),
-        entry
-      ]);
+      return collection.map((entry, index) => [String(index), entry]);
     }
 
     if (collection && typeof collection === 'object') {
@@ -293,10 +279,12 @@ export class UI {
     return [];
   }
 
+  getSelectedId(value) {
+    return value === undefined || value === null ? '' : String(value);
+  }
+
   addGarageStyles() {
-    if (document.getElementById('kano-run-garage-card-styles')) {
-      return;
-    }
+    if (document.getElementById('kano-run-garage-card-styles')) return;
 
     const style = document.createElement('style');
     style.id = 'kano-run-garage-card-styles';
@@ -344,10 +332,9 @@ export class UI {
         text-align: left;
         overflow-wrap: anywhere;
         cursor: pointer;
-        transition:
-          border-color 0.15s ease,
-          transform 0.15s ease,
-          background 0.15s ease;
+        transition: border-color 0.15s ease,
+                    transform 0.15s ease,
+                    background 0.15s ease;
       }
 
       #garage-screen .garage-selection-card:hover {
@@ -410,11 +397,6 @@ export class UI {
         letter-spacing: 0.07em;
       }
 
-      #garage-screen .garage-selection-card.is-selected
-      .garage-selection-status {
-        color: #fcd34d;
-      }
-
       #garage-screen .garage-empty-state {
         padding: 12px;
         color: #cbd5e1;
@@ -452,16 +434,15 @@ export class UI {
 
     list.innerHTML = '';
 
-    const routes = this.getCollectionEntries(CONFIG.ROUTES);
-
-    routes.forEach(([key, route]) => {
+    this.getCollectionEntries(CONFIG.ROUTES).forEach(([key, route]) => {
       if (!route || typeof route !== 'object') return;
 
       const id = this.getEntryId(route, key);
       const name = route.name || 'Kano Route';
       const description = route.description || 'Drive this route.';
       const fare = Number(route.baseFare);
-      const selected = String(this.game.selectedRoute) === String(id);
+      const selected =
+        this.getSelectedId(this.game.selectedRoute) === String(id);
 
       const card = document.createElement('button');
       card.type = 'button';
@@ -472,11 +453,11 @@ export class UI {
       card.setAttribute('aria-pressed', String(selected));
 
       card.innerHTML = `
-        <div class="garage-card-icon" aria-hidden="true">🛺</div>
-        <div class="rname">${selected ? '✓ ' : ''}${this.escapeHTML(name)}</div>
+        <div class="garage-card-icon" aria-hidden="true">&#128762;</div>
+        <div class="rname">${selected ? '&#10003; ' : ''}${this.escapeHTML(name)}</div>
         <div class="rdesc">${this.escapeHTML(description)}</div>
         <div class="rdesc">
-          Fare estimate: ₦${Number.isFinite(fare) ? fare.toLocaleString() : '—'}
+          Fare estimate: &#8358;${Number.isFinite(fare) ? fare.toLocaleString() : '&#8212;'}
         </div>
         <div class="garage-selection-status">
           ${selected ? 'SELECTED ROUTE' : 'SELECT ROUTE'}
@@ -490,13 +471,8 @@ export class UI {
           Storage.setRoute(id);
         }
 
-        if (this.routeScreen) {
-          this.routeScreen.style.display = 'none';
-        }
-
-        if (this.startScreen) {
-          this.startScreen.style.display = 'flex';
-        }
+        if (this.routeScreen) this.routeScreen.style.display = 'none';
+        if (this.startScreen) this.startScreen.style.display = 'flex';
 
         if (typeof this.game.renderer3d?.setRoute === 'function') {
           this.game.renderer3d.setRoute(route);
@@ -519,59 +495,56 @@ export class UI {
   renderDrivers() {
     const list =
       document.getElementById('driver-char-grid') ||
-      document.getElementById('driver-list') ||
-      document.getElementById('driver-grid');
+      document.getElementById('driver-list');
 
     if (list) {
       list.innerHTML = '';
       list.classList.add('garage-card-grid');
 
-      const drivers = this.getCollectionEntries(CONFIG.DRIVERS);
+      this.getCollectionEntries(CONFIG.DRIVERS).forEach(
+        ([key, driver], index) => {
+          if (!driver || typeof driver !== 'object') return;
 
-      drivers.forEach(([key, driver], index) => {
-        if (!driver || typeof driver !== 'object') return;
+          const id = this.getEntryId(driver, key);
+          const name = driver.name || `Driver ${index + 1}`;
+          const title = driver.title || 'Keke Driver';
+          const description =
+            driver.desc || driver.description || 'Available driver';
 
-        const id = this.getEntryId(driver, key);
-        const name = driver.name || `Driver ${index + 1}`;
-        const title = driver.title || 'Keke Driver';
-        const description =
-          driver.desc || driver.description || 'Available driver';
+          const selected =
+            this.getSelectedId(this.game.selectedDriver) === String(id);
 
-        const selected =
-          String(this.game.selectedDriver) === String(id);
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'route-card garage-selection-card';
+          card.setAttribute('aria-pressed', String(selected));
 
-        const card = document.createElement('button');
-        card.type = 'button';
-        card.className = 'route-card garage-selection-card';
-        card.setAttribute('aria-pressed', String(selected));
+          if (selected) card.classList.add('is-selected');
 
-        if (selected) card.classList.add('is-selected');
+          card.innerHTML = `
+            <div class="garage-card-icon" aria-hidden="true">&#128100;</div>
+            <div class="rname">${selected ? '&#10003; ' : ''}${this.escapeHTML(name)}</div>
+            <div class="rdesc">${this.escapeHTML(title)}</div>
+            <div class="rdesc">${this.escapeHTML(description)}</div>
+            <div class="garage-selection-status">
+              ${selected ? 'SELECTED' : 'SELECT DRIVER'}
+            </div>
+          `;
 
-        card.innerHTML = `
-          <div class="garage-card-icon" aria-hidden="true">👤</div>
-          <div class="rname">
-            ${selected ? '✓ ' : ''}${this.escapeHTML(name)}
-          </div>
-          <div class="rdesc">${this.escapeHTML(title)}</div>
-          <div class="rdesc">${this.escapeHTML(description)}</div>
-          <div class="garage-selection-status">
-            ${selected ? 'SELECTED' : 'SELECT DRIVER'}
-          </div>
-        `;
+          card.addEventListener('click', () => {
+            this.game.selectedDriver = id;
 
-        card.addEventListener('click', () => {
-          this.game.selectedDriver = id;
+            if (typeof Storage.setDriver === 'function') {
+              Storage.setDriver(id);
+            }
 
-          if (typeof Storage.setDriver === 'function') {
-            Storage.setDriver(id);
-          }
+            this.renderDrivers();
+            this.showMissionToast('Driver: ' + name);
+          });
 
-          this.renderDrivers();
-          this.showMissionToast('Driver: ' + name);
-        });
-
-        list.appendChild(card);
-      });
+          list.appendChild(card);
+        }
+      );
 
       if (!list.children.length) {
         list.innerHTML =
@@ -600,28 +573,18 @@ export class UI {
     list.innerHTML = '';
     list.classList.add('garage-card-grid');
 
-    const paints = this.getCollectionEntries(CONFIG.PAINTS);
-
-    paints.forEach(([key, paint], index) => {
+    this.getCollectionEntries(CONFIG.PAINTS).forEach(([key, paint], index) => {
       if (!paint || typeof paint !== 'object') return;
 
       const id = this.getEntryId(paint, key);
       const name = paint.name || `Paint ${index + 1}`;
 
-      // Support several common colour formats. A missing colour must
-      // never cause a .toString() runtime exception.
       const colorValue =
-        paint.color ??
-        paint.hex ??
-        paint.colour ??
-        paint.value;
+        paint.color ?? paint.hex ?? paint.colour ?? paint.value;
 
       let hex = '#16a085';
 
-      if (
-        typeof colorValue === 'number' &&
-        Number.isFinite(colorValue)
-      ) {
+      if (typeof colorValue === 'number' && Number.isFinite(colorValue)) {
         const numericColor = Math.max(
           0,
           Math.min(0xffffff, Math.floor(colorValue))
@@ -644,10 +607,7 @@ export class UI {
           if (Number.isFinite(numericColor)) {
             hex =
               '#' +
-              Math.max(
-                0,
-                Math.min(0xffffff, Math.floor(numericColor))
-              )
+              Math.max(0, Math.min(0xffffff, Math.floor(numericColor)))
                 .toString(16)
                 .padStart(6, '0');
           }
@@ -655,13 +615,12 @@ export class UI {
       }
 
       const selected =
-        String(this.game.selectedPaint) === String(id);
+        this.getSelectedId(this.game.selectedPaint) === String(id);
 
       const card = document.createElement('button');
       card.type = 'button';
       card.className =
         'route-card garage-selection-card paint-card';
-
       card.setAttribute('aria-pressed', String(selected));
 
       if (selected) card.classList.add('is-selected');
@@ -703,8 +662,6 @@ export class UI {
       list.innerHTML =
         '<div class="garage-empty-state">No paint options are configured.</div>';
     }
-
-    this.addGarageStyles();
   }
 
   // ---------------------------------------------------------------------------
@@ -735,7 +692,7 @@ export class UI {
         item.description || item.desc || 'Driver appearance option';
 
       const selected =
-        String(this.game.selectedDressing) === String(id);
+        this.getSelectedId(this.game.selectedDressing) === String(id);
 
       const card = document.createElement('button');
       card.type = 'button';
@@ -744,8 +701,8 @@ export class UI {
       if (selected) card.classList.add('is-selected');
 
       card.innerHTML = `
-        <div class="garage-card-icon" aria-hidden="true">🧢</div>
-        <div class="rname">${selected ? '✓ ' : ''}${this.escapeHTML(name)}</div>
+        <div class="garage-card-icon" aria-hidden="true">&#129506;</div>
+        <div class="rname">${selected ? '&#10003; ' : ''}${this.escapeHTML(name)}</div>
         <div class="rdesc">${this.escapeHTML(description)}</div>
         <div class="garage-selection-status">
           ${selected ? 'SELECTED' : 'DRESSING'}
@@ -800,7 +757,7 @@ export class UI {
         upgrade.description || upgrade.desc || 'Vehicle upgrade';
 
       const selected =
-        String(this.game.selectedUpgrade) === String(id);
+        this.getSelectedId(this.game.selectedUpgrade) === String(id);
 
       const card = document.createElement('button');
       card.type = 'button';
@@ -809,8 +766,8 @@ export class UI {
       if (selected) card.classList.add('is-selected');
 
       card.innerHTML = `
-        <div class="garage-card-icon" aria-hidden="true">🔧</div>
-        <div class="rname">${selected ? '✓ ' : ''}${this.escapeHTML(name)}</div>
+        <div class="garage-card-icon" aria-hidden="true">&#128295;</div>
+        <div class="rname">${selected ? '&#10003; ' : ''}${this.escapeHTML(name)}</div>
         <div class="rdesc">${this.escapeHTML(description)}</div>
         <div class="garage-selection-status">
           ${selected ? 'SELECTED' : 'UPGRADE'}
@@ -863,7 +820,7 @@ export class UI {
 
         return `
           <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
-            #${index + 1} ₦${score.toLocaleString()} ·
+            #${index + 1} &#8358;${score.toLocaleString()} ·
             ${distance.toFixed(1)} km · ${driver}
           </div>
         `;
@@ -890,11 +847,8 @@ export class UI {
         const on = !!unlocked?.[achievement.id];
 
         return `
-          <div style="
-            padding:5px 0;
-            color:${on ? '#f5c542' : '#64748b'}
-          ">
-            ${on ? '🏆' : '🔒'}
+          <div style="padding:5px 0;color:${on ? '#f5c542' : '#64748b'}">
+            ${on ? '&#127942;' : '&#128275;'}
             ${this.escapeHTML(achievement.name || 'Achievement')} —
             ${this.escapeHTML(achievement.desc || '')}
           </div>
@@ -933,25 +887,20 @@ export class UI {
   }
 
   showGameOver(game) {
-    if (this.overScreen) {
-      this.overScreen.style.display = 'flex';
-    }
+    if (this.overScreen) this.overScreen.style.display = 'flex';
 
     const finalStats = document.getElementById('final-stats');
 
     if (finalStats) {
       finalStats.innerHTML =
-        `<b>₦${Math.floor(Number(game.score) || 0).toLocaleString()}</b>` +
+        `<b>&#8358;${Math.floor(Number(game.score) || 0).toLocaleString()}</b>` +
         ` · ${(Number(game.dist) || 0).toFixed(1)} km` +
         ` · ${Number(game.totalPax) || 0} pax` +
         ` · ${Number(game.dropCount) || 0} drops`;
     }
 
     const finalHighScore = document.getElementById('final-hs');
-
-    if (finalHighScore) {
-      finalHighScore.textContent = game.high ?? 0;
-    }
+    if (finalHighScore) finalHighScore.textContent = game.high ?? 0;
   }
 
   updateHUD(game) {
@@ -963,41 +912,25 @@ export class UI {
       this.distEl.textContent = (Number(game.dist) || 0).toFixed(1);
     }
 
-    if (this.paxEl) {
-      this.paxEl.textContent = game.paxOnBoard ?? 0;
-    }
-
-    if (this.capEl) {
-      this.capEl.textContent = game.capacity ?? 0;
-    }
-
-    if (this.livesEl) {
-      this.livesEl.textContent = game.continuesLeft ?? 0;
-    }
+    if (this.paxEl) this.paxEl.textContent = game.paxOnBoard ?? 0;
+    if (this.capEl) this.capEl.textContent = game.capacity ?? 0;
+    if (this.livesEl) this.livesEl.textContent = game.continuesLeft ?? 0;
   }
 
   setMission(text) {
-    if (this.missionLabel) {
-      this.missionLabel.textContent = '🎯 ' + (text || '');
-    }
+    if (this.missionLabel) this.missionLabel.textContent = '🎯 ' + (text || '');
   }
 
   setRouteLabel(text) {
-    if (this.routeLabel) {
-      this.routeLabel.textContent = text || '';
-    }
+    if (this.routeLabel) this.routeLabel.textContent = text || '';
   }
 
   setRadio(text) {
-    if (this.radioLabel) {
-      this.radioLabel.textContent = '📻 ' + (text || '');
-    }
+    if (this.radioLabel) this.radioLabel.textContent = '📻 ' + (text || '');
   }
 
   setDriverLabel(text) {
-    if (this.driverLabel) {
-      this.driverLabel.textContent = '👤 ' + (text || '');
-    }
+    if (this.driverLabel) this.driverLabel.textContent = '👤 ' + (text || '');
   }
 
   showMissionToast(message) {
@@ -1110,9 +1043,7 @@ export class UI {
   }
 
   hideEvent() {
-    if (this.eventBox) {
-      this.eventBox.style.display = 'none';
-    }
+    if (this.eventBox) this.eventBox.style.display = 'none';
   }
 
   // ---------------------------------------------------------------------------
@@ -1124,9 +1055,7 @@ export class UI {
     const qualityBtn = document.getElementById('quality-btn');
 
     if (muteBtn) {
-      muteBtn.textContent = Storage.getMuted()
-        ? '🔇 Muted'
-        : '🔊 Sound';
+      muteBtn.textContent = Storage.getMuted() ? '🔇 Muted' : '🔊 Sound';
     }
 
     if (qualityBtn) {
@@ -1158,8 +1087,7 @@ export class UI {
 
       if (claim) claim.style.display = 'none';
     } else {
-      box.textContent =
-        `📅 Daily reward ready · Current streak ${streak}`;
+      box.textContent = `📅 Daily reward ready · Current streak ${streak}`;
 
       if (claim) claim.style.display = 'inline-block';
     }
@@ -1170,29 +1098,31 @@ export class UI {
   // ---------------------------------------------------------------------------
 
   async shareRun(game) {
-    const route =
-      CONFIG.ROUTES?.[game.selectedRoute] ||
-      Object.values(CONFIG.ROUTES || {}).find(
-        (item) => String(item?.id) === String(game.selectedRoute)
-      );
+    const routes = this.getCollectionEntries(CONFIG.ROUTES);
+    const drivers = this.getCollectionEntries(CONFIG.DRIVERS);
 
-    const driver =
-      CONFIG.DRIVERS?.[game.selectedDriver] ||
-      Object.values(CONFIG.DRIVERS || {}).find(
-        (item) => String(item?.id) === String(game.selectedDriver)
-      ) ||
-      CONFIG.DRIVERS?.ruffneck ||
-      { name: 'Keke Driver' };
+    const routeEntry = routes.find(
+      ([key, item]) =>
+        String(this.getEntryId(item, key)) === String(game.selectedRoute)
+    );
+
+    const driverEntry = drivers.find(
+      ([key, item]) =>
+        String(this.getEntryId(item, key)) === String(game.selectedDriver)
+    );
+
+    const route = routeEntry?.[1];
+    const driver = driverEntry?.[1] || { name: 'Keke Driver' };
 
     const score = Math.floor(Number(game.score) || 0);
     const distance = (Number(game.dist) || 0).toFixed(1);
 
     const message =
-      `I just drove ₦${score.toLocaleString()} ` +
+      `I just earned ₦${score.toLocaleString()} ` +
       `on ${route?.name || 'Kano'} as ${driver.name || 'Keke Driver'} ` +
       `in Kano Run 3D! ${distance} km · ` +
       `${Number(game.totalPax) || 0} passengers. ` +
-      `Play: https://kano-run.vercel.app`;
+      'Play: https://kano-run.vercel.app';
 
     try {
       if (navigator.share) {
