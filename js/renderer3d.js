@@ -1531,7 +1531,7 @@ export class Renderer3D {
       const officer = visual.userData.officer;
       if (officer) {
         const near = Math.abs(visual.position.z - PLAYER_Z) < 12;
-        officer.userData.arm?.rotation.z = near ? Math.sin(this.elapsed * 5) * 0.18 - 0.35 : 0;
+        if (officer.userData.arm) officer.userData.arm.rotation.z = near ? Math.sin(this.elapsed * 5) * 0.18 - 0.35 : 0;
         officer.position.y = Math.abs(Math.sin(this.elapsed * 3.2)) * 0.008;
       }
 
