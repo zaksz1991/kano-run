@@ -828,6 +828,33 @@ export class Game {
     this._updateHUDEveryFrame();
   }
 
+  resize() {
+    const canvas = this.canvas;
+    if (!canvas) return;
+
+    const host = canvas.parentElement;
+    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
+    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const targetWidth = Math.max(Math.round(width * dpr), 1);
+    const targetHeight = Math.max(Math.round(height * dpr), 1);
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    if (this.ctx) {
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    this.renderer3d?.resize?.();
+  }
+
   draw() {
     this.renderer3d?.draw?.(this);
   }
