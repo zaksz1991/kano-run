@@ -115,17 +115,9 @@ canvas {
   overflow-wrap: anywhere;
 }
 
-.stat.money {
-  color: var(--kr-gold);
-}
-
-.stat.dist {
-  color: var(--kr-muted);
-}
-
-.stat.pax {
-  color: var(--kr-green);
-}
+.stat.money { color: var(--kr-gold); }
+.stat.dist { color: var(--kr-muted); }
+.stat.pax { color: var(--kr-green); }
 
 .mission-bar {
   margin: 8px 12px 0;
@@ -143,7 +135,7 @@ canvas {
 
 #route-label {
   position: absolute;
-  top: 88px;
+  top: 55px;
   left: 12px;
   max-width: calc(100% - 24px);
   background: rgba(12, 18, 32, 0.9);
@@ -184,7 +176,7 @@ canvas {
 
 #combo-display {
   position: absolute;
-  top: 100px;
+  top: 90px;
   left: 50%;
   transform: translateX(-50%);
   max-width: 90%;
@@ -251,7 +243,7 @@ canvas {
 #event-box {
   display: none;
   position: absolute;
-  bottom: max(168px, calc(env(safe-area-inset-bottom) + 145px));
+  bottom: max(160px, calc(env(safe-area-inset-bottom) + 140px));
   left: 50%;
   transform: translateX(-50%);
   width: 90%;
@@ -260,24 +252,26 @@ canvas {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  background: rgba(12, 18, 32, 0.96);
-  border: 1px solid rgba(245, 197, 66, 0.4);
-  border-radius: 20px;
-  padding: 16px;
+  background: rgba(10, 15, 28, 0.95);
+  border: 2px solid #eab308;
+  border-radius: 16px;
+  padding: 14px;
   z-index: 25;
   pointer-events: auto;
 }
 
 #event-title {
   font-weight: 800;
-  color: var(--kr-gold);
+  color: #fbbf24;
   margin-bottom: 8px;
+  font-size: 0.95rem;
 }
 
 #event-text {
-  font-size: 0.9rem;
-  line-height: 1.45;
-  margin-bottom: 14px;
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  margin-bottom: 12px;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
@@ -331,6 +325,7 @@ canvas {
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
+  pointer-events: auto;
   touch-action: manipulation;
 }
 
@@ -477,7 +472,10 @@ canvas {
 
 #route-list {
   width: 100%;
-  max-width: 360px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   max-height: 55vh;
   max-height: 55dvh;
   overflow-y: auto;
@@ -574,7 +572,7 @@ canvas {
   display: none !important;
 }
 
-/* Fallback for browsers without dynamic viewport units. */
+/* Inert compatibility fallback for browsers without dynamic viewport units. */
 @supports not (height: 100dvh) {
   body,
   #game-container {
@@ -668,5 +666,114 @@ canvas {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+
+/* Rules moved out of inline HTML styles to keep markup clean. */
+.stat.lives {
+  color: #f87171;
+}
+
+#route-label {
+  opacity: 0.9;
+  pointer-events: none;
+  font-size: 0.7rem;
+  background: rgba(10, 15, 28, 0.75);
+  color: #fbbf24;
+  padding: 3px 9px;
+}
+
+#combo-display {
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  color: #fbbf24;
+}
+
+#lastma-warning {
+  color: #fff;
+}
+
+#event-choices {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#event-choices button {
+  flex: 1 1 120px;
+  min-width: 120px;
+  background: rgba(245, 197, 66, 0.15);
+  border: 1px solid rgba(245, 197, 66, 0.4);
+  color: #fbbf24;
+  padding: 10px;
+  border-radius: 12px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.controls-cluster {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#route-screen,
+#garage-screen,
+#over-screen {
+  display: none;
+}
+
+#route-screen h1,
+#garage-screen h1 {
+  font-size: 1.7rem;
+}
+
+#over-screen h1 {
+  font-size: 1.85rem;
+}
+
+#daily-mission {
+  margin-top: 12px;
+  max-width: 320px;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+#claim-daily {
+  display: none;
+  margin-top: 8px;
+  padding: 8px 18px;
+  font-size: 0.9rem;
+}
+
+#route-list {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 55vh;
+  max-height: 55dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  margin: 12px 0;
+}
+
+#radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The game itself is fixed to the viewport; these rules preserve mobile controls. */
+@supports not (height: 100dvh) {
+  body,
+  #game-container {
+    height: 100vh;
   }
 }
