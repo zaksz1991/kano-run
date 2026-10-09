@@ -196,6 +196,13 @@ export class Game {
     this.ui = ui;
     this.renderer3d = renderer3d;
 
+    // Normalize station objects before any UI method tries to display them.
+    // Their properties remain intact for the garage and radio/audio logic;
+    // implicit string conversion returns the readable station name instead
+    // of JavaScript's default "[object Object]".
+    this._installRadioDisplayCompatibility();
+    this._ensureKanoRunLogo();
+
     this.state = STATE.START;
     this.paused = false;
 
@@ -303,7 +310,83 @@ export class Game {
 
     this._bindKeyboard();
     this._bindDrivingControls();
-    this._syncDrivingControlsVisibility();
+  }
+
+  _installRadioDisplayCompatibility() {
+    const stations = CONFIG.RADIO || CONFIG.RADIO_STATIONS || [];
+    for (const station of stations) {
+      if (!station || typeof station !== 'object') continue;
+      try {
+        Object.defineProperty(station, Symbol.toPrimitive, {
+          configurable: true,
+          enumerable: false,
+          value() {
+            return String(this.name || this.label || this.id || 'Radio');
+          }
+        });
+      } catch {
+        // The explicit radio-bar rendering in _activateRadio is the fallback.
+      }
+    }
+  }
+
+  _ensureKanoRunLogo() {
+    if (typeof document === 'undefined') return;
+    const startScreen = document.getElementById('start-screen');
+    if (!startScreen || startScreen.querySelector('[data-kano-run-brand-mark]')) return;
+
+    const mark = document.createElement('div');
+    mark.dataset.kanoRunBrandMark = 'true';
+    mark.setAttribute('role', 'img');
+    mark.setAttribute('aria-label', 'Kano Run logo — Adaidaita Sahu, Kano State');
+    mark.style.cssText = [
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'margin:0 auto 10px', 'width:96px', 'height:96px',
+      'filter:drop-shadow(0 8px 18px rgba(0,0,0,.38))'
+    ].join(';');
+    mark.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="96" height="96" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="kanoRunGold" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#fff1a8"/>
+            <stop offset=".48" stop-color="#fbbf24"/>
+            <stop offset="1" stop-color="#d97706"/>
+          </linearGradient>
+          <linearGradient id="kanoRunRoad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#334155"/>
+            <stop offset="1" stop-color="#0b1220"/>
+          </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r="55" fill="#081525" stroke="url(#kanoRunGold)" stroke-width="4"/>
+        <circle cx="60" cy="60" r="47" fill="#0f2238" stroke="#ffffff" stroke-opacity=".12" stroke-width="1.5"/>
+        <path d="M27 88 49 30h11L38 88Z" fill="url(#kanoRunRoad)" stroke="#94a3b8" stroke-opacity=".55" stroke-width="1.2"/>
+        <path d="m46 86 18-49h8L54 86Z" fill="#fbbf24" opacity=".9"/>
+        <path d="M76 27 91 51 83 55 69 31Z" fill="#22d3ee" opacity=".95"/>
+        <path d="M28 70h65" stroke="#e2e8f0" stroke-opacity=".55" stroke-width="2" stroke-dasharray="4 5"/>
+        <g transform="translate(22 47)">
+          <circle cx="18" cy="35" r="8" fill="#020617" stroke="#e2e8f0" stroke-width="2"/>
+          <circle cx="55" cy="35" r="8" fill="#020617" stroke="#e2e8f0" stroke-width="2"/>
+          <circle cx="18" cy="35" r="2.5" fill="#94a3b8"/>
+          <circle cx="55" cy="35" r="2.5" fill="#94a3b8"/>
+          <path d="M6 28 10 15Q12 11 18 11h23q7 0 10 6l8 11v5H7Z" fill="url(#kanoRunGold)" stroke="#fff1a8" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M20 14h17q4 0 6 4l3 6H16l2-7q.5-3 2-3Z" fill="#0e7490" stroke="#cffafe" stroke-width="1.2"/>
+          <path d="M28 14v10" stroke="#cffafe" stroke-width="1.1"/>
+          <path d="M8 28h49" stroke="#92400e" stroke-width="2"/>
+          <rect x="4" y="25" width="6" height="5" rx="1.5" fill="#f8fafc"/>
+          <rect x="54" y="25" width="6" height="5" rx="1.5" fill="#ef4444"/>
+        </g>
+      </svg>`;
+
+    const title = startScreen.querySelector('h1');
+    if (title) {
+      title.style.letterSpacing = '.13em';
+      title.style.fontWeight = '950';
+      title.style.textShadow = '0 3px 0 #7c2d12, 0 0 22px rgba(251,191,36,.35)';
+      title.style.marginTop = '0';
+      startScreen.insertBefore(mark, title);
+    } else {
+      startScreen.prepend(mark);
+    }
   }
 
   _bindDrivingControls() {
@@ -316,7 +399,7 @@ export class Game {
       controls.setAttribute('aria-label', 'Driving controls');
       controls.style.cssText = [
         'position:fixed', 'right:14px', 'bottom:88px', 'z-index:1000',
-        'display:none', 'flex-direction:column', 'gap:10px',
+        'display:flex', 'flex-direction:column', 'gap:10px',
         'touch-action:none', 'user-select:none', '-webkit-user-select:none'
       ].join(';');
 
@@ -369,15 +452,6 @@ export class Game {
       bindHold(brake, () => this.brakeDown(), () => this.brakeUp());
       document.body.appendChild(controls);
     }
-    this._syncDrivingControlsVisibility();
-  }
-
-  _syncDrivingControlsVisibility() {
-    if (typeof document === 'undefined') return;
-    const controls = document.getElementById('kano-driving-controls');
-    if (!controls) return;
-    const shouldShow = this.state === STATE.PLAY && !this.paused && !this.eventOpen;
-    controls.style.display = shouldShow ? 'flex' : 'none';
   }
 
   setUI(ui) {
@@ -693,6 +767,22 @@ export class Game {
     );
 
     this._ui('setRadio', station);
+
+    // Keep the visible radio label readable even if the legacy UI concatenates
+    // the station object directly. This also preserves the existing radio icon.
+    if (typeof document !== 'undefined') {
+      const radioBar = document.getElementById('radio-bar');
+      if (radioBar) {
+        radioBar.replaceChildren();
+        const icon = document.createElement('span');
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = '📻';
+        const label = document.createElement('span');
+        label.textContent = station.name || station.id || 'Radio';
+        radioBar.append(icon, document.createTextNode(' '), label);
+      }
+    }
+
     this._ui('showToast', `📻 ${station.name}`);
   }
 
@@ -723,7 +813,6 @@ export class Game {
 
     this.state = STATE.PLAY;
     this.paused = false;
-    this._syncDrivingControlsVisibility();
     this.eventOpen = false;
     this.eventType = null;
     this.eventContext = null;
@@ -891,16 +980,13 @@ export class Game {
 
   update(delta = FRAME_MS) {
     if (this.state !== STATE.PLAY || this.paused) {
-      this._syncDrivingControlsVisibility();
       this.renderer3d?.draw?.(this);
       return;
     }
 
     this.frame += 1;
-    this._syncDrivingControlsVisibility();
 
     if (this.eventOpen || this.state === STATE.EVENT) {
-      this._syncDrivingControlsVisibility();
       this.renderer3d?.draw?.(this);
       return;
     }
@@ -1048,10 +1134,8 @@ export class Game {
 
     const type = pick(types);
 
-    // Spawn only well ahead of the player and preserve a safe gap in the lane.
-    const spawnY = -340 - Math.random() * 240;
     const tooClose = this.obs.some(
-      (o) => o.lane === lane && Math.abs(o.y - spawnY) < 180
+      (o) => o.lane === lane && o.y < -120
     );
 
     if (tooClose) return;
@@ -1059,10 +1143,8 @@ export class Game {
     this.obs.push({
       id: this.nextTrafficId++,
       lane,
-      y: spawnY,
+      y: -240 - Math.random() * 300,
       type,
-      // Relative traffic speed: faster vehicles pull away; slower vehicles
-      // approach gradually. Never move traffic toward the player when stopped.
       speedFactor: 0.82 + Math.random() * 0.34,
       scoredNearMiss: false,
       checkpoint: false
@@ -1131,36 +1213,14 @@ export class Game {
 
   updateTraffic() {
     for (const obstacle of this.obs) {
-      const relativeSpeed = 1 - obstacle.speedFactor;
-      obstacle.y += this.speed * relativeSpeed * 1.25;
+      obstacle.y += this.speed * 1.25 * obstacle.speedFactor;
     }
 
-    // Resolve same-lane traffic overlap before collision checks. Vehicles keep
-    // a minimum longitudinal gap; if there is no room, the trailing vehicle
-    // changes to a free adjacent lane or is held behind the vehicle ahead.
-    const ordered = [...this.obs].sort((a, b) => a.y - b.y);
-    const minGap = 76;
-    for (let i = 0; i < ordered.length; i += 1) {
-      const trailing = ordered[i];
-      if (trailing.collided) continue;
-      for (let j = i + 1; j < ordered.length; j += 1) {
-        const leading = ordered[j];
-        if (leading.collided || trailing.lane !== leading.lane) continue;
-        const gap = leading.y - trailing.y;
-        if (gap >= 0 && gap < minGap) {
-          const adjacent = [trailing.lane - 1, trailing.lane + 1]
-            .filter((lane) => lane >= MIN_LANE && lane <= MAX_LANE)
-            .find((lane) => !ordered.some((other) => other !== trailing && other.lane === lane && Math.abs(other.y - trailing.y) < minGap));
-          if (adjacent !== undefined && Math.random() < 0.35) {
-            trailing.lane = adjacent;
-          } else {
-            trailing.y = leading.y - minGap;
-          }
-        }
-      }
+    const survivors = [];
+    for (const obstacle of this.obs) {
+      if (obstacle.y < 700) survivors.push(obstacle);
     }
-
-    this.obs = this.obs.filter((obstacle) => obstacle.y < 700 && !obstacle.collided);
+    this.obs = survivors.filter((obstacle) => !obstacle.collided);
   }
 
   updatePassengerZones() {
