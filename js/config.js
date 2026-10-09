@@ -259,43 +259,7 @@ export const CONFIG = {
   COMMERCE:{fuelCostPerKm:14,maintenanceCostPerCrash:120,bonusMultiplier:.08}
 };
 
-// Compatibility layer for the current gameplay engine and garage UI.
-// The garage renderer expects each paint/livery object to carry its own id,
-// even though the original configuration stores them under keyed objects.
-for (const [id, paint] of Object.entries(CONFIG.PAINTS || {})) {
-  paint.id = paint.id ?? id;
-  paint.name = paint.name ?? id;
-  paint.price = Number.isFinite(Number(paint.price)) ? Number(paint.price) : 0;
-  paint.cost = paint.cost ?? paint.price;
-  paint.unlockCost = paint.unlockCost ?? paint.price;
-  paint.body = paint.body ?? paint.color ?? '#fbbf24';
-  paint.roof = paint.roof ?? paint.body;
-  paint.accent = paint.accent ?? paint.body;
-}
-for (const [id, paint] of Object.entries(CONFIG.SPONSORED_LIVERIES || {})) {
-  paint.id = paint.id ?? id;
-  paint.name = paint.name ?? id;
-  paint.price = Number.isFinite(Number(paint.price)) ? Number(paint.price) : 0;
-  paint.cost = paint.cost ?? paint.price;
-  paint.unlockCost = paint.unlockCost ?? paint.price;
-  paint.body = paint.body ?? '#fbbf24';
-  paint.roof = paint.roof ?? paint.body;
-  paint.accent = paint.accent ?? paint.body;
-}
-for (const [id, driver] of Object.entries(CONFIG.DRIVERS || {})) {
-  driver.id = driver.id ?? id;
-  driver.name = driver.name ?? id;
-  driver.price = Number.isFinite(Number(driver.price)) ? Number(driver.price) : 0;
-  driver.cost = driver.cost ?? driver.price;
-  driver.unlockCost = driver.unlockCost ?? driver.price;
-}
-for (const [id, style] of Object.entries(CONFIG.DRIVER_STYLES || {})) {
-  style.id = style.id ?? id;
-  style.name = style.name ?? id;
-  style.price = Number.isFinite(Number(style.price)) ? Number(style.price) : 0;
-  style.cost = style.cost ?? style.price;
-  style.unlockCost = style.unlockCost ?? style.price;
-}
+// Compatibility layer for the current gameplay engine.
 CONFIG.RADIO = CONFIG.RADIO_STATIONS || [];
 CONFIG.ACHIEVEMENTS = CONFIG.ACHIEVEMENTS || [
   { id:'first_trip', name:'First Fare', description:'Complete your first passenger trip', target:1 },
