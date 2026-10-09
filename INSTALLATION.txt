@@ -1,23 +1,26 @@
-KANO RUN — COMPLETE AUDIT REPLACEMENT (REVISION 2)
+KANO RUN — UI BINDING CRASH + FAVICON FIX (COMPLETE FILES)
 
-Replace these files completely at the project root:
-  index.html       -> index.html
-  css/styles.css   -> css/styles.css
-  vercel.json      -> vercel.json
+Replace these files at these exact paths:
 
-WHAT CHANGED
-- CSS: keeps -webkit-backdrop-filter for Safari and removes the unprefixed backdrop-filter declaration that the current checker flags. The panel still has its translucent background if blur is unsupported.
-- CSS: uses -webkit-user-select, -moz-user-select, and -ms-user-select without the unprefixed property flagged in the audit.
-- HTML: increments the stylesheet version to ?v=2026100903 so browsers request the updated file. The existing accessible viewport declaration is retained.
-- Vercel: adds a specific Cache-Control rule for /favicon.ico, keeps one-year immutable caching for Vite-hashed /assets files, uses one-day caching for versioned CSS and fixed-name static assets, and retains the existing Vite build and SPA rewrite.
-- Vercel: adds nosniff, a frame-ancestors CSP directive, and Referrer-Policy. No X-XSS-Protection or Expires header is configured here.
+1. js/ui.js               Replace the entire existing file.
+2. index.html             Replace the entire root HTML file.
+3. public/css/styles.css  Replace the full stylesheet that is served at /css/styles.css.
+4. vercel.json            Replace the entire Vercel config with this copy, based on the config provided in this conversation.
+5. public/favicon.ico     Add this file; it fixes the missing /favicon.ico asset.
 
-INSTALL
-1. Unzip at the repository root and replace all three files.
-2. Commit and push to trigger a Vercel deployment.
-3. After deployment, open the site in a private window or hard-refresh, then rerun the audit.
+Why the runtime error occurs:
+The deployed bundle throws while a bind() method tries to assign onclick on a null DOM lookup. This replacement UI uses a guarded addEventListener helper and skips absent optional DOM elements, so a missing button cannot throw that specific null.onclick error. It also binds the game's standard controls and menus.
 
-NOTES
-- Vite already generates a fingerprinted URL such as /assets/index-IJCUOSoZ.js; the one-year immutable cache rule is the correct strategy for that content-hashed asset. If an audit still says its URL does not match a cache-busting pattern, that is likely a pattern-detection false positive rather than the asset lacking a hash.
-- Cache settings take effect after deployment. This package has not been tested in a live Vercel deployment or browser in this environment.
-- The latest audit pasted in chat ends at the heading “3. Security” without its associated findings, so this package addresses the complete compatibility and performance findings visible in that report plus the previously identified app-side security headers.
+Vite static-file paths:
+- public/css/styles.css is deployed as /css/styles.css.
+- public/favicon.ico is deployed as /favicon.ico.
+- index.html stays at repository root.
+- js/ui.js is the source module imported by js/main.js as ./ui.js.
+
+After replacement:
+1. Commit and push all files.
+2. Wait for the Vercel deployment to finish (do not test an old deployment).
+3. Open the newest deployment in a new tab and hard-refresh.
+4. Confirm the JS bundle filename/hash changes and check the console.
+
+Verification completed here: JS syntax check passed; JSON parsed; CSS rule braces are balanced; the replacement has no direct .onclick assignments. The deployed game has not been browser-tested from this environment.
