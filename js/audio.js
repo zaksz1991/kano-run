@@ -137,7 +137,6 @@ export const Audio = {
     nf.connect(this.noiseGain);
     this.noiseGain.connect(this.ctx.destination);
     this.noise.start();
-    this.startCityAmbience();
   },
 
   stopEngine() {
@@ -152,7 +151,6 @@ export const Audio = {
     this.eng = null;
     this.eng2 = null;
     this.noise = null;
-    this.stopCityAmbience();
     this.engGain = null;
     this.noiseGain = null;
     this._eng2Gain = null;
@@ -165,38 +163,11 @@ export const Audio = {
     }
     if (!this.eng || !this.engGain) return;
     const s = Math.max(0, speed);
-    const idle = s < 0.4;
-    this.eng.frequency.value = idle ? 36 : 38 + s * 9;
-    this.engGain.gain.value = idle ? 0.008 : 0.01 + Math.min(0.03, s * 0.0028);
-    if (this.eng2) this.eng2.frequency.value = idle ? 55 : 70 + s * 14;
-    if (this._eng2Gain) this._eng2Gain.gain.value = idle ? 0.002 : 0.004 + Math.min(0.012, s * 0.0012);
-    if (this.noiseGain) this.noiseGain.gain.value = idle ? 0.003 : 0.005 + Math.min(0.02, s * 0.002);
-  },
-
-  startCityAmbience() {
-    this.ensure();
-    if (!this.ctx || this.muted || this.cityHum) return;
-    const sr = this.ctx.sampleRate;
-    const buf = this.ctx.createBuffer(1, sr * 2, sr);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.4;
-    this.cityHum = this.ctx.createBufferSource();
-    this.cityHum.buffer = buf;
-    this.cityHum.loop = true;
-    this.cityGain = this.ctx.createGain();
-    this.cityGain.gain.value = 0.012;
-    const f = this.ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = 350;
-    this.cityHum.connect(f);
-    f.connect(this.cityGain);
-    this.cityGain.connect(this.ctx.destination);
-    this.cityHum.start();
-  },
-
-  stopCityAmbience() {
-    try { this.cityHum?.stop(); this.cityHum?.disconnect(); } catch (e) {}
-    this.cityHum = null;
+    this.eng.frequency.value = 38 + s * 9;
+    this.engGain.gain.value = 0.01 + Math.min(0.03, s * 0.0028);
+    if (this.eng2) this.eng2.frequency.value = 70 + s * 14;
+    if (this._eng2Gain) this._eng2Gain.gain.value = 0.004 + Math.min(0.012, s * 0.0012);
+    if (this.noiseGain) this.noiseGain.gain.value = 0.005 + Math.min(0.02, s * 0.002);
   },
 
   startRadioBed() {

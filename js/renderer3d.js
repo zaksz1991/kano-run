@@ -15,9 +15,6 @@ export class Renderer3D {
     this.coinPool = [];
     this.introPhase = 3;
     this.cabinCam = false;
-    this.cameraMode = 'chase'; // chase | driver | passenger | road
-    this.camPos = new THREE.Vector3(0, 6, -3.5);
-    this.camLook = new THREE.Vector3(0, 0.9, 16);
     this.init();
   }
 
@@ -53,7 +50,6 @@ export class Renderer3D {
 
     this.player = this.makeKeke(0xfbbf24, true);
     this.player.position.set(0, 0, PLAYER_Z);
-    this.player.traverse((ch) => { if (ch.isMesh) { ch.castShadow = true; ch.receiveShadow = true; } });
     this.scene.add(this.player);
     // Night headlights
     this.headlightL = new THREE.SpotLight(0xfff2cc, 0, 28, 0.4, 0.4, 1.2);
@@ -160,41 +156,6 @@ export class Renderer3D {
     this.scene.add(this.playerShadow);
   }
 
-  makeRoadTexture() {
-    const cv = document.createElement('canvas');
-    cv.width = 256;
-    cv.height = 256;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#2a2e35';
-    ctx.fillRect(0, 0, 256, 256);
-    // asphalt noise
-    for (let i = 0; i < 4000; i++) {
-      const g = 30 + Math.random() * 40;
-      ctx.fillStyle = 'rgba(' + g + ',' + g + ',' + (g + 5) + ',0.35)';
-      ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
-    }
-    // center dashes
-    ctx.strokeStyle = '#eab308';
-    ctx.lineWidth = 6;
-    ctx.setLineDash([28, 22]);
-    ctx.beginPath();
-    ctx.moveTo(128, 0);
-    ctx.lineTo(128, 256);
-    ctx.stroke();
-    // edge lines
-    ctx.setLineDash([]);
-    ctx.strokeStyle = '#f8fafc';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(24, 0); ctx.lineTo(24, 256);
-    ctx.moveTo(232, 0); ctx.lineTo(232, 256);
-    ctx.stroke();
-    const tex = new THREE.CanvasTexture(cv);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1, 18);
-    return tex;
-  }
-
   mat(color, opts = {}) {
     return new THREE.MeshStandardMaterial({
       color,
@@ -206,18 +167,13 @@ export class Renderer3D {
   }
 
   buildRoad() {
-    // Main asphalt with procedural texture
-    const roadTex = this.makeRoadTexture();
-    const roadMat = new THREE.MeshStandardMaterial({
-      map: roadTex,
-      roughness: 0.94,
-      metalness: 0.06,
-      color: 0xffffff
-    });
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(9.5, ROAD_LEN), roadMat);
+    // Main asphalt
+    const road = new THREE.Mesh(
+      new THREE.PlaneGeometry(9.5, ROAD_LEN),
+      this.mat(0x2c3545, { roughness: 0.92, metalness: 0.08 })
+    );
     road.rotation.x = -Math.PI / 2;
     road.position.set(0, 0, ROAD_LEN / 2 - 4);
-    this.roadMesh = road;
     this.scene.add(road);
 
     // Center darker wear strip
@@ -281,8 +237,7 @@ export class Renderer3D {
     const types = [
       'house', 'shop', 'house', 'market', 'house', 'mosque',
       'shop', 'petrol', 'house', 'busstop', 'shop', 'house',
-      'market', 'house', 'shop', 'mosque', 'house', 'petrol',
-      'house', 'shop', 'market', 'busstop', 'house', 'mosque'
+      'market', 'house', 'shop', 'mosque', 'house', 'petrol'
     ];
 
     for (const side of [-1, 1]) {
@@ -305,9 +260,9 @@ export class Renderer3D {
     }
 
     // A few pedestrians on shoulders
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 16; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      this.addPedestrian(side * (4.7 + (i % 3) * 0.2), i * 5.2 + 2);
+      this.addPedestrian(side * (4.8 + (i % 3) * 0.15), i * 6.5 + 3);
     }
 
     // Kano-style city gates / welcome arches spanning the road
@@ -903,34 +858,6 @@ export class Renderer3D {
     return LANE_X[Math.max(0, Math.min(2, Math.round(lane)))];
   }
 
-  cycleCamera() {
-    const modes = ['chase', 'driver', 'passenger', 'road'];
-    const i = modes.indexOf(this.cameraMode || 'chase');
-    this.cameraMode = modes[(i + 1) % modes.length];
-    this.cabinCam = this.cameraMode === 'driver';
-    return this.cameraMode;
-  }
-
-  setDamageVisual(condition) {
-    if (!this.player) return;
-    const t = Math.max(0, Math.min(1, (100 - (condition || 100)) / 100));
-    this.player.traverse((ch) => {
-      if (ch.isMesh && ch.material && ch.material.color && ch.geometry?.type === 'BoxGeometry') {
-        const p = ch.geometry.parameters;
-        if (p && p.width >= 1.0 && p.height >= 0.4 && p.height <= 0.6) {
-          // darken body toward grey-brown when damaged
-          const base = ch.userData.baseColor || ch.material.color.getHex();
-          if (!ch.userData.baseColor) ch.userData.baseColor = base;
-          const r = ((base >> 16) & 255) * (1 - t * 0.45);
-          const g = ((base >> 8) & 255) * (1 - t * 0.5);
-          const b = (base & 255) * (1 - t * 0.2);
-          ch.material.color.setRGB(r / 255, g / 255, b / 255);
-          ch.material.roughness = 0.45 + t * 0.4;
-        }
-      }
-    });
-  }
-
   applyPaint(paintId) {
     const colors = {
       classic: 0xfbbf24, ruffneck: 0xeab308, sky: 0x38bdf8,
@@ -985,16 +912,8 @@ export class Renderer3D {
       this.sun.intensity = 0.18;
       this.hemlight.intensity = 0.12;
       if (this.sky) this.sky.material.color.setHex(0x020617);
-      if (this.headlightL) this.headlightL.intensity = 2.2;
-      if (this.headlightR) this.headlightR.intensity = 2.2;
-      // Boost street lamp emissive at night
-      if (this.buildings) {
-        this.buildings.traverse((ch) => {
-          if (ch.isMesh && ch.material && ch.material.emissive && ch.geometry?.type === 'SphereGeometry') {
-            ch.material.emissiveIntensity = 1.2;
-          }
-        });
-      }
+      if (this.headlightL) this.headlightL.intensity = 1.8;
+      if (this.headlightR) this.headlightR.intensity = 1.8;
     } else if (tod > 0.42) {
       // dusk
       this.renderer.setClearColor(0x7c3aed, 1);
@@ -1096,14 +1015,6 @@ export class Renderer3D {
       this.player.position.y = by;
       this.player.rotation.y = (tx - this.player.position.x) * 0.1;
       this.player.rotation.z = (this.player.position.x - tx) * 0.06;
-      // Wheel spin by speed
-      const spin = (g.speed || 0) * 0.35;
-      this.player.traverse((ch) => {
-        if (ch.isMesh && ch.geometry?.type === 'CylinderGeometry') {
-          const p = ch.geometry.parameters;
-          if (p && p.radiusTop && p.radiusTop < 0.3) ch.rotation.x += spin;
-        }
-      });
       // intro: camera closer during walk-up
       if ((this.introPhase || 3) < 3) {
         this.camera.position.z = -2.2 + this.introPhase * 0.4;
@@ -1115,57 +1026,33 @@ export class Renderer3D {
       }
     }
 
-    // Multi-camera: chase | driver | passenger | road
+    // Camera — cabin / chase + speed FOV + shake
     let sx = 0, sy = 0;
     if (g.shake > 0) {
-      sx = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.035;
-      sy = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.025;
+      sx = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.03;
+      sy = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.02;
     }
     const px = this.player ? this.player.position.x : 0;
-    const bob = Math.sin((g.frame || 0) * 0.18) * Math.min(0.07, (spd || 0) * 0.012);
-    let mode = this.cameraMode || g.cameraMode || 'chase';
-    if (g.cabinCam && mode === 'chase') mode = 'driver';
-
-    let targetPos, targetLook, targetFov;
-    if (mode === 'driver') {
-      // Driver seat — eyes forward over handlebar
-      targetFov = 66 + Math.min(5, Math.max(0, spd - 3));
-      targetPos = new THREE.Vector3(px + sx * 0.4, 1.42 + sy * 0.25 + bob * 0.5, PLAYER_Z + 0.45);
-      targetLook = new THREE.Vector3(px * 0.12 + sx * 0.2, 1.05, PLAYER_Z + 16);
-      if (this.player) this.player.visible = false;
-    } else if (mode === 'passenger') {
-      // Back seat passenger looking forward-left
-      targetFov = 60 + Math.min(4, Math.max(0, spd - 3));
-      targetPos = new THREE.Vector3(px + 0.35 + sx * 0.3, 1.28 + bob * 0.4, PLAYER_Z - 0.35);
-      targetLook = new THREE.Vector3(px * 0.2 - 0.3, 0.95, PLAYER_Z + 12);
-      if (this.player) this.player.visible = true;
-    } else if (mode === 'road') {
-      // Low hood / road rush view
-      targetFov = 72 + Math.min(6, Math.max(0, spd - 2));
-      targetPos = new THREE.Vector3(px + sx * 0.5, 0.85 + sy * 0.2 + bob * 0.3, PLAYER_Z + 1.1);
-      targetLook = new THREE.Vector3(px * 0.1, 0.4, PLAYER_Z + 18);
+    const cabin = this.cabinCam || g.cabinCam;
+    if (cabin) {
+      // First-person from driver seat
+      const targetFov = 68 + Math.min(6, Math.max(0, spd - 3));
+      this.camera.fov += (targetFov - this.camera.fov) * 0.08;
+      this.camera.updateProjectionMatrix();
+      this.camera.position.x = px + sx * 0.5;
+      this.camera.position.y = 1.35 + sy * 0.3;
+      this.camera.position.z = PLAYER_Z + 0.35;
+      this.camera.lookAt(px * 0.15, 1.0, PLAYER_Z + 14);
       if (this.player) this.player.visible = false;
     } else {
-      // Cinematic chase
-      targetFov = 48 + Math.min(6, Math.max(0, spd - 4) * 1.0);
-      targetPos = new THREE.Vector3(px * 0.45 + sx, 5.8 + sy + bob, -3.8);
-      targetLook = new THREE.Vector3(px * 0.28, 0.85, 15);
       if (this.player) this.player.visible = true;
-    }
-
-    // Smooth camera (professional lerp)
-    if (!this.camPos) this.camPos = targetPos.clone();
-    if (!this.camLook) this.camLook = targetLook.clone();
-    this.camPos.lerp(targetPos, 0.12);
-    this.camLook.lerp(targetLook, 0.1);
-    this.camera.position.copy(this.camPos);
-    this.camera.lookAt(this.camLook);
-    this.camera.fov += (targetFov - this.camera.fov) * 0.08;
-    this.camera.updateProjectionMatrix();
-
-    // Scroll road texture for motion
-    if (this.roadMesh && this.roadMesh.material && this.roadMesh.material.map) {
-      this.roadMesh.material.map.offset.y = -((g.roadOff || 0) * 0.02) % 1;
+      const targetFov = 50 + Math.min(8, Math.max(0, spd - 4) * 1.5);
+      this.camera.fov += (targetFov - this.camera.fov) * 0.05;
+      this.camera.updateProjectionMatrix();
+      this.camera.position.x = px * 0.4 + sx;
+      this.camera.position.y = 6.2 + sy;
+      this.camera.position.z = -3.5;
+      this.camera.lookAt(px * 0.25, 0.9, 16);
     }
 
     const py = g.playerY || 500;
@@ -1219,7 +1106,7 @@ export class Renderer3D {
       mesh.position.y = 0.55 + Math.sin(coin.bob || 0) * 0.15;
       mesh.rotation.y += 0.1;
       if (mesh.material && mesh.material.color) {
-        mesh.material.color.setHex(coin.repair ? 0x3b82f6 : coin.petrol ? 0x22c55e : 0xfbbf24);
+        mesh.material.color.setHex(coin.petrol ? 0x22c55e : 0xfbbf24);
       }
     }
     while (ci < this.coinPool.length) this.coinPool[ci++].visible = false;

@@ -31,17 +31,10 @@ export class UI {
     this.updateDailyUI(game);
     this.showLastRun();
     this.updateSelectionStatus();
-    this.maybeShowHelpOnBoot();
   }
 
   bind() {
     document.getElementById('start-btn').onclick = () => this.game.start();
-    const helpBtn = document.getElementById('help-btn');
-    if (helpBtn) helpBtn.onclick = () => this.showHelp();
-    const hudHelp = document.getElementById('hud-help');
-    if (hudHelp) hudHelp.onclick = () => this.showHelp();
-    const got = document.getElementById('help-gotit');
-    if (got) got.onclick = () => this.hideHelp(true);
     document.getElementById('retry-btn').onclick = () => this.game.start();
     document.getElementById('home-btn').onclick = () => this.showStart();
     const shareBtn = document.getElementById('share-btn');
@@ -419,29 +412,6 @@ export class UI {
     if (qBtn) qBtn.textContent = Storage.getLowQuality() ? '⚡ Performance' : '✨ Quality';
   }
 
-  showHelp() {
-    const el = document.getElementById('help-overlay');
-    if (el) {
-      el.style.display = 'flex';
-    }
-  }
-
-  hideHelp(remember) {
-    const el = document.getElementById('help-overlay');
-    if (el) el.style.display = 'none';
-    if (remember) {
-      try { localStorage.setItem('kanoHelpSeen', '1'); } catch (e) {}
-    }
-  }
-
-  maybeShowHelpOnBoot() {
-    try {
-      if (!localStorage.getItem('kanoHelpSeen')) this.showHelp();
-    } catch (e) {
-      this.showHelp();
-    }
-  }
-
   updateSelectionStatus() {
     const el = document.getElementById('selection-status');
     const roadBtn = document.getElementById('road-btn');
@@ -478,40 +448,6 @@ export class UI {
       box.textContent = `📅 Daily reward ready · Current streak ${streak}`;
       if (claim) claim.style.display = 'inline-block';
     }
-  }
-
-  setCamLabel(mode) {
-    const btn = document.getElementById('cam-btn');
-    if (!btn) return;
-    const short = { chase: 'CAM', driver: 'DRV', passenger: 'PAX', road: 'ROAD' };
-    btn.textContent = short[mode] || 'CAM';
-  }
-
-  setTyreStatus(punctured, wear) {
-    const el = document.getElementById('tyre-status');
-    const wrap = document.getElementById('tyre-stat');
-    if (!el) return;
-    if (punctured) {
-      el.textContent = 'FLAT';
-      if (wrap) wrap.style.color = '#ef4444';
-    } else if (wear > 70) {
-      el.textContent = 'WORN';
-      if (wrap) wrap.style.color = '#f59e0b';
-    } else if (wear > 40) {
-      el.textContent = 'FAIR';
-      if (wrap) wrap.style.color = '#fbbf24';
-    } else {
-      el.textContent = 'OK';
-      if (wrap) wrap.style.color = '#94a3b8';
-    }
-  }
-
-  setCondition(n) {
-    const el = document.getElementById('condition');
-    if (!el) return;
-    const v = Math.max(0, Math.round(n));
-    el.textContent = v;
-    el.parentElement.style.color = v < 30 ? '#ef4444' : v < 60 ? '#fb923c' : '#94a3b8';
   }
 
   setFuel(n) {
