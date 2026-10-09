@@ -2,18 +2,17 @@
 
 **Game Developer: Hassan Zakariya**
 
-Playable web game — Vite + Three.js.
+Adaidaita Sahu through Kano State (Three.js / WebGL).
 
-## Latest
-- Loading splash with Kano welcome photo
-- City gate arches + welcome pillars in 3D world
-- Keke NAPEP look (yellow body, black canopy, amber indicators)
-- KAROTA common / Yan Daba rare
-- Brand photos for banner & icon
+## Latest upgrade
+- Pre-start selection: driver, route, road mode (one-way / two-way)
+- Capacity 5: 2 front (beside driver) + 3 back
+- Big / tall / fat passengers need 2 spaces (tight fit)
+- **Yan Daba** checkpoints (rob phone/money)
+- **Robber kekes** (partner criminals in traffic)
+- Oncoming traffic on two-way roads
 
-## Deploy (Vercel)
+## Deploy
 ```bash
-npm install
-npm run build
-npx vercel --prod
+npm install && npm run build && vercel --prod
 ```
