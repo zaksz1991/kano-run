@@ -196,12 +196,10 @@ export class Game {
     this.ui = ui;
     this.renderer3d = renderer3d;
 
-    // Normalize station objects before any UI method tries to display them.
-    // Their properties remain intact for the garage and radio/audio logic;
-    // implicit string conversion returns the readable station name instead
-    // of JavaScript's default "[object Object]".
+    // Convert radio station objects to their readable names when legacy UI
+    // code converts a station directly to text. No visual logo is inserted.
     this._installRadioDisplayCompatibility();
-    this._ensureKanoRunLogo();
+    this._ensureDeveloperCredit();
 
     this.state = STATE.START;
     this.paused = false;
@@ -312,6 +310,7 @@ export class Game {
     this._bindDrivingControls();
   }
 
+
   _installRadioDisplayCompatibility() {
     const stations = CONFIG.RADIO || CONFIG.RADIO_STATIONS || [];
     for (const station of stations) {
@@ -321,72 +320,38 @@ export class Game {
           configurable: true,
           enumerable: false,
           value() {
-            return String(this.name || this.label || this.id || 'Radio');
+            return String(this.name || this.label || this.title || this.id || 'Radio');
           }
         });
       } catch {
-        // The explicit radio-bar rendering in _activateRadio is the fallback.
+        // UI.setRadio() may still receive the object; its own renderer can
+        // choose an explicit station.name fallback when needed.
       }
     }
   }
 
-  _ensureKanoRunLogo() {
+  _ensureDeveloperCredit() {
     if (typeof document === 'undefined') return;
     const startScreen = document.getElementById('start-screen');
-    if (!startScreen || startScreen.querySelector('[data-kano-run-brand-mark]')) return;
+    if (!startScreen || document.getElementById('kano-run-developer-credit')) return;
 
-    const mark = document.createElement('div');
-    mark.dataset.kanoRunBrandMark = 'true';
-    mark.setAttribute('role', 'img');
-    mark.setAttribute('aria-label', 'Kano Run logo — Adaidaita Sahu, Kano State');
-    mark.style.cssText = [
-      'display:flex', 'align-items:center', 'justify-content:center',
-      'margin:0 auto 10px', 'width:96px', 'height:96px',
-      'filter:drop-shadow(0 8px 18px rgba(0,0,0,.38))'
+    const credit = document.createElement('p');
+    credit.id = 'kano-run-developer-credit';
+    credit.textContent = 'Developed by Hassan Zakariya · RuffNeck Entertainment';
+    credit.setAttribute('aria-label', 'Developer: Hassan Zakariya, RuffNeck Entertainment');
+    credit.style.cssText = [
+      'display:block',
+      'width:100%',
+      'box-sizing:border-box',
+      'margin:12px 0 0',
+      'padding:4px 8px',
+      'color:rgba(255,255,255,.68)',
+      'font-size:11px',
+      'font-weight:500',
+      'line-height:1.4',
+      'text-align:center'
     ].join(';');
-    mark.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="96" height="96" aria-hidden="true" focusable="false">
-        <defs>
-          <linearGradient id="kanoRunGold" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#fff1a8"/>
-            <stop offset=".48" stop-color="#fbbf24"/>
-            <stop offset="1" stop-color="#d97706"/>
-          </linearGradient>
-          <linearGradient id="kanoRunRoad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#334155"/>
-            <stop offset="1" stop-color="#0b1220"/>
-          </linearGradient>
-        </defs>
-        <circle cx="60" cy="60" r="55" fill="#081525" stroke="url(#kanoRunGold)" stroke-width="4"/>
-        <circle cx="60" cy="60" r="47" fill="#0f2238" stroke="#ffffff" stroke-opacity=".12" stroke-width="1.5"/>
-        <path d="M27 88 49 30h11L38 88Z" fill="url(#kanoRunRoad)" stroke="#94a3b8" stroke-opacity=".55" stroke-width="1.2"/>
-        <path d="m46 86 18-49h8L54 86Z" fill="#fbbf24" opacity=".9"/>
-        <path d="M76 27 91 51 83 55 69 31Z" fill="#22d3ee" opacity=".95"/>
-        <path d="M28 70h65" stroke="#e2e8f0" stroke-opacity=".55" stroke-width="2" stroke-dasharray="4 5"/>
-        <g transform="translate(22 47)">
-          <circle cx="18" cy="35" r="8" fill="#020617" stroke="#e2e8f0" stroke-width="2"/>
-          <circle cx="55" cy="35" r="8" fill="#020617" stroke="#e2e8f0" stroke-width="2"/>
-          <circle cx="18" cy="35" r="2.5" fill="#94a3b8"/>
-          <circle cx="55" cy="35" r="2.5" fill="#94a3b8"/>
-          <path d="M6 28 10 15Q12 11 18 11h23q7 0 10 6l8 11v5H7Z" fill="url(#kanoRunGold)" stroke="#fff1a8" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="M20 14h17q4 0 6 4l3 6H16l2-7q.5-3 2-3Z" fill="#0e7490" stroke="#cffafe" stroke-width="1.2"/>
-          <path d="M28 14v10" stroke="#cffafe" stroke-width="1.1"/>
-          <path d="M8 28h49" stroke="#92400e" stroke-width="2"/>
-          <rect x="4" y="25" width="6" height="5" rx="1.5" fill="#f8fafc"/>
-          <rect x="54" y="25" width="6" height="5" rx="1.5" fill="#ef4444"/>
-        </g>
-      </svg>`;
-
-    const title = startScreen.querySelector('h1');
-    if (title) {
-      title.style.letterSpacing = '.13em';
-      title.style.fontWeight = '950';
-      title.style.textShadow = '0 3px 0 #7c2d12, 0 0 22px rgba(251,191,36,.35)';
-      title.style.marginTop = '0';
-      startScreen.insertBefore(mark, title);
-    } else {
-      startScreen.prepend(mark);
-    }
+    startScreen.appendChild(credit);
   }
 
   _bindDrivingControls() {
@@ -767,22 +732,6 @@ export class Game {
     );
 
     this._ui('setRadio', station);
-
-    // Keep the visible radio label readable even if the legacy UI concatenates
-    // the station object directly. This also preserves the existing radio icon.
-    if (typeof document !== 'undefined') {
-      const radioBar = document.getElementById('radio-bar');
-      if (radioBar) {
-        radioBar.replaceChildren();
-        const icon = document.createElement('span');
-        icon.setAttribute('aria-hidden', 'true');
-        icon.textContent = '📻';
-        const label = document.createElement('span');
-        label.textContent = station.name || station.id || 'Radio';
-        radioBar.append(icon, document.createTextNode(' '), label);
-      }
-    }
-
     this._ui('showToast', `📻 ${station.name}`);
   }
 
