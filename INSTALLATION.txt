@@ -1,27 +1,23 @@
-KANO RUN — COMPLETE AUDIT REPLACEMENT PACKAGE
+KANO RUN — COMPLETE AUDIT REPLACEMENT (REVISION 2)
 
-Files in this package:
-  index.html       -> replace the project's index.html at the repository root
-  css/styles.css   -> replace the complete file at css/styles.css
-  vercel.json      -> replace the complete file at the repository root
+Replace these files completely at the project root:
+  index.html       -> index.html
+  css/styles.css   -> css/styles.css
+  vercel.json      -> vercel.json
 
-WHAT THIS PACKAGE CHANGES
-- Adds Safari-prefixed backdrop-filter and user-select declarations.
-- Removes inline style attributes from index.html and moves those layout rules into css/styles.css.
-- Changes the viewport to width=device-width, initial-scale=1.0, viewport-fit=cover (no maximum-scale or user-scalable restriction).
-- Removes the theme-color metadata declaration that triggered the Firefox compatibility hint.
-- Uses the local system font stack; no Google Fonts stylesheet or webfont requests are made from these replacement files. This also avoids the third-party Google Fonts Expires, X-Frame-Options and X-XSS-Protection responses shown by the audit.
-- Adds X-Content-Type-Options, a minimal CSP frame-ancestors directive, and Referrer-Policy through Vercel headers.
-- Overrides Vercel's default must-revalidate cache policy for HTML, the manifest, icons, CSS and brand files. The Vite-hashed /assets files keep immutable one-year caching.
-- Adds a version query to the stylesheet link: ?v=20261009-02. Increment this token after future CSS changes if you want to use a new URL.
+WHAT CHANGED
+- CSS: keeps -webkit-backdrop-filter for Safari and removes the unprefixed backdrop-filter declaration that the current checker flags. The panel still has its translucent background if blur is unsupported.
+- CSS: uses -webkit-user-select, -moz-user-select, and -ms-user-select without the unprefixed property flagged in the audit.
+- HTML: increments the stylesheet version to ?v=2026100903 so browsers request the updated file. The existing accessible viewport declaration is retained.
+- Vercel: adds a specific Cache-Control rule for /favicon.ico, keeps one-year immutable caching for Vite-hashed /assets files, uses one-day caching for versioned CSS and fixed-name static assets, and retains the existing Vite build and SPA rewrite.
+- Vercel: adds nosniff, a frame-ancestors CSP directive, and Referrer-Policy. No X-XSS-Protection or Expires header is configured here.
 
 INSTALL
-1. Unzip this package at the repository root, preserving the css/ subdirectory.
-2. Replace the three files above completely.
-3. Commit and push the changes to trigger Vercel deployment.
-4. After deployment, hard-refresh the site and rerun the audit.
+1. Unzip at the repository root and replace all three files.
+2. Commit and push to trigger a Vercel deployment.
+3. After deployment, open the site in a private window or hard-refresh, then rerun the audit.
 
-IMPORTANT LIMITATIONS
-- This package was built against the supplied full stylesheet and the saved index.html source available in this conversation. The deployed site could differ from that saved HTML. Review the diff before committing if the repository's current index.html has newer DOM or game UI elements.
-- Fixed-name brand assets are configured for revalidation (max-age=0), rather than one-year immutable caching, because their current URLs are not content-hashed. The audit may still recommend renaming/versioning those image URLs; changing their URLs without reviewing current JavaScript references could break them.
-- CSS/HTML/JSON checks were run locally. No live browser or Vercel deployment test was possible in this environment.
+NOTES
+- Vite already generates a fingerprinted URL such as /assets/index-IJCUOSoZ.js; the one-year immutable cache rule is the correct strategy for that content-hashed asset. If an audit still says its URL does not match a cache-busting pattern, that is likely a pattern-detection false positive rather than the asset lacking a hash.
+- Cache settings take effect after deployment. This package has not been tested in a live Vercel deployment or browser in this environment.
+- The latest audit pasted in chat ends at the heading “3. Security” without its associated findings, so this package addresses the complete compatibility and performance findings visible in that report plus the previously identified app-side security headers.
