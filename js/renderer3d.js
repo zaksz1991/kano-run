@@ -150,8 +150,21 @@ function createCanvasTexture(drawer, w = 256, h = 128) {
 
 export class Renderer3D {
   constructor(canvas, game = null) {
-    this.canvas = canvas;
-    this.game = game;
+    // Game.js already owns a 2D canvas. Never attach WebGL to that same
+    // canvas: create a separate 3D canvas so the game loop and HUD keep working.
+    if (canvas && canvas.canvas && typeof canvas.getContext !== 'function' && !game) {
+      game = canvas;
+      canvas = canvas.canvas;
+    }
+
+    this.game = game || null;
+    this.gameCanvas = canvas?.canvas || canvas;
+    if (!this.gameCanvas || typeof this.gameCanvas.addEventListener !== 'function') {
+      throw new TypeError('Renderer3D requires a Game instance or an HTML canvas.');
+    }
+    this.canvas = null;
+    this.webglHost = null;
+    this.ownsCanvas = false;
 
     this.ctx = null;
     this.renderer = null;
@@ -236,6 +249,10 @@ export class Renderer3D {
   init() {
     const pixelRatio = this.quality === 'high' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
 
+    this.createWebGLCanvas();
+    const width = Math.max(this.webglHost?.clientWidth || this.gameCanvas.clientWidth || window.innerWidth, 1);
+    const height = Math.max(this.webglHost?.clientHeight || this.gameCanvas.clientHeight || window.innerHeight, 1);
+
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: true,
@@ -243,7 +260,7 @@ export class Renderer3D {
       powerPreference: 'high-performance',
     });
     this.renderer.setPixelRatio(pixelRatio);
-    this.renderer.setSize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight, false);
+    this.renderer.setSize(width, height, false);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -334,10 +351,46 @@ export class Renderer3D {
     }
   }
 
+  createWebGLCanvas() {
+    const host = this.gameCanvas.parentElement || document.body;
+    this.webglHost = host;
+
+    if (host && getComputedStyle(host).position === 'static') {
+      host.style.position = 'relative';
+    }
+
+    // Remove only a stale canvas created by this renderer, never the game canvas.
+    const existing = host?.querySelector?.('canvas[data-kano-run-webgl="true"]');
+    if (existing && existing !== this.gameCanvas) existing.remove();
+
+    const glCanvas = document.createElement('canvas');
+    glCanvas.dataset.kanoRunWebgl = 'true';
+    glCanvas.setAttribute('aria-hidden', 'true');
+    Object.assign(glCanvas.style, {
+      position: 'absolute', inset: '0', width: '100%', height: '100%',
+      display: 'block', zIndex: '1', pointerEvents: 'none', touchAction: 'none'
+    });
+
+    // Put WebGL above the old 2D drawing canvas so the 3D world is visible,
+    // while keeping interaction controls clickable and above both canvases.
+    if (this.gameCanvas.nextSibling) host.insertBefore(glCanvas, this.gameCanvas.nextSibling);
+    else host.appendChild(glCanvas);
+    this.canvas = glCanvas;
+    this.ownsCanvas = true;
+
+    for (const id of ['ui-overlay', 'controls']) {
+      const element = document.getElementById(id);
+      if (element) {
+        element.style.position = element.style.position || 'relative';
+        element.style.zIndex = '10';
+      }
+    }
+  }
+
   resize() {
     if (!this.renderer || !this.camera) return;
-    const width = Math.max(this.canvas.clientWidth || window.innerWidth, 1);
-    const height = Math.max(this.canvas.clientHeight || window.innerHeight, 1);
+    const width = Math.max(this.webglHost?.clientWidth || this.gameCanvas.clientWidth || window.innerWidth, 1);
+    const height = Math.max(this.webglHost?.clientHeight || this.gameCanvas.clientHeight || window.innerHeight, 1);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
@@ -1917,6 +1970,9 @@ export class Renderer3D {
     this.trafficWorld?.dispose?.();
     this.trafficWorld = null;
     this.renderer?.dispose?.();
+    if (this.ownsCanvas && this.canvas?.dataset?.kanoRunWebgl === 'true') {
+      this.canvas.remove();
+    }
     this.ready = false;
   }
 }
