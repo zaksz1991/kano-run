@@ -1,5 +1,5 @@
 /**
- * Kano Run 3D — Core game logic (Phase 10)
+ * Kano Run 3D — Core game logic
  * Game Developer: Hassan Zakariya
  * Spec: real driving controls, intro sequence, passengers/destinations,
  * fare negotiation, KAROTA, traffic AI — preserves missions/storage/HUD.
@@ -50,6 +50,23 @@ export class Game {
     this.landmarkIndex = 0;
     this.nearMissCount = 0;
     this.introT = 0;
+    this.fuel = 100;
+    this.zoneType = 'road'; // road | junction | market
+    this.zoneTimer = 0;
+    this.parkOnly = false; // true inside market/junction regulation
+    this.cabinCam = false;
+    this.weatherGrip = 1;
+    this.heatComplaints = 0;
+    this.lastHonkFrame = 0;
+    this.lifeTipsShown = 0;
+    this.pickupCooldown = 0;
+    this.stoppedFrames = 0;
+    this.condition = 100; // overall vehicle health 0-100
+    this.damageBody = 0;
+    this.damageEngine = 0;
+    this.damageTyres = 0;
+    this.puncture = false;
+    this.tireWearAccum = 0;
     this.level = 1;
 
     this.selectedRoute = Storage.getRoute() || 'citycenter';
@@ -82,6 +99,21 @@ export class Game {
 
   getTimeOfDay() {
     return (this.frame % 5400) / 5400;
+  }
+
+  /** 0 morning rush → 0.25 midday → 0.5 evening → night */
+  isPeakHour() {
+    const t = this.getTimeOfDay();
+    return (t > 0.05 && t < 0.18) || (t > 0.45 && t < 0.58);
+  }
+
+  fareScale() {
+    // Evening/night slightly higher; midday lower competition
+    const t = this.getTimeOfDay();
+    if (t > 0.55) return 1.2;
+    if (this.isPeakHour()) return 1.1;
+    if (t > 0.25 && t < 0.4) return 0.9;
+    return 1;
   }
 
   getDriver() {
@@ -117,6 +149,21 @@ export class Game {
     const skipIntro = Storage.getSeenTutorial() && Storage.get('kanoSkipIntro', false);
     this.state = skipIntro ? STATE.PLAY : STATE.INTRO;
     this.introT = 0;
+    this.fuel = 100;
+    this.zoneType = 'road'; // road | junction | market
+    this.zoneTimer = 0;
+    this.parkOnly = false; // true inside market/junction regulation
+    this.cabinCam = false;
+    this.weatherGrip = 1;
+    this.heatComplaints = 0;
+    this.lastHonkFrame = 0;
+    this.lifeTipsShown = 0;
+    this.pickupCooldown = 0;
+    this.stoppedFrames = 0;
+    this.condition = 100; // overall vehicle health 0-100
+    this.damageBody = 0;
+    this.damageEngine = 0;
+    this.damageTyres = 0;
     this.score = 0;
     this.dist = 0;
     this.paxOnBoard = 0;
@@ -185,10 +232,17 @@ export class Game {
 
   finishIntro() {
     this.state = STATE.PLAY;
-    this.throttle = 0.35;
+    this.throttle = 0.2;
     Audio.startEngine();
     Audio.startRadioBed();
-    this.ui.showMissionToast('Engine on — drive!');
+    const tips = [
+      'Sannu da aiki — load at the park',
+      'Morning rush — traffic will be tight',
+      'Watch KAROTA at junctions',
+      'Full load rides slower — that is normal'
+    ];
+    this.ui.showMissionToast(tips[Math.floor(Math.random() * tips.length)]);
+    Audio.speak('Sannu da aiki', { rate: 0.92, pitch: 1 });
     if (this.renderer3d) this.renderer3d.introPhase = 3;
   }
 
@@ -206,12 +260,87 @@ export class Game {
     }
   }
 
+  recalcCondition() {
+    // Weighted wear
+    this.condition = Math.max(0, Math.min(100,
+      100 - this.damageBody * 0.35 - this.damageEngine * 0.4 - this.damageTyres * 0.25
+    ));
+  }
+
+  applyDamage(kind, amount) {
+    if (kind === 'body') this.damageBody = Math.min(100, this.damageBody + amount);
+    else if (kind === 'engine') this.damageEngine = Math.min(100, this.damageEngine + amount);
+    else if (kind === 'tyres') this.damageTyres = Math.min(100, this.damageTyres + amount);
+    else {
+      this.damageBody = Math.min(100, this.damageBody + amount * 0.5);
+      this.damageEngine = Math.min(100, this.damageEngine + amount * 0.3);
+    }
+    this.recalcCondition();
+    if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
+  }
+
+  repairVehicle(level = 'full') {
+    if (level === 'full') {
+      this.damageBody = 0;
+      this.damageEngine = 0;
+      this.damageTyres = 0;
+      this.puncture = false;
+      this.tireWearAccum = 0;
+    } else if (level === 'quick') {
+      this.damageBody = Math.max(0, this.damageBody - 25);
+      this.damageEngine = Math.max(0, this.damageEngine - 20);
+      this.damageTyres = Math.max(0, this.damageTyres - 20);
+      if (this.damageTyres < 50) this.puncture = false;
+    } else if (level === 'tyres') {
+      this.damageTyres = 0;
+      this.puncture = false;
+      this.tireWearAccum = 0;
+    }
+    this.recalcCondition();
+    if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
+  }
+
+  /** Sudden puncture — flat until tyres repaired */
+  triggerPuncture(reason) {
+    if (this.puncture) return;
+    this.puncture = true;
+    this.damageTyres = Math.min(100, this.damageTyres + 35 + Math.random() * 20);
+    this.recalcCondition();
+    this.speed *= 0.4;
+    this.triggerShake(10, 5);
+    Audio.brake();
+    Audio.speak('Puncture. Flat tyre.', { rate: 0.95 });
+    this.ui.showMissionToast('💥 Puncture! ' + (reason || 'Flat tyre') + ' — limp to mechanic');
+    if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
+  }
+
+  toggleCabin() {
+    if (this.renderer3d?.cycleCamera) {
+      const mode = this.renderer3d.cycleCamera();
+      this.cabinCam = mode === 'driver';
+      this.cameraMode = mode;
+      const labels = {
+        chase: 'Chase camera',
+        driver: 'Driver view',
+        passenger: 'Passenger seat',
+        road: 'Road / hood view'
+      };
+      this.ui.showMissionToast(labels[mode] || mode);
+      this.ui.setCamLabel?.(mode);
+    } else {
+      this.cabinCam = !this.cabinCam;
+      this.ui.showMissionToast(this.cabinCam ? 'Driver view' : 'Chase view');
+    }
+  }
+
   setThrottle(v) {
     this.throttle = Math.max(0, Math.min(1, v));
   }
 
   setBrake(on) {
+    const was = this.braking;
     this.braking = !!on;
+    if (on && !was && this.speed > 2) Audio.brake();
   }
 
   changeLane(dir) {
@@ -285,6 +414,9 @@ export class Game {
   // ——— Opening / crash / continue ———
   gameOver() {
     Audio.crash();
+    this.applyDamage('body', 18 + Math.random() * 12);
+    this.applyDamage('engine', 10 + Math.random() * 10);
+    this.applyDamage('tyres', 6 + Math.random() * 8);
     this.triggerShake(16, 8);
     try { if (navigator.vibrate) navigator.vibrate(80); } catch {}
     this.state = STATE.EVENT;
@@ -421,10 +553,12 @@ export class Game {
     });
     let pick = fare;
     if (p.aishat && this.getBonuses().aishatBonus) pick += this.getBonuses().aishatBonus;
-    this.score += Math.floor(pick * 0.25);
+    this.score += Math.floor(pick * 0.25 * this.fareScale());
     this.addCombo(p.aishat ? 3 : p.vip ? 2 : 1);
     Audio.pickup();
     Audio.voicePickup();
+    Audio.voiceSannu();
+    this.pickupCooldown = 50;
     if (p.aishat) this.ui.showMissionToast('Aishat + Hibba → ' + (p.dest || 'town'));
     else if (p.size === 'big' || p.size === 'fat' || p.size === 'tall')
       this.ui.showMissionToast('Tight fit (' + p.size + ') → ' + (p.dest || '?') + ' · ₦' + fare);
@@ -480,8 +614,8 @@ export class Game {
 
   tryDropOff() {
     if (this.paxOnBoard <= 0 || this.onboard.length === 0) return;
-    if (this.speed > 3.2) {
-      this.ui.showMissionToast('Akwai! Slow down to drop');
+    if (this.speed > 2.2) {
+      this.ui.showMissionToast('Akwai! Almost stop to drop');
       return;
     }
     const p = this.onboard.shift();
@@ -491,7 +625,8 @@ export class Game {
     let fare = Math.floor(
       (p.fare || route.baseFare || 140) *
         this.getComboMultiplier() *
-        (this.getBonuses().fareMult || 1)
+        (this.getBonuses().fareMult || 1) *
+        this.fareScale()
     );
     // Destination match bonus — landmark / route name
     const marks = (route.landmarks || []).map(s => s.toLowerCase());
@@ -508,13 +643,15 @@ export class Game {
     this.addCombo(2);
     Audio.pickup();
     Audio.voiceDrop();
-    this.ui.showMissionToast('Akwai — ' + (p.dest || 'stop') + ' +₦' + fare + bonusNote);
+    this.ui.showMissionToast('Akwai! (' + (p.dest || 'stop') + ') +₦' + fare + bonusNote);
+    Audio.voiceAkwai();
   }
 
   startYanDaba() {
     this.state = STATE.EVENT;
     this.throttle = 0;
     Audio.alert();
+    Audio.voiceYanDaba();
     this.triggerShake(10, 5);
     try { if (navigator.vibrate) navigator.vibrate([40, 40, 80]); } catch (e) {}
     const loss = 150 + Math.floor(Math.random() * 400);
@@ -579,6 +716,7 @@ export class Game {
     this.throttle = 0;
     Audio.alert();
     Audio.siren();
+    Audio.voiceKarota();
     this.triggerShake(6, 3);
     const fine = 150 + Math.floor(Math.random() * 250);
     const h = this.honorific();
@@ -704,23 +842,82 @@ export class Game {
     const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
     const bonuses = this.getBonuses();
 
-    // Speed from throttle / brake (real driving feel)
-    let targetSpeed = this.throttle * (6.8 * (route.difficulty || 1) + (bonuses.speed || 0) * 3);
+    // Realistic keke dynamics: slow accel, strong engine braking, load penalty
+    const loadFactor = 1 - Math.min(0.22, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.22);
+    const dmgFactor = 1 - Math.min(0.45, (100 - (this.condition || 100)) / 100 * 0.5);
+    const tyreGrip = 1 - Math.min(0.25, (this.damageTyres || 0) / 100 * 0.25);
+    const top = (5.8 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.2) * loadFactor * dmgFactor;
+    let targetSpeed = this.throttle * top;
     if (this.braking) targetSpeed = 0;
-    if (this.trafficJamTimer > 0) targetSpeed *= 0.5;
-    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) {
-      targetSpeed += 0.3;
+    if (this.trafficJamTimer > 0) targetSpeed *= 0.45;
+    if (this.parkOnly) targetSpeed = Math.min(targetSpeed, 3.2); // forced slow in junction/market
+    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) targetSpeed += 0.25;
+    // Accel: heavy at low speed, weaker near top (like small engine)
+    const accel = (0.045 + this.throttle * 0.09) * loadFactor * this.weatherGrip * dmgFactor * (1 - (this.damageEngine || 0) / 250);
+    if (this.speed < targetSpeed) this.speed += accel;
+    else this.speed += (targetSpeed - this.speed) * (0.08 + (1 - this.throttle) * 0.06);
+    // Brakes
+    if (this.braking) this.speed *= 0.82 * this.weatherGrip * tyreGrip;
+    // Coasting drag
+    if (this.throttle < 0.15 && !this.braking) this.speed *= 0.985;
+    // Fuel
+    if (this.speed > 0.25) {
+      this.fuel = Math.max(0, this.fuel - 0.01 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
     }
-    // Smooth accel/decel
-    if (this.speed < targetSpeed) this.speed += 0.08 + this.throttle * 0.12;
-    else this.speed += (targetSpeed - this.speed) * 0.12;
-    if (this.braking) this.speed *= 0.88;
-    this.speed = Math.max(0, Math.min(this.speed, 11));
+    if (this.fuel <= 0) {
+      this.speed *= 0.9;
+      if (this.frame % 70 === 0) this.ui.showMissionToast('Out of fuel — limp mode');
+    } else if (this.fuel < 18 && this.frame % 100 === 0) {
+      this.ui.showMissionToast('Low fuel — find petrol');
+      Audio.voiceLowFuel();
+    }
+    this.speed = Math.max(0, Math.min(this.speed, 9.5));
+
+    // Condition warnings
+    if (this.condition < 25 && this.frame % 120 === 0) {
+      this.ui.showMissionToast('Keke condition critical — find mechanic');
+    } else if (this.condition < 50 && this.frame % 200 === 0) {
+      this.ui.showMissionToast('Keke needs maintenance');
+    }
+    // Engine sputter when very damaged
+    if (this.damageEngine > 60 && this.throttle > 0.5 && Math.random() < 0.02) {
+      this.speed *= 0.7;
+      this.ui.showMissionToast('Engine struggling');
+      Audio.brake();
+    }
+
+    // Idle at standstill — real keke waits for passengers
+    if (this.speed < 0.35) {
+      this.stoppedFrames = (this.stoppedFrames || 0) + 1;
+      if (this.stoppedFrames === 90) this.ui.showMissionToast('Waiting for passengers…');
+    } else {
+      this.stoppedFrames = 0;
+    this.condition = 100; // overall vehicle health 0-100
+    this.damageBody = 0;
+    this.damageEngine = 0;
+    this.damageTyres = 0;
+    }
+    if (this.pickupCooldown > 0) this.pickupCooldown--;
 
     this.roadOff = (this.roadOff + this.speed * 2) % 58;
     this.dist += this.speed * 0.0055;
-    this.score += Math.floor(this.speed * 0.2 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
+    this.score += Math.floor(this.speed * 0.06 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
     Audio.updateEngine(this.speed);
+
+    // Sync weather grip from renderer weather if available
+    const w = this.renderer3d?.weather || 'clear';
+    if (w === 'rain') this.weatherGrip = 0.88;
+    else if (w === 'harmattan') this.weatherGrip = 0.94;
+    else this.weatherGrip = 1;
+    this.heatComplaints = 0;
+    this.lastHonkFrame = 0;
+    this.lifeTipsShown = 0;
+    this.pickupCooldown = 0;
+    this.stoppedFrames = 0;
+    this.condition = 100; // overall vehicle health 0-100
+    this.damageBody = 0;
+    this.damageEngine = 0;
+    this.damageTyres = 0;
 
     // Level from distance
     const newLevel = 1 + Math.floor(this.dist / 2.5);
@@ -772,6 +969,38 @@ export class Game {
     if (this.roadCondition === 'bad') {
       this.speed *= 0.98;
       if (this.frame % 20 === 0) this.bounce = Math.max(this.bounce, 6);
+      if (this.frame % 40 === 0 && this.speed > 2) {
+        this.applyDamage('tyres', 1.2 + Math.random());
+        if (this.damageTyres > 40 && this.frame % 80 === 0) {
+          this.ui.showMissionToast('Tyres wearing on bad road');
+        }
+      }
+    }
+
+    // Gradual tire wear from speed + load + road
+    if (this.speed > 1 && !this.puncture) {
+      const wear = 0.008 * this.speed * (1 + this.paxOnBoard * 0.08) *
+        (this.roadCondition === 'bad' ? 2.2 : this.roadCondition === 'muddy' ? 1.4 : 1);
+      this.tireWearAccum = (this.tireWearAccum || 0) + wear;
+      if (this.tireWearAccum >= 1) {
+        const add = Math.floor(this.tireWearAccum);
+        this.tireWearAccum -= add;
+        this.applyDamage('tyres', add * 0.35);
+      }
+      // Puncture risk rises with tyre damage and bad road
+      const risk = (this.damageTyres / 100) * 0.0015 *
+        (this.roadCondition === 'bad' ? 3 : 1) *
+        (this.speed > 6 ? 1.5 : 1);
+      if (Math.random() < risk) {
+        this.triggerPuncture(this.roadCondition === 'bad' ? 'nail / pothole' : 'worn tyre');
+      }
+    }
+
+    // Flat tyre limp mode
+    if (this.puncture) {
+      this.speed = Math.min(this.speed, 2.8);
+      if (this.frame % 50 === 0) this.bounce = Math.max(this.bounce, 8);
+      if (this.frame % 100 === 0) this.ui.showMissionToast('Flat tyre — max crawl speed');
     }
 
     this.targetX = this.laneX(this.playerLane);
@@ -780,8 +1009,9 @@ export class Game {
 
     // Spawn traffic (denser during police chase)
     const chase = this.policeChase > 0;
-    const spawnEvery = chase ? 28 : 48;
-    const spawnChance = chase ? 0.9 : 0.7;
+    const peak = this.isPeakHour();
+    const spawnEvery = chase ? 28 : peak ? 36 : 55;
+    const spawnChance = chase ? 0.9 : peak ? 0.85 : 0.55;
     if (this.frame % spawnEvery === 0 && Math.random() < spawnChance && this.trafficJamTimer <= 0) {
       let lane = Math.floor(Math.random() * 3);
       if (lane === this.playerLane && Math.random() < 0.5) lane = (lane + 1) % 3;
@@ -797,7 +1027,7 @@ export class Game {
           y: -80,
           w: type === 'motorcycle' ? 36 : type === 'bus' || type === 'truck' ? 56 : 50,
           h: type === 'motorcycle' ? 50 : 70,
-          speedOff: opposite ? 1.2 + Math.random() * 0.8 : -0.4 + Math.random() * 0.5,
+          speedOff: opposite ? 0.9 + Math.random() * 0.6 : -0.9 + Math.random() * 0.5,
           opposite: !!opposite,
           robber: type === 'robber',
           laneCooldown: 50 + Math.floor(Math.random() * 80)
@@ -809,6 +1039,7 @@ export class Game {
     if (this.frame % 100 === 0) {
       const roll = Math.random();
       const sizes = ['normal', 'normal', 'normal', 'tall', 'fat', 'big'];
+      const isPark = Math.random() < 0.45 || this.parkOnly;
       this.paxZones.push({
         lane: Math.floor(Math.random() * 3),
         y: -90,
@@ -818,13 +1049,14 @@ export class Game {
         dest: this.randomDest(),
         seats: roll < 0.09 ? 2 : 1,
         size: sizes[Math.floor(Math.random() * sizes.length)],
-        flagging: true
+        flagging: true,
+        isPark
       });
     }
     if (this.frame % 120 === 0) {
       this.dropZones.push({ lane: Math.floor(Math.random() * 3), y: -90, used: false, akwai: true });
     }
-    if (this.frame % 60 === 0) {
+    if (this.frame % 140 === 0 && Math.random() < 0.4) {
       this.coins.push({ lane: Math.floor(Math.random() * 3), y: -60, taken: false, bob: Math.random() * 6 });
     }
 
@@ -887,7 +1119,7 @@ export class Game {
       const pb = { x: this.playerX - 20, y: this.playerY - 32, w: 40, h: 60 };
       for (const o of this.obs) {
         const ox = this.laneX(Math.round(o.lane)) - o.w / 2;
-        if (this.rectHit(pb, { x: ox, y: o.y + 8, w: o.w, h: o.h - 12 })) {
+        if (this.rectHit(pb, { x: ox, y: o.y + 10, w: o.w * 0.85, h: o.h - 16 })) {
           if (o.robber || o.type === 'robber') {
             const theft = 100 + Math.floor(Math.random() * 250);
             this.score = Math.max(0, this.score - theft);
@@ -899,6 +1131,20 @@ export class Game {
               return;
             }
             this.inv = 40;
+            continue;
+          }
+          // Low-speed scrape survives; high-speed = crash
+          if (this.speed < 2.2) {
+            this.speed *= 0.5;
+            this.score = Math.max(0, this.score - 30);
+            this.applyDamage('body', 8 + Math.random() * 6);
+            if (Math.random() < 0.12) this.applyDamage('tyres', 10);
+            if (Math.random() < 0.06) this.triggerPuncture('scrape hit tyre');
+            this.triggerShake(6, 3);
+            Audio.brake();
+            this.inv = 25;
+            this.ui.showMissionToast('Scrape — body damage');
+            o.y += 40;
             continue;
           }
           this.gameOver();
@@ -920,21 +1166,41 @@ export class Game {
       }
     }
 
-    // Pick up — must be SLOW
+    // Pick up — must be SLOW; park rules in market/junction
     for (const p of this.paxZones) {
       if (p.taken) continue;
       if (Math.round(p.lane) === this.playerLane && Math.abs(p.y - this.playerY) < 52) {
-        if (this.speed > 3.5) {
-          if (this.frame % 30 === 0) this.ui.showMissionToast('Slow down to pick up!');
+        if (this.speed > 2.4) {
+          if (this.frame % 40 === 0) this.ui.showMissionToast('Almost stop to load — like real park');
           continue;
         }
+        if (this.pickupCooldown > 0) continue;
         if (this.paxOnBoard >= this.capacity) continue;
+        // Illegal loading when park-only zone and not a marked park stop
+        if (this.parkOnly && !p.isPark) {
+          p.taken = true;
+          if (Math.random() < 0.55) {
+            this.ui.showMissionToast('KAROTA: No loading here!');
+            Audio.alert();
+            this.score = Math.max(0, this.score - (80 + Math.floor(Math.random() * 120)));
+            // chance of full checkpoint
+            if (Math.random() < 0.35) {
+              this.startKarotaCheckpoint();
+              return;
+            }
+          } else {
+            // sneaky board
+            p.agreedFare = 100 + Math.floor(Math.random() * 40);
+            this.boardWaiting(p);
+          }
+          continue;
+        }
         p.taken = true;
         if (!p.aishat && Math.random() < 0.32) {
           this.startNegotiation(p);
           return;
         }
-        p.agreedFare = p.vip ? 350 : p.aishat ? 550 : 120 + Math.floor(Math.random() * 40);
+        p.agreedFare = p.vip ? 300 + Math.floor(Math.random()*100) : p.aishat ? 400 + Math.floor(Math.random()*150) : 100 + Math.floor(Math.random() * 80);
         this.boardWaiting(p);
       }
     }
@@ -947,8 +1213,8 @@ export class Game {
         Math.abs(d.y - this.playerY) < 52 &&
         this.paxOnBoard > 0
       ) {
-        if (this.speed > 3.2) {
-          if (this.frame % 30 === 0) this.ui.showMissionToast('Akwai! Brake to drop');
+        if (this.speed > 2.2) {
+          if (this.frame % 40 === 0) this.ui.showMissionToast('Akwai! Brake to drop');
           continue;
         }
         d.used = true;
@@ -960,8 +1226,41 @@ export class Game {
       if (c.taken) continue;
       if (Math.hypot(this.playerX - this.laneX(c.lane), this.playerY - c.y) < 42) {
         c.taken = true;
-        this.score += 40;
-        Audio.coin();
+        if (c.petrol) {
+          this.fuel = Math.min(100, this.fuel + 45);
+          this.ui.showMissionToast('⛽ Refueled');
+          Audio.success();
+          Audio.voiceRefuel();
+        } else if (c.repair) {
+          // Mechanic: pay from score for repair
+          const cost = this.condition >= 85 ? 0 : 120 + Math.floor((100 - this.condition) * 3);
+          if (cost === 0 && !this.puncture) {
+            this.ui.showMissionToast('Mechanic: keke still fine');
+          } else if (this.score >= cost || this.puncture) {
+            const pay = this.puncture ? Math.max(cost, 150) : cost;
+            if (this.score >= pay) {
+              this.score -= pay;
+              this.repairVehicle('full');
+              this.ui.showMissionToast(
+                (this.puncture ? '🔧 New tyre + repair — ₦' : '🔧 Repaired — ₦') + pay
+              );
+              Audio.success();
+              Audio.speak('Tyres fixed. Keke ready.', { rate: 0.95 });
+            } else {
+              this.repairVehicle('tyres');
+              this.score = Math.max(0, this.score - 80);
+              this.ui.showMissionToast('🔧 Tyre only fixed — ₦80');
+              Audio.success();
+            }
+          } else {
+            this.repairVehicle('quick');
+            this.ui.showMissionToast('🔧 Quick fix only — need ₦' + cost + ' for full');
+            Audio.negotiate();
+          }
+        } else {
+          this.score += 40;
+          Audio.coin();
+        }
       }
     }
 
@@ -978,7 +1277,12 @@ export class Game {
     }
 
     this.ui.updateHUD(this);
+    this.ui.setFuel?.(this.fuel);
+    this.ui.setZone?.(this.zoneType);
+    this.ui.setCondition?.(this.condition);
+    this.ui.setTyreStatus?.(this.puncture, this.damageTyres);
   }
 }
+
 
 export { DEVELOPER };
