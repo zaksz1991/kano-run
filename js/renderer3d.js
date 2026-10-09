@@ -14,6 +14,10 @@ export class Renderer3D {
     this.zonePool = [];
     this.coinPool = [];
     this.introPhase = 3;
+    this.cabinCam = false;
+    this.cameraMode = 'chase'; // chase | driver | passenger | road
+    this.camPos = new THREE.Vector3(0, 6, -3.5);
+    this.camLook = new THREE.Vector3(0, 0.9, 16);
     this.init();
   }
 
@@ -49,15 +53,39 @@ export class Renderer3D {
 
     this.player = this.makeKeke(0xfbbf24, true);
     this.player.position.set(0, 0, PLAYER_Z);
+    this.player.traverse((ch) => { if (ch.isMesh) { ch.castShadow = true; ch.receiveShadow = true; } });
     this.scene.add(this.player);
+    // Night headlights
+    this.headlightL = new THREE.SpotLight(0xfff2cc, 0, 28, 0.4, 0.4, 1.2);
+    this.headlightR = new THREE.SpotLight(0xfff2cc, 0, 28, 0.4, 0.4, 1.2);
+    this.headlightL.position.set(-0.3, 0.7, 1.2);
+    this.headlightR.position.set(0.3, 0.7, 1.2);
+    this.headlightL.target.position.set(-0.5, 0, 12);
+    this.headlightR.target.position.set(0.5, 0, 12);
+    this.player.add(this.headlightL);
+    this.player.add(this.headlightR);
+    this.player.add(this.headlightL.target);
+    this.player.add(this.headlightR.target);
 
-    // Pool mixed vehicle types
-    for (let i = 0; i < 22; i++) {
-      const v = this.makeCar(0x64748b);
-      v.visible = false;
-      this.scene.add(v);
-      this.vehiclePool.push(v);
-    }
+    // Pool mixed vehicle types for Phase 12 variety
+    this.vehiclePool = [];
+    this.typedPools = { car: [], keke: [], taxi: [], bus: [], motorcycle: [], truck: [], police: [], karota: [], robber: [] };
+    const add = (mesh, type) => {
+      mesh.visible = false;
+      mesh.userData.poolType = type;
+      this.scene.add(mesh);
+      this.vehiclePool.push(mesh);
+      this.typedPools[type].push(mesh);
+    };
+    for (let i = 0; i < 6; i++) add(this.makeCar(0xdc2626), 'car');
+    for (let i = 0; i < 5; i++) add(this.makeKeke(0xeab308, false), 'keke');
+    for (let i = 0; i < 3; i++) add(this.makeCar(0xeab308), 'taxi');
+    for (let i = 0; i < 2; i++) add(this.makeBus(), 'bus');
+    for (let i = 0; i < 3; i++) add(this.makeMotorcycle(), 'motorcycle');
+    for (let i = 0; i < 2; i++) add(this.makeTruck(), 'truck');
+    for (let i = 0; i < 2; i++) add(this.makeEnforcer('police'), 'police');
+    for (let i = 0; i < 2; i++) add(this.makeEnforcer('karota'), 'karota');
+    for (let i = 0; i < 2; i++) add(this.makeKeke(0x7f1d1d, false), 'robber');
     for (let i = 0; i < 10; i++) {
       const z = this.makeZone(0x4ade80);
       z.visible = false;
@@ -132,6 +160,41 @@ export class Renderer3D {
     this.scene.add(this.playerShadow);
   }
 
+  makeRoadTexture() {
+    const cv = document.createElement('canvas');
+    cv.width = 256;
+    cv.height = 256;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#2a2e35';
+    ctx.fillRect(0, 0, 256, 256);
+    // asphalt noise
+    for (let i = 0; i < 4000; i++) {
+      const g = 30 + Math.random() * 40;
+      ctx.fillStyle = 'rgba(' + g + ',' + g + ',' + (g + 5) + ',0.35)';
+      ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+    }
+    // center dashes
+    ctx.strokeStyle = '#eab308';
+    ctx.lineWidth = 6;
+    ctx.setLineDash([28, 22]);
+    ctx.beginPath();
+    ctx.moveTo(128, 0);
+    ctx.lineTo(128, 256);
+    ctx.stroke();
+    // edge lines
+    ctx.setLineDash([]);
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(24, 0); ctx.lineTo(24, 256);
+    ctx.moveTo(232, 0); ctx.lineTo(232, 256);
+    ctx.stroke();
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, 18);
+    return tex;
+  }
+
   mat(color, opts = {}) {
     return new THREE.MeshStandardMaterial({
       color,
@@ -143,13 +206,18 @@ export class Renderer3D {
   }
 
   buildRoad() {
-    // Main asphalt
-    const road = new THREE.Mesh(
-      new THREE.PlaneGeometry(9.5, ROAD_LEN),
-      this.mat(0x2c3545, { roughness: 0.92, metalness: 0.08 })
-    );
+    // Main asphalt with procedural texture
+    const roadTex = this.makeRoadTexture();
+    const roadMat = new THREE.MeshStandardMaterial({
+      map: roadTex,
+      roughness: 0.94,
+      metalness: 0.06,
+      color: 0xffffff
+    });
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(9.5, ROAD_LEN), roadMat);
     road.rotation.x = -Math.PI / 2;
     road.position.set(0, 0, ROAD_LEN / 2 - 4);
+    this.roadMesh = road;
     this.scene.add(road);
 
     // Center darker wear strip
@@ -213,7 +281,8 @@ export class Renderer3D {
     const types = [
       'house', 'shop', 'house', 'market', 'house', 'mosque',
       'shop', 'petrol', 'house', 'busstop', 'shop', 'house',
-      'market', 'house', 'shop', 'mosque', 'house', 'petrol'
+      'market', 'house', 'shop', 'mosque', 'house', 'petrol',
+      'house', 'shop', 'market', 'busstop', 'house', 'mosque'
     ];
 
     for (const side of [-1, 1]) {
@@ -236,10 +305,16 @@ export class Renderer3D {
     }
 
     // A few pedestrians on shoulders
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 22; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      this.addPedestrian(side * 5.0, i * 9 + 4);
+      this.addPedestrian(side * (4.7 + (i % 3) * 0.2), i * 5.2 + 2);
     }
+
+    // Kano-style city gates / welcome arches spanning the road
+    this.addCityGate(0, 28);
+    this.addCityGate(0, 72);
+    this.addWelcomePillar(-6.5, 45);
+    this.addWelcomePillar(6.5, 45);
 
     this.scene.add(this.buildings);
 
@@ -249,6 +324,55 @@ export class Renderer3D {
     );
     this.sky.position.y = -2;
     this.scene.add(this.sky);
+  }
+
+  addCityGate(x, z) {
+    const archCol = this.mat(0x7c2d12, { roughness: 0.85 });
+    const cream = this.mat(0xf5e6c8, { roughness: 0.7 });
+    // left pillar
+    const lp = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.5, 0.8), archCol);
+    lp.position.set(x - 4.2, 2.75, z);
+    this.buildings.add(lp);
+    // right pillar
+    const rp = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.5, 0.8), archCol);
+    rp.position.set(x + 4.2, 2.75, z);
+    this.buildings.add(rp);
+    // top beam
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.7, 0.7), archCol);
+    beam.position.set(x, 5.4, z);
+    this.buildings.add(beam);
+    // crenellations
+    for (let i = -4; i <= 4; i++) {
+      const cren = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.5), archCol);
+      cren.position.set(x + i * 1.0, 5.95, z);
+      this.buildings.add(cren);
+    }
+    // sign panel
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.55, 0.15), cream);
+    sign.position.set(x, 5.35, z + 0.4);
+    this.buildings.add(sign);
+  }
+
+  addWelcomePillar(x, z) {
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 6.5, 1.1),
+      this.mat(0xb45309, { roughness: 0.75 })
+    );
+    body.position.set(x, 3.25, z);
+    this.buildings.add(body);
+    const top = new THREE.Mesh(
+      new THREE.BoxGeometry(1.3, 0.5, 1.3),
+      this.mat(0xfbbf24, { roughness: 0.5, metalness: 0.2 })
+    );
+    top.position.set(x, 6.7, z);
+    this.buildings.add(top);
+    // I Love Kano heart panel
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.8, 1.2),
+      new THREE.MeshBasicMaterial({ color: 0xdc2626, side: THREE.DoubleSide })
+    );
+    panel.position.set(x + (x > 0 ? -0.56 : 0.56), 4.2, z);
+    this.buildings.add(panel);
   }
 
   addHouse(x, z, side, color) {
@@ -476,12 +600,13 @@ export class Renderer3D {
     }
   }
 
-  /** Recognizable Adaidaita Sahu (3-wheeler) */
+  /** Keke NAPEP style — yellow body, black canopy, 3 wheels */
   makeKeke(bodyColor = 0xfbbf24, isPlayer = false) {
     const g = new THREE.Group();
     const bodyM = this.mat(bodyColor, { roughness: 0.45, metalness: 0.2 });
     const dark = this.mat(0x1e293b, { roughness: 0.7 });
-    const roofM = this.mat(isPlayer ? 0xfde047 : 0xeab308, { roughness: 0.4 });
+    // Real NAPEP: black fabric canopy
+    const roofM = this.mat(0x0f172a, { roughness: 0.9 });
     const chrome = this.mat(0x94a3b8, { roughness: 0.3, metalness: 0.7 });
     const tire = this.mat(0x0f172a, { roughness: 0.95 });
 
@@ -541,6 +666,13 @@ export class Renderer3D {
       const hl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), lightM);
       hl.position.set(x, 0.58, 0.92);
       g.add(hl);
+    }
+    // Amber indicators (NAPEP style)
+    const indM = this.mat(0xf59e0b, { emissive: 0xf59e0b, emissiveIntensity: 0.35 });
+    for (const x of [-0.55, 0.55]) {
+      const ind = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.08), indM);
+      ind.position.set(x, 0.72, 0.75);
+      g.add(ind);
     }
 
     // Handlebars
@@ -662,6 +794,51 @@ export class Renderer3D {
     return g;
   }
 
+  makeMotorcycle() {
+    const g = new THREE.Group();
+    const dark = this.mat(0x0f172a, { roughness: 0.9 });
+    const body = this.mat(0x475569, { roughness: 0.5, metalness: 0.3 });
+    const w1 = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.1, 10), dark);
+    w1.rotation.z = Math.PI / 2; w1.position.set(0, 0.18, 0.45); g.add(w1);
+    const w2 = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.1, 10), dark);
+    w2.rotation.z = Math.PI / 2; w2.position.set(0, 0.18, -0.4); g.add(w2);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.2, 0.9), body);
+    frame.position.y = 0.4; g.add(frame);
+    const rider = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.25), this.mat(0x1d4ed8));
+    rider.position.set(0, 0.7, -0.05); g.add(rider);
+    g.userData.kind = 'motorcycle';
+    return g;
+  }
+
+  makeBus() {
+    const g = new THREE.Group();
+    const bodyM = this.mat(0x15803d, { roughness: 0.5, metalness: 0.15 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.1, 3.2), bodyM);
+    body.position.y = 0.85; g.add(body);
+    const dark = this.mat(0x0f172a);
+    for (const [x, z] of [[-0.55, 1.1], [0.55, 1.1], [-0.55, -1.1], [0.55, -1.1]]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.14, 10), dark);
+      w.rotation.z = Math.PI / 2; w.position.set(x, 0.24, z); g.add(w);
+    }
+    g.userData.kind = 'bus';
+    return g;
+  }
+
+  makeTruck() {
+    const g = new THREE.Group();
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.9, 1.1), this.mat(0xb45309, { roughness: 0.5 }));
+    cab.position.set(0, 0.7, 0.9); g.add(cab);
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.7, 2.0), this.mat(0x78716c, { roughness: 0.8 }));
+    bed.position.set(0, 0.6, -0.7); g.add(bed);
+    const dark = this.mat(0x0f172a);
+    for (const [x, z] of [[-0.5, 0.9], [0.5, 0.9], [-0.5, -1.0], [0.5, -1.0]]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.14, 10), dark);
+      w.rotation.z = Math.PI / 2; w.position.set(x, 0.22, z); g.add(w);
+    }
+    g.userData.kind = 'truck';
+    return g;
+  }
+
   makeZone(color) {
     const g = new THREE.Group();
     const ring = new THREE.Mesh(
@@ -726,6 +903,34 @@ export class Renderer3D {
     return LANE_X[Math.max(0, Math.min(2, Math.round(lane)))];
   }
 
+  cycleCamera() {
+    const modes = ['chase', 'driver', 'passenger', 'road'];
+    const i = modes.indexOf(this.cameraMode || 'chase');
+    this.cameraMode = modes[(i + 1) % modes.length];
+    this.cabinCam = this.cameraMode === 'driver';
+    return this.cameraMode;
+  }
+
+  setDamageVisual(condition) {
+    if (!this.player) return;
+    const t = Math.max(0, Math.min(1, (100 - (condition || 100)) / 100));
+    this.player.traverse((ch) => {
+      if (ch.isMesh && ch.material && ch.material.color && ch.geometry?.type === 'BoxGeometry') {
+        const p = ch.geometry.parameters;
+        if (p && p.width >= 1.0 && p.height >= 0.4 && p.height <= 0.6) {
+          // darken body toward grey-brown when damaged
+          const base = ch.userData.baseColor || ch.material.color.getHex();
+          if (!ch.userData.baseColor) ch.userData.baseColor = base;
+          const r = ((base >> 16) & 255) * (1 - t * 0.45);
+          const g = ((base >> 8) & 255) * (1 - t * 0.5);
+          const b = (base & 255) * (1 - t * 0.2);
+          ch.material.color.setRGB(r / 255, g / 255, b / 255);
+          ch.material.roughness = 0.45 + t * 0.4;
+        }
+      }
+    });
+  }
+
   applyPaint(paintId) {
     const colors = {
       classic: 0xfbbf24, ruffneck: 0xeab308, sky: 0x38bdf8,
@@ -780,6 +985,16 @@ export class Renderer3D {
       this.sun.intensity = 0.18;
       this.hemlight.intensity = 0.12;
       if (this.sky) this.sky.material.color.setHex(0x020617);
+      if (this.headlightL) this.headlightL.intensity = 2.2;
+      if (this.headlightR) this.headlightR.intensity = 2.2;
+      // Boost street lamp emissive at night
+      if (this.buildings) {
+        this.buildings.traverse((ch) => {
+          if (ch.isMesh && ch.material && ch.material.emissive && ch.geometry?.type === 'SphereGeometry') {
+            ch.material.emissiveIntensity = 1.2;
+          }
+        });
+      }
     } else if (tod > 0.42) {
       // dusk
       this.renderer.setClearColor(0x7c3aed, 1);
@@ -789,6 +1004,8 @@ export class Renderer3D {
       this.sun.intensity = 0.45;
       this.hemlight.intensity = 0.25;
       if (this.sky) this.sky.material.color.setHex(0x5b21b6);
+      if (this.headlightL) this.headlightL.intensity = 0.6;
+      if (this.headlightR) this.headlightR.intensity = 0.6;
     } else if (tod > 0.28) {
       // afternoon warm
       this.renderer.setClearColor(0x38bdf8, 1);
@@ -798,6 +1015,8 @@ export class Renderer3D {
       this.sun.intensity = 1.05;
       this.hemlight.intensity = 0.4;
       if (this.sky) this.sky.material.color.setHex(0x38bdf8);
+      if (this.headlightL) this.headlightL.intensity = 0;
+      if (this.headlightR) this.headlightR.intensity = 0;
     } else {
       // bright morning
       this.renderer.setClearColor(0x7dd3fc, 1);
@@ -807,6 +1026,8 @@ export class Renderer3D {
       this.sun.intensity = 1.2;
       this.hemlight.intensity = 0.5;
       if (this.sky) this.sky.material.color.setHex(0x7dd3fc);
+      if (this.headlightL) this.headlightL.intensity = 0;
+      if (this.headlightR) this.headlightR.intensity = 0;
     }
 
     // ——— Weather cycle (clear → harmattan dust → rain) ———
@@ -875,6 +1096,14 @@ export class Renderer3D {
       this.player.position.y = by;
       this.player.rotation.y = (tx - this.player.position.x) * 0.1;
       this.player.rotation.z = (this.player.position.x - tx) * 0.06;
+      // Wheel spin by speed
+      const spin = (g.speed || 0) * 0.35;
+      this.player.traverse((ch) => {
+        if (ch.isMesh && ch.geometry?.type === 'CylinderGeometry') {
+          const p = ch.geometry.parameters;
+          if (p && p.radiusTop && p.radiusTop < 0.3) ch.rotation.x += spin;
+        }
+      });
       // intro: camera closer during walk-up
       if ((this.introPhase || 3) < 3) {
         this.camera.position.z = -2.2 + this.introPhase * 0.4;
@@ -886,33 +1115,79 @@ export class Renderer3D {
       }
     }
 
-    // Camera — speed FOV + shake
+    // Multi-camera: chase | driver | passenger | road
     let sx = 0, sy = 0;
     if (g.shake > 0) {
-      sx = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.03;
-      sy = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.02;
+      sx = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.035;
+      sy = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.025;
     }
     const px = this.player ? this.player.position.x : 0;
-    const targetFov = 50 + Math.min(8, Math.max(0, spd - 4) * 1.5);
-    this.camera.fov += (targetFov - this.camera.fov) * 0.05;
+    const bob = Math.sin((g.frame || 0) * 0.18) * Math.min(0.07, (spd || 0) * 0.012);
+    let mode = this.cameraMode || g.cameraMode || 'chase';
+    if (g.cabinCam && mode === 'chase') mode = 'driver';
+
+    let targetPos, targetLook, targetFov;
+    if (mode === 'driver') {
+      // Driver seat — eyes forward over handlebar
+      targetFov = 66 + Math.min(5, Math.max(0, spd - 3));
+      targetPos = new THREE.Vector3(px + sx * 0.4, 1.42 + sy * 0.25 + bob * 0.5, PLAYER_Z + 0.45);
+      targetLook = new THREE.Vector3(px * 0.12 + sx * 0.2, 1.05, PLAYER_Z + 16);
+      if (this.player) this.player.visible = false;
+    } else if (mode === 'passenger') {
+      // Back seat passenger looking forward-left
+      targetFov = 60 + Math.min(4, Math.max(0, spd - 3));
+      targetPos = new THREE.Vector3(px + 0.35 + sx * 0.3, 1.28 + bob * 0.4, PLAYER_Z - 0.35);
+      targetLook = new THREE.Vector3(px * 0.2 - 0.3, 0.95, PLAYER_Z + 12);
+      if (this.player) this.player.visible = true;
+    } else if (mode === 'road') {
+      // Low hood / road rush view
+      targetFov = 72 + Math.min(6, Math.max(0, spd - 2));
+      targetPos = new THREE.Vector3(px + sx * 0.5, 0.85 + sy * 0.2 + bob * 0.3, PLAYER_Z + 1.1);
+      targetLook = new THREE.Vector3(px * 0.1, 0.4, PLAYER_Z + 18);
+      if (this.player) this.player.visible = false;
+    } else {
+      // Cinematic chase
+      targetFov = 48 + Math.min(6, Math.max(0, spd - 4) * 1.0);
+      targetPos = new THREE.Vector3(px * 0.45 + sx, 5.8 + sy + bob, -3.8);
+      targetLook = new THREE.Vector3(px * 0.28, 0.85, 15);
+      if (this.player) this.player.visible = true;
+    }
+
+    // Smooth camera (professional lerp)
+    if (!this.camPos) this.camPos = targetPos.clone();
+    if (!this.camLook) this.camLook = targetLook.clone();
+    this.camPos.lerp(targetPos, 0.12);
+    this.camLook.lerp(targetLook, 0.1);
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.camLook);
+    this.camera.fov += (targetFov - this.camera.fov) * 0.08;
     this.camera.updateProjectionMatrix();
-    this.camera.position.x = px * 0.4 + sx;
-    this.camera.position.y = 6.2 + sy;
-    this.camera.position.z = -3.5;
-    this.camera.lookAt(px * 0.25, 0.9, 16);
+
+    // Scroll road texture for motion
+    if (this.roadMesh && this.roadMesh.material && this.roadMesh.material.map) {
+      this.roadMesh.material.map.offset.y = -((g.roadOff || 0) * 0.02) % 1;
+    }
 
     const py = g.playerY || 500;
-    let vi = 0;
+    // Hide all pool meshes first
+    for (const mesh of this.vehiclePool) mesh.visible = false;
+    const used = {};
     for (const o of g.obs || []) {
-      if (vi >= this.vehiclePool.length) break;
-      const mesh = this.vehiclePool[vi++];
+      let type = o.type || 'car';
+      if (type === 'taxi') type = 'taxi';
+      const pool = (this.typedPools && this.typedPools[type] && this.typedPools[type].length)
+        ? this.typedPools[type]
+        : this.typedPools?.car || this.vehiclePool;
+      used[type] = used[type] || 0;
+      if (used[type] >= pool.length) continue;
+      const mesh = pool[used[type]++];
       mesh.visible = true;
       mesh.position.x = this.laneToX(o.lane);
       mesh.position.z = this.screenYToZ(o.y, py);
       mesh.position.y = 0;
-      this.styleVehicle(mesh, o.type || 'car');
+      // slight lean when changing lanes feel
+      mesh.rotation.y = Math.sin((g.frame || 0) * 0.05 + o.y * 0.01) * 0.03;
     }
-    while (vi < this.vehiclePool.length) this.vehiclePool[vi++].visible = false;
 
     let zi = 0;
     const zones = [
@@ -935,14 +1210,17 @@ export class Renderer3D {
     while (zi < this.zonePool.length) this.zonePool[zi++].visible = false;
 
     let ci = 0;
-    for (const c of g.coins || []) {
-      if (c.taken || ci >= this.coinPool.length) continue;
+    for (const coin of g.coins || []) {
+      if (coin.taken || ci >= this.coinPool.length) continue;
       const mesh = this.coinPool[ci++];
       mesh.visible = true;
-      mesh.position.x = this.laneToX(c.lane);
-      mesh.position.z = this.screenYToZ(c.y, py);
-      mesh.position.y = 0.55 + Math.sin(c.bob || 0) * 0.15;
+      mesh.position.x = this.laneToX(coin.lane);
+      mesh.position.z = this.screenYToZ(coin.y, py);
+      mesh.position.y = 0.55 + Math.sin(coin.bob || 0) * 0.15;
       mesh.rotation.y += 0.1;
+      if (mesh.material && mesh.material.color) {
+        mesh.material.color.setHex(coin.repair ? 0x3b82f6 : coin.petrol ? 0x22c55e : 0xfbbf24);
+      }
     }
     while (ci < this.coinPool.length) this.coinPool[ci++].visible = false;
 

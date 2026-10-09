@@ -8,10 +8,16 @@ export const STATE = {
   EVENT: 5
 };
 
-export const DEVELOPER = 'RuffNeck';
+export const DEVELOPER = 'Hassan Zakariya';
 
 export const CONFIG = {
   LANES: 3,
+  // Front seat 2 + back seat 3 = 5 (realistic crowded keke)
+  DEFAULT_CAPACITY: 5,
+  ROAD_MODES: {
+    oneway: { id: 'oneway', name: 'One-way', desc: 'Traffic flows with you only', oppositeChance: 0 },
+    twoway: { id: 'twoway', name: 'Two-way', desc: 'Oncoming traffic in left lane', oppositeChance: 0.35 }
+  },
 
   DESTINATIONS: [
     'Sabon Gari', 'Kofar Mata', 'Fagge', 'Farm Centre', 'Hotoro',
@@ -93,12 +99,12 @@ export const CONFIG = {
   },
 
   KEKES: {
-    starter: { id: 'starter', name: 'Street Classic', color: 0xfbbf24, speed: 0, capacity: 3, unlocked: true },
-    ruffgold: { id: 'ruffgold', name: 'RuffNeck Gold', color: 0xeab308, speed: 0.1, capacity: 3, unlocked: true },
-    sky: { id: 'sky', name: 'Sky Runner', color: 0x38bdf8, speed: 0.15, capacity: 3, unlocked: true },
-    heavy: { id: 'heavy', name: 'Load Master', color: 0x22c55e, speed: -0.05, capacity: 4, unlocked: true },
-    night: { id: 'night', name: 'Night Shadow', color: 0x1e293b, speed: 0.2, capacity: 3, unlocked: true },
-    royal: { id: 'royal', name: 'Royal Purple', color: 0xa855f7, speed: 0.12, capacity: 3, unlocked: true }
+    starter: { id: 'starter', name: 'Street Classic', color: 0xfbbf24, speed: 0, capacity: 5, unlocked: true },
+    ruffgold: { id: 'ruffgold', name: 'RuffNeck Gold', color: 0xeab308, speed: 0.1, capacity: 5, unlocked: true },
+    sky: { id: 'sky', name: 'Sky Runner', color: 0x38bdf8, speed: 0.15, capacity: 5, unlocked: true },
+    heavy: { id: 'heavy', name: 'Load Master', color: 0x22c55e, speed: -0.05, capacity: 5, unlocked: true },
+    night: { id: 'night', name: 'Night Shadow', color: 0x1e293b, speed: 0.2, capacity: 5, unlocked: true },
+    royal: { id: 'royal', name: 'Royal Purple', color: 0xa855f7, speed: 0.12, capacity: 5, unlocked: true }
   },
 
   PAINTS: {

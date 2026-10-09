@@ -1,5 +1,6 @@
 import { CONFIG, STATE } from './config.js';
 import { Storage } from './storage.js';
+import { Audio } from './audio.js';
 
 export class UI {
   constructor(game) {
@@ -28,10 +29,19 @@ export class UI {
     document.getElementById('hs').textContent = game.high;
     this.syncSettingsButtons();
     this.updateDailyUI(game);
+    this.showLastRun();
+    this.updateSelectionStatus();
+    this.maybeShowHelpOnBoot();
   }
 
   bind() {
     document.getElementById('start-btn').onclick = () => this.game.start();
+    const helpBtn = document.getElementById('help-btn');
+    if (helpBtn) helpBtn.onclick = () => this.showHelp();
+    const hudHelp = document.getElementById('hud-help');
+    if (hudHelp) hudHelp.onclick = () => this.showHelp();
+    const got = document.getElementById('help-gotit');
+    if (got) got.onclick = () => this.hideHelp(true);
     document.getElementById('retry-btn').onclick = () => this.game.start();
     document.getElementById('home-btn').onclick = () => this.showStart();
     const shareBtn = document.getElementById('share-btn');
@@ -40,6 +50,16 @@ export class UI {
       this.startScreen.style.display = 'none';
       this.routeScreen.style.display = 'flex';
     };
+    const roadBtn = document.getElementById('road-btn');
+    if (roadBtn) {
+      roadBtn.onclick = () => {
+        const next = this.game.selectedRoadMode === 'oneway' ? 'twoway' : 'oneway';
+        this.game.selectedRoadMode = next;
+        Storage.set('kanoRoadMode', next);
+        this.updateSelectionStatus();
+        this.showMissionToast(next === 'oneway' ? 'One-way road' : 'Two-way road');
+      };
+    }
     document.getElementById('route-back').onclick = () => {
       this.routeScreen.style.display = 'none';
       this.startScreen.style.display = 'flex';
@@ -79,15 +99,15 @@ export class UI {
     holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.25));
     holdCtrl(brake, () => this.game.setBrake(true), () => this.game.setBrake(false));
     if (pauseBtn) pauseBtn.onclick = () => this.game.togglePause();
+    const camBtn = document.getElementById('cam-btn');
+    if (camBtn) camBtn.onclick = () => this.game.toggleCabin();
 
     const muteBtn = document.getElementById('mute-btn');
     if (muteBtn) muteBtn.onclick = () => {
       const next = !Storage.getMuted();
       Storage.setMuted(next);
-      import('./audio.js').then(({ Audio }) => {
-        Audio.muted = next;
-        if (next) Audio.stopEngine();
-      });
+      Audio.muted = next;
+      if (next) Audio.stopEngine();
       this.syncSettingsButtons();
       this.showMissionToast(next ? 'Sound off' : 'Sound on');
     };
@@ -128,6 +148,7 @@ export class UI {
       if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(1);
       if (e.key === 'ArrowDown' || e.key === 's') this.game.setBrake(true);
       if (e.key === 'p' || e.key === 'Escape') this.game.togglePause();
+      if (e.key === 'c') this.game.toggleCabin();
     });
     window.addEventListener('keyup', (e) => {
       if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(0.25);
@@ -147,6 +168,7 @@ export class UI {
         Storage.setRoute(r.id);
         this.routeScreen.style.display = 'none';
         this.startScreen.style.display = 'flex';
+        this.updateSelectionStatus();
         this.showMissionToast('Route: ' + r.name);
       };
       list.appendChild(div);
@@ -167,13 +189,66 @@ export class UI {
         this.game.selectedDriver = d.id;
         Storage.setDriver(d.id);
         this.renderDrivers();
+        this.updateSelectionStatus();
         this.showMissionToast('Driver: ' + d.name);
       };
       list.appendChild(div);
     });
     this.renderPaints();
+    this.renderKekes();
     this.renderLeaderboard();
     this.renderAchievements();
+  }
+
+  renderKekes() {
+    let list = document.getElementById('keke-list');
+    if (!list) {
+      const garage = document.getElementById('garage-screen');
+      if (!garage) return;
+      const label = document.createElement('div');
+      label.style.cssText = 'font-size:0.75rem;color:#94a3b8;margin:12px 0 8px;text-transform:uppercase;letter-spacing:0.08em';
+      label.textContent = 'Keke';
+      list = document.createElement('div');
+      list.id = 'keke-list';
+      list.style.cssText = 'width:100%;max-width:360px;display:grid;grid-template-columns:1fr 1fr;gap:8px';
+      const paints = document.getElementById('paint-list');
+      if (paints && paints.parentNode) {
+        paints.parentNode.insertBefore(label, paints);
+        paints.parentNode.insertBefore(list, paints);
+      }
+    }
+    const owned = Storage.get('kanoOwnedKeke', ['starter', 'ruffgold']) || ['starter', 'ruffgold'];
+    list.innerHTML = '';
+    Object.values(CONFIG.KEKES || {}).forEach((k) => {
+      const unlocked = owned.includes(k.id) || k.unlocked;
+      const selected = this.game.selectedKeke === k.id;
+      const div = document.createElement('div');
+      div.className = 'route-card';
+      div.style.padding = '10px';
+      div.style.opacity = unlocked ? '1' : '0.45';
+      if (selected) div.style.borderColor = '#f5c542';
+      const hex = '#' + k.color.toString(16).padStart(6, '0');
+      div.innerHTML = `<div style="height:20px;border-radius:6px;background:${hex};margin-bottom:6px"></div>
+        <div class="rname" style="font-size:0.78rem">${selected ? '✓ ' : ''}${k.name}</div>
+        <div class="rdesc">${unlocked ? 'Cap ' + k.capacity : '🔒 Lv unlock'}</div>`;
+      div.onclick = () => {
+        if (!unlocked) {
+          this.showMissionToast('Locked — reach higher level');
+          return;
+        }
+        this.game.selectedKeke = k.id;
+        Storage.set('kanoKeke', k.id);
+        this.game.capacity = k.capacity || 3;
+        if (this.game.renderer3d?.applyPaint) {
+          // approximate body color from keke
+          const map = { starter: 'classic', ruffgold: 'ruffneck', sky: 'sky', heavy: 'forest', night: 'night', royal: 'royal' };
+          this.game.renderer3d.applyPaint(map[k.id] || 'classic');
+        }
+        this.renderKekes();
+        this.showMissionToast('Keke: ' + k.name);
+      };
+      list.appendChild(div);
+    });
   }
 
   renderPaints() {
@@ -242,8 +317,11 @@ export class UI {
 
   showGameOver(game) {
     this.overScreen.style.display = 'flex';
+    const dests = (game.destinationsServed || []).slice(-4).join(', ') || '—';
     document.getElementById('final-stats').innerHTML =
-      `<b>₦${Math.floor(game.score).toLocaleString()}</b> · ${game.dist.toFixed(1)} km · ${game.totalPax} pax · ${game.dropCount} drops`;
+      `<b>₦${Math.floor(game.score).toLocaleString()}</b> · ${game.dist.toFixed(1)} km · Lv ${game.level || 1}<br>` +
+      `${game.totalPax} pax · ${game.dropCount} drops · ${game.nearMissCount || 0} near misses<br>` +
+      `<span style="color:#94a3b8;font-size:0.8rem">Stops: ${dests}</span>`;
     document.getElementById('final-hs').textContent = game.high;
   }
 
@@ -253,6 +331,51 @@ export class UI {
     this.paxEl.textContent = game.paxOnBoard;
     this.capEl.textContent = game.capacity;
     if (this.livesEl) this.livesEl.textContent = game.continuesLeft;
+    const speedo = document.getElementById('speedo');
+    if (speedo) {
+      // map internal speed to ~km/h feel
+      speedo.textContent = Math.round((game.speed || 0) * 12);
+    }
+    this.drawMinimap(game);
+  }
+
+  drawMinimap(game) {
+    const c = document.getElementById('minimap');
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+    // road
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(18, 4, 36, h - 8);
+    ctx.strokeStyle = '#eab308';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(30, 6); ctx.lineTo(30, h - 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(42, 6); ctx.lineTo(42, h - 6); ctx.stroke();
+    ctx.setLineDash([]);
+    const py = game.playerY || 500;
+    const mapY = (y) => {
+      const t = 1 - Math.max(0, Math.min(1, y / (py + 80)));
+      return 8 + t * (h - 16);
+    };
+    const mapX = (lane) => 24 + Math.round(lane) * 12;
+    // traffic
+    for (const o of game.obs || []) {
+      ctx.fillStyle = o.type === 'police' || o.type === 'karota' ? '#f59e0b' : '#94a3b8';
+      ctx.fillRect(mapX(o.lane) - 3, mapY(o.y) - 4, 6, 8);
+    }
+    // pax zones
+    for (const p of game.paxZones || []) {
+      if (p.taken) continue;
+      ctx.fillStyle = p.aishat ? '#f472b6' : '#4ade80';
+      ctx.beginPath();
+      ctx.arc(mapX(p.lane), mapY(p.y), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // player
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(mapX(game.playerLane) - 4, h - 18, 8, 12);
   }
 
   setMission(t) { if (this.missionLabel) this.missionLabel.textContent = '🎯 ' + t; }
@@ -296,6 +419,52 @@ export class UI {
     if (qBtn) qBtn.textContent = Storage.getLowQuality() ? '⚡ Performance' : '✨ Quality';
   }
 
+  showHelp() {
+    const el = document.getElementById('help-overlay');
+    if (el) {
+      el.style.display = 'flex';
+    }
+  }
+
+  hideHelp(remember) {
+    const el = document.getElementById('help-overlay');
+    if (el) el.style.display = 'none';
+    if (remember) {
+      try { localStorage.setItem('kanoHelpSeen', '1'); } catch (e) {}
+    }
+  }
+
+  maybeShowHelpOnBoot() {
+    try {
+      if (!localStorage.getItem('kanoHelpSeen')) this.showHelp();
+    } catch (e) {
+      this.showHelp();
+    }
+  }
+
+  updateSelectionStatus() {
+    const el = document.getElementById('selection-status');
+    const roadBtn = document.getElementById('road-btn');
+    if (!el) return;
+    const route = CONFIG.ROUTES[this.game.selectedRoute];
+    const driver = CONFIG.DRIVERS[this.game.selectedDriver] || CONFIG.DRIVERS.ruffneck;
+    const road = (CONFIG.ROAD_MODES && CONFIG.ROAD_MODES[this.game.selectedRoadMode]) || { name: 'Two-way' };
+    el.innerHTML = '<b style="color:#f5c542">' + driver.name + '</b> · ' +
+      (route ? route.name : 'Route') + '<br>' + road.name + ' · Cap 5 (2 front + 3 back)';
+    if (roadBtn) roadBtn.textContent = 'ROAD: ' + (road.name || 'TWO-WAY').toUpperCase();
+  }
+
+  showLastRun() {
+    const box = document.getElementById('daily-box');
+    if (!box) return;
+    const last = Storage.get('kanoLastRun', null);
+    if (last && last.score) {
+      const prev = box.textContent || '';
+      // keep daily text; append last run under daily-box via title
+      box.title = 'Last run: ₦' + last.score + ' · ' + last.dist + 'km · Lv' + (last.level || 1);
+    }
+  }
+
   updateDailyUI(game) {
     const box = document.getElementById('daily-box');
     const claim = document.getElementById('claim-daily');
@@ -309,6 +478,69 @@ export class UI {
       box.textContent = `📅 Daily reward ready · Current streak ${streak}`;
       if (claim) claim.style.display = 'inline-block';
     }
+  }
+
+  setCamLabel(mode) {
+    const btn = document.getElementById('cam-btn');
+    if (!btn) return;
+    const short = { chase: 'CAM', driver: 'DRV', passenger: 'PAX', road: 'ROAD' };
+    btn.textContent = short[mode] || 'CAM';
+  }
+
+  setTyreStatus(punctured, wear) {
+    const el = document.getElementById('tyre-status');
+    const wrap = document.getElementById('tyre-stat');
+    if (!el) return;
+    if (punctured) {
+      el.textContent = 'FLAT';
+      if (wrap) wrap.style.color = '#ef4444';
+    } else if (wear > 70) {
+      el.textContent = 'WORN';
+      if (wrap) wrap.style.color = '#f59e0b';
+    } else if (wear > 40) {
+      el.textContent = 'FAIR';
+      if (wrap) wrap.style.color = '#fbbf24';
+    } else {
+      el.textContent = 'OK';
+      if (wrap) wrap.style.color = '#94a3b8';
+    }
+  }
+
+  setCondition(n) {
+    const el = document.getElementById('condition');
+    if (!el) return;
+    const v = Math.max(0, Math.round(n));
+    el.textContent = v;
+    el.parentElement.style.color = v < 30 ? '#ef4444' : v < 60 ? '#fb923c' : '#94a3b8';
+  }
+
+  setFuel(n) {
+    const el = document.getElementById('fuel');
+    if (el) el.textContent = Math.max(0, Math.round(n));
+  }
+
+  setZone(z) {
+    const el = document.getElementById('zone-label');
+    if (!el) return;
+    if (!z || z === 'road') { el.textContent = ''; return; }
+    el.textContent = z === 'market' ? '🛒 MARKET' : '🔀 JUNCTION';
+  }
+
+  setLevel(n) {
+    const el = document.getElementById('level-label');
+    if (el) el.textContent = 'Lv ' + n;
+  }
+
+  setOnboardDest(list) {
+    const el = document.getElementById('onboard-dest');
+    if (!el) return;
+    if (!list || !list.length) {
+      el.style.opacity = '0';
+      el.textContent = '';
+      return;
+    }
+    el.style.opacity = '1';
+    el.textContent = 'Onboard: ' + list.map(p => (p.dest || '?') + (p.name === 'VIP' ? '★' : '')).join(' · ');
   }
 
   setPauseUI(on) {

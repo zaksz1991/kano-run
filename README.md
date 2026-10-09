@@ -1,32 +1,19 @@
-# Kano Run 3D — Phase 10
+# Kano Run 3D
 
-**Developer: RuffNeck**
+**Game Developer: Hassan Zakariya**
 
-Drive an Adaidaita Sahu through Kano State (Three.js / WebGL).
+Playable web game — Vite + Three.js.
 
-## Phase 10 highlights
-- Opening sequence: walk → enter keke → start engine
-- Controls: steer, gas, brake, horn, radio, pause (touch + keyboard)
-- Passengers with destinations (Sabon Gari, Kofar Mata, Fagge, …)
-- Slow down to pick up / **Akwai** drop-off for fare
-- Varied fare negotiation (Oga, Mallam, Hajiya, …)
-- KAROTA checkpoints (pay / negotiate / flee)
-- Traffic AI, near miss, missions, daily, drivers, paints, radio audio bed
-- Developed by **RuffNeck**
+## Latest
+- Loading splash with Kano welcome photo
+- City gate arches + welcome pillars in 3D world
+- Keke NAPEP look (yellow body, black canopy, amber indicators)
+- KAROTA common / Yan Daba rare
+- Brand photos for banner & icon
 
-## Controls
-| Action | Mobile | Keyboard |
-|--------|--------|----------|
-| Steer | ← → | A/D or arrows |
-| Gas | GAS | W / ↑ |
-| Brake | BRAKE | S / ↓ |
-| Horn | HORN | Space / H |
-| Radio | 📻 | R |
-| Pause | ❚❚ | P / Esc |
-
-## Deploy
+## Deploy (Vercel)
 ```bash
 npm install
 npm run build
-vercel --prod
+npx vercel --prod
 ```
