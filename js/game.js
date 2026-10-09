@@ -2,1778 +2,682 @@ import { CONFIG, STATE } from './config.js';
 import { Storage } from './storage.js';
 import { Audio } from './audio.js';
 
-/*
- * Kano Run — Adaidaita Sahu
- * Game core — specification-aligned replacement
- *
- * Responsibilities:
- * - gameplay state and progression
- * - correct left/right steering
- * - keyboard + mobile-facing control methods
- * - traffic, passengers, fares and destinations
- * - negotiation and KAROTA interactions
- * - levels, missions, combos, achievements and continues
- * - opening sequence state
- * - route / driver / paint / keke / radio selection
- *
- * The renderer remains responsible for 3D presentation.
- * The audio module remains responsible for sound generation/playback.
- */
-
-const PLAYER_Y = 500;
-const LANES = 3;
-const MIN_LANE = 0;
-const MAX_LANE = LANES - 1;
-
-const BASE_SPEED = 1.35;
-const BASE_MAX_SPEED = 5.2;
-const FRAME_MS = 1000 / 60;
-
-const COLLISION_Y = 36;
-const NEAR_MISS_Y = 92;
-const PICKUP_Y = 70;
-const DROPOFF_Y = 72;
-const CHECKPOINT_Y = 70;
-
-const KANО_DESTINATIONS = [
-  'Sabon Gari',
-  'Kofar Mata',
-  'Fagge',
-  'Farm Centre',
-  'Hotoro',
-  'Zoo Road',
-  'Naibawa',
-  'Tarauni',
-  'Dala',
-  'Kantin Kwari',
-  'Kofar Wambai',
-  'Kumbotso',
-  'Sharada',
-  'Bompai',
-  'Gwale',
-  'Kabuga',
-  'BUK Road',
-  'Waje',
-  'Rijiyar Zaki',
-  'Yankaba',
-  'Challawa',
-  'Nassarawa GRA',
-  'Airport Road'
-];
-
-const PASSENGER_TYPES = [
-  { id: 'standard', name: 'Passenger', seats: 1, fare: 1.0, weight: 50 },
-  { id: 'student', name: 'Student', seats: 1, fare: 0.88, weight: 18 },
-  { id: 'worker', name: 'Worker', seats: 1, fare: 1.08, weight: 18 },
-  { id: 'market', name: 'Market Customer', seats: 1, fare: 1.05, weight: 8 },
-  { id: 'elder', name: 'Elder', seats: 1, fare: 1.12, weight: 3 },
-  { id: 'hajiya', name: 'Hajiya', seats: 1, fare: 1.18, weight: 3 }
-];
-
-const GREETINGS = [
-  'Oga, ina kwana?',
-  'Mai Gida, please slow down.',
-  'Mallam, ina zuwa can.',
-  'Yallabai, zan je can.',
-  'Dan uwa, tsaya kadan.',
-  'Aboki, akwai wuri?',
-  'Driver, wannan hanyar za mu bi.',
-  'Baba, tsaya a gabana.',
-  'Mama, akwai wuri?',
-  'Hajiya, a hankali don Allah.'
-];
-
-const KABATA_VOICES = [
-  'Akwai!',
-  'Akwai wuri?',
-  'Driver, tsaya nan.',
-  'Oga, a tsaya.',
-  'Mallam, ka sauke ni nan.',
-  'Yallabai, nan ne.'
-];
-
-const KEKES = {
-  standard: {
-    id: 'standard',
-    name: 'Standard Keke',
-    title: 'Everyday Adaidaita',
-    color: 0xfbbf24,
-    unlockLevel: 1,
-    speed: 0,
-    handling: 1,
-    capacity: 3,
-    fare: 1,
-    description: 'Balanced yellow city keke.'
-  },
-  luxury: {
-    id: 'luxury',
-    name: 'Luxury Keke',
-    title: 'Comfort Ride',
-    color: 0xeab308,
-    unlockLevel: 3,
-    speed: 0.15,
-    handling: 1.05,
-    capacity: 3,
-    fare: 1.12,
-    description: 'Better comfort and fare potential.'
-  },
-  cargo: {
-    id: 'cargo',
-    name: 'Cargo Keke',
-    title: 'Load Runner',
-    color: 0x22c55e,
-    unlockLevel: 5,
-    speed: -0.2,
-    handling: 0.92,
-    capacity: 3,
-    fare: 1.18,
-    description: 'Built for heavier roadside loads.'
-  },
-  open: {
-    id: 'open',
-    name: 'Open Keke',
-    title: 'Market Runner',
-    color: 0x38bdf8,
-    unlockLevel: 7,
-    speed: 0.08,
-    handling: 1.08,
-    capacity: 3,
-    fare: 1.1,
-    description: 'Quick handling for dense market routes.'
-  },
-  police: {
-    id: 'police',
-    name: 'Police Keke',
-    title: 'Enforcement Variant',
-    color: 0x1e40af,
-    unlockLevel: 10,
-    speed: 0.25,
-    handling: 1.02,
-    capacity: 3,
-    fare: 0.95,
-    description: 'Special unlock for advanced progression.'
-  },
-  karota: {
-    id: 'karota',
-    name: 'KAROTA Keke',
-    title: 'Checkpoint Variant',
-    color: 0xf59e0b,
-    unlockLevel: 12,
-    speed: 0.18,
-    handling: 1.0,
-    capacity: 3,
-    fare: 1.0,
-    description: 'Advanced utility variant.'
-  }
-};
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function weightedPick(items) {
-  const total = items.reduce((sum, item) => sum + (item.weight || 1), 0);
-  let r = Math.random() * total;
-  for (const item of items) {
-    r -= item.weight || 1;
-    if (r <= 0) return item;
-  }
-  return items[items.length - 1];
-}
-
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export class Game {
-  constructor(canvas, ui = null, renderer3d = null) {
+  constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas?.getContext?.('2d') || null;
-    this.ui = ui;
-    this.renderer3d = renderer3d;
-
+    this.ctx = null;
+    this.ui = null;
+    this.renderer3d = null;
     this.state = STATE.START;
-    this.paused = false;
-
     this.score = 0;
-    this.money = 0;
     this.dist = 0;
+    this.paxOnBoard = 0;
     this.totalPax = 0;
-    this.completedTrips = 0;
-    this.paxCount = 0;
+    this.dropCount = 0;
     this.capacity = 3;
-
     this.continuesLeft = 3;
+    this.paidContinuesUsed = 0;
     this.combo = 0;
-    this.bestCombo = 0;
-    this.nearMissCount = 0;
-    this.crashes = 0;
-
-    this.level = 1;
-    this.levelProgress = 0;
-    this.xp = 0;
-
-    this.speed = BASE_SPEED;
-    this.maxSpeed = BASE_MAX_SPEED;
-    this.throttle = 1;
-    this.brake = 0;
-    this.gasHeld = false;
-    this.brakeHeld = false;
-    this._externalThrottle = false;
-
+    this.comboTimer = 0;
+    this.speed = 3.6;
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
-    this.playerX = this.laneX(this.playerLane);
-    this.targetX = this.playerX;
-    this.playerY = PLAYER_Y;
-    this.playerZ = 0;
+    this.playerX = 0;
+    this.targetX = 0;
+    this.playerY = 0;
+    this.inv = 0;
     this.bounce = 0;
     this.shake = 0;
     this.shakeMag = 0;
-
     this.obs = [];
     this.paxZones = [];
     this.dropZones = [];
     this.coins = [];
-    this.checkpoints = [];
-
-    this.currentPassengers = [];
-    this.nextPassengerId = 1;
-    this.nextTrafficId = 1;
-    this.nextZoneId = 1;
-
-    this.eventOpen = false;
-    this.eventType = null;
-    this.eventContext = null;
-    this._resumeStateAfterEvent = STATE.PLAY;
-
-    this.introSequence = {
-      active: false,
-      stage: 'idle',
-      timer: 0,
-      driverId: 'ruffneck',
-      paintId: 'classic'
-    };
-
-    this.routeId = 'citycenter';
-    this.selectedRoute = null;
-    this.selectedDriver = 'ruffneck';
-    this.selectedPaint = 'classic';
-    this.selectedRadio = 'freedom';
-    this.selectedKeke = 'standard';
-
-    this.radioIndex = 0;
-    this.lastRadioSwitchFrame = -999;
-
-    this.lastSpawnFrame = 0;
-    this.lastPassengerFrame = 0;
-    this.lastCoinFrame = 0;
-    this.lastCheckpointFrame = 0;
-    this.lastLandmarkIndex = -1;
-
-    this.karotaWanted = false;
-    this.karotaHeat = 0;
+    this.keys = {};
+    this.trafficJamTimer = 0;
+    this.nearMissCooldown = 0;
     this.policeChase = 0;
-    this.checkpointCooldown = 0;
-
-    this.weatherState = 'clear';
-    this.mission = null;
-    this.missionIndex = 0;
-    this.dailyClaimed = false;
-    this.dailyReward = 500;
-
-    this.lastDropDestination = null;
-    this.lastPassenger = null;
-    this.lastFare = 0;
-
-    this._storageLoad();
-    this.selectRoute(this.routeId, false);
-    this.selectDriver(this.selectedDriver, false);
-    this.selectPaint(this.selectedPaint, false);
-    this.selectKeke(this.selectedKeke, false);
-    this.selectRadio(this.selectedRadio, false);
-    this.generateMission();
-
-    this._bindKeyboard();
-  }
-
-  setUI(ui) {
-    this.ui = ui;
-    return this;
-  }
-
-  setRenderer(renderer) {
-    this.renderer3d = renderer;
-    return this;
-  }
-
-  _storageRead(key, fallback = null) {
-    try {
-      if (typeof Storage?.get === 'function') return Storage.get(key) ?? fallback;
-      if (typeof Storage?.load === 'function') return Storage.load(key) ?? fallback;
-      if (typeof localStorage !== 'undefined') {
-        const value = localStorage.getItem(`kanoRun:${key}`);
-        if (value == null) return fallback;
-        try { return JSON.parse(value); } catch { return value; }
-      }
-    } catch {}
-    return fallback;
-  }
-
-  _storageWrite(key, value) {
-    try {
-      if (typeof Storage?.set === 'function') {
-        Storage.set(key, value);
-        return;
-      }
-      if (typeof Storage?.save === 'function') {
-        Storage.save(key, value);
-        return;
-      }
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(`kanoRun:${key}`, JSON.stringify(value));
-      }
-    } catch {}
-  }
-
-  _storageLoad() {
-    this.routeId = this._storageRead('route', this._storageRead('selectedRoute', 'citycenter'));
-    this.selectedDriver = this._storageRead('driver', this._storageRead('selectedDriver', 'ruffneck'));
-    this.selectedPaint = this._storageRead('paint', this._storageRead('selectedPaint', 'classic'));
-    this.selectedRadio = this._storageRead('radio', this._storageRead('selectedRadio', 'freedom'));
-    this.selectedKeke = this._storageRead('keke', this._storageRead('selectedKeke', 'standard'));
-    this.money = Number(this._storageRead('money', 0)) || 0;
-
-    const claimedDate = this._storageRead('dailyClaimDate', null);
-    this.dailyClaimed = claimedDate === todayKey();
-  }
-
-  _saveSelection() {
-    this._storageWrite('route', this.routeId);
-    this._storageWrite('driver', this.selectedDriver);
-    this._storageWrite('paint', this.selectedPaint);
-    this._storageWrite('radio', this.selectedRadio);
-    this._storageWrite('keke', this.selectedKeke);
-    this._storageWrite('money', this.money);
-  }
-
-  _ui(method, ...args) {
-    try {
-      const fn = this.ui?.[method];
-      if (typeof fn === 'function') return fn.apply(this.ui, args);
-    } catch {}
-    return undefined;
-  }
-
-  _audio(methodNames, ...args) {
-    for (const name of methodNames) {
-      try {
-        const fn = Audio?.[name];
-        if (typeof fn === 'function') {
-          fn.apply(Audio, args);
-          return true;
-        }
-      } catch {}
-    }
-    return false;
-  }
-
-  _bindKeyboard() {
-    if (typeof window === 'undefined') return;
-
-    window.addEventListener('keydown', (event) => {
-      if (event.repeat) return;
-
-      switch (event.code) {
-        case 'ArrowLeft':
-        case 'KeyA':
-          event.preventDefault();
-          this.moveLeft();
-          break;
-        case 'ArrowRight':
-        case 'KeyD':
-          event.preventDefault();
-          this.moveRight();
-          break;
-        case 'ArrowUp':
-        case 'KeyW':
-        case 'Space':
-          event.preventDefault();
-          this.gasDown();
-          break;
-        case 'ArrowDown':
-        case 'KeyS':
-          event.preventDefault();
-          this.brakeDown();
-          break;
-        case 'KeyP':
-          event.preventDefault();
-          this.togglePause();
-          break;
-        case 'KeyH':
-          event.preventDefault();
-          this.horn();
-          break;
-        case 'KeyR':
-          event.preventDefault();
-          this.nextRadio();
-          break;
-        default:
-          break;
-      }
-    });
-
-    window.addEventListener('keyup', (event) => {
-      switch (event.code) {
-        case 'ArrowUp':
-        case 'KeyW':
-        case 'Space':
-          this.gasUp();
-          break;
-        case 'ArrowDown':
-        case 'KeyS':
-          this.brakeUp();
-          break;
-        default:
-          break;
-      }
-    });
-  }
-
-  // Mobile/control API. All devices use the same lane logic.
-  moveLeft() {
-    if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
-    this.playerLane = clamp(this.playerLane - 1, MIN_LANE, MAX_LANE);
-    this.targetX = this.laneX(this.playerLane);
-    this._audio(['steer', 'playSteer']);
-  }
-
-  moveRight() {
-    if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
-    this.playerLane = clamp(this.playerLane + 1, MIN_LANE, MAX_LANE);
-    this.targetX = this.laneX(this.playerLane);
-    this._audio(['steer', 'playSteer']);
-  }
-
-  changeLane(direction = 0) {
-    // Accept both numeric directions and browser/control events.
-    // The 3D/mobile control layer may forward the pointer/touch event itself.
-    let value = Number(direction);
-
-    if (!Number.isFinite(value) || value === 0) {
-      const code = direction?.code || direction?.key || '';
-      if (code === 'ArrowLeft' || code === 'KeyA' || code === 'left') value = -1;
-      else if (code === 'ArrowRight' || code === 'KeyD' || code === 'right') value = 1;
-      else if (direction?.direction != null) value = Number(direction.direction);
-    }
-
-    if (!Number.isFinite(value) || value === 0) return;
-
-    // Preserve the established movement implementation.
-    if (value < 0) this.moveLeft();
-    else this.moveRight();
-  }
-
-  left() { this.moveLeft(); }
-  right() { this.moveRight(); }
-
-  gasDown() {
-    this.gasHeld = true;
-    this._externalThrottle = true;
-    this.throttle = 1;
-  }
-
-  gasUp() {
-    this.gasHeld = false;
-    this._externalThrottle = false;
-  }
-
-  brakeDown() {
-    this.brakeHeld = true;
-    this.brake = 1;
-  }
-
-  brakeUp() {
-    this.brakeHeld = false;
-    this.brake = 0;
-  }
-
-  setThrottle(value) {
-    this.throttle = clamp(Number(value) || 0, 0, 1);
-    this._externalThrottle = true;
-  }
-
-  setBrake(value) {
-    this.brake = clamp(Number(value) || 0, 0, 1);
-  }
-
-  pause() {
-    if (this.state !== STATE.PLAY || this.eventOpen) return;
-    this.paused = true;
-    this._audio(['pause']);
-    this.renderer3d?.setPaused?.(true);
-    this._ui('showPaused');
-  }
-
-  resume() {
-    if (this.state !== STATE.PLAY) return;
-    this.paused = false;
-    this._audio(['resume']);
-    this.renderer3d?.setPaused?.(false);
-    this._ui('showPlaying');
-  }
-
-  togglePause() {
-    if (this.paused) this.resume();
-    else this.pause();
-  }
-
-  horn() {
-    this._audio(['horn', 'playHorn', 'beep'], 'horn');
-    this._ui('showToast', 'HORN');
-  }
-
-  selectRoute(routeId, persist = true) {
-    if (!CONFIG.ROUTES?.[routeId]) return false;
-    this.routeId = routeId;
-    this.selectedRoute = CONFIG.ROUTES[routeId];
-    if (persist) this._saveSelection();
-    this._ui('setRoute', this.selectedRoute);
-    this.renderer3d?.setRoute?.(this.selectedRoute);
-    return true;
-  }
-
-  selectDriver(driverId, persist = true) {
-    const driver = CONFIG.DRIVERS?.[driverId];
-    if (!driver || driver.unlocked === false) return false;
-    this.selectedDriver = driverId;
-    if (persist) this._saveSelection();
-    this._ui('setDriver', driver);
-    return true;
-  }
-
-  selectPaint(paintId, persist = true) {
-    if (!CONFIG.PAINTS?.[paintId]) return false;
-    this.selectedPaint = paintId;
-    if (persist) this._saveSelection();
-    this.renderer3d?.applyPaint?.(paintId);
-    this._ui('setPaint', CONFIG.PAINTS[paintId]);
-    return true;
-  }
-
-  selectKeke(kekeId, persist = true) {
-    const keke = KEKES[kekeId];
-    if (!keke) return false;
-    if (this.level < keke.unlockLevel) {
-      this._ui('showToast', `${keke.name} unlocks at level ${keke.unlockLevel}.`);
-      return false;
-    }
-    this.selectedKeke = kekeId;
-    this.capacity = keke.capacity;
-    if (persist) this._saveSelection();
-    this._ui('setKeke', keke);
-    this.renderer3d?.setKeke?.(kekeId, keke);
-    return true;
-  }
-
-  selectRadio(radioId, persist = true) {
-    const radios = CONFIG.RADIO || [];
-    const idx = radios.findIndex((r) => r.id === radioId);
-    if (idx < 0) return false;
-    this.radioIndex = idx;
-    this.selectedRadio = radios[idx].id;
-    if (persist) this._saveSelection();
-    this._activateRadio();
-    return true;
-  }
-
-  nextRadio() {
-    const radios = CONFIG.RADIO || [];
-    if (!radios.length) return;
-    this.radioIndex = (this.radioIndex + 1) % radios.length;
-    this.selectedRadio = radios[this.radioIndex].id;
-    this.lastRadioSwitchFrame = this.frame;
-    this._saveSelection();
-    this._activateRadio();
-  }
-
-  previousRadio() {
-    const radios = CONFIG.RADIO || [];
-    if (!radios.length) return;
-    this.radioIndex = (this.radioIndex - 1 + radios.length) % radios.length;
-    this.selectedRadio = radios[this.radioIndex].id;
-    this.lastRadioSwitchFrame = this.frame;
-    this._saveSelection();
-    this._activateRadio();
-  }
-
-  _activateRadio() {
-    const station = (CONFIG.RADIO || [])[this.radioIndex];
-    if (!station) return;
-
-    this._audio(
-      ['setRadioStation', 'setRadio', 'playRadio', 'radio'],
-      station.id,
-      station.name
-    );
-
-    this._ui('setRadio', station);
-    this._ui('showToast', `📻 ${station.name}`);
-  }
-
-  getKekeCatalog() {
-    return Object.values(KEKES).map((keke) => ({
-      ...keke,
-      unlocked: this.level >= keke.unlockLevel,
-      selected: this.selectedKeke === keke.id
-    }));
-  }
-
-  getDriverCatalog() {
-    return Object.values(CONFIG.DRIVERS || {}).map((driver) => ({
-      ...driver,
-      selected: this.selectedDriver === driver.id
-    }));
-  }
-
-  getRouteCatalog() {
-    return Object.values(CONFIG.ROUTES || {}).map((route) => ({
-      ...route,
-      selected: this.routeId === route.id
-    }));
-  }
-
-  start() {
-    if (this.state === STATE.PLAY && !this.paused) return;
-
-    this.state = STATE.PLAY;
-    this.paused = false;
-    this.eventOpen = false;
-    this.eventType = null;
-    this.eventContext = null;
-
-    this.score = 0;
-    this.dist = 0;
-    this.totalPax = 0;
-    this.completedTrips = 0;
-    this.paxCount = 0;
-    this.continuesLeft = 3;
-    this.combo = 0;
-    this.bestCombo = 0;
+    this.selectedRoute = Storage.getRoute() || 'citycenter';
+    this.selectedDriver = Storage.getDriver() || 'ruffneck';
+    this.selectedPaint = Storage.getPaint() || 'classic';
+    this.radioIndex = Storage.getRadio() || 0;
     this.nearMissCount = 0;
-    this.crashes = 0;
-    this.speed = 0.75;
-    this.frame = 0;
-    this.roadOff = 0;
-    this.playerLane = 1;
-    this.targetX = this.laneX(this.playerLane);
-    this.playerX = this.targetX;
-    this.obs = [];
-    this.paxZones = [];
-    this.dropZones = [];
-    this.coins = [];
-    this.checkpoints = [];
-    this.currentPassengers = [];
-    this.karotaHeat = 0;
-    this.karotaWanted = false;
-    this.policeChase = 0;
-    this.checkpointCooldown = 0;
-    this.mission = null;
-    this.missionIndex = 0;
-    this.generateMission();
-    this.lastSpawnFrame = 0;
-    this.lastPassengerFrame = 55;
-    this.lastCoinFrame = 30;
-    this.lastCheckpointFrame = 0;
+    this.landmarkIndex = 0;
+    this.karotaTimer = 0;
+    this.high = Storage.getHighScore();
+    this.money = Storage.getMoney();
+    this.activeMission = null;
+  }
 
-    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
-    const keke = KEKES[this.selectedKeke] || KEKES.standard;
+  initDaily() {
+    // daily mission progress tracked in activeMission already; claim is separate
+    this.ui.updateDailyUI(this);
+  }
 
-    this.capacity = keke.capacity;
-    this.maxSpeed = BASE_MAX_SPEED + (driver?.bonuses?.speed || 0) + (keke.speed || 0);
-    this.maxSpeed = Math.max(3.8, Math.min(5.2, this.maxSpeed));
+  claimDaily() {
+    if (Storage.isDailyClaimed()) {
+      this.ui.showMissionToast('Already claimed today');
+      return;
+    }
+    // require a completed run today via high activity: score>500 or dist>1
+    const streak = Storage.claimDaily();
+    const reward = 500 + Math.min(500, streak * 50);
+    this.money += reward;
+    Storage.setMoney(this.money);
+    this.ui.showMissionToast('Daily +₦' + reward + ' · Streak ' + streak);
+    this.ui.updateDailyUI(this);
+  }
 
-    this.introSequence = {
-      active: true,
-      stage: 'walk_to_keke',
-      timer: 0,
-      driverId: this.selectedDriver,
-      paintId: this.selectedPaint
-    };
+  getDriver() {
+    return CONFIG.DRIVERS[this.selectedDriver] || CONFIG.DRIVERS.ruffneck;
+  }
 
-    this.renderer3d?.applyPaint?.(this.selectedPaint);
-    this.renderer3d?.setKeke?.(this.selectedKeke, keke);
-    this.renderer3d?.startOpeningSequence?.(this.selectedDriver, this.selectedPaint, this.selectedKeke);
-    this.renderer3d?.setRoute?.(this.selectedRoute);
+  getBonuses() {
+    return this.getDriver().bonuses || {};
+  }
 
-    this._audio(['ensure', 'start']);
-    this._activateRadio();
-    this._ui('showPlaying');
-    this._ui('showEvent', {
-      title: 'Kano Run',
-      text: `RuffNeck Adaidaita Sahu — ${this.selectedRoute?.name || 'Kano Route'}\n\nYour driver walks to the keke, boards and starts the engine.`,
-      actions: [
-        {
-          label: 'START ROUTE',
-          onClick: () => {
-            this.closeEvent();
-          }
-        }
-      ]
-    });
-    this._ui('updateHUD', this._hudPayload());
+  cycleRadio() {
+    this.radioIndex = (this.radioIndex + 1) % CONFIG.RADIO.length;
+    Storage.setRadio(this.radioIndex);
+    const st = CONFIG.RADIO[this.radioIndex];
+    this.ui.setRadio(st.name);
+    this.ui.showMissionToast('📻 ' + st.name);
+    Audio.beep(440, 0.05, 'sine', 0.03);
   }
 
   resize() {
-    const canvas = this.canvas;
-    if (!canvas) return;
-
-    const host = canvas.parentElement;
-    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
-    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const targetWidth = Math.max(Math.round(width * dpr), 1);
-    const targetHeight = Math.max(Math.round(height * dpr), 1);
-
-    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-    }
-
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    if (this.ctx) {
-      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-
-    this.renderer3d?.resize?.();
+    const r = this.canvas.parentElement.getBoundingClientRect();
+    this.canvas.style.width = r.width + 'px';
+    this.canvas.style.height = r.height + 'px';
+    if (this.renderer3d?.resize) this.renderer3d.resize();
   }
 
-  retry() {
-    this.start();
-  }
-
-  restart() {
-    this.start();
-  }
-
-  closeEvent() {
-    this.eventOpen = false;
-    this.eventType = null;
-    this.eventContext = null;
-    this.state = this._resumeStateAfterEvent || STATE.PLAY;
-    this.paused = false;
-    this.renderer3d?.setPaused?.(false);
-    this._ui('hideEvent');
-    this._ui('showPlaying');
-  }
-
-  showEvent(event) {
-    this.eventOpen = true;
-    this.state = STATE.EVENT;
-    this._resumeStateAfterEvent = STATE.PLAY;
-    this.eventType = event?.type || 'generic';
-    this.eventContext = event?.context || null;
-    this._ui('showEvent', event);
-  }
-
-  updateOpeningSequence() {
-    if (!this.introSequence.active) return false;
-
-    this.introSequence.timer += 1;
-
-    if (this.introSequence.stage === 'walk_to_keke') {
-      if (this.introSequence.timer >= 70) {
-        this.introSequence.stage = 'boarding';
-        this.introSequence.timer = 0;
-        this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-        this._audio(['walk', 'playWalk']);
-      }
-    } else if (this.introSequence.stage === 'boarding') {
-      if (this.introSequence.timer >= 48) {
-        this.introSequence.stage = 'engine_start';
-        this.introSequence.timer = 0;
-        this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-      }
-    } else if (this.introSequence.stage === 'engine_start') {
-      if (this.introSequence.timer === 1) {
-        this._audio(['engineStart', 'startEngine', 'playEngineStart']);
-      }
-      if (this.introSequence.timer >= 48) {
-        this.introSequence.stage = 'driving';
-        this.introSequence.active = false;
-        this.introSequence.timer = 0;
-        this._audio(['drive', 'startEngine']);
-        this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-        this._ui('hideEvent');
-      }
-    }
-
-    this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-    return this.introSequence.active;
-  }
-
-  update(delta = FRAME_MS) {
-    if (this.state !== STATE.PLAY || this.paused) {
-      this.renderer3d?.draw?.(this);
-      return;
-    }
-
-    this.frame += 1;
-
-    if (this.eventOpen || this.state === STATE.EVENT) {
-      this.renderer3d?.draw?.(this);
-      return;
-    }
-
-    if (this.introSequence.active) {
-      this.updateOpeningSequence();
-      this.renderer3d?.draw?.(this);
-      this._updateHUDEveryFrame();
-      return;
-    }
-
-    if (this.bounce > 0) this.bounce -= 1;
-    if (this.shake > 0) this.shake -= 1;
-    if (this.checkpointCooldown > 0) this.checkpointCooldown -= 1;
-
-    this.updateDrivingSpeed();
-    this.updatePlayer();
-
-    this.roadOff += this.speed;
-    this.dist += this.speed * 0.00016;
-    this.xp += this.speed * 0.02;
-    this.updateLevel();
-
-    if (this.frame - this.lastSpawnFrame >= this.trafficSpawnInterval()) {
-      this.spawnTraffic();
-      this.lastSpawnFrame = this.frame;
-    }
-
-    if (this.frame - this.lastPassengerFrame >= this.passengerSpawnInterval()) {
-      this.spawnPassengerZone();
-      this.lastPassengerFrame = this.frame;
-    }
-
-    if (this.frame - this.lastCoinFrame >= 145) {
-      this.spawnCoin();
-      this.lastCoinFrame = this.frame;
-    }
-
-    if (this.frame - this.lastCheckpointFrame >= this.checkpointInterval()) {
-      this.spawnCheckpoint();
-      this.lastCheckpointFrame = this.frame;
-    }
-
-    this.updateTraffic();
-    this.updatePassengerZones();
-    this.updateDropZones();
-    this.updateCoins();
-    this.updateCheckpoints();
-    this.updatePoliceChase();
-
-    this.handleTrafficCollisions();
-    this.handlePassengerInteractions();
-    this.handleCoinCollection();
-    this.updateMissionProgress();
-    this.updateDailyProgress();
-    this.updateLandmarks();
-
-    if (this.speed > 0.2) {
-      this._audio(['updateEngine'], this.speed, this.throttle, this.brake);
-    }
-
-    this.renderer3d?.draw?.(this);
-    this._updateHUDEveryFrame();
-  }
-
-  draw() {
-    this.renderer3d?.draw?.(this);
-  }
-
-  updateDrivingSpeed() {
-    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
-    const keke = KEKES[this.selectedKeke] || KEKES.standard;
-    const driverSpeed = driver?.bonuses?.speed || 0;
-
-    const effectiveThrottle = this.gasHeld || !this._externalThrottle ? 1 : this.throttle;
-    const targetCruise = BASE_SPEED + driverSpeed * 0.35 + keke.speed * 0.35;
-
-    if (this.brakeHeld || this.brake > 0) {
-      this.speed -= 0.11 + this.speed * 0.015;
-    } else if (effectiveThrottle > 0) {
-      this.speed += (0.012 + effectiveThrottle * 0.012);
-    } else {
-      this.speed -= 0.018;
-    }
-
-    if (this.speed < targetCruise * 0.75 && !(this.brakeHeld || this.brake > 0)) {
-      this.speed += 0.008;
-    }
-
-    this.speed = clamp(this.speed, 0.25, this.maxSpeed);
-  }
-
-  updatePlayer() {
-    this.playerX += (this.targetX - this.playerX) * 0.28;
-    this.playerY = PLAYER_Y;
-
-    if (Math.abs(this.playerX - this.targetX) > 0.05) {
-      this.bounce = Math.max(this.bounce, 2);
-    }
-  }
-
-  laneX(lane) {
-    const laneMap = [110, 195, 280];
-    return laneMap[clamp(Math.round(lane), 0, 2)];
+  laneX(l) {
+    const pad = 18;
+    const lw = (this.canvas.clientWidth - pad * 2) / CONFIG.LANES;
+    return pad + l * lw + lw / 2;
   }
 
   getTimeOfDay() {
-    const cycle = (this.frame % 5400) / 5400;
-    return cycle;
+    // cycle every ~90s of play frames
+    return (this.frame % 5400) / 5400;
   }
 
-  getWeather() {
-    return this.weatherState;
-  }
-
-  setWeather(weather) {
-    const allowed = ['clear', 'harmattan', 'rain'];
-    if (!allowed.includes(weather)) return;
-    this.weatherState = weather;
-  }
-
-  trafficSpawnInterval() {
-    return Math.max(76, 142 - this.level * 2 - Math.floor(this.speed * 2));
-  }
-
-  passengerSpawnInterval() {
-    return Math.max(170, 300 - this.level * 4);
-  }
-
-  checkpointInterval() {
-    return Math.max(420, 560 - this.level * 8);
-  }
-
-  spawnTraffic() {
-    if (this.obs.length >= 8) return;
-
-    const lane = Math.floor(Math.random() * LANES);
-    const types = [
-      'keke', 'car', 'car', 'taxi', 'bus',
-      'motorcycle', 'truck'
-    ];
-
-    if (this.level >= 4) types.push('police');
-    if (this.level >= 6) types.push('karota');
-
-    const type = pick(types);
-
-    const tooClose = this.obs.some(
-      (o) => o.lane === lane && o.y < -230
-    );
-
-    if (tooClose) return;
-
-    this.obs.push({
-      id: this.nextTrafficId++,
-      lane,
-      y: -240 - Math.random() * 300,
-      type,
-      speedFactor: 0.82 + Math.random() * 0.34,
-      scoredNearMiss: false,
-      checkpoint: false
-    });
-  }
-
-  spawnPassengerZone() {
-    if (this.paxZones.length >= 8) return;
-
-    const lane = Math.floor(Math.random() * LANES);
-    const passenger = weightedPick(PASSENGER_TYPES);
-    const destination = pick(this.destinationPool());
-
-    const zone = {
-      id: this.nextZoneId++,
-      lane,
-      y: -260 - Math.random() * 260,
-      taken: false,
-      aishat: passenger.id === 'hajiya',
-      vip: passenger.id === 'elder' || passenger.id === 'worker',
-      flagging: true,
-      passenger,
-      passengerName: passenger.name,
-      destination,
-      fareBase: (this.selectedRoute?.baseFare || 150) * passenger.fare,
-      waitFrames: 0
-    };
-
-    this.paxZones.push(zone);
-  }
-
-  destinationPool() {
-    const route = this.selectedRoute;
-    const landmarks = route?.landmarks || [];
-    const merged = [
-      ...KANО_DESTINATIONS,
-      ...landmarks
-    ];
-    return [...new Set(merged)];
-  }
-
-  spawnCoin() {
-    if (this.coins.length >= 10) return;
-    this.coins.push({
-      lane: Math.floor(Math.random() * LANES),
-      y: -180 - Math.random() * 520,
-      taken: false,
-      bob: Math.random() * Math.PI * 2,
-      value: 25 + this.level * 5
-    });
-  }
-
-  spawnCheckpoint() {
-    if (this.checkpoints.length >= 2 || this.checkpointCooldown > 0) return;
-
-    const lane = Math.floor(Math.random() * LANES);
-    this.checkpoints.push({
-      id: `karota-${this.frame}-${lane}`,
-      lane,
-      y: -380 - Math.random() * 180,
-      type: Math.random() < 0.52 ? 'karota' : 'police',
-      active: true,
-      handled: false
-    });
-  }
-
-  updateTraffic() {
-    for (const obstacle of this.obs) {
-      obstacle.y += this.speed * 1.25 * obstacle.speedFactor;
-    }
-
-    const survivors = [];
-    for (const obstacle of this.obs) {
-      if (obstacle.y < 700) survivors.push(obstacle);
-    }
-    this.obs = survivors;
-  }
-
-  updatePassengerZones() {
-    for (const zone of this.paxZones) {
-      zone.y += this.speed;
-      zone.waitFrames += 1;
-      if (zone.waitFrames > 120 && zone.y > PLAYER_Y + 80) {
-        zone.taken = true;
-      }
-    }
-
-    this.paxZones = this.paxZones.filter(
-      (zone) => !zone.taken || zone.y < PLAYER_Y + 120
-    );
-  }
-
-  updateDropZones() {
-    for (const zone of this.dropZones) {
-      zone.y += this.speed;
-      if (zone.y > 700) zone.used = true;
-    }
-    this.dropZones = this.dropZones.filter((zone) => !zone.used);
-  }
-
-  updateCoins() {
-    for (const coin of this.coins) {
-      coin.y += this.speed;
-      coin.bob = (coin.bob || 0) + 0.08;
-    }
-    this.coins = this.coins.filter((coin) => coin.y < 700 && !coin.taken);
-  }
-
-  updateCheckpoints() {
-    for (const cp of this.checkpoints) cp.y += this.speed;
-    this.checkpoints = this.checkpoints.filter(
-      (cp) => cp.y < 700 && !cp.handled
-    );
-  }
-
-  updatePoliceChase() {
-    if (this.policeChase <= 0) return;
-
-    this.policeChase -= 1;
-    this.karotaWanted = true;
-
-    if (this.frame % 90 === 0) {
-      this._audio(['police', 'karotaAlert', 'siren']);
-      this._ui('showToast', '🚨 KAROTA is following you. Slow down and clear the checkpoint.');
-    }
-
-    if (this.policeChase === 0) {
-      this.karotaWanted = false;
-      this.karotaHeat = Math.max(0, this.karotaHeat - 2);
-    }
-  }
-
-  handleTrafficCollisions() {
-    for (const obstacle of this.obs) {
-      const sameLane = obstacle.lane === this.playerLane;
-      const dy = Math.abs(obstacle.y - PLAYER_Y);
-
-      if (sameLane && dy <= COLLISION_Y) {
-        if (obstacle.type === 'police' || obstacle.type === 'karota') {
-          this.triggerCheckpointInteraction({
-            type: obstacle.type,
-            source: obstacle
-          });
-        } else {
-          this.crash(obstacle);
-        }
-        return;
-      }
-
-      if (
-        !obstacle.scoredNearMiss &&
-        dy <= NEAR_MISS_Y &&
-        dy > COLLISION_Y &&
-        Math.abs(obstacle.lane - this.playerLane) === 1
-      ) {
-        obstacle.scoredNearMiss = true;
-        this.nearMissCount += 1;
-        this.combo += 1;
-        this.bestCombo = Math.max(this.bestCombo, this.combo);
-        this.score += Math.round(25 * (1 + this.combo * 0.1));
-        this.xp += 8;
-        this._audio(['nearMiss', 'playNearMiss']);
-        this._ui('showCombo', this.combo);
-      }
-    }
-  }
-
-  crash(obstacle) {
-    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
-    const invFrames = driver?.bonuses?.invFrames || 10;
-
-    if (this._lastCrashFrame && this.frame - this._lastCrashFrame < invFrames) {
-      return;
-    }
-
-    this._lastCrashFrame = this.frame;
-    this.crashes += 1;
-    this.continuesLeft -= 1;
-    this.combo = 0;
-    this.speed = Math.max(2.0, this.speed * 0.55);
-    this.shake = 18;
-    this.shakeMag = 8;
-    this.bounce = 10;
-
-    this._audio(['crash', 'collision', 'playCrash']);
-    this._ui('showToast', 'CRASH!');
-
-    if (this.continuesLeft > 0) {
-      this.showEvent({
-        type: 'continue',
-        title: 'Crash',
-        text: `You hit a ${obstacle?.type || 'vehicle'}. Continue the run? You have ${this.continuesLeft} Life Saver${this.continuesLeft === 1 ? '' : 's'} left.`,
-        context: { obstacle },
-        actions: [
-          {
-            label: 'CONTINUE',
-            onClick: () => this.continueRun()
-          },
-          {
-            label: 'END RUN',
-            onClick: () => this.finishRun()
-          }
-        ]
-      });
-    } else {
-      this.finishRun();
-    }
-  }
-
-  continueRun() {
-    this.eventOpen = false;
-    this.eventType = null;
-    this.eventContext = null;
+  start() {
     this.state = STATE.PLAY;
-    this.paused = false;
-    this.speed = Math.max(2.6, this.speed);
-    this._lastCrashFrame = this.frame;
-    this.renderer3d?.setPaused?.(false);
-    this._audio(['continue', 'lifeSaver']);
-    this._ui('hideEvent');
-    this._ui('showToast', 'Life Saver used. Keep driving.');
-  }
-
-  handlePassengerInteractions() {
-    if (this.currentPassengers.length > 0) {
-      for (const drop of this.dropZones) {
-        if (drop.used) continue;
-        if (drop.lane !== this.playerLane) continue;
-
-        const dy = Math.abs(drop.y - PLAYER_Y);
-        if (dy <= DROPOFF_Y && this.speed <= 3.0) {
-          this.completeDropOff(drop);
-          return;
-        }
-      }
-    }
-
-    if (this.currentPassengers.length < this.capacity) {
-      for (const zone of this.paxZones) {
-        if (zone.taken) continue;
-        if (zone.lane !== this.playerLane) continue;
-
-        const dy = Math.abs(zone.y - PLAYER_Y);
-        if (dy <= PICKUP_Y && this.speed <= 3.25) {
-          this.startPassengerNegotiation(zone);
-          return;
-        }
-      }
-    }
-  }
-
-  startPassengerNegotiation(zone) {
-    if (this.eventOpen) return;
-
-    const greeting = GREETINGS[(this.totalPax + zone.id) % GREETINGS.length];
-    const routeBase = zone.fareBase;
-    const suggested = Math.max(80, Math.round(routeBase));
-    const low = Math.max(60, Math.round(routeBase * 0.82));
-    const high = Math.round(routeBase * 1.26);
-
-    zone.negotiating = true;
-    this.showEvent({
-      type: 'fare',
-      title: `${greeting}`,
-      text: `${zone.passenger.name} wants to go to ${zone.destination}. Suggested fare: ₦${suggested}.\n\nChoose how you handle the fare.`,
-      context: { zone },
-      actions: [
-        {
-          label: `ACCEPT ₦${suggested}`,
-          onClick: () => this.acceptPassenger(zone, suggested, 'standard')
-        },
-        {
-          label: `NEGOTIATE ₦${high}`,
-          onClick: () => this.acceptPassenger(zone, high, 'high')
-        },
-        {
-          label: `FAIR ₦${low}`,
-          onClick: () => this.acceptPassenger(zone, low, 'fair')
-        },
-        {
-          label: 'LET THEM GO',
-          onClick: () => this.rejectPassenger(zone)
-        }
-      ]
-    });
-
-    this._audio(['passengerCall', 'passengerHail', 'voice'], greeting);
-  }
-
-  acceptPassenger(zone, fare, mode) {
-    if (!zone || zone.taken) {
-      this.closeEvent();
-      return;
-    }
-
-    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
-    let finalFare = fare;
-
-    if (mode === 'high') {
-      const accepted = Math.random() < 0.68;
-      if (!accepted) {
-        finalFare = Math.max(60, Math.round(fare * 0.82));
-        this._ui('showToast', 'Passenger negotiated you down.');
-      }
-    }
-
-    if (zone.aishat && driver?.bonuses?.aishatBonus) {
-      finalFare += driver.bonuses.aishatBonus;
-    }
-
-    finalFare *= driver?.bonuses?.fareMult || 1;
-    finalFare *= KEKES[this.selectedKeke]?.fare || 1;
-    finalFare = Math.max(50, Math.round(finalFare));
-
-    if (this.currentPassengers.length >= this.capacity) {
-      this._ui('showToast', 'Keke is full.');
-      this.closeEvent();
-      return;
-    }
-
-    zone.taken = true;
-    zone.flagging = false;
-    zone.negotiating = false;
-
-    const passenger = {
-      id: zone.id,
-      type: zone.passenger.id,
-      name: zone.passenger.name,
-      seats: zone.passenger.seats,
-      destination: zone.destination,
-      fare: finalFare,
-      boardedFrame: this.frame
-    };
-
-    this.currentPassengers.push(passenger);
-    this.paxCount = this.currentPassengers.length;
-    this.totalPax += 1;
-    this.lastPassenger = passenger;
-    this.lastFare = finalFare;
-
-    const drop = {
-      id: `drop-${zone.id}`,
-      lane: this.playerLane,
-      y: -260 - Math.random() * 220,
-      used: false,
-      destination: zone.destination,
-      passengerId: passenger.id,
-      fare: finalFare,
-      passenger
-    };
-
-    this.dropZones.push(drop);
-
-    this.combo += 1;
-    this.bestCombo = Math.max(this.bestCombo, this.combo);
-    this.score += Math.round(finalFare * 0.35);
-    this.xp += 20;
-
-    this._audio(['pickup', 'passengerPickup', 'playPickup']);
-    this._ui('showToast', `${passenger.name} aboard → ${passenger.destination}`);
-    this.closeEvent();
-  }
-
-  rejectPassenger(zone) {
-    if (!zone) {
-      this.closeEvent();
-      return;
-    }
-
-    zone.taken = true;
-    zone.flagging = false;
-    zone.negotiating = false;
+    this.score = 0;
+    this.dist = 0;
+    this.paxOnBoard = 0;
+    this.totalPax = 0;
+    this.dropCount = 0;
+    this.continuesLeft = 3;
+    this.paidContinuesUsed = 0;
     this.combo = 0;
-    this._ui('showToast', 'Passenger missed the ride.');
-    this.closeEvent();
-  }
-
-  completeDropOff(drop) {
-    if (!drop || drop.used) return;
-
-    drop.used = true;
-    const idx = this.currentPassengers.findIndex(
-      (p) => p.id === drop.passengerId
-    );
-
-    const passenger = idx >= 0 ? this.currentPassengers[idx] : null;
-    if (idx >= 0) this.currentPassengers.splice(idx, 1);
-
-    this.paxCount = this.currentPassengers.length;
-    this.completedTrips += 1;
-
-    const routeMultiplier = this.selectedRoute?.difficulty || 1;
-    const comboMultiplier = 1 + Math.min(this.combo, 10) * 0.06;
-    const finalFare = Math.max(
-      50,
-      Math.round((passenger?.fare || drop.fare || 100) * comboMultiplier)
-    );
-
-    this.money += finalFare;
-    this.score += finalFare;
-    this.xp += 30 + finalFare * 0.04;
-
-    if (this.combo > 0) this.combo += 1;
-    else this.combo = 1;
-
-    this.bestCombo = Math.max(this.bestCombo, this.combo);
-    this.lastFare = finalFare;
-    this.lastDropDestination = drop.destination;
-
-    this._audio(['dropoff', 'passengerDropoff', 'playDropoff']);
-    this._ui('showToast', `Akwai! Dropped at ${drop.destination}. +₦${finalFare}`);
-
-    if (this.mission?.type === 'drop') {
-      this.mission.progress += 1;
-    }
-
-    this._saveSelection();
-  }
-
-  handleCoinCollection() {
-    for (const coin of this.coins) {
-      if (coin.taken) continue;
-      if (coin.lane !== this.playerLane) continue;
-      if (Math.abs(coin.y - PLAYER_Y) > 46) continue;
-
-      coin.taken = true;
-      this.score += coin.value;
-      this.money += coin.value;
-      this.xp += 5;
-      this._audio(['coin', 'collectCoin', 'playCoin']);
-      this._ui('showToast', `+₦${coin.value}`);
-    }
-  }
-
-  triggerCheckpointInteraction({ type, source }) {
-    if (this.eventOpen) return;
-    if (this.checkpointCooldown > 0) return;
-
-    const fineBase = type === 'karota'
-      ? 450 + this.level * 45
-      : 300 + this.level * 30;
-
-    this.checkpointCooldown = 240;
-    this.eventType = type;
-    this.eventContext = { source };
-
-    this.showEvent({
-      type: 'karota',
-      title: type === 'karota' ? 'KAROTA CHECKPOINT' : 'POLICE CHECKPOINT',
-      text: `Officer has stopped your keke. Fine: ₦${fineBase}.\n\nKeep the interaction controlled; driving away may start a pursuit.`,
-      context: { source, fineBase },
-      actions: [
-        {
-          label: `PAY ₦${fineBase}`,
-          onClick: () => this.payCheckpointFine(fineBase)
-        },
-        {
-          label: 'NEGOTIATE',
-          onClick: () => this.negotiateCheckpoint(fineBase)
-        },
-        {
-          label: 'DISPUTE',
-          onClick: () => this.disputeCheckpoint(fineBase)
-        },
-        {
-          label: 'DRIVE OFF',
-          onClick: () => this.escapeCheckpoint()
-        }
-      ]
-    });
-
-    this._audio(type === 'karota'
-      ? ['karota', 'checkpoint', 'voice']
-      : ['police', 'checkpoint', 'siren']);
-  }
-
-  payCheckpointFine(fine) {
-    const amount = Math.min(this.money, fine);
-    this.money -= amount;
-    this.score = Math.max(0, this.score - amount);
-    this.karotaHeat = Math.max(0, this.karotaHeat - 2);
-    this.karotaWanted = false;
+    this.comboTimer = 0;
+    this.speed = 3.6;
+    this.frame = 0;
+    this.roadOff = 0;
+    this.playerLane = 1;
+    this.inv = 0;
+    this.bounce = 0;
+    this.obs = [];
+    this.paxZones = [];
+    this.dropZones = [];
+    this.coins = [];
+    this.trafficJamTimer = 0;
+    this.nearMissCooldown = 0;
     this.policeChase = 0;
-    this._ui('showToast', `Fine paid: ₦${amount}`);
-    this._saveSelection();
-    this.closeEvent();
-  }
-
-  negotiateCheckpoint(fine) {
-    const success = Math.random() < 0.52;
-    if (success) {
-      const reduced = Math.max(50, Math.round(fine * 0.55));
-      this.money -= Math.min(this.money, reduced);
-      this.karotaHeat = Math.max(0, this.karotaHeat - 1);
-      this._ui('showToast', `Negotiated checkpoint fine: ₦${reduced}`);
-      this._saveSelection();
-      this.closeEvent();
-      return;
-    }
-
-    this.karotaHeat += 1;
-    this._ui('showToast', 'Negotiation failed.');
-    this.closeEvent();
-  }
-
-  disputeCheckpoint(fine) {
-    const successful = Math.random() < 0.36;
-    if (successful) {
-      this.karotaHeat = Math.max(0, this.karotaHeat - 1);
-      this._ui('showToast', 'Officer released you after checking the vehicle.');
-      this.closeEvent();
-      return;
-    }
-
-    const surcharge = Math.round(fine * 0.25);
-    this.money -= Math.min(this.money, surcharge);
-    this.karotaHeat += 2;
-    this._ui('showToast', `Dispute failed. Extra cost: ₦${surcharge}`);
-    this._saveSelection();
-    this.closeEvent();
-  }
-
-  escapeCheckpoint() {
-    this.karotaHeat += 3;
-    this.karotaWanted = true;
-    this.policeChase = 600 + this.level * 30;
-    this.speed = Math.min(this.maxSpeed, this.speed + 0.7);
-    this._audio(['siren', 'policeChase']);
-    this._ui('showToast', '🚨 Pursuit started — avoid the police vehicle.');
-    this.closeEvent();
-  }
-
-  updateMissionProgress() {
-    if (!this.mission) return;
-
-    switch (this.mission.type) {
-      case 'dist':
-        this.mission.progress = this.dist;
-        break;
-      case 'score':
-        this.mission.progress = this.score;
-        break;
-      case 'pax':
-        this.mission.progress = this.totalPax;
-        break;
-      case 'drop':
-        // drop count is represented by completedTrips below
-        this.mission.progress = this.completedTrips;
-        break;
-      case 'nearmiss':
-        this.mission.progress = this.nearMissCount;
-        break;
-      default:
-        break;
-    }
-
-    if (this.mission.progress >= this.mission.target) {
-      if (!this.mission.completed) {
-        this.mission.completed = true;
-        const reward = 350 + this.level * 75;
-        this.money += reward;
-        this.score += reward;
-        this.xp += 100;
-        this._audio(['mission', 'missionComplete']);
-        this._ui('showToast', `Mission complete! +₦${reward}`);
-        this.generateMission();
-        this._saveSelection();
-      }
-    }
-  }
-
-  generateMission() {
-    const base = (CONFIG.MISSIONS || [])[this.missionIndex % (CONFIG.MISSIONS?.length || 1)];
-    this.missionIndex += 1;
-
-    if (!base) {
-      this.mission = {
-        text: 'Drive 2 km',
-        type: 'dist',
-        target: 2,
-        progress: 0,
-        completed: false
-      };
-      return;
-    }
-
-    this.mission = {
-      ...base,
-      progress: 0,
-      completed: false
-    };
-  }
-
-  updateLevel() {
-    const thresholds = [0, 1.2, 3, 5.5, 8.5, 12, 16, 21, 27, 34, 42, 52];
-    let newLevel = 1;
-
-    for (let i = 1; i < thresholds.length; i++) {
-      if (this.dist >= thresholds[i]) newLevel = i + 1;
-      else break;
-    }
-
-    if (newLevel > this.level) {
-      const oldLevel = this.level;
-      this.level = newLevel;
-      this.maxSpeed += Math.min(0.2, (this.level - oldLevel) * 0.08);
-      this.xp += 150;
-      this._ui('showToast', `LEVEL UP — Level ${this.level}`);
-
-      const nextKeke = this.getKekeCatalog().find(
-        (k) => k.unlockLevel === this.level
+    this.nearMissCount = 0;
+    this.landmarkIndex = 0;
+    this.karotaTimer = 0;
+    this.activeMission = { ...CONFIG.MISSIONS[Math.floor(Math.random() * CONFIG.MISSIONS.length)], progress: 0 };
+    this.ui.showPlaying();
+    this.ui.setMission(this.activeMission.text);
+    const route = CONFIG.ROUTES[this.selectedRoute];
+    this.ui.setRouteLabel(route ? route.name : '');
+    const drv = this.getDriver();
+    this.ui.setDriverLabel(drv.name + ' · ' + drv.title);
+    const st = CONFIG.RADIO[this.radioIndex] || CONFIG.RADIO[0];
+    this.ui.setRadio(st.name);
+    // base speed tweak from driver
+    const b = this.getBonuses();
+    this.speed = 3.4 + (b.speed || 0);
+    Audio.startEngine();
+    this.ui.updateHUD(this);
+    if (this.renderer3d?.applyPaint) this.renderer3d.applyPaint(this.selectedPaint);
+    this.initDaily();
+    if (!Storage.getSeenTutorial()) {
+      this.ui.showEvent(
+        '🛵 Welcome to Kano Run',
+        'Swipe lanes · Horn to push traffic\nGreen = pick up · Yellow = drop for fare\nWatch for KAROTA checkpoints!',
+        [{ label: 'Got it — Drive!', action: () => { Storage.setSeenTutorial(); this.state = STATE.PLAY; this.ui.showPlaying(); } }]
       );
-      if (nextKeke) {
-        this._ui('showToast', `Unlocked: ${nextKeke.name}`);
+    }
+  }
+
+  triggerShake(frames = 12, mag = 6) {
+    this.shake = frames;
+    this.shakeMag = mag;
+  }
+
+  addCombo(n = 1) {
+    this.combo += n;
+    this.comboTimer = 160;
+    if (this.combo >= 5 && this.combo % 5 === 0) this.ui.showMissionToast(`🔥 ${this.combo}x COMBO!`);
+  }
+
+  getComboMultiplier() {
+    if (this.combo >= 12) return 2;
+    if (this.combo >= 7) return 1.6;
+    if (this.combo >= 4) return 1.3;
+    if (this.combo >= 2) return 1.15;
+    return 1;
+  }
+
+  changeLane(dir) {
+    const n = this.playerLane + dir;
+    if (n >= 0 && n < CONFIG.LANES) {
+      this.playerLane = n;
+      this.bounce = 10;
+    }
+  }
+
+  horn() {
+    Audio.horn();
+    this.inv = Math.max(this.inv, 20);
+    // push nearby traffic
+    for (const o of this.obs) {
+      if (Math.round(o.lane) === this.playerLane && Math.abs(o.y - this.playerY) < 120) {
+        o.y -= 40;
       }
     }
-  }
-
-  updateLandmarks() {
-    if (!this.selectedRoute?.landmarks?.length) return;
-
-    const segment = Math.floor(this.dist * 0.85) % this.selectedRoute.landmarks.length;
-    if (segment !== this.lastLandmarkIndex) {
-      this.lastLandmarkIndex = segment;
-      const landmark = this.selectedRoute.landmarks[segment];
-      this._ui('showLandmark', landmark);
-    }
-  }
-
-  updateDailyProgress() {
-    if (!this.mission) return;
-    if (this.frame % 300 !== 0) return;
-    this._ui('updateDailyMission', this.getDailyStatus());
-  }
-
-  getDailyStatus() {
-    return {
-      claimed: this.dailyClaimed,
-      reward: this.dailyReward,
-      date: todayKey(),
-      progress: Math.min(1, this.dist / 1.5),
-      description: 'Drive 1.5 km today to unlock your daily reward.'
-    };
-  }
-
-  claimDailyReward() {
-    if (this.dailyClaimed) {
-      this._ui('showToast', 'Daily reward already claimed today.');
-      return false;
-    }
-
-    if (this.dist < 1.5 && this.state === STATE.PLAY) {
-      this._ui('showToast', 'Drive 1.5 km to claim today’s reward.');
-      return false;
-    }
-
-    this.dailyClaimed = true;
-    this.money += this.dailyReward;
-    this.score += this.dailyReward;
-    this.xp += 50;
-    this._storageWrite('dailyClaimDate', todayKey());
-    this._saveSelection();
-    this._audio(['reward', 'dailyReward']);
-    this._ui('showToast', `Daily reward claimed: ₦${this.dailyReward}`);
-    return true;
-  }
-
-  finishRun() {
-    this.state = STATE.OVER;
-    this.paused = false;
-    this.eventOpen = false;
-    this.continuesLeft = Math.max(0, this.continuesLeft);
-    this._audio(['gameOver', 'over']);
-    this._saveSelection();
-
-    const achievementRewards = this.checkAchievements();
-    const finalReward = achievementRewards;
-
-    if (finalReward > 0) {
-      this.money += finalReward;
-      this.score += finalReward;
-    }
-
-    const finalStats = {
-      score: Math.round(this.score),
-      money: Math.round(this.money),
-      dist: Number(this.dist.toFixed(2)),
-      passengers: this.totalPax,
-      drops: this.completedTrips,
-      bestCombo: this.bestCombo,
-      nearMisses: this.nearMissCount,
-      level: this.level,
-      route: this.selectedRoute?.name || this.routeId,
-      driver: CONFIG.DRIVERS?.[this.selectedDriver]?.name || this.selectedDriver,
-      keke: KEKES[this.selectedKeke]?.name || this.selectedKeke,
-      achievementReward: finalReward
-    };
-
-    this._ui('showOver', finalStats);
-    this._ui('updateFinalStats', finalStats);
   }
 
   gameOver() {
-    this.finishRun();
+    Audio.crash();
+    this.triggerShake(16, 8);
+    this.state = STATE.EVENT;
+    if (this.continuesLeft > 0) {
+      this.ui.showEvent('💥 CRASHED!', `You still have ${this.continuesLeft} free Life Saver${this.continuesLeft > 1 ? 's' : ''} left.\nContinue from here?`, [
+        { label: `Use Free Life Saver (${this.continuesLeft} left)`, action: () => this.useContinue(false) },
+        { label: 'End Run', action: () => this.finalGameOver() }
+      ]);
+    } else {
+      const cost = 350 + (this.paidContinuesUsed || 0) * 200;
+      const can = this.score >= cost;
+      this.ui.showEvent('💥 No Free Lives Left', can
+        ? `Pay ₦${cost.toLocaleString()} from your score to continue?`
+        : `Need ₦${cost.toLocaleString()} — you have ₦${this.score.toLocaleString()}.`,
+        can
+          ? [
+              { label: `Pay ₦${cost.toLocaleString()} & Continue`, action: () => this.useContinue(true) },
+              { label: 'End Run', action: () => this.finalGameOver() }
+            ]
+          : [{ label: 'End Run', action: () => this.finalGameOver() }]
+      );
+    }
   }
 
-  checkAchievements() {
-    let reward = 0;
-    const earned = [];
+  useContinue(isPaid) {
+    try {
+      if (isPaid) {
+        const cost = 350 + (this.paidContinuesUsed || 0) * 200;
+        if (this.score < cost) { this.finalGameOver(); return; }
+        this.score -= cost;
+        this.paidContinuesUsed = (this.paidContinuesUsed || 0) + 1;
+        this.continuesLeft = 1;
+        this.ui.showMissionToast(`Paid ₦${cost.toLocaleString()} — continue!`);
+      } else {
+        this.continuesLeft = Math.max(0, this.continuesLeft - 1);
+        this.score = Math.max(0, this.score - 80);
+      }
+      this.inv = 100 + (this.getBonuses().invFrames || 0);
+      this.obs = [];
+      this.speed = Math.min(this.speed, 5.5);
+      this.ui.hideEvent();
+      this.state = STATE.PLAY;
+      this.ui.showPlaying();
+      this.ui.updateHUD(this);
+      Audio.startEngine();
+    } catch (e) {
+      console.error(e);
+      this.finalGameOver();
+    }
+  }
 
-    for (const achievement of CONFIG.ACHIEVEMENTS || []) {
-      let passed = false;
+  finalGameOver() {
+    this.state = STATE.OVER;
+    Audio.stopEngine();
+    this.money += Math.floor(this.score * 0.2);
+    Storage.setMoney(this.money);
+    if (this.score > this.high) {
+      this.high = this.score;
+      Storage.setHighScore(this.high);
+    }
+    // Leaderboard
+    const route = CONFIG.ROUTES[this.selectedRoute];
+    const driver = this.getDriver();
+    Storage.addRun({
+      score: Math.floor(this.score),
+      dist: Number(this.dist.toFixed(1)),
+      route: route?.name || this.selectedRoute,
+      driver: driver.name,
+      at: Date.now()
+    });
+    // Achievements
+    for (const ach of (CONFIG.ACHIEVEMENTS || [])) {
       try {
-        passed = Boolean(achievement.check?.(this));
+        if (ach.check(this) && Storage.unlockAchievement(ach.id)) {
+          this.ui.showMissionToast('🏆 ' + ach.name);
+        }
       } catch {}
-      if (!passed) continue;
+    }
+    this.ui.showGameOver(this);
+  }
 
-      const storageKey = `achievement:${achievement.id}`;
-      if (this._storageRead(storageKey, false)) continue;
+  rectHit(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
 
-      this._storageWrite(storageKey, true);
-      reward += 150;
-      earned.push(achievement);
+  boardPassenger(p) {
+    const seats = p.aishat ? Math.min(2, this.capacity - this.paxOnBoard) : 1;
+    this.paxOnBoard += seats;
+    this.totalPax += seats;
+    let pick = p.aishat ? 550 : (p.vip ? 350 : 120);
+    if (p.aishat && this.getBonuses().aishatBonus) pick += this.getBonuses().aishatBonus;
+    this.score += pick;
+    this.addCombo(p.aishat ? 3 : (p.vip ? 2 : 1));
+    Audio.pickup();
+    if (p.aishat) this.ui.showMissionToast('👩‍👧 Aishat + Hibba boarded!');
+    else if (p.vip) this.ui.showMissionToast('💼 VIP boarded! +₦' + pick);
+    else this.ui.showMissionToast('Passenger in');
+  }
+
+  startNegotiation(p) {
+    this.state = STATE.EVENT;
+    Audio.negotiate();
+    const low = 50;
+    const fair = 120;
+    this.ui.showEvent(
+      '💬 Fare Negotiation',
+      'Passenger: "Aboki, reduce am! I go pay ₦' + low + ' only."\nWhat do you say?',
+      [
+        {
+          label: 'Accept ₦' + low,
+          action: () => {
+            this.paxOnBoard = Math.min(this.capacity, this.paxOnBoard + 1);
+            this.totalPax += 1;
+            this.score += low;
+            this.addCombo(1);
+            Audio.pickup();
+            this.ui.showMissionToast('Boarded for ₦' + low);
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Hold ₦' + fair,
+          action: () => {
+            if (Math.random() < 0.55) {
+              this.paxOnBoard = Math.min(this.capacity, this.paxOnBoard + 1);
+              this.totalPax += 1;
+              this.score += fair;
+              this.addCombo(2);
+              Audio.pickup();
+              this.ui.showMissionToast('Agreed ₦' + fair);
+            } else {
+              Audio.alert();
+              this.ui.showMissionToast('Passenger walked away');
+            }
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'No deal',
+          action: () => {
+            this.ui.showMissionToast('No boarding');
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        }
+      ]
+    );
+  }
+
+  startKarotaCheckpoint() {
+    this.karotaTimer = 400;
+    this.state = STATE.EVENT;
+    Audio.alert();
+    this.triggerShake(8, 4);
+    const fine = 200 + Math.floor(Math.random() * 300);
+    this.ui.showEvent(
+      '⚠️ KAROTA Checkpoint',
+      'KAROTA officer flags you down.\n"Paper? Or you go settle ₦' + fine + '?"',
+      [
+        {
+          label: 'Pay ₦' + fine,
+          action: () => {
+            this.score = Math.max(0, this.score - fine);
+            this.ui.showMissionToast('Paid KAROTA ₦' + fine);
+            Audio.negotiate();
+            this.inv = 60;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Talk your way out',
+          action: () => {
+            if (Math.random() < 0.45) {
+              this.ui.showMissionToast('They waved you on');
+              Audio.success();
+              this.score += 80;
+            } else {
+              this.score = Math.max(0, this.score - fine);
+              this.ui.showMissionToast('Still paid ₦' + fine);
+              Audio.crash();
+            }
+            this.inv = 60;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Speed off (risk)',
+          action: () => {
+            if (Math.random() < 0.4) {
+              this.ui.showMissionToast('Escaped!');
+              this.addCombo(3);
+              Audio.horn();
+            } else {
+              this.ui.showMissionToast('Caught — heavy fine');
+              this.score = Math.max(0, this.score - fine * 2);
+              this.triggerShake(12, 6);
+              Audio.crash();
+            }
+            this.inv = 40;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        }
+      ]
+    );
+  }
+
+  /** Min gap in screen-Y units between vehicles in same lane */
+  laneClear(lane, y, gap = 130, ignore = null) {
+    return !this.obs.some(o =>
+      o !== ignore &&
+      Math.round(o.lane) === Math.round(lane) &&
+      Math.abs(o.y - y) < gap
+    );
+  }
+
+  update() {
+    if (this.state !== STATE.PLAY) {
+      if (this.shake > 0) this.shake--;
+      return;
+    }
+    this.frame++;
+    if (this.inv > 0) this.inv--;
+    if (this.bounce > 0) this.bounce--;
+    if (this.shake > 0) this.shake--;
+    if (this.nearMissCooldown > 0) this.nearMissCooldown--;
+    if (this.policeChase > 0) this.policeChase--;
+    if (this.trafficJamTimer > 0) this.trafficJamTimer--;
+    if (this.comboTimer > 0) {
+      this.comboTimer--;
+      if (this.comboTimer <= 0) this.combo = 0;
     }
 
-    if (earned.length) {
-      for (const achievement of earned) {
-        this._ui('showToast', `Achievement: ${achievement.name}`);
+    const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
+    const bonuses = this.getBonuses();
+    let baseTop = 7.2 * (route.difficulty || 1) + (bonuses.speed || 0) * 3;
+    if (this.trafficJamTimer > 0) baseTop *= 0.55;
+    // Ruffneck night edge
+    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) baseTop += 0.4;
+    this.speed = Math.min(baseTop, 3.2 + this.dist * 0.018 + (bonuses.speed || 0));
+    this.roadOff = (this.roadOff + this.speed * 2) % 58;
+    this.dist += this.speed * 0.0055;
+    const b = this.getBonuses();
+    this.score += Math.floor(this.speed * 0.22 * this.getComboMultiplier() * (b.scoreMult || 1));
+    Audio.updateEngine(this.speed);
+
+    // Landmark callouts along route
+    const marks = route.landmarks || [];
+    if (marks.length && this.dist > (this.landmarkIndex + 1) * 2.5 && this.landmarkIndex < marks.length) {
+      const name = marks[this.landmarkIndex];
+      this.landmarkIndex++;
+      this.ui.showMissionToast('📍 ' + name);
+      Audio.success();
+    }
+
+    // KAROTA checkpoint event
+    if (this.karotaTimer > 0) this.karotaTimer--;
+    if (this.frame % 720 === 0 && this.dist > 1.5 && this.karotaTimer <= 0 && Math.random() < 0.4) {
+      this.startKarotaCheckpoint();
+      return;
+    }
+
+    this.targetX = this.laneX(this.playerLane);
+    this.playerX += (this.targetX - this.playerX) * 0.25;
+    this.playerY = this.canvas.clientHeight - 195;
+
+    // ——— Traffic jam event ———
+    if (this.frame % 480 === 0 && Math.random() < 0.35 && this.trafficJamTimer <= 0 && this.dist > 1) {
+      this.trafficJamTimer = 150;
+      this.ui.showMissionToast('🚦 TRAFFIC JAM! Slow down');
+      this.triggerShake(6, 3);
+    }
+
+    // ——— Safe traffic spawn (per-lane gap + prefer non-player lane when close) ———
+    if (this.frame % 48 === 0 && Math.random() < 0.72 && this.trafficJamTimer <= 0) {
+      let lane = Math.floor(Math.random() * 3);
+      // Prefer not stacking on player lane at spawn
+      if (lane === this.playerLane && Math.random() < 0.55) {
+        lane = (lane + 1 + Math.floor(Math.random() * 2)) % 3;
+      }
+      if (this.laneClear(lane, -80, 150)) {
+        const roll = Math.random();
+        let type = 'car';
+        if (roll < 0.35) type = 'keke';
+        else if (roll < 0.55) type = 'car';
+        else if (roll < 0.7) type = 'keke';
+        else if (roll < 0.82) type = 'police';
+        else if (roll < 0.92) type = 'karota';
+        else type = 'car';
+
+        this.obs.push({
+          type,
+          lane,
+          y: -80,
+          w: type === 'keke' ? 46 : 52,
+          h: type === 'keke' ? 64 : 74,
+          speedOff: -0.3 + Math.random() * 0.5, // mostly slower than player flow
+          laneCooldown: 40 + Math.floor(Math.random() * 80)
+        });
       }
     }
 
-    return reward;
-  }
+    // Extra density during jam (spawn ahead in all lanes with gaps)
+    if (this.trafficJamTimer > 80 && this.frame % 30 === 0) {
+      for (let lane = 0; lane < 3; lane++) {
+        if (this.laneClear(lane, -80, 160) && Math.random() < 0.5) {
+          this.obs.push({
+            type: Math.random() < 0.5 ? 'keke' : 'car',
+            lane, y: -80, w: 50, h: 70,
+            speedOff: -0.8,
+            laneCooldown: 120
+          });
+        }
+      }
+    }
 
-  _hudPayload() {
-    const radio = (CONFIG.RADIO || [])[this.radioIndex];
-    return {
-      score: Math.round(this.score),
-      money: Math.round(this.money),
-      dist: Number(this.dist.toFixed(1)),
-      pax: this.paxCount,
-      capacity: this.capacity,
-      lives: this.continuesLeft,
-      combo: this.combo,
-      level: this.level,
-      speed: Number(this.speed.toFixed(1)),
-      mission: this.mission,
-      route: this.selectedRoute,
-      driver: CONFIG.DRIVERS?.[this.selectedDriver],
-      keke: KEKES[this.selectedKeke],
-      radio,
-      weather: this.weatherState,
-      karotaWanted: this.karotaWanted,
-      policeChase: this.policeChase > 0,
-      passengers: this.currentPassengers.map((p) => ({
-        destination: p.destination,
-        fare: p.fare,
-        type: p.type
-      }))
-    };
-  }
+    if (this.frame % 95 === 0) {
+      const roll = Math.random();
+      this.paxZones.push({
+        lane: Math.floor(Math.random() * 3),
+        y: -90,
+        taken: false,
+        aishat: roll < 0.1,
+        vip: roll >= 0.1 && roll < 0.22
+      });
+    }
+    if (this.frame % 115 === 0) {
+      this.dropZones.push({ lane: Math.floor(Math.random() * 3), y: -90, used: false });
+    }
+    if (this.frame % 58 === 0) {
+      this.coins.push({ lane: Math.floor(Math.random() * 3), y: -60, taken: false, bob: Math.random() * 6 });
+    }
 
-  _updateHUDEveryFrame() {
-    if (this.frame % 4 !== 0) return;
-    this._ui('updateHUD', this._hudPayload());
-    this._ui('updateDailyMission', this.getDailyStatus());
-  }
+    const mv = this.speed * 1.1;
+    const h = this.canvas.clientHeight;
 
-  getState() {
-    return {
-      state: this.state,
-      paused: this.paused,
-      frame: this.frame,
-      score: this.score,
-      money: this.money,
-      dist: this.dist,
-      playerLane: this.playerLane,
-      playerX: this.playerX,
-      playerY: this.playerY,
-      speed: this.speed,
-      level: this.level,
-      currentPassengers: this.currentPassengers,
-      obs: this.obs,
-      paxZones: this.paxZones,
-      dropZones: this.dropZones,
-      coins: this.coins,
-      checkpoints: this.checkpoints
-    };
+    // ——— Traffic movement + following distance + overtaking ———
+    for (const o of this.obs) {
+      // Find vehicle ahead in same lane (higher y = closer to player / further down screen)
+      let aheadDist = 9999;
+      for (const other of this.obs) {
+        if (other === o) continue;
+        if (Math.round(other.lane) !== Math.round(o.lane)) continue;
+        if (other.y > o.y) {
+          const d = other.y - o.y;
+          if (d < aheadDist) aheadDist = d;
+        }
+      }
+      // Also respect player if same lane and ahead
+      if (Math.round(o.lane) === this.playerLane && this.playerY > o.y) {
+        aheadDist = Math.min(aheadDist, this.playerY - o.y);
+      }
+
+      let move = mv + (o.speedOff || 0);
+      // Brake if too close to vehicle ahead
+      if (aheadDist < 90) move *= 0.25;
+      else if (aheadDist < 130) move *= 0.55;
+
+      o.y += move;
+      if (o.laneCooldown > 0) o.laneCooldown--;
+
+      // Overtake: change lane only if destination clear and something is blocking ahead
+      if (o.laneCooldown <= 0 && aheadDist < 120 && Math.random() < 0.04) {
+        const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+        for (const dir of dirs) {
+          const nl = Math.round(o.lane) + dir;
+          if (nl < 0 || nl > 2) continue;
+          // Clear of other traffic
+          if (!this.laneClear(nl, o.y, 110, o)) continue;
+          // Don't cut into player at close range
+          if (nl === this.playerLane && Math.abs(o.y - this.playerY) < 100) continue;
+          o.lane = nl;
+          o.laneCooldown = 70 + Math.floor(Math.random() * 50);
+          break;
+        }
+      }
+
+      // Police / KAROTA: occasional "notice" when near player
+      if ((o.type === 'police' || o.type === 'karota') &&
+          Math.round(o.lane) === this.playerLane &&
+          Math.abs(o.y - this.playerY) < 160 &&
+          this.policeChase <= 0 &&
+          Math.random() < 0.01) {
+        this.policeChase = 120;
+        this.ui.showMissionToast(o.type === 'karota' ? '⚠️ KAROTA nearby — drive careful!' : '🚨 Police nearby!');
+        this.triggerShake(5, 2);
+      }
+    }
+    this.obs = this.obs.filter(o => o.y < h + 80);
+
+    for (const p of this.paxZones) p.y += mv;
+    this.paxZones = this.paxZones.filter(p => p.y < h + 40 && !p.taken);
+    for (const d of this.dropZones) d.y += mv;
+    this.dropZones = this.dropZones.filter(d => d.y < h + 40 && !d.used);
+    for (const c of this.coins) {
+      c.y += mv;
+      c.bob += 0.1;
+    }
+    this.coins = this.coins.filter(c => c.y < h + 40 && !c.taken);
+
+    // ——— Collisions (slightly tighter hitbox) + near miss rewards ———
+    if (this.inv <= 0) {
+      const pb = { x: this.playerX - 20, y: this.playerY - 32, w: 40, h: 60 };
+      for (const o of this.obs) {
+        const ox = this.laneX(Math.round(o.lane)) - o.w / 2;
+        if (this.rectHit(pb, { x: ox, y: o.y + 8, w: o.w, h: o.h - 12 })) {
+          // Police/KAROTA contact costs more message
+          if (o.type === 'police' || o.type === 'karota') {
+            this.ui.showMissionToast(o.type === 'karota' ? 'KAROTA got you!' : 'Police stop!');
+          }
+          this.gameOver();
+          return;
+        }
+
+        // Near miss: adjacent lane, close in Y
+        if (
+          this.nearMissCooldown <= 0 &&
+          Math.round(o.lane) !== this.playerLane &&
+          Math.abs(Math.round(o.lane) - this.playerLane) === 1 &&
+          Math.abs(o.y - this.playerY) < 36
+        ) {
+          this.nearMissCooldown = 45;
+          this.nearMissCount = (this.nearMissCount || 0) + 1;
+          const nm = Math.floor(60 * (this.getBonuses().nearMissBonus || 1));
+          this.addCombo(2);
+          this.score += nm;
+          this.ui.showMissionToast('💨 Near miss! +₦' + nm);
+        }
+      }
+    }
+
+    // ——— Pickups (some negotiate fare) ———
+    for (const p of this.paxZones) {
+      if (p.taken) continue;
+      if (Math.round(p.lane) === this.playerLane && Math.abs(p.y - this.playerY) < 50 && this.paxOnBoard < this.capacity) {
+        p.taken = true;
+        // Chance to negotiate (not Aishat)
+        if (!p.aishat && Math.random() < 0.28) {
+          this.startNegotiation(p);
+          return;
+        }
+        this.boardPassenger(p);
+      }
+    }
+
+    for (const d of this.dropZones) {
+      if (d.used) continue;
+      if (Math.round(d.lane) === this.playerLane && Math.abs(d.y - this.playerY) < 50 && this.paxOnBoard > 0) {
+        d.used = true;
+        const n = this.paxOnBoard;
+        this.paxOnBoard = 0;
+        this.dropCount += n;
+        const fare = Math.floor(n * (route.baseFare || 140) * this.getComboMultiplier() * (this.getBonuses().fareMult || 1));
+        this.score += fare;
+        this.addCombo(2);
+        this.ui.showMissionToast(`Drop +₦${fare}`);
+      }
+    }
+
+    for (const c of this.coins) {
+      if (c.taken) continue;
+      if (Math.hypot(this.playerX - this.laneX(c.lane), this.playerY - c.y) < 42) {
+        c.taken = true;
+        this.score += 40;
+        Audio.coin();
+      }
+    }
+
+    if (this.activeMission) {
+      const m = this.activeMission;
+      if (m.type === 'drop') m.progress = this.dropCount;
+      if (m.type === 'dist') m.progress = this.dist;
+      if (m.type === 'score') m.progress = this.score;
+      if (m.type === 'pax') m.progress = this.totalPax;
+      if (m.type === 'nearmiss') m.progress = this.nearMissCount || 0;
+      this.ui.setMission(`${m.text} (${Math.min(m.target, Math.floor(m.progress))}/${m.target})`);
+    }
+
+    this.ui.updateHUD(this);
   }
 }
+
