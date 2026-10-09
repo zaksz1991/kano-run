@@ -29,7 +29,8 @@ const BASE_SPEED = 3.6;
 const BASE_MAX_SPEED = 7.2;
 const FRAME_MS = 1000 / 60;
 
-const COLLISION_Y = 64; // Match the visible 3D vehicle overlap window.
+// Wider overlap window so vehicle impacts register reliably at speed.
+const COLLISION_Y = 54;
 const NEAR_MISS_Y = 92;
 const PICKUP_Y = 70;
 const DROPOFF_Y = 72;
@@ -1250,32 +1251,33 @@ export class Game {
   }
 
   handleTrafficCollisions() {
-    // Collision is evaluated in the same lane/screen-space coordinates used
-    // by the game simulation. The 3D renderer only draws traffic; it does not
-    // decide whether a collision happened.
     for (const obstacle of this.obs) {
-      if (!obstacle || obstacle.collided) continue;
+      if (obstacle.collided) continue;
 
-      const obstacleLane = clamp(Math.round(Number(obstacle.lane) || 0), MIN_LANE, MAX_LANE);
-      const laneDistance = Math.abs(this.playerX - this.laneX(obstacleLane));
-      const verticalDistance = Math.abs(Number(obstacle.y) - PLAYER_Y);
-      const sameLane = obstacleLane === this.playerLane;
-      const horizontalOverlap = laneDistance <= 44;
-      const verticalOverlap = Number.isFinite(verticalDistance) && verticalDistance <= COLLISION_Y;
+      // Use world-space horizontal overlap as well as the lane index. This
+      // catches impacts while steering between lanes, not just lane equality.
+      const obstacleX = this.laneX(obstacle.lane);
+      const dx = Math.abs(this.playerX - obstacleX);
+      const dy = Math.abs(obstacle.y - PLAYER_Y);
+      const horizontalOverlap = dx <= 48;
+      const verticalOverlap = dy <= COLLISION_Y;
 
-      if ((sameLane || horizontalOverlap) && verticalOverlap) {
-        // Every traffic vehicle is solid, including police and KAROTA vehicles.
-        // Their checkpoint events remain available through the checkpoint system.
+      // Every traffic vehicle is solid, including police and KAROTA vehicles.
+      // Their checkpoint/chase systems remain available when triggered by
+      // their normal gameplay events; direct vehicle impacts cause a crash.
+      if (horizontalOverlap && verticalOverlap) {
         this.crash(obstacle);
         return;
       }
 
+      // Keep the existing near-miss scoring when the player passes close
+      // without actually overlapping the vehicle.
       if (
         !obstacle.scoredNearMiss &&
-        verticalDistance <= NEAR_MISS_Y &&
-        verticalDistance > COLLISION_Y &&
-        laneDistance > 44 &&
-        laneDistance <= 88
+        dy <= NEAR_MISS_Y &&
+        dy > COLLISION_Y &&
+        dx > 48 &&
+        dx <= 100
       ) {
         obstacle.scoredNearMiss = true;
         this.nearMissCount += 1;
