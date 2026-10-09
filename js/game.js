@@ -1103,13 +1103,15 @@ export class Game {
   spawnPassengerZone() {
     if (this.paxZones.length >= 8) return;
 
-    const lane = Math.floor(Math.random() * LANES);
+    const lane = Math.random() < 0.5 ? MIN_LANE : MAX_LANE;
+    const roadsideSide = lane === MIN_LANE ? 'left' : 'right';
     const passenger = weightedPick(PASSENGER_TYPES);
     const destination = pick(this.destinationPool());
 
     const zone = {
       id: this.nextZoneId++,
       lane,
+      roadsideSide,
       y: -260 - Math.random() * 260,
       taken: false,
       aishat: passenger.id === 'hajiya',
