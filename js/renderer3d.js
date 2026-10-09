@@ -150,10 +150,8 @@ function createCanvasTexture(drawer, w = 256, h = 128) {
 
 export class Renderer3D {
   constructor(canvas, game = null) {
-    // The game canvas is already owned by Game and receives a 2D context.
-    // Three.js/WebGL must NEVER be initialized on that same canvas.
-    // Accept the historical constructor forms (canvas, context, or Game) but
-    // always create a dedicated WebGL canvas for the 3D renderer.
+    // Keep the original canvas as a hidden compatibility/input surface. WebGL is the
+    // only visible gameplay renderer; DOM UI, menus, and controls remain untouched.
     if (canvas && canvas.canvas && typeof canvas.getContext !== 'function' && !game) {
       game = canvas;
       canvas = canvas.canvas;
@@ -161,11 +159,9 @@ export class Renderer3D {
 
     this.game = game || null;
     this.gameCanvas = canvas?.canvas || canvas;
-
     if (!this.gameCanvas || typeof this.gameCanvas.addEventListener !== 'function') {
-      throw new TypeError('Renderer3D requires an HTMLCanvasElement or a canvas rendering context.');
+      throw new TypeError('Renderer3D requires a Game instance or an HTML canvas.');
     }
-
     this.canvas = null;
     this.webglHost = null;
     this.ownsCanvas = false;
@@ -197,6 +193,18 @@ export class Renderer3D {
     this.playerWheels = [];
     this.playerSteering = null;
     this.playerShadow = null;
+    // Lightweight suspension and steering state. This affects visuals only;
+    // the game core remains the authority for movement and collisions.
+    this.playerDynamics = {
+      lateralVelocity: 0,
+      pitch: 0,
+      roll: 0,
+      suspension: 0,
+      lastSpeed: 0,
+      steering: 0,
+      bump: 0,
+    };
+    this.cameraDynamics = { lateralVelocity: 0, verticalVelocity: 0, lastSpeed: 0 };
 
     this.world = null;
     this.city = null;
@@ -242,9 +250,8 @@ export class Renderer3D {
     const pixelRatio = this.quality === 'high' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
 
     this.createWebGLCanvas();
-
-    const width = this.webglHost?.clientWidth || this.gameCanvas.clientWidth || window.innerWidth;
-    const height = this.webglHost?.clientHeight || this.gameCanvas.clientHeight || window.innerHeight;
+    const width = Math.max(this.webglHost?.clientWidth || this.gameCanvas.clientWidth || window.innerWidth, 1);
+    const height = Math.max(this.webglHost?.clientHeight || this.gameCanvas.clientHeight || window.innerHeight, 1);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -264,7 +271,7 @@ export class Renderer3D {
     this.scene.background = new THREE.Color(DAY.sky);
     this.scene.fog = new THREE.Fog(DAY.fog, 42, 175);
 
-    const aspect = Math.max(width / Math.max(height, 1), 0.5);
+    const aspect = Math.max((this.canvas.clientWidth || window.innerWidth) / Math.max(this.canvas.clientHeight || window.innerHeight, 1), 0.5);
     this.camera = new THREE.PerspectiveCamera(58, aspect, 0.1, 260);
     this.camera.position.set(0, 4.2, 13.5);
 
@@ -352,38 +359,38 @@ export class Renderer3D {
       host.style.position = 'relative';
     }
 
+    // Remove only a stale canvas created by this renderer, never the game canvas.
     const existing = host?.querySelector?.('canvas[data-kano-run-webgl="true"]');
-    if (existing && existing !== this.gameCanvas) {
-      existing.remove();
-    }
+    if (existing && existing !== this.gameCanvas) existing.remove();
 
     const glCanvas = document.createElement('canvas');
     glCanvas.dataset.kanoRunWebgl = 'true';
     glCanvas.setAttribute('aria-hidden', 'true');
-    glCanvas.style.position = 'absolute';
-    glCanvas.style.inset = '0';
-    glCanvas.style.width = '100%';
-    glCanvas.style.height = '100%';
-    glCanvas.style.display = 'block';
-    glCanvas.style.zIndex = '0';
-    glCanvas.style.pointerEvents = 'none';
-    glCanvas.style.touchAction = 'none';
+    Object.assign(glCanvas.style, {
+      position: 'absolute', inset: '0', width: '100%', height: '100%',
+      display: 'block', zIndex: '1', pointerEvents: 'none', touchAction: 'none'
+    });
 
-    // Keep the original 2D canvas intact underneath. Game/HUD/fallback code
-    // continues to use gameCanvas and never touches this WebGL canvas.
-    if (this.gameCanvas.nextSibling) {
-      host.insertBefore(glCanvas, this.gameCanvas.nextSibling);
-    } else {
-      host.appendChild(glCanvas);
-    }
-
+    // WebGL is the sole visible gameplay layer. The original canvas remains in the
+    // DOM for Game's 2D context and sizing compatibility, but is visually hidden.
+    // DOM UI and controls are promoted above WebGL below.
+    if (this.gameCanvas.nextSibling) host.insertBefore(glCanvas, this.gameCanvas.nextSibling);
+    else host.appendChild(glCanvas);
     this.canvas = glCanvas;
     this.ownsCanvas = true;
 
-    // Keep the existing HUD and touch controls above the 3D layer.
+    // Do not remove or resize the legacy canvas: Game still requests its 2D
+    // context during construction. Hide only its pixels to prevent doubled roads,
+    // vehicles, and other 2D gameplay artwork beneath/above the 3D scene.
+    this.gameCanvas.style.visibility = 'hidden';
+    this.gameCanvas.setAttribute('aria-hidden', 'true');
+
     for (const id of ['ui-overlay', 'controls']) {
       const element = document.getElementById(id);
-      if (element) element.style.zIndex = '10';
+      if (element) {
+        element.style.position = element.style.position || 'relative';
+        element.style.zIndex = '10';
+      }
     }
   }
 
@@ -915,6 +922,7 @@ export class Renderer3D {
 
     this.playerWheels = this.player.userData.wheels || [];
     this.playerSteering = this.player.userData.steering || null;
+    this.playerDriver = this.player.userData.driver || null;
 
     const shadowGeo = new THREE.CircleGeometry(1.2, 24);
     const shadowMat = makeMat(0x000000, 1, 0, { transparent: true, opacity: 0.23, depthWrite: false });
@@ -1451,29 +1459,85 @@ export class Renderer3D {
 
   updatePlayerAnimation(dt, g) {
     if (!this.player) return;
-    const speed = Number(g?.speed) || Number(g?.speedOff) || 0;
+
+    const d = this.playerDynamics;
+    const speed = Math.max(0, Number(g?.speed) || Number(g?.speedOff) || 0);
+    const previousSpeed = d.lastSpeed;
+    const acceleration = clamp((speed - previousSpeed) / Math.max(dt, 0.001), -24, 24);
+    d.lastSpeed = THREE.MathUtils.lerp(previousSpeed, speed, Math.min(dt * 4.5, 1));
+
     const lane = Number.isFinite(g?.playerLane) ? g.playerLane : 1;
     const targetX = this.laneToX(lane);
-    const laneDelta = targetX - this.player.position.x;
-    this.player.position.x += laneDelta * Math.min(dt * 9, 1);
+    const laneError = targetX - this.player.position.x;
+    const oldX = this.player.position.x;
 
-    const accel = clamp(speed / 12, -1, 1);
-    const lean = clamp(-laneDelta * 0.045 - accel * 0.035, -0.18, 0.18);
-    this.player.rotation.z = THREE.MathUtils.lerp(this.player.rotation.z, lean, Math.min(dt * 7, 1));
+    // Spring-damper lateral movement gives lane changes a little weight and
+    // prevents the vehicle from snapping directly to the centre of a lane.
+    const lateralAcceleration = clamp(laneError * 25 - d.lateralVelocity * 8.5, -18, 18);
+    d.lateralVelocity += lateralAcceleration * dt;
+    d.lateralVelocity = clamp(d.lateralVelocity, -5.8, 5.8);
+    this.player.position.x += d.lateralVelocity * dt;
+    if (Math.abs(laneError) < 0.012 && Math.abs(d.lateralVelocity) < 0.04) {
+      this.player.position.x = targetX;
+      d.lateralVelocity *= 0.25;
+    }
 
-    const suspensionTarget = 0.018 * Math.sin(this.elapsed * 9) + (g?.braking ? 0.02 : 0);
-    this.player.position.y = 0.13 + suspensionTarget;
+    const lateralG = clamp((this.player.position.x - oldX) / Math.max(dt, 0.001) / 7.5, -1, 1);
+    const braking = Boolean(g?.braking) || acceleration < -1.6;
+    const throttle = clamp(acceleration / 12, -1, 1);
+    const steerTarget = clamp(-d.lateralVelocity * 0.035 - lateralG * 0.045, -0.16, 0.16);
+    d.steering = THREE.MathUtils.lerp(d.steering, steerTarget, Math.min(dt * 8.5, 1));
+
+    // Subtle road texture, acceleration pitch and braking dive are layered
+    // together, with bounded movement to avoid exaggerated arcade bouncing.
+    const roadFrequency = 7 + speed * 0.22;
+    const roadBump = Math.sin(this.elapsed * roadFrequency) * 0.009
+      + Math.sin(this.elapsed * roadFrequency * 0.47 + 1.8) * 0.005;
+    const brakingDive = braking ? 0.025 : 0;
+    const pitchTarget = clamp(-throttle * 0.035 + brakingDive + roadBump, -0.045, 0.055);
+    d.pitch = THREE.MathUtils.lerp(d.pitch, pitchTarget, Math.min(dt * 5.5, 1));
+    const rollTarget = clamp(-d.lateralVelocity * 0.022 - lateralG * 0.035, -0.12, 0.12);
+    d.roll = THREE.MathUtils.lerp(d.roll, rollTarget, Math.min(dt * 6.5, 1));
+
+    const suspensionTarget = roadBump + (braking ? 0.012 : 0) + Math.sin(this.elapsed * 2.2) * 0.002;
+    d.suspension = THREE.MathUtils.lerp(d.suspension, suspensionTarget, Math.min(dt * 8, 1));
+    this.player.position.y = 0.13 + d.suspension;
+    this.player.rotation.z = d.roll;
+    this.player.rotation.x = d.pitch;
+
+    // Front wheel steering and speed-proportional wheel rotation.
+    const wheelSpin = -speed * dt * 8.7;
+    for (let i = 0; i < this.playerWheels.length; i += 1) {
+      const wheel = this.playerWheels[i];
+      wheel.rotation.x += wheelSpin;
+      if (i < 2) {
+        wheel.rotation.y = THREE.MathUtils.lerp(wheel.rotation.y, d.steering, Math.min(dt * 10, 1));
+      }
+    }
+    if (this.playerSteering) {
+      this.playerSteering.rotation.y = THREE.MathUtils.lerp(
+        this.playerSteering.rotation.y,
+        -d.steering * 2.4,
+        Math.min(dt * 8, 1),
+      );
+    }
+
+    if (this.playerDriver) {
+      this.playerDriver.rotation.z = THREE.MathUtils.lerp(
+        this.playerDriver.rotation.z,
+        -d.roll * 0.35,
+        Math.min(dt * 5, 1),
+      );
+    }
+
     if (this.playerShadow) {
       this.playerShadow.position.x = this.player.position.x;
       this.playerShadow.position.z = this.player.position.z + 0.25;
-      this.playerShadow.scale.x = 1.05 + Math.abs(accel) * 0.08;
+      this.playerShadow.scale.x = 1.05 + Math.abs(d.roll) * 0.45 + Math.abs(acceleration) * 0.001;
+      this.playerShadow.material.opacity = clamp(0.23 - Math.abs(this.player.position.y - 0.13) * 0.8, 0.14, 0.25);
     }
 
-    const wheelSpin = -speed * dt * 8.7;
-    for (const wheel of this.playerWheels) wheel.rotation.x += wheelSpin;
-    if (this.playerSteering) this.playerSteering.rotation.y = THREE.MathUtils.lerp(this.playerSteering.rotation.y, -laneDelta * 0.28, Math.min(dt * 10, 1));
-
-    if (Math.abs(laneDelta) > 0.02 && this.weather !== 'rain') {
+    if (Math.abs(laneError) > 0.55 && this.weather !== 'rain') {
       this.spawnDust(this.player.position.x, this.player.position.z + 0.7, this.quality === 'low' ? 1 : 2);
     }
   }
@@ -1749,18 +1813,30 @@ export class Renderer3D {
 
   updateCamera(dt, g) {
     if (!this.camera || !this.player) return;
-    const speed = Number(g?.speed) || Number(g?.speedOff) || 0;
+    const speed = Math.max(0, Number(g?.speed) || Number(g?.speedOff) || 0);
     const laneX = this.player.position.x;
-    const targetX = laneX * 0.44;
-    const speedLift = clamp(speed / 16, 0, 1) * 0.55;
+    const dynamics = this.cameraDynamics;
+    const speedDelta = (speed - dynamics.lastSpeed) / Math.max(dt, 0.001);
+    dynamics.lastSpeed = THREE.MathUtils.lerp(dynamics.lastSpeed, speed, Math.min(dt * 3, 1));
 
-    this.targetCameraX = THREE.MathUtils.lerp(this.targetCameraX, targetX, Math.min(dt * 3.8, 1));
-    this.cameraTarget.set(this.targetCameraX, 3.95 + speedLift, PLAYER_Z + 8.5);
-    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, this.targetCameraX, Math.min(dt * 4.4, 1));
-    this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, 3.65 + speedLift, Math.min(dt * 3.2, 1));
-    this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, PLAYER_Z + 10.9 - speed * 0.2, Math.min(dt * 3.4, 1));
+    const targetX = laneX * 0.42;
+    const speedLift = clamp(speed / 16, 0, 1) * 0.48;
+    const desiredX = targetX - clamp(this.playerDynamics?.lateralVelocity || 0, -5, 5) * 0.11;
+    const desiredY = 3.6 + speedLift + clamp(speedDelta * 0.0012, -0.12, 0.16);
+    const desiredZ = PLAYER_Z + 10.7 - clamp(speed * 0.18, 0, 2.8);
 
-    this.cameraLook.set(laneX * 0.18, 0.8, PLAYER_Z - 10 - clamp(speed * 2.1, 0, 12));
+    // Smooth camera inertia keeps the horizon steady while still following
+    // lane changes and speed changes naturally.
+    this.targetCameraX = THREE.MathUtils.lerp(this.targetCameraX, desiredX, 1 - Math.exp(-3.4 * dt));
+    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, this.targetCameraX, 1 - Math.exp(-4.0 * dt));
+    this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, desiredY, 1 - Math.exp(-3.0 * dt));
+    this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, desiredZ, 1 - Math.exp(-3.2 * dt));
+
+    this.cameraLook.set(
+      laneX * 0.15,
+      0.78 + clamp(speed / 30, 0, 0.12),
+      PLAYER_Z - 11 - clamp(speed * 1.65, 0, 14),
+    );
     this.camera.lookAt(this.cameraLook);
 
     if (this.cameraShake > 0) {
@@ -1904,9 +1980,6 @@ export class Renderer3D {
     if (this.ownsCanvas && this.canvas?.dataset?.kanoRunWebgl === 'true') {
       this.canvas.remove();
     }
-    this.canvas = null;
-    this.webglHost = null;
-    this.ownsCanvas = false;
     this.ready = false;
   }
 }
