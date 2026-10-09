@@ -29,7 +29,7 @@ const BASE_SPEED = 3.6;
 const BASE_MAX_SPEED = 7.2;
 const FRAME_MS = 1000 / 60;
 
-const COLLISION_Y = 36;
+const COLLISION_Y = 64; // Match the visible 3D vehicle overlap window.
 const NEAR_MISS_Y = 92;
 const PICKUP_Y = 70;
 const DROPOFF_Y = 72;
@@ -1250,31 +1250,32 @@ export class Game {
   }
 
   handleTrafficCollisions() {
+    // Collision is evaluated in the same lane/screen-space coordinates used
+    // by the game simulation. The 3D renderer only draws traffic; it does not
+    // decide whether a collision happened.
     for (const obstacle of this.obs) {
-      if (obstacle.collided) continue;
-      const dx = Math.abs(this.playerX - this.laneX(obstacle.lane));
-      const dy = Math.abs(obstacle.y - PLAYER_Y);
-      const overlapsPlayer = dx <= 34;
+      if (!obstacle || obstacle.collided) continue;
 
-      if (overlapsPlayer && dy <= COLLISION_Y) {
-        if (obstacle.type === 'police' || obstacle.type === 'karota') {
-          obstacle.collided = true;
-          this.triggerCheckpointInteraction({
-            type: obstacle.type,
-            source: obstacle
-          });
-        } else {
-          this.crash(obstacle);
-        }
+      const obstacleLane = clamp(Math.round(Number(obstacle.lane) || 0), MIN_LANE, MAX_LANE);
+      const laneDistance = Math.abs(this.playerX - this.laneX(obstacleLane));
+      const verticalDistance = Math.abs(Number(obstacle.y) - PLAYER_Y);
+      const sameLane = obstacleLane === this.playerLane;
+      const horizontalOverlap = laneDistance <= 44;
+      const verticalOverlap = Number.isFinite(verticalDistance) && verticalDistance <= COLLISION_Y;
+
+      if ((sameLane || horizontalOverlap) && verticalOverlap) {
+        // Every traffic vehicle is solid, including police and KAROTA vehicles.
+        // Their checkpoint events remain available through the checkpoint system.
+        this.crash(obstacle);
         return;
       }
 
       if (
         !obstacle.scoredNearMiss &&
-        dy <= NEAR_MISS_Y &&
-        dy > COLLISION_Y &&
-        dx > 34 &&
-        dx <= 88
+        verticalDistance <= NEAR_MISS_Y &&
+        verticalDistance > COLLISION_Y &&
+        laneDistance > 44 &&
+        laneDistance <= 88
       ) {
         obstacle.scoredNearMiss = true;
         this.nearMissCount += 1;
