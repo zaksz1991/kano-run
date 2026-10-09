@@ -105,10 +105,21 @@ export class UI {
     for (const id of this.screenIds()) {
       const element = this.el(id);
       if (!element) continue;
+
       const active = id === activeId;
+
+      // `hidden` removes an inactive screen from the accessibility tree.
+      // `inert` additionally prevents keyboard/pointer focus inside it.
+      // Do not combine aria-hidden="true" with descendant buttons: that is
+      // what triggers axe's aria-hidden-focus rule.
+      if (!active && element.contains(document.activeElement)) {
+        document.activeElement.blur?.();
+      }
+
+      element.inert = !active;
       element.hidden = !active;
       element.style.display = active ? 'flex' : 'none';
-      element.setAttribute('aria-hidden', String(!active));
+      element.removeAttribute('aria-hidden');
     }
   }
 
@@ -154,6 +165,7 @@ export class UI {
     this.hideEvent();
     this.ensurePauseOverlay();
     if (this.pauseOverlay) {
+      this.pauseOverlay.inert = false;
       this.pauseOverlay.hidden = false;
       this.pauseOverlay.style.display = 'flex';
     }
@@ -167,6 +179,8 @@ export class UI {
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Game paused');
+    overlay.hidden = true;
+    overlay.inert = true;
     overlay.style.cssText = [
       'position:absolute', 'inset:0', 'z-index:60', 'display:none',
       'flex-direction:column', 'align-items:center', 'justify-content:center',
@@ -212,6 +226,7 @@ export class UI {
 
   hidePauseOverlay() {
     if (!this.pauseOverlay) return;
+    this.pauseOverlay.inert = true;
     this.pauseOverlay.hidden = true;
     this.pauseOverlay.style.display = 'none';
   }
@@ -597,7 +612,7 @@ export class UI {
       if (!keke) continue;
       const selected = this.game.selectedKeke === keke.id;
       const locked = keke.unlocked === false || (Number(this.game.level) || 1) < (Number(keke.unlockLevel) || 1);
-      this.renderOptionButton('upgrade-grid', keke.name || keke.id,
+      this.renderOptionButton('keke-grid', keke.name || keke.id,
         locked ? `Unlock at level ${Number(keke.unlockLevel) || 1}` : (selected ? 'Selected keke' : `Capacity: ${Number(keke.capacity) || 3}`),
         selected, () => {
           const ok = this.game.selectKeke?.(keke.id);
