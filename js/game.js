@@ -4,18 +4,20 @@ import { Audio } from './audio.js';
 
 /*
  * Kano Run — Adaidaita Sahu
- * Complete game core replacement.
+ * Game core — specification-aligned replacement
  *
- * Fixes:
- * - Gas accelerates only while requested.
- * - Releasing gas allows the keke to coast and slow down.
- * - Brake progressively reduces speed and can stop the keke.
- * - Lower driving speeds and smoother acceleration.
- * - Swept traffic collision detection prevents vehicles passing through.
- * - Checkpoint markers now trigger when the player reaches them.
- * - Event guards prevent multiple interactions in the same frame.
- * - Preserves routes, drivers, paints, passengers, fares, missions,
- *   achievements, progression, radio, weather, and existing UI APIs.
+ * Responsibilities:
+ * - gameplay state and progression
+ * - correct left/right steering
+ * - keyboard + mobile-facing control methods
+ * - traffic, passengers, fares and destinations
+ * - negotiation and KAROTA interactions
+ * - levels, missions, combos, achievements and continues
+ * - opening sequence state
+ * - route / driver / paint / keke / radio selection
+ *
+ * The renderer remains responsible for 3D presentation.
+ * The audio module remains responsible for sound generation/playback.
  */
 
 const PLAYER_Y = 500;
@@ -23,15 +25,15 @@ const LANES = 3;
 const MIN_LANE = 0;
 const MAX_LANE = LANES - 1;
 
-const BASE_SPEED = 1.0;
-const BASE_MAX_SPEED = 4.2;
+const BASE_SPEED = 3.6;
+const BASE_MAX_SPEED = 7.2;
 const FRAME_MS = 1000 / 60;
 
-const COLLISION_Y = 43;
-const NEAR_MISS_Y = 100;
+const COLLISION_Y = 36;
+const NEAR_MISS_Y = 92;
 const PICKUP_Y = 70;
 const DROPOFF_Y = 72;
-const CHECKPOINT_Y = 48;
+const CHECKPOINT_Y = 70;
 
 const KANО_DESTINATIONS = [
   'Sabon Gari',
@@ -176,12 +178,10 @@ function pick(arr) {
 function weightedPick(items) {
   const total = items.reduce((sum, item) => sum + (item.weight || 1), 0);
   let r = Math.random() * total;
-
   for (const item of items) {
     r -= item.weight || 1;
     if (r <= 0) return item;
   }
-
   return items[items.length - 1];
 }
 
@@ -217,19 +217,18 @@ export class Game {
     this.levelProgress = 0;
     this.xp = 0;
 
+    // The keke starts stationary. Acceleration requires an explicit gas input.
     this.speed = 0;
     this.maxSpeed = BASE_MAX_SPEED;
-
-    // No automatic acceleration when a run starts.
     this.throttle = 0;
     this.brake = 0;
     this.gasHeld = false;
     this.brakeHeld = false;
-    this._externalThrottle = false;
+    this._externalThrottle = true;
+    this._lastCrashFrame = -Infinity;
 
     this.frame = 0;
     this.roadOff = 0;
-
     this.playerLane = 1;
     this.playerX = this.laneX(this.playerLane);
     this.targetX = this.playerX;
@@ -294,9 +293,6 @@ export class Game {
     this.lastPassenger = null;
     this.lastFare = 0;
 
-    this._lastCrashFrame = -9999;
-    this._crashInvulnerableUntil = 0;
-
     this._storageLoad();
     this.selectRoute(this.routeId, false);
     this.selectDriver(this.selectedDriver, false);
@@ -306,6 +302,72 @@ export class Game {
     this.generateMission();
 
     this._bindKeyboard();
+    this._bindDrivingControls();
+  }
+
+  _bindDrivingControls() {
+    if (typeof document === 'undefined') return;
+
+    let controls = document.getElementById('kano-driving-controls');
+    if (!controls) {
+      controls = document.createElement('div');
+      controls.id = 'kano-driving-controls';
+      controls.setAttribute('aria-label', 'Driving controls');
+      controls.style.cssText = [
+        'position:fixed', 'right:14px', 'bottom:88px', 'z-index:1000',
+        'display:flex', 'flex-direction:column', 'gap:10px',
+        'touch-action:none', 'user-select:none', '-webkit-user-select:none'
+      ].join(';');
+
+      const makeButton = (id, label, background) => {
+        const button = document.createElement('button');
+        button.id = id;
+        button.type = 'button';
+        button.textContent = label;
+        button.setAttribute('aria-label', label.toLowerCase());
+        button.style.cssText = [
+          'width:78px', 'height:58px', 'border:2px solid rgba(255,255,255,.8)',
+          'border-radius:14px', `background:${background}`, 'color:#fff',
+          'font:900 15px system-ui,sans-serif', 'letter-spacing:.4px',
+          'box-shadow:0 4px 12px rgba(0,0,0,.4)', 'touch-action:none',
+          'cursor:pointer', 'padding:0'
+        ].join(';');
+        controls.appendChild(button);
+        return button;
+      };
+
+      const gas = makeButton('kano-gas-btn', 'GAS ▲', '#15803d');
+      const brake = makeButton('kano-brake-btn', 'BRAKE ▼', '#b91c1c');
+
+      const bindHold = (button, down, up) => {
+        const release = (event) => {
+          if (event) event.preventDefault();
+          up();
+          button.style.filter = '';
+          button.style.transform = '';
+        };
+        button.addEventListener('pointerdown', (event) => {
+          event.preventDefault();
+          if (event.button !== undefined && event.button !== 0) return;
+          down();
+          button.style.filter = 'brightness(1.2)';
+          button.style.transform = 'scale(.97)';
+          try { button.setPointerCapture(event.pointerId); } catch {}
+        });
+        button.addEventListener('pointerup', release);
+        button.addEventListener('pointercancel', release);
+        button.addEventListener('lostpointercapture', release);
+        window.addEventListener('blur', () => release());
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) release();
+        });
+        button.addEventListener('contextmenu', (event) => event.preventDefault());
+      };
+
+      bindHold(gas, () => this.gasDown(), () => this.gasUp());
+      bindHold(brake, () => this.brakeDown(), () => this.brakeUp());
+      document.body.appendChild(controls);
+    }
   }
 
   setUI(ui) {
@@ -320,26 +382,14 @@ export class Game {
 
   _storageRead(key, fallback = null) {
     try {
-      if (typeof Storage?.get === 'function') {
-        return Storage.get(key) ?? fallback;
-      }
-
-      if (typeof Storage?.load === 'function') {
-        return Storage.load(key) ?? fallback;
-      }
-
+      if (typeof Storage?.get === 'function') return Storage.get(key) ?? fallback;
+      if (typeof Storage?.load === 'function') return Storage.load(key) ?? fallback;
       if (typeof localStorage !== 'undefined') {
         const value = localStorage.getItem(`kanoRun:${key}`);
         if (value == null) return fallback;
-
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
-        }
+        try { return JSON.parse(value); } catch { return value; }
       }
     } catch {}
-
     return fallback;
   }
 
@@ -349,12 +399,10 @@ export class Game {
         Storage.set(key, value);
         return;
       }
-
       if (typeof Storage?.save === 'function') {
         Storage.save(key, value);
         return;
       }
-
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(`kanoRun:${key}`, JSON.stringify(value));
       }
@@ -362,31 +410,11 @@ export class Game {
   }
 
   _storageLoad() {
-    this.routeId = this._storageRead(
-      'route',
-      this._storageRead('selectedRoute', 'citycenter')
-    );
-
-    this.selectedDriver = this._storageRead(
-      'driver',
-      this._storageRead('selectedDriver', 'ruffneck')
-    );
-
-    this.selectedPaint = this._storageRead(
-      'paint',
-      this._storageRead('selectedPaint', 'classic')
-    );
-
-    this.selectedRadio = this._storageRead(
-      'radio',
-      this._storageRead('selectedRadio', 'freedom')
-    );
-
-    this.selectedKeke = this._storageRead(
-      'keke',
-      this._storageRead('selectedKeke', 'standard')
-    );
-
+    this.routeId = this._storageRead('route', this._storageRead('selectedRoute', 'citycenter'));
+    this.selectedDriver = this._storageRead('driver', this._storageRead('selectedDriver', 'ruffneck'));
+    this.selectedPaint = this._storageRead('paint', this._storageRead('selectedPaint', 'classic'));
+    this.selectedRadio = this._storageRead('radio', this._storageRead('selectedRadio', 'freedom'));
+    this.selectedKeke = this._storageRead('keke', this._storageRead('selectedKeke', 'standard'));
     this.money = Number(this._storageRead('money', 0)) || 0;
 
     const claimedDate = this._storageRead('dailyClaimDate', null);
@@ -405,11 +433,8 @@ export class Game {
   _ui(method, ...args) {
     try {
       const fn = this.ui?.[method];
-      if (typeof fn === 'function') {
-        return fn.apply(this.ui, args);
-      }
+      if (typeof fn === 'function') return fn.apply(this.ui, args);
     } catch {}
-
     return undefined;
   }
 
@@ -417,14 +442,12 @@ export class Game {
     for (const name of methodNames) {
       try {
         const fn = Audio?.[name];
-
         if (typeof fn === 'function') {
           fn.apply(Audio, args);
           return true;
         }
       } catch {}
     }
-
     return false;
   }
 
@@ -440,41 +463,34 @@ export class Game {
           event.preventDefault();
           this.moveLeft();
           break;
-
         case 'ArrowRight':
         case 'KeyD':
           event.preventDefault();
           this.moveRight();
           break;
-
         case 'ArrowUp':
         case 'KeyW':
         case 'Space':
           event.preventDefault();
           this.gasDown();
           break;
-
         case 'ArrowDown':
         case 'KeyS':
           event.preventDefault();
           this.brakeDown();
           break;
-
         case 'KeyP':
           event.preventDefault();
           this.togglePause();
           break;
-
         case 'KeyH':
           event.preventDefault();
           this.horn();
           break;
-
         case 'KeyR':
           event.preventDefault();
           this.nextRadio();
           break;
-
         default:
           break;
       }
@@ -487,90 +503,44 @@ export class Game {
         case 'Space':
           this.gasUp();
           break;
-
         case 'ArrowDown':
         case 'KeyS':
           this.brakeUp();
           break;
-
         default:
           break;
       }
     });
-
-    window.addEventListener('blur', () => {
-      this.gasUp();
-      this.brakeUp();
-    });
   }
 
-  // Shared lane-control API for keyboard, mouse, and touch controls.
+  // Mobile/control API. All devices use the same lane logic.
   moveLeft() {
     if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
-
-    this.playerLane = clamp(
-      this.playerLane - 1,
-      MIN_LANE,
-      MAX_LANE
-    );
-
+    this.playerLane = clamp(this.playerLane - 1, MIN_LANE, MAX_LANE);
     this.targetX = this.laneX(this.playerLane);
     this._audio(['steer', 'playSteer']);
   }
 
   moveRight() {
     if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
-
-    this.playerLane = clamp(
-      this.playerLane + 1,
-      MIN_LANE,
-      MAX_LANE
-    );
-
+    this.playerLane = clamp(this.playerLane + 1, MIN_LANE, MAX_LANE);
     this.targetX = this.laneX(this.playerLane);
     this._audio(['steer', 'playSteer']);
   }
 
+  left() { this.moveLeft(); }
+  right() { this.moveRight(); }
+
+  // Compatibility API used by the 3D/mobile control layer.
+  // direction < 0 moves left; direction > 0 moves right.
   changeLane(direction = 0) {
-    let value = Number(direction);
-
-    if (!Number.isFinite(value) || value === 0) {
-      const code = direction?.code || direction?.key || '';
-
-      if (
-        code === 'ArrowLeft' ||
-        code === 'KeyA' ||
-        code === 'left'
-      ) {
-        value = -1;
-      } else if (
-        code === 'ArrowRight' ||
-        code === 'KeyD' ||
-        code === 'right'
-      ) {
-        value = 1;
-      } else if (direction?.direction != null) {
-        value = Number(direction.direction);
-      }
-    }
-
+    const value = Number(direction);
     if (!Number.isFinite(value) || value === 0) return;
-
     if (value < 0) this.moveLeft();
     else this.moveRight();
   }
 
-  left() {
-    this.moveLeft();
-  }
-
-  right() {
-    this.moveRight();
-  }
-
   gasDown() {
-    if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
-
     this.gasHeld = true;
     this._externalThrottle = true;
     this.throttle = 1;
@@ -578,13 +548,11 @@ export class Game {
 
   gasUp() {
     this.gasHeld = false;
-    this._externalThrottle = true;
     this.throttle = 0;
+    this._externalThrottle = true;
   }
 
   brakeDown() {
-    if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
-
     this.brakeHeld = true;
     this.brake = 1;
   }
@@ -597,21 +565,17 @@ export class Game {
   setThrottle(value) {
     this.throttle = clamp(Number(value) || 0, 0, 1);
     this._externalThrottle = true;
-    this.gasHeld = this.throttle > 0;
+    if (this.throttle > 0) this.gasHeld = false;
   }
 
   setBrake(value) {
     this.brake = clamp(Number(value) || 0, 0, 1);
-    this.brakeHeld = this.brake > 0;
+    if (this.brake > 0) this.brakeHeld = false;
   }
 
   pause() {
     if (this.state !== STATE.PLAY || this.eventOpen) return;
-
     this.paused = true;
-    this.gasUp();
-    this.brakeUp();
-
     this._audio(['pause']);
     this.renderer3d?.setPaused?.(true);
     this._ui('showPaused');
@@ -619,7 +583,6 @@ export class Game {
 
   resume() {
     if (this.state !== STATE.PLAY) return;
-
     this.paused = false;
     this._audio(['resume']);
     this.renderer3d?.setPaused?.(false);
@@ -638,116 +601,79 @@ export class Game {
 
   selectRoute(routeId, persist = true) {
     if (!CONFIG.ROUTES?.[routeId]) return false;
-
     this.routeId = routeId;
     this.selectedRoute = CONFIG.ROUTES[routeId];
-
     if (persist) this._saveSelection();
-
     this._ui('setRoute', this.selectedRoute);
-    this.renderer3d?.setRoute?.(this.selectedRoute);
-
     return true;
   }
 
   selectDriver(driverId, persist = true) {
     const driver = CONFIG.DRIVERS?.[driverId];
-
     if (!driver || driver.unlocked === false) return false;
-
     this.selectedDriver = driverId;
-
     if (persist) this._saveSelection();
-
     this._ui('setDriver', driver);
-
     return true;
   }
 
   selectPaint(paintId, persist = true) {
     if (!CONFIG.PAINTS?.[paintId]) return false;
-
     this.selectedPaint = paintId;
-
     if (persist) this._saveSelection();
-
     this.renderer3d?.applyPaint?.(paintId);
     this._ui('setPaint', CONFIG.PAINTS[paintId]);
-
     return true;
   }
 
   selectKeke(kekeId, persist = true) {
     const keke = KEKES[kekeId];
-
     if (!keke) return false;
-
     if (this.level < keke.unlockLevel) {
-      this._ui(
-        'showToast',
-        `${keke.name} unlocks at level ${keke.unlockLevel}.`
-      );
+      this._ui('showToast', `${keke.name} unlocks at level ${keke.unlockLevel}.`);
       return false;
     }
-
     this.selectedKeke = kekeId;
     this.capacity = keke.capacity;
-
     if (persist) this._saveSelection();
-
     this._ui('setKeke', keke);
     this.renderer3d?.setKeke?.(kekeId, keke);
-
     return true;
   }
 
   selectRadio(radioId, persist = true) {
     const radios = CONFIG.RADIO || [];
-    const idx = radios.findIndex((radio) => radio.id === radioId);
-
+    const idx = radios.findIndex((r) => r.id === radioId);
     if (idx < 0) return false;
-
     this.radioIndex = idx;
     this.selectedRadio = radios[idx].id;
-
     if (persist) this._saveSelection();
-
     this._activateRadio();
-
     return true;
   }
 
   nextRadio() {
     const radios = CONFIG.RADIO || [];
-
     if (!radios.length) return;
-
     this.radioIndex = (this.radioIndex + 1) % radios.length;
     this.selectedRadio = radios[this.radioIndex].id;
     this.lastRadioSwitchFrame = this.frame;
-
     this._saveSelection();
     this._activateRadio();
   }
 
   previousRadio() {
     const radios = CONFIG.RADIO || [];
-
     if (!radios.length) return;
-
-    this.radioIndex =
-      (this.radioIndex - 1 + radios.length) % radios.length;
-
+    this.radioIndex = (this.radioIndex - 1 + radios.length) % radios.length;
     this.selectedRadio = radios[this.radioIndex].id;
     this.lastRadioSwitchFrame = this.frame;
-
     this._saveSelection();
     this._activateRadio();
   }
 
   _activateRadio() {
     const station = (CONFIG.RADIO || [])[this.radioIndex];
-
     if (!station) return;
 
     this._audio(
@@ -757,7 +683,7 @@ export class Game {
     );
 
     this._ui('setRadio', station);
-    this._ui('showToast', `Radio: ${station.name}`);
+    this._ui('showToast', `📻 ${station.name}`);
   }
 
   getKekeCatalog() {
@@ -796,70 +722,40 @@ export class Game {
     this.totalPax = 0;
     this.completedTrips = 0;
     this.paxCount = 0;
-
     this.continuesLeft = 3;
     this.combo = 0;
     this.bestCombo = 0;
     this.nearMissCount = 0;
     this.crashes = 0;
-
     this.speed = 0;
     this.throttle = 0;
     this.brake = 0;
     this.gasHeld = false;
     this.brakeHeld = false;
-    this._externalThrottle = false;
-
+    this._externalThrottle = true;
+    this._lastCrashFrame = -Infinity;
     this.frame = 0;
     this.roadOff = 0;
-
     this.playerLane = 1;
     this.targetX = this.laneX(this.playerLane);
     this.playerX = this.targetX;
-
     this.obs = [];
     this.paxZones = [];
     this.dropZones = [];
     this.coins = [];
     this.checkpoints = [];
     this.currentPassengers = [];
-
-    this.nextPassengerId = 1;
-    this.nextTrafficId = 1;
-    this.nextZoneId = 1;
-
     this.karotaHeat = 0;
     this.karotaWanted = false;
     this.policeChase = 0;
     this.checkpointCooldown = 0;
 
-    this.mission = null;
-    this.missionIndex = 0;
-    this.generateMission();
-
-    this.lastSpawnFrame = 0;
-    this.lastPassengerFrame = 55;
-    this.lastCoinFrame = 30;
-    this.lastCheckpointFrame = 0;
-    this.lastLandmarkIndex = -1;
-
-    this._lastCrashFrame = -9999;
-    this._crashInvulnerableUntil = 0;
-
-    const driver =
-      CONFIG.DRIVERS?.[this.selectedDriver] ||
-      CONFIG.DRIVERS?.ruffneck;
-
+    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
     const keke = KEKES[this.selectedKeke] || KEKES.standard;
 
     this.capacity = keke.capacity;
-
-    this.maxSpeed =
-      BASE_MAX_SPEED +
-      (driver?.bonuses?.speed || 0) +
-      (keke.speed || 0);
-
-    this.maxSpeed = clamp(this.maxSpeed, 3.0, 4.5);
+    this.maxSpeed = BASE_MAX_SPEED + (driver?.bonuses?.speed || 0) + (keke.speed || 0);
+    this.maxSpeed = Math.max(5.5, this.maxSpeed);
 
     this.introSequence = {
       active: true,
@@ -871,60 +767,35 @@ export class Game {
 
     this.renderer3d?.applyPaint?.(this.selectedPaint);
     this.renderer3d?.setKeke?.(this.selectedKeke, keke);
-    this.renderer3d?.startOpeningSequence?.(
-      this.selectedDriver,
-      this.selectedPaint,
-      this.selectedKeke
-    );
-    this.renderer3d?.setRoute?.(this.selectedRoute);
+    this.renderer3d?.startOpeningSequence?.(this.selectedDriver, this.selectedPaint, this.selectedKeke);
 
     this._audio(['ensure', 'start']);
     this._activateRadio();
     this._ui('showPlaying');
-
     this._ui('showEvent', {
       title: 'Kano Run',
-      text:
-        `RuffNeck Adaidaita Sahu — ${this.selectedRoute?.name || 'Kano Route'}\n\n` +
-        'Your driver walks to the keke, boards and starts the engine.',
+      text: `RuffNeck Adaidaita Sahu — ${this.selectedRoute?.name || 'Kano Route'}\n\nYour driver walks to the keke, boards and starts the engine.`,
       actions: [
         {
           label: 'START ROUTE',
-          onClick: () => this.closeEvent()
+          onClick: () => {
+            this.closeEvent();
+          }
         }
       ]
     });
-
     this._ui('updateHUD', this._hudPayload());
   }
 
   resize() {
     const canvas = this.canvas;
-
     if (!canvas) return;
 
     const host = canvas.parentElement;
-    const width = Math.max(
-      host?.clientWidth ||
-      canvas.clientWidth ||
-      (typeof window !== 'undefined' ? window.innerWidth : 1) ||
-      1,
-      1
-    );
+    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
+    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
 
-    const height = Math.max(
-      host?.clientHeight ||
-      canvas.clientHeight ||
-      (typeof window !== 'undefined' ? window.innerHeight : 1) ||
-      1,
-      1
-    );
-
-    const dpr = Math.min(
-      typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
-      2
-    );
-
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const targetWidth = Math.max(Math.round(width * dpr), 1);
     const targetHeight = Math.max(Math.round(height * dpr), 1);
 
@@ -957,7 +828,6 @@ export class Game {
     this.eventContext = null;
     this.state = this._resumeStateAfterEvent || STATE.PLAY;
     this.paused = false;
-
     this.renderer3d?.setPaused?.(false);
     this._ui('hideEvent');
     this._ui('showPlaying');
@@ -965,15 +835,10 @@ export class Game {
 
   showEvent(event) {
     this.eventOpen = true;
-    this.gasUp();
-    this.brakeUp();
-
     this.state = STATE.EVENT;
     this._resumeStateAfterEvent = STATE.PLAY;
     this.eventType = event?.type || 'generic';
     this.eventContext = event?.context || null;
-
-    this.renderer3d?.setPaused?.(true);
     this._ui('showEvent', event);
   }
 
@@ -986,7 +851,6 @@ export class Game {
       if (this.introSequence.timer >= 70) {
         this.introSequence.stage = 'boarding';
         this.introSequence.timer = 0;
-
         this.renderer3d?.updateOpeningSequence?.(this.introSequence);
         this._audio(['walk', 'playWalk']);
       }
@@ -994,19 +858,16 @@ export class Game {
       if (this.introSequence.timer >= 48) {
         this.introSequence.stage = 'engine_start';
         this.introSequence.timer = 0;
-
         this.renderer3d?.updateOpeningSequence?.(this.introSequence);
       }
     } else if (this.introSequence.stage === 'engine_start') {
       if (this.introSequence.timer === 1) {
         this._audio(['engineStart', 'startEngine', 'playEngineStart']);
       }
-
       if (this.introSequence.timer >= 48) {
         this.introSequence.stage = 'driving';
         this.introSequence.active = false;
         this.introSequence.timer = 0;
-
         this._audio(['drive', 'startEngine']);
         this.renderer3d?.updateOpeningSequence?.(this.introSequence);
         this._ui('hideEvent');
@@ -1014,7 +875,6 @@ export class Game {
     }
 
     this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-
     return this.introSequence.active;
   }
 
@@ -1048,7 +908,6 @@ export class Game {
     this.roadOff += this.speed;
     this.dist += this.speed * 0.00016;
     this.xp += this.speed * 0.02;
-
     this.updateLevel();
 
     if (this.frame - this.lastSpawnFrame >= this.trafficSpawnInterval()) {
@@ -1056,23 +915,17 @@ export class Game {
       this.lastSpawnFrame = this.frame;
     }
 
-    if (
-      this.frame - this.lastPassengerFrame >=
-      this.passengerSpawnInterval()
-    ) {
+    if (this.frame - this.lastPassengerFrame >= this.passengerSpawnInterval()) {
       this.spawnPassengerZone();
       this.lastPassengerFrame = this.frame;
     }
 
-    if (this.frame - this.lastCoinFrame >= 145) {
+    if (this.frame - this.lastCoinFrame >= 85) {
       this.spawnCoin();
       this.lastCoinFrame = this.frame;
     }
 
-    if (
-      this.frame - this.lastCheckpointFrame >=
-      this.checkpointInterval()
-    ) {
+    if (this.frame - this.lastCheckpointFrame >= this.checkpointInterval()) {
       this.spawnCheckpoint();
       this.lastCheckpointFrame = this.frame;
     }
@@ -1085,35 +938,15 @@ export class Game {
     this.updatePoliceChase();
 
     this.handleTrafficCollisions();
-
-    // An encounter pauses the run. Do not process pickups or another
-    // encounter during the same frame.
-    if (this.eventOpen || this.state === STATE.EVENT) {
-      this.renderer3d?.draw?.(this);
-      this._updateHUDEveryFrame();
-      return;
-    }
-
-    this.handleCheckpointCollisions();
-
-    if (this.eventOpen || this.state === STATE.EVENT) {
-      this.renderer3d?.draw?.(this);
-      this._updateHUDEveryFrame();
-      return;
-    }
-
     this.handlePassengerInteractions();
     this.handleCoinCollection();
     this.updateMissionProgress();
     this.updateDailyProgress();
     this.updateLandmarks();
 
-    this._audio(
-      ['updateEngine'],
-      this.speed,
-      this.throttle,
-      this.brake
-    );
+    if (this.speed > 0.2) {
+      this._audio(['updateEngine'], this.speed, this.throttle, this.brake);
+    }
 
     this.renderer3d?.draw?.(this);
     this._updateHUDEveryFrame();
@@ -1124,53 +957,29 @@ export class Game {
   }
 
   updateDrivingSpeed() {
-    const driver =
-      CONFIG.DRIVERS?.[this.selectedDriver] ||
-      CONFIG.DRIVERS?.ruffneck;
-
+    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
     const keke = KEKES[this.selectedKeke] || KEKES.standard;
-
     const driverSpeed = driver?.bonuses?.speed || 0;
-    const braking = this.brakeHeld || this.brake > 0;
+    const throttle = this.gasHeld ? 1 : clamp(Number(this.throttle) || 0, 0, 1);
+    const braking = this.brakeHeld ? 1 : clamp(Number(this.brake) || 0, 0, 1);
 
-    // Default is coasting, not automatic acceleration.
-    const effectiveThrottle = this.gasHeld
-      ? 1
-      : this._externalThrottle
-        ? clamp(this.throttle, 0, 1)
-        : 0;
-
-    const handling = clamp(keke.handling || 1, 0.8, 1.2);
-
-    if (braking) {
-      const brakeStrength = clamp(this.brake, 0, 1);
-      const effectiveBrake = this.brakeHeld
-        ? 1
-        : Math.max(0.25, brakeStrength);
-
-      // Braking gets stronger with speed, but remains controllable.
-      this.speed -= (0.035 + this.speed * 0.035) * effectiveBrake;
-    } else if (effectiveThrottle > 0) {
-      // Acceleration is intentionally gradual.
-      const acceleration = 0.006 + effectiveThrottle * 0.018;
-      this.speed += acceleration * handling;
+    // Smooth acceleration, stronger braking, and gentle coasting. No hidden cruise
+    // acceleration: the player must hold GAS or set a positive throttle value.
+    if (braking > 0) {
+      this.speed -= (0.075 + this.speed * 0.045) * braking;
+    } else if (throttle > 0) {
+      const acceleration = 0.018 + throttle * 0.025;
+      this.speed += acceleration * (1 + Math.max(0, driverSpeed + keke.speed) * 0.15);
     } else {
-      // Release the gas to coast and gradually slow down.
-      this.speed -= 0.009 + this.speed * 0.003;
+      this.speed -= 0.008 + this.speed * 0.012;
     }
 
-    const driverLimit = BASE_MAX_SPEED + driverSpeed * 0.35;
-    const kekeLimit = BASE_MAX_SPEED + (keke.speed || 0);
-    const calculatedLimit = Math.min(
-      this.maxSpeed,
-      Math.max(2.5, driverLimit, kekeLimit)
-    );
-
-    this.speed = clamp(this.speed, 0, calculatedLimit);
+    this.maxSpeed = Math.max(5.5, BASE_MAX_SPEED + driverSpeed + (keke.speed || 0));
+    this.speed = clamp(this.speed, 0, this.maxSpeed);
   }
 
   updatePlayer() {
-    this.playerX += (this.targetX - this.playerX) * 0.22;
+    this.playerX += (this.targetX - this.playerX) * 0.28;
     this.playerY = PLAYER_Y;
 
     if (Math.abs(this.playerX - this.targetX) > 0.05) {
@@ -1184,7 +993,8 @@ export class Game {
   }
 
   getTimeOfDay() {
-    return (this.frame % 5400) / 5400;
+    const cycle = (this.frame % 5400) / 5400;
+    return cycle;
   }
 
   getWeather() {
@@ -1193,41 +1003,30 @@ export class Game {
 
   setWeather(weather) {
     const allowed = ['clear', 'harmattan', 'rain'];
-
     if (!allowed.includes(weather)) return;
-
     this.weatherState = weather;
   }
 
   trafficSpawnInterval() {
-    // Slower, less crowded traffic.
-    return Math.max(
-      105,
-      175 - this.level * 2 - Math.floor(this.speed)
-    );
+    // Leave enough reaction time, especially on mobile and at higher levels.
+    return Math.max(88, 176 - this.level * 4 - Math.floor(this.speed * 2));
   }
 
   passengerSpawnInterval() {
-    return Math.max(190, 310 - this.level * 4);
+    return Math.max(105, 230 - this.level * 5);
   }
 
   checkpointInterval() {
-    return Math.max(420, 560 - this.level * 8);
+    return Math.max(520, 1050 - this.level * 15);
   }
 
   spawnTraffic() {
-    if (this.obs.length >= 8) return;
+    if (this.obs.length >= 18) return;
 
     const lane = Math.floor(Math.random() * LANES);
-
     const types = [
-      'keke',
-      'car',
-      'car',
-      'taxi',
-      'bus',
-      'motorcycle',
-      'truck'
+      'keke', 'keke', 'car', 'car', 'taxi', 'bus',
+      'motorcycle', 'truck'
     ];
 
     if (this.level >= 4) types.push('police');
@@ -1236,9 +1035,7 @@ export class Game {
     const type = pick(types);
 
     const tooClose = this.obs.some(
-      (obstacle) =>
-        obstacle.lane === lane &&
-        obstacle.y < -230
+      (o) => o.lane === lane && o.y < -120
     );
 
     if (tooClose) return;
@@ -1247,12 +1044,10 @@ export class Game {
       id: this.nextTrafficId++,
       lane,
       y: -240 - Math.random() * 300,
-      previousY: null,
       type,
       speedFactor: 0.82 + Math.random() * 0.34,
       scoredNearMiss: false,
-      checkpoint: false,
-      checkpointHandled: false
+      checkpoint: false
     });
   }
 
@@ -1263,7 +1058,7 @@ export class Game {
     const passenger = weightedPick(PASSENGER_TYPES);
     const destination = pick(this.destinationPool());
 
-    this.paxZones.push({
+    const zone = {
       id: this.nextZoneId++,
       lane,
       y: -260 - Math.random() * 260,
@@ -1276,17 +1071,23 @@ export class Game {
       destination,
       fareBase: (this.selectedRoute?.baseFare || 150) * passenger.fare,
       waitFrames: 0
-    });
+    };
+
+    this.paxZones.push(zone);
   }
 
   destinationPool() {
-    const landmarks = this.selectedRoute?.landmarks || [];
-    return [...new Set([...KANО_DESTINATIONS, ...landmarks])];
+    const route = this.selectedRoute;
+    const landmarks = route?.landmarks || [];
+    const merged = [
+      ...KANО_DESTINATIONS,
+      ...landmarks
+    ];
+    return [...new Set(merged)];
   }
 
   spawnCoin() {
     if (this.coins.length >= 10) return;
-
     this.coins.push({
       lane: Math.floor(Math.random() * LANES),
       y: -180 - Math.random() * 520,
@@ -1297,17 +1098,13 @@ export class Game {
   }
 
   spawnCheckpoint() {
-    if (this.checkpoints.length >= 2 || this.checkpointCooldown > 0) {
-      return;
-    }
+    if (this.checkpoints.length >= 2 || this.checkpointCooldown > 0) return;
 
     const lane = Math.floor(Math.random() * LANES);
-
     this.checkpoints.push({
       id: `karota-${this.frame}-${lane}`,
       lane,
       y: -380 - Math.random() * 180,
-      previousY: null,
       type: Math.random() < 0.52 ? 'karota' : 'police',
       active: true,
       handled: false
@@ -1316,21 +1113,20 @@ export class Game {
 
   updateTraffic() {
     for (const obstacle of this.obs) {
-      obstacle.previousY = obstacle.y;
-
-      // Traffic approaches more slowly, giving the player more time
-      // to react and making collision detection more reliable.
-      obstacle.y += this.speed * 0.9 * obstacle.speedFactor;
+      obstacle.y += this.speed * 1.25 * obstacle.speedFactor;
     }
 
-    this.obs = this.obs.filter((obstacle) => obstacle.y < 700);
+    const survivors = [];
+    for (const obstacle of this.obs) {
+      if (obstacle.y < 700) survivors.push(obstacle);
+    }
+    this.obs = survivors.filter((obstacle) => !obstacle.collided);
   }
 
   updatePassengerZones() {
     for (const zone of this.paxZones) {
       zone.y += this.speed;
       zone.waitFrames += 1;
-
       if (zone.waitFrames > 120 && zone.y > PLAYER_Y + 80) {
         zone.taken = true;
       }
@@ -1344,12 +1140,8 @@ export class Game {
   updateDropZones() {
     for (const zone of this.dropZones) {
       zone.y += this.speed;
-
-      if (zone.y > 700) {
-        zone.used = true;
-      }
+      if (zone.y > 700) zone.used = true;
     }
-
     this.dropZones = this.dropZones.filter((zone) => !zone.used);
   }
 
@@ -1358,22 +1150,29 @@ export class Game {
       coin.y += this.speed;
       coin.bob = (coin.bob || 0) + 0.08;
     }
-
-    this.coins = this.coins.filter(
-      (coin) => coin.y < 700 && !coin.taken
-    );
+    this.coins = this.coins.filter((coin) => coin.y < 700 && !coin.taken);
   }
 
   updateCheckpoints() {
-    for (const checkpoint of this.checkpoints) {
-      checkpoint.previousY = checkpoint.y;
-      checkpoint.y += this.speed;
-    }
+    for (const cp of this.checkpoints) {
+      if (cp.handled || !cp.active) continue;
+      cp.y += this.speed;
 
+      const dx = Math.abs(this.playerX - this.laneX(cp.lane));
+      const dy = Math.abs(cp.y - PLAYER_Y);
+      if (
+        !this.eventOpen &&
+        this.checkpointCooldown <= 0 &&
+        dx <= 34 &&
+        dy <= CHECKPOINT_Y
+      ) {
+        // Mark before opening the event so the same checkpoint cannot fire twice.
+        cp.handled = true;
+        this.triggerCheckpointInteraction({ type: cp.type, source: cp });
+      }
+    }
     this.checkpoints = this.checkpoints.filter(
-      (checkpoint) =>
-        checkpoint.y < 700 &&
-        !checkpoint.handled
+      (cp) => cp.y < 700 && !cp.handled
     );
   }
 
@@ -1385,10 +1184,7 @@ export class Game {
 
     if (this.frame % 90 === 0) {
       this._audio(['police', 'karotaAlert', 'siren']);
-      this._ui(
-        'showToast',
-        'KAROTA is following you. Slow down and clear the checkpoint.'
-      );
+      this._ui('showToast', '🚨 KAROTA is following you. Slow down and clear the checkpoint.');
     }
 
     if (this.policeChase === 0) {
@@ -1397,49 +1193,23 @@ export class Game {
     }
   }
 
-  _crossedPlayerBand(previousY, currentY, radius) {
-    const low = PLAYER_Y - radius;
-    const high = PLAYER_Y + radius;
-
-    // Swept collision test: detect an object even if it crosses the
-    // entire collision band between two game updates.
-    if (previousY == null || !Number.isFinite(previousY)) {
-      return currentY >= low && currentY <= high;
-    }
-
-    const segmentLow = Math.min(previousY, currentY);
-    const segmentHigh = Math.max(previousY, currentY);
-
-    return segmentHigh >= low && segmentLow <= high;
-  }
-
   handleTrafficCollisions() {
     for (const obstacle of this.obs) {
-      const sameLane = obstacle.lane === this.playerLane;
+      if (obstacle.collided) continue;
+      const dx = Math.abs(this.playerX - this.laneX(obstacle.lane));
       const dy = Math.abs(obstacle.y - PLAYER_Y);
+      const overlapsPlayer = dx <= 34;
 
-      if (sameLane && this._crossedPlayerBand(
-        obstacle.previousY,
-        obstacle.y,
-        COLLISION_Y
-      )) {
-        if (
-          obstacle.type === 'police' ||
-          obstacle.type === 'karota'
-        ) {
-          if (!obstacle.checkpointHandled) {
-            obstacle.checkpointHandled = true;
-
-            this.triggerCheckpointInteraction({
-              type: obstacle.type,
-              source: obstacle
-            });
-          }
-
-          return;
+      if (overlapsPlayer && dy <= COLLISION_Y) {
+        if (obstacle.type === 'police' || obstacle.type === 'karota') {
+          obstacle.collided = true;
+          this.triggerCheckpointInteraction({
+            type: obstacle.type,
+            source: obstacle
+          });
+        } else {
+          this.crash(obstacle);
         }
-
-        this.crash(obstacle);
         return;
       }
 
@@ -1447,7 +1217,8 @@ export class Game {
         !obstacle.scoredNearMiss &&
         dy <= NEAR_MISS_Y &&
         dy > COLLISION_Y &&
-        Math.abs(obstacle.lane - this.playerLane) === 1
+        dx > 34 &&
+        dx <= 88
       ) {
         obstacle.scoredNearMiss = true;
         this.nearMissCount += 1;
@@ -1455,70 +1226,24 @@ export class Game {
         this.bestCombo = Math.max(this.bestCombo, this.combo);
         this.score += Math.round(25 * (1 + this.combo * 0.1));
         this.xp += 8;
-
         this._audio(['nearMiss', 'playNearMiss']);
         this._ui('showCombo', this.combo);
       }
     }
   }
 
-  handleCheckpointCollisions() {
-    if (this.eventOpen || this.checkpointCooldown > 0) return;
-
-    for (const checkpoint of this.checkpoints) {
-      if (!checkpoint.active || checkpoint.handled) continue;
-      if (checkpoint.lane !== this.playerLane) continue;
-
-      if (!this._crossedPlayerBand(
-        checkpoint.previousY,
-        checkpoint.y,
-        CHECKPOINT_Y
-      )) {
-        continue;
-      }
-
-      checkpoint.handled = true;
-      checkpoint.active = false;
-
-      this.triggerCheckpointInteraction({
-        type: checkpoint.type,
-        source: checkpoint
-      });
-
-      return;
-    }
-  }
-
   crash(obstacle) {
-    const driver =
-      CONFIG.DRIVERS?.[this.selectedDriver] ||
-      CONFIG.DRIVERS?.ruffneck;
-
+    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
     const invFrames = driver?.bonuses?.invFrames || 10;
 
-    if (this.frame < this._crashInvulnerableUntil) return;
-
-    if (
-      this._lastCrashFrame > -9999 &&
-      this.frame - this._lastCrashFrame < invFrames
-    ) {
-      return;
-    }
+    if (this.frame - this._lastCrashFrame < invFrames) return;
 
     this._lastCrashFrame = this.frame;
-    this._crashInvulnerableUntil = this.frame + 90;
-
+    if (obstacle) obstacle.collided = true;
     this.crashes += 1;
     this.continuesLeft -= 1;
     this.combo = 0;
-
-    this.speed = Math.max(0.5, this.speed * 0.55);
-    this.throttle = 0;
-    this.brake = 0;
-    this.gasHeld = false;
-    this.brakeHeld = false;
-    this._externalThrottle = false;
-
+    this.speed = Math.max(0.8, this.speed * 0.55);
     this.shake = 18;
     this.shakeMag = 8;
     this.bounce = 10;
@@ -1530,10 +1255,7 @@ export class Game {
       this.showEvent({
         type: 'continue',
         title: 'Crash',
-        text:
-          `You hit a ${obstacle?.type || 'vehicle'}. Continue the run? ` +
-          `You have ${this.continuesLeft} Life Saver` +
-          `${this.continuesLeft === 1 ? '' : 's'} left.`,
+        text: `You hit a ${obstacle?.type || 'vehicle'}. Continue the run? You have ${this.continuesLeft} Life Saver${this.continuesLeft === 1 ? '' : 's'} left.`,
         context: { obstacle },
         actions: [
           {
@@ -1555,21 +1277,14 @@ export class Game {
     this.eventOpen = false;
     this.eventType = null;
     this.eventContext = null;
-
     this.state = STATE.PLAY;
     this.paused = false;
-
-    this.speed = Math.max(0.5, this.speed);
+    this.speed = Math.max(0, this.speed);
     this.throttle = 0;
     this.brake = 0;
     this.gasHeld = false;
     this.brakeHeld = false;
-    this._externalThrottle = false;
-
-    // Keep the player protected briefly after resuming.
-    this._crashInvulnerableUntil = this.frame + 90;
     this._lastCrashFrame = this.frame;
-
     this.renderer3d?.setPaused?.(false);
     this._audio(['continue', 'lifeSaver']);
     this._ui('hideEvent');
@@ -1577,15 +1292,12 @@ export class Game {
   }
 
   handlePassengerInteractions() {
-    if (this.eventOpen) return;
-
     if (this.currentPassengers.length > 0) {
       for (const drop of this.dropZones) {
         if (drop.used) continue;
         if (drop.lane !== this.playerLane) continue;
 
         const dy = Math.abs(drop.y - PLAYER_Y);
-
         if (dy <= DROPOFF_Y && this.speed <= 3.0) {
           this.completeDropOff(drop);
           return;
@@ -1599,7 +1311,6 @@ export class Game {
         if (zone.lane !== this.playerLane) continue;
 
         const dy = Math.abs(zone.y - PLAYER_Y);
-
         if (dy <= PICKUP_Y && this.speed <= 3.25) {
           this.startPassengerNegotiation(zone);
           return;
@@ -1609,24 +1320,19 @@ export class Game {
   }
 
   startPassengerNegotiation(zone) {
-    if (this.eventOpen || !zone || zone.taken) return;
+    if (this.eventOpen) return;
 
-    const greeting =
-      GREETINGS[(this.totalPax + zone.id) % GREETINGS.length];
-
+    const greeting = GREETINGS[(this.totalPax + zone.id) % GREETINGS.length];
     const routeBase = zone.fareBase;
     const suggested = Math.max(80, Math.round(routeBase));
     const low = Math.max(60, Math.round(routeBase * 0.82));
     const high = Math.round(routeBase * 1.26);
 
     zone.negotiating = true;
-
     this.showEvent({
       type: 'fare',
-      title: greeting,
-      text:
-        `${zone.passenger.name} wants to go to ${zone.destination}. ` +
-        `Suggested fare: ₦${suggested}.\n\nChoose how you handle the fare.`,
+      title: `${greeting}`,
+      text: `${zone.passenger.name} wants to go to ${zone.destination}. Suggested fare: ₦${suggested}.\n\nChoose how you handle the fare.`,
       context: { zone },
       actions: [
         {
@@ -1648,10 +1354,7 @@ export class Game {
       ]
     });
 
-    this._audio(
-      ['passengerCall', 'passengerHail', 'voice'],
-      greeting
-    );
+    this._audio(['passengerCall', 'passengerHail', 'voice'], greeting);
   }
 
   acceptPassenger(zone, fare, mode) {
@@ -1660,15 +1363,11 @@ export class Game {
       return;
     }
 
-    const driver =
-      CONFIG.DRIVERS?.[this.selectedDriver] ||
-      CONFIG.DRIVERS?.ruffneck;
-
+    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
     let finalFare = fare;
 
     if (mode === 'high') {
       const accepted = Math.random() < 0.68;
-
       if (!accepted) {
         finalFare = Math.max(60, Math.round(fare * 0.82));
         this._ui('showToast', 'Passenger negotiated you down.');
@@ -1709,7 +1408,7 @@ export class Game {
     this.lastPassenger = passenger;
     this.lastFare = finalFare;
 
-    this.dropZones.push({
+    const drop = {
       id: `drop-${zone.id}`,
       lane: this.playerLane,
       y: -260 - Math.random() * 220,
@@ -1718,7 +1417,9 @@ export class Game {
       passengerId: passenger.id,
       fare: finalFare,
       passenger
-    });
+    };
+
+    this.dropZones.push(drop);
 
     this.combo += 1;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
@@ -1726,11 +1427,7 @@ export class Game {
     this.xp += 20;
 
     this._audio(['pickup', 'passengerPickup', 'playPickup']);
-    this._ui(
-      'showToast',
-      `${passenger.name} aboard → ${passenger.destination}`
-    );
-
+    this._ui('showToast', `${passenger.name} aboard → ${passenger.destination}`);
     this.closeEvent();
   }
 
@@ -1743,9 +1440,7 @@ export class Game {
     zone.taken = true;
     zone.flagging = false;
     zone.negotiating = false;
-
     this.combo = 0;
-
     this._ui('showToast', 'Passenger missed the ride.');
     this.closeEvent();
   }
@@ -1754,47 +1449,36 @@ export class Game {
     if (!drop || drop.used) return;
 
     drop.used = true;
-
     const idx = this.currentPassengers.findIndex(
-      (passenger) => passenger.id === drop.passengerId
+      (p) => p.id === drop.passengerId
     );
 
-    const passenger = idx >= 0
-      ? this.currentPassengers[idx]
-      : null;
-
-    if (idx >= 0) {
-      this.currentPassengers.splice(idx, 1);
-    }
+    const passenger = idx >= 0 ? this.currentPassengers[idx] : null;
+    if (idx >= 0) this.currentPassengers.splice(idx, 1);
 
     this.paxCount = this.currentPassengers.length;
     this.completedTrips += 1;
 
+    const routeMultiplier = this.selectedRoute?.difficulty || 1;
     const comboMultiplier = 1 + Math.min(this.combo, 10) * 0.06;
-
     const finalFare = Math.max(
       50,
-      Math.round(
-        (passenger?.fare || drop.fare || 100) * comboMultiplier
-      )
+      Math.round((passenger?.fare || drop.fare || 100) * comboMultiplier)
     );
 
     this.money += finalFare;
     this.score += finalFare;
     this.xp += 30 + finalFare * 0.04;
 
-    this.combo = this.combo > 0 ? this.combo + 1 : 1;
-    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    if (this.combo > 0) this.combo += 1;
+    else this.combo = 1;
 
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
     this.lastFare = finalFare;
     this.lastDropDestination = drop.destination;
 
     this._audio(['dropoff', 'passengerDropoff', 'playDropoff']);
-
-    this._ui(
-      'showToast',
-      `Akwai! Dropped at ${drop.destination}. +₦${finalFare}`
-    );
+    this._ui('showToast', `Akwai! Dropped at ${drop.destination}. +₦${finalFare}`);
 
     if (this.mission?.type === 'drop') {
       this.mission.progress += 1;
@@ -1813,38 +1497,27 @@ export class Game {
       this.score += coin.value;
       this.money += coin.value;
       this.xp += 5;
-
       this._audio(['coin', 'collectCoin', 'playCoin']);
       this._ui('showToast', `+₦${coin.value}`);
     }
   }
 
   triggerCheckpointInteraction({ type, source }) {
-    if (this.eventOpen || this.checkpointCooldown > 0) return;
-
-    if (source) {
-      source.checkpointHandled = true;
-      source.handled = true;
-      source.active = false;
-    }
+    if (this.eventOpen) return;
+    if (this.checkpointCooldown > 0) return;
 
     const fineBase = type === 'karota'
       ? 450 + this.level * 45
       : 300 + this.level * 30;
 
     this.checkpointCooldown = 240;
-
     this.eventType = type;
     this.eventContext = { source };
 
     this.showEvent({
       type: 'karota',
-      title: type === 'karota'
-        ? 'KAROTA CHECKPOINT'
-        : 'POLICE CHECKPOINT',
-      text:
-        `Officer has stopped your keke. Fine: ₦${fineBase}.\n\n` +
-        'Keep the interaction controlled; driving away may start a pursuit.',
+      title: type === 'karota' ? 'KAROTA CHECKPOINT' : 'POLICE CHECKPOINT',
+      text: `Officer has stopped your keke. Fine: ₦${fineBase}.\n\nKeep the interaction controlled; driving away may start a pursuit.`,
       context: { source, fineBase },
       actions: [
         {
@@ -1866,22 +1539,18 @@ export class Game {
       ]
     });
 
-    this._audio(
-      type === 'karota'
-        ? ['karota', 'checkpoint', 'voice']
-        : ['police', 'checkpoint', 'siren']
-    );
+    this._audio(type === 'karota'
+      ? ['karota', 'checkpoint', 'voice']
+      : ['police', 'checkpoint', 'siren']);
   }
 
   payCheckpointFine(fine) {
     const amount = Math.min(this.money, fine);
-
     this.money -= amount;
     this.score = Math.max(0, this.score - amount);
     this.karotaHeat = Math.max(0, this.karotaHeat - 2);
     this.karotaWanted = false;
     this.policeChase = 0;
-
     this._ui('showToast', `Fine paid: ₦${amount}`);
     this._saveSelection();
     this.closeEvent();
@@ -1889,50 +1558,34 @@ export class Game {
 
   negotiateCheckpoint(fine) {
     const success = Math.random() < 0.52;
-
     if (success) {
       const reduced = Math.max(50, Math.round(fine * 0.55));
-
       this.money -= Math.min(this.money, reduced);
       this.karotaHeat = Math.max(0, this.karotaHeat - 1);
-
       this._ui('showToast', `Negotiated checkpoint fine: ₦${reduced}`);
-
       this._saveSelection();
       this.closeEvent();
-
       return;
     }
 
     this.karotaHeat += 1;
-
     this._ui('showToast', 'Negotiation failed.');
     this.closeEvent();
   }
 
   disputeCheckpoint(fine) {
     const successful = Math.random() < 0.36;
-
     if (successful) {
       this.karotaHeat = Math.max(0, this.karotaHeat - 1);
-
-      this._ui(
-        'showToast',
-        'Officer released you after checking the vehicle.'
-      );
-
+      this._ui('showToast', 'Officer released you after checking the vehicle.');
       this.closeEvent();
-
       return;
     }
 
     const surcharge = Math.round(fine * 0.25);
-
     this.money -= Math.min(this.money, surcharge);
     this.karotaHeat += 2;
-
     this._ui('showToast', `Dispute failed. Extra cost: ₦${surcharge}`);
-
     this._saveSelection();
     this.closeEvent();
   }
@@ -1941,15 +1594,9 @@ export class Game {
     this.karotaHeat += 3;
     this.karotaWanted = true;
     this.policeChase = 600 + this.level * 30;
-
-    this.speed = Math.min(this.maxSpeed, this.speed + 0.35);
-
+    this.speed = Math.min(this.maxSpeed, this.speed + 0.7);
     this._audio(['siren', 'policeChase']);
-    this._ui(
-      'showToast',
-      'Pursuit started — avoid the police vehicle.'
-    );
-
+    this._ui('showToast', '🚨 Pursuit started — avoid the police vehicle.');
     this.closeEvent();
   }
 
@@ -1960,23 +1607,19 @@ export class Game {
       case 'dist':
         this.mission.progress = this.dist;
         break;
-
       case 'score':
         this.mission.progress = this.score;
         break;
-
       case 'pax':
         this.mission.progress = this.totalPax;
         break;
-
       case 'drop':
+        // drop count is represented by completedTrips below
         this.mission.progress = this.completedTrips;
         break;
-
       case 'nearmiss':
         this.mission.progress = this.nearMissCount;
         break;
-
       default:
         break;
     }
@@ -1984,16 +1627,12 @@ export class Game {
     if (this.mission.progress >= this.mission.target) {
       if (!this.mission.completed) {
         this.mission.completed = true;
-
         const reward = 350 + this.level * 75;
-
         this.money += reward;
         this.score += reward;
         this.xp += 100;
-
         this._audio(['mission', 'missionComplete']);
         this._ui('showToast', `Mission complete! +₦${reward}`);
-
         this.generateMission();
         this._saveSelection();
       }
@@ -2001,11 +1640,7 @@ export class Game {
   }
 
   generateMission() {
-    const missions = CONFIG.MISSIONS || [];
-    const base = missions.length
-      ? missions[this.missionIndex % missions.length]
-      : null;
-
+    const base = (CONFIG.MISSIONS || [])[this.missionIndex % (CONFIG.MISSIONS?.length || 1)];
     this.missionIndex += 1;
 
     if (!base) {
@@ -2016,7 +1651,6 @@ export class Game {
         progress: 0,
         completed: false
       };
-
       return;
     }
 
@@ -2028,38 +1662,24 @@ export class Game {
   }
 
   updateLevel() {
-    const thresholds = [
-      0, 1.2, 3, 5.5, 8.5, 12,
-      16, 21, 27, 34, 42, 52
-    ];
-
+    const thresholds = [0, 1.2, 3, 5.5, 8.5, 12, 16, 21, 27, 34, 42, 52];
     let newLevel = 1;
 
-    for (let i = 1; i < thresholds.length; i += 1) {
-      if (this.dist >= thresholds[i]) {
-        newLevel = i + 1;
-      } else {
-        break;
-      }
+    for (let i = 1; i < thresholds.length; i++) {
+      if (this.dist >= thresholds[i]) newLevel = i + 1;
+      else break;
     }
 
     if (newLevel > this.level) {
       const oldLevel = this.level;
-
       this.level = newLevel;
-      this.maxSpeed += Math.min(
-        0.2,
-        (this.level - oldLevel) * 0.08
-      );
-
+      this.maxSpeed += Math.min(0.2, (this.level - oldLevel) * 0.08);
       this.xp += 150;
-
       this._ui('showToast', `LEVEL UP — Level ${this.level}`);
 
       const nextKeke = this.getKekeCatalog().find(
-        (keke) => keke.unlockLevel === this.level
+        (k) => k.unlockLevel === this.level
       );
-
       if (nextKeke) {
         this._ui('showToast', `Unlocked: ${nextKeke.name}`);
       }
@@ -2069,15 +1689,10 @@ export class Game {
   updateLandmarks() {
     if (!this.selectedRoute?.landmarks?.length) return;
 
-    const segment =
-      Math.floor(this.dist * 0.85) %
-      this.selectedRoute.landmarks.length;
-
+    const segment = Math.floor(this.dist * 0.85) % this.selectedRoute.landmarks.length;
     if (segment !== this.lastLandmarkIndex) {
       this.lastLandmarkIndex = segment;
-
       const landmark = this.selectedRoute.landmarks[segment];
-
       this._ui('showLandmark', landmark);
     }
   }
@@ -2085,7 +1700,6 @@ export class Game {
   updateDailyProgress() {
     if (!this.mission) return;
     if (this.frame % 300 !== 0) return;
-
     this._ui('updateDailyMission', this.getDailyStatus());
   }
 
@@ -2106,11 +1720,7 @@ export class Game {
     }
 
     if (this.dist < 1.5 && this.state === STATE.PLAY) {
-      this._ui(
-        'showToast',
-        'Drive 1.5 km to claim today’s reward.'
-      );
-
+      this._ui('showToast', 'Drive 1.5 km to claim today’s reward.');
       return false;
     }
 
@@ -2118,16 +1728,10 @@ export class Game {
     this.money += this.dailyReward;
     this.score += this.dailyReward;
     this.xp += 50;
-
     this._storageWrite('dailyClaimDate', todayKey());
     this._saveSelection();
-
     this._audio(['reward', 'dailyReward']);
-    this._ui(
-      'showToast',
-      `Daily reward claimed: ₦${this.dailyReward}`
-    );
-
+    this._ui('showToast', `Daily reward claimed: ₦${this.dailyReward}`);
     return true;
   }
 
@@ -2135,20 +1739,16 @@ export class Game {
     this.state = STATE.OVER;
     this.paused = false;
     this.eventOpen = false;
-
-    this.gasUp();
-    this.brakeUp();
-
     this.continuesLeft = Math.max(0, this.continuesLeft);
-
     this._audio(['gameOver', 'over']);
     this._saveSelection();
 
     const achievementRewards = this.checkAchievements();
+    const finalReward = achievementRewards;
 
-    if (achievementRewards > 0) {
-      this.money += achievementRewards;
-      this.score += achievementRewards;
+    if (finalReward > 0) {
+      this.money += finalReward;
+      this.score += finalReward;
     }
 
     const finalStats = {
@@ -2161,11 +1761,9 @@ export class Game {
       nearMisses: this.nearMissCount,
       level: this.level,
       route: this.selectedRoute?.name || this.routeId,
-      driver:
-        CONFIG.DRIVERS?.[this.selectedDriver]?.name ||
-        this.selectedDriver,
+      driver: CONFIG.DRIVERS?.[this.selectedDriver]?.name || this.selectedDriver,
       keke: KEKES[this.selectedKeke]?.name || this.selectedKeke,
-      achievementReward: achievementRewards
+      achievementReward: finalReward
     };
 
     this._ui('showOver', finalStats);
@@ -2182,15 +1780,12 @@ export class Game {
 
     for (const achievement of CONFIG.ACHIEVEMENTS || []) {
       let passed = false;
-
       try {
         passed = Boolean(achievement.check?.(this));
       } catch {}
-
       if (!passed) continue;
 
       const storageKey = `achievement:${achievement.id}`;
-
       if (this._storageRead(storageKey, false)) continue;
 
       this._storageWrite(storageKey, true);
@@ -2198,8 +1793,10 @@ export class Game {
       earned.push(achievement);
     }
 
-    for (const achievement of earned) {
-      this._ui('showToast', `Achievement: ${achievement.name}`);
+    if (earned.length) {
+      for (const achievement of earned) {
+        this._ui('showToast', `Achievement: ${achievement.name}`);
+      }
     }
 
     return reward;
@@ -2207,7 +1804,6 @@ export class Game {
 
   _hudPayload() {
     const radio = (CONFIG.RADIO || [])[this.radioIndex];
-
     return {
       score: Math.round(this.score),
       money: Math.round(this.money),
@@ -2218,10 +1814,6 @@ export class Game {
       combo: this.combo,
       level: this.level,
       speed: Number(this.speed.toFixed(1)),
-      throttle: this.throttle,
-      brake: this.brake,
-      gasHeld: this.gasHeld,
-      brakeHeld: this.brakeHeld,
       mission: this.mission,
       route: this.selectedRoute,
       driver: CONFIG.DRIVERS?.[this.selectedDriver],
@@ -2230,17 +1822,16 @@ export class Game {
       weather: this.weatherState,
       karotaWanted: this.karotaWanted,
       policeChase: this.policeChase > 0,
-      passengers: this.currentPassengers.map((passenger) => ({
-        destination: passenger.destination,
-        fare: passenger.fare,
-        type: passenger.type
+      passengers: this.currentPassengers.map((p) => ({
+        destination: p.destination,
+        fare: p.fare,
+        type: p.type
       }))
     };
   }
 
   _updateHUDEveryFrame() {
     if (this.frame % 4 !== 0) return;
-
     this._ui('updateHUD', this._hudPayload());
     this._ui('updateDailyMission', this.getDailyStatus());
   }
@@ -2257,10 +1848,6 @@ export class Game {
       playerX: this.playerX,
       playerY: this.playerY,
       speed: this.speed,
-      throttle: this.throttle,
-      brake: this.brake,
-      gasHeld: this.gasHeld,
-      brakeHeld: this.brakeHeld,
       level: this.level,
       currentPassengers: this.currentPassengers,
       obs: this.obs,
