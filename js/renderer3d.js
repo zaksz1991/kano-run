@@ -14,7 +14,6 @@ export class Renderer3D {
     this.zonePool = [];
     this.coinPool = [];
     this.introPhase = 3;
-    this.cabinCam = false;
     this.init();
   }
 
@@ -265,12 +264,6 @@ export class Renderer3D {
       this.addPedestrian(side * (4.8 + (i % 3) * 0.15), i * 6.5 + 3);
     }
 
-    // Kano-style city gates / welcome arches spanning the road
-    this.addCityGate(0, 28);
-    this.addCityGate(0, 72);
-    this.addWelcomePillar(-6.5, 45);
-    this.addWelcomePillar(6.5, 45);
-
     this.scene.add(this.buildings);
 
     this.sky = new THREE.Mesh(
@@ -279,55 +272,6 @@ export class Renderer3D {
     );
     this.sky.position.y = -2;
     this.scene.add(this.sky);
-  }
-
-  addCityGate(x, z) {
-    const archCol = this.mat(0x7c2d12, { roughness: 0.85 });
-    const cream = this.mat(0xf5e6c8, { roughness: 0.7 });
-    // left pillar
-    const lp = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.5, 0.8), archCol);
-    lp.position.set(x - 4.2, 2.75, z);
-    this.buildings.add(lp);
-    // right pillar
-    const rp = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.5, 0.8), archCol);
-    rp.position.set(x + 4.2, 2.75, z);
-    this.buildings.add(rp);
-    // top beam
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.7, 0.7), archCol);
-    beam.position.set(x, 5.4, z);
-    this.buildings.add(beam);
-    // crenellations
-    for (let i = -4; i <= 4; i++) {
-      const cren = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.5), archCol);
-      cren.position.set(x + i * 1.0, 5.95, z);
-      this.buildings.add(cren);
-    }
-    // sign panel
-    const sign = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.55, 0.15), cream);
-    sign.position.set(x, 5.35, z + 0.4);
-    this.buildings.add(sign);
-  }
-
-  addWelcomePillar(x, z) {
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(1.1, 6.5, 1.1),
-      this.mat(0xb45309, { roughness: 0.75 })
-    );
-    body.position.set(x, 3.25, z);
-    this.buildings.add(body);
-    const top = new THREE.Mesh(
-      new THREE.BoxGeometry(1.3, 0.5, 1.3),
-      this.mat(0xfbbf24, { roughness: 0.5, metalness: 0.2 })
-    );
-    top.position.set(x, 6.7, z);
-    this.buildings.add(top);
-    // I Love Kano heart panel
-    const panel = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.8, 1.2),
-      new THREE.MeshBasicMaterial({ color: 0xdc2626, side: THREE.DoubleSide })
-    );
-    panel.position.set(x + (x > 0 ? -0.56 : 0.56), 4.2, z);
-    this.buildings.add(panel);
   }
 
   addHouse(x, z, side, color) {
@@ -555,13 +499,12 @@ export class Renderer3D {
     }
   }
 
-  /** Keke NAPEP style — yellow body, black canopy, 3 wheels */
+  /** Recognizable Adaidaita Sahu (3-wheeler) */
   makeKeke(bodyColor = 0xfbbf24, isPlayer = false) {
     const g = new THREE.Group();
     const bodyM = this.mat(bodyColor, { roughness: 0.45, metalness: 0.2 });
     const dark = this.mat(0x1e293b, { roughness: 0.7 });
-    // Real NAPEP: black fabric canopy
-    const roofM = this.mat(0x0f172a, { roughness: 0.9 });
+    const roofM = this.mat(isPlayer ? 0xfde047 : 0xeab308, { roughness: 0.4 });
     const chrome = this.mat(0x94a3b8, { roughness: 0.3, metalness: 0.7 });
     const tire = this.mat(0x0f172a, { roughness: 0.95 });
 
@@ -621,13 +564,6 @@ export class Renderer3D {
       const hl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), lightM);
       hl.position.set(x, 0.58, 0.92);
       g.add(hl);
-    }
-    // Amber indicators (NAPEP style)
-    const indM = this.mat(0xf59e0b, { emissive: 0xf59e0b, emissiveIntensity: 0.35 });
-    for (const x of [-0.55, 0.55]) {
-      const ind = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.08), indM);
-      ind.position.set(x, 0.72, 0.75);
-      g.add(ind);
     }
 
     // Handlebars
@@ -1026,34 +962,20 @@ export class Renderer3D {
       }
     }
 
-    // Camera — cabin / chase + speed FOV + shake
+    // Camera — speed FOV + shake
     let sx = 0, sy = 0;
     if (g.shake > 0) {
       sx = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.03;
       sy = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.02;
     }
     const px = this.player ? this.player.position.x : 0;
-    const cabin = this.cabinCam || g.cabinCam;
-    if (cabin) {
-      // First-person from driver seat
-      const targetFov = 68 + Math.min(6, Math.max(0, spd - 3));
-      this.camera.fov += (targetFov - this.camera.fov) * 0.08;
-      this.camera.updateProjectionMatrix();
-      this.camera.position.x = px + sx * 0.5;
-      this.camera.position.y = 1.35 + sy * 0.3;
-      this.camera.position.z = PLAYER_Z + 0.35;
-      this.camera.lookAt(px * 0.15, 1.0, PLAYER_Z + 14);
-      if (this.player) this.player.visible = false;
-    } else {
-      if (this.player) this.player.visible = true;
-      const targetFov = 50 + Math.min(8, Math.max(0, spd - 4) * 1.5);
-      this.camera.fov += (targetFov - this.camera.fov) * 0.05;
-      this.camera.updateProjectionMatrix();
-      this.camera.position.x = px * 0.4 + sx;
-      this.camera.position.y = 6.2 + sy;
-      this.camera.position.z = -3.5;
-      this.camera.lookAt(px * 0.25, 0.9, 16);
-    }
+    const targetFov = 50 + Math.min(8, Math.max(0, spd - 4) * 1.5);
+    this.camera.fov += (targetFov - this.camera.fov) * 0.05;
+    this.camera.updateProjectionMatrix();
+    this.camera.position.x = px * 0.4 + sx;
+    this.camera.position.y = 6.2 + sy;
+    this.camera.position.z = -3.5;
+    this.camera.lookAt(px * 0.25, 0.9, 16);
 
     const py = g.playerY || 500;
     // Hide all pool meshes first
@@ -1097,17 +1019,14 @@ export class Renderer3D {
     while (zi < this.zonePool.length) this.zonePool[zi++].visible = false;
 
     let ci = 0;
-    for (const coin of g.coins || []) {
-      if (coin.taken || ci >= this.coinPool.length) continue;
+    for (const c of g.coins || []) {
+      if (c.taken || ci >= this.coinPool.length) continue;
       const mesh = this.coinPool[ci++];
       mesh.visible = true;
-      mesh.position.x = this.laneToX(coin.lane);
-      mesh.position.z = this.screenYToZ(coin.y, py);
-      mesh.position.y = 0.55 + Math.sin(coin.bob || 0) * 0.15;
+      mesh.position.x = this.laneToX(c.lane);
+      mesh.position.z = this.screenYToZ(c.y, py);
+      mesh.position.y = 0.55 + Math.sin(c.bob || 0) * 0.15;
       mesh.rotation.y += 0.1;
-      if (mesh.material && mesh.material.color) {
-        mesh.material.color.setHex(coin.petrol ? 0x22c55e : 0xfbbf24);
-      }
     }
     while (ci < this.coinPool.length) this.coinPool[ci++].visible = false;
 

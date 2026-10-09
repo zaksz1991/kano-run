@@ -1,6 +1,5 @@
 import { CONFIG, STATE } from './config.js';
 import { Storage } from './storage.js';
-import { Audio } from './audio.js';
 
 export class UI {
   constructor(game) {
@@ -92,15 +91,15 @@ export class UI {
     holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.25));
     holdCtrl(brake, () => this.game.setBrake(true), () => this.game.setBrake(false));
     if (pauseBtn) pauseBtn.onclick = () => this.game.togglePause();
-    const camBtn = document.getElementById('cam-btn');
-    if (camBtn) camBtn.onclick = () => this.game.toggleCabin();
 
     const muteBtn = document.getElementById('mute-btn');
     if (muteBtn) muteBtn.onclick = () => {
       const next = !Storage.getMuted();
       Storage.setMuted(next);
-      Audio.muted = next;
-      if (next) Audio.stopEngine();
+      import('./audio.js').then(({ Audio }) => {
+        Audio.muted = next;
+        if (next) Audio.stopEngine();
+      });
       this.syncSettingsButtons();
       this.showMissionToast(next ? 'Sound off' : 'Sound on');
     };
@@ -141,7 +140,6 @@ export class UI {
       if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(1);
       if (e.key === 'ArrowDown' || e.key === 's') this.game.setBrake(true);
       if (e.key === 'p' || e.key === 'Escape') this.game.togglePause();
-      if (e.key === 'c') this.game.toggleCabin();
     });
     window.addEventListener('keyup', (e) => {
       if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(0.25);
@@ -448,18 +446,6 @@ export class UI {
       box.textContent = `📅 Daily reward ready · Current streak ${streak}`;
       if (claim) claim.style.display = 'inline-block';
     }
-  }
-
-  setFuel(n) {
-    const el = document.getElementById('fuel');
-    if (el) el.textContent = Math.max(0, Math.round(n));
-  }
-
-  setZone(z) {
-    const el = document.getElementById('zone-label');
-    if (!el) return;
-    if (!z || z === 'road') { el.textContent = ''; return; }
-    el.textContent = z === 'market' ? '🛒 MARKET' : '🔀 JUNCTION';
   }
 
   setLevel(n) {

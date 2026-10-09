@@ -1,5 +1,5 @@
 /**
- * Kano Run 3D — Core game logic
+ * Kano Run 3D — Core game logic (Phase 10)
  * Game Developer: Hassan Zakariya
  * Spec: real driving controls, intro sequence, passengers/destinations,
  * fare negotiation, KAROTA, traffic AI — preserves missions/storage/HUD.
@@ -50,12 +50,6 @@ export class Game {
     this.landmarkIndex = 0;
     this.nearMissCount = 0;
     this.introT = 0;
-    this.fuel = 100;
-    this.zoneType = 'road'; // road | junction | market
-    this.zoneTimer = 0;
-    this.parkOnly = false; // true inside market/junction regulation
-    this.cabinCam = false;
-    this.weatherGrip = 1;
     this.level = 1;
 
     this.selectedRoute = Storage.getRoute() || 'citycenter';
@@ -123,12 +117,6 @@ export class Game {
     const skipIntro = Storage.getSeenTutorial() && Storage.get('kanoSkipIntro', false);
     this.state = skipIntro ? STATE.PLAY : STATE.INTRO;
     this.introT = 0;
-    this.fuel = 100;
-    this.zoneType = 'road'; // road | junction | market
-    this.zoneTimer = 0;
-    this.parkOnly = false; // true inside market/junction regulation
-    this.cabinCam = false;
-    this.weatherGrip = 1;
     this.score = 0;
     this.dist = 0;
     this.paxOnBoard = 0;
@@ -218,20 +206,12 @@ export class Game {
     }
   }
 
-  toggleCabin() {
-    this.cabinCam = !this.cabinCam;
-    if (this.renderer3d) this.renderer3d.cabinCam = this.cabinCam;
-    this.ui.showMissionToast(this.cabinCam ? 'Cabin view' : 'Chase view');
-  }
-
   setThrottle(v) {
     this.throttle = Math.max(0, Math.min(1, v));
   }
 
   setBrake(on) {
-    const was = this.braking;
     this.braking = !!on;
-    if (on && !was && this.speed > 2) Audio.brake();
   }
 
   changeLane(dir) {
@@ -445,7 +425,6 @@ export class Game {
     this.addCombo(p.aishat ? 3 : p.vip ? 2 : 1);
     Audio.pickup();
     Audio.voicePickup();
-    Audio.voiceSannu();
     if (p.aishat) this.ui.showMissionToast('Aishat + Hibba → ' + (p.dest || 'town'));
     else if (p.size === 'big' || p.size === 'fat' || p.size === 'tall')
       this.ui.showMissionToast('Tight fit (' + p.size + ') → ' + (p.dest || '?') + ' · ₦' + fare);
@@ -529,15 +508,13 @@ export class Game {
     this.addCombo(2);
     Audio.pickup();
     Audio.voiceDrop();
-    this.ui.showMissionToast('Akwai! (' + (p.dest || 'stop') + ') +₦' + fare + bonusNote);
-    Audio.voiceAkwai();
+    this.ui.showMissionToast('Akwai — ' + (p.dest || 'stop') + ' +₦' + fare + bonusNote);
   }
 
   startYanDaba() {
     this.state = STATE.EVENT;
     this.throttle = 0;
     Audio.alert();
-    Audio.voiceYanDaba();
     this.triggerShake(10, 5);
     try { if (navigator.vibrate) navigator.vibrate([40, 40, 80]); } catch (e) {}
     const loss = 150 + Math.floor(Math.random() * 400);
@@ -602,7 +579,6 @@ export class Game {
     this.throttle = 0;
     Audio.alert();
     Audio.siren();
-    Audio.voiceKarota();
     this.triggerShake(6, 3);
     const fine = 150 + Math.floor(Math.random() * 250);
     const h = this.honorific();
@@ -739,31 +715,12 @@ export class Game {
     if (this.speed < targetSpeed) this.speed += 0.08 + this.throttle * 0.12;
     else this.speed += (targetSpeed - this.speed) * 0.12;
     if (this.braking) this.speed *= 0.88;
-    // Weather grip
-    this.speed *= this.weatherGrip;
-    // Fuel drain
-    if (this.speed > 0.3) {
-      this.fuel = Math.max(0, this.fuel - 0.012 * (0.5 + this.throttle));
-    }
-    if (this.fuel <= 0) {
-      this.speed *= 0.92;
-      if (this.frame % 60 === 0) this.ui.showMissionToast('Out of fuel — limp mode');
-    } else if (this.fuel < 20 && this.frame % 90 === 0) {
-      this.ui.showMissionToast('Low fuel — find petrol');
-      Audio.voiceLowFuel();
-    }
     this.speed = Math.max(0, Math.min(this.speed, 11));
 
     this.roadOff = (this.roadOff + this.speed * 2) % 58;
     this.dist += this.speed * 0.0055;
     this.score += Math.floor(this.speed * 0.2 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
     Audio.updateEngine(this.speed);
-
-    // Sync weather grip from renderer weather if available
-    const w = this.renderer3d?.weather || 'clear';
-    if (w === 'rain') this.weatherGrip = 0.88;
-    else if (w === 'harmattan') this.weatherGrip = 0.94;
-    else this.weatherGrip = 1;
 
     // Level from distance
     const newLevel = 1 + Math.floor(this.dist / 2.5);
@@ -852,7 +809,6 @@ export class Game {
     if (this.frame % 100 === 0) {
       const roll = Math.random();
       const sizes = ['normal', 'normal', 'normal', 'tall', 'fat', 'big'];
-      const isPark = Math.random() < 0.45 || this.parkOnly;
       this.paxZones.push({
         lane: Math.floor(Math.random() * 3),
         y: -90,
@@ -862,8 +818,7 @@ export class Game {
         dest: this.randomDest(),
         seats: roll < 0.09 ? 2 : 1,
         size: sizes[Math.floor(Math.random() * sizes.length)],
-        flagging: true,
-        isPark
+        flagging: true
       });
     }
     if (this.frame % 120 === 0) {
@@ -965,7 +920,7 @@ export class Game {
       }
     }
 
-    // Pick up — must be SLOW; park rules in market/junction
+    // Pick up — must be SLOW
     for (const p of this.paxZones) {
       if (p.taken) continue;
       if (Math.round(p.lane) === this.playerLane && Math.abs(p.y - this.playerY) < 52) {
@@ -974,25 +929,6 @@ export class Game {
           continue;
         }
         if (this.paxOnBoard >= this.capacity) continue;
-        // Illegal loading when park-only zone and not a marked park stop
-        if (this.parkOnly && !p.isPark) {
-          p.taken = true;
-          if (Math.random() < 0.55) {
-            this.ui.showMissionToast('KAROTA: No loading here!');
-            Audio.alert();
-            this.score = Math.max(0, this.score - (80 + Math.floor(Math.random() * 120)));
-            // chance of full checkpoint
-            if (Math.random() < 0.35) {
-              this.startKarotaCheckpoint();
-              return;
-            }
-          } else {
-            // sneaky board
-            p.agreedFare = 100 + Math.floor(Math.random() * 40);
-            this.boardWaiting(p);
-          }
-          continue;
-        }
         p.taken = true;
         if (!p.aishat && Math.random() < 0.32) {
           this.startNegotiation(p);
@@ -1024,15 +960,8 @@ export class Game {
       if (c.taken) continue;
       if (Math.hypot(this.playerX - this.laneX(c.lane), this.playerY - c.y) < 42) {
         c.taken = true;
-        if (c.petrol) {
-          this.fuel = Math.min(100, this.fuel + 45);
-          this.ui.showMissionToast('⛽ Refueled');
-          Audio.success();
-          Audio.voiceRefuel();
-        } else {
-          this.score += 40;
-          Audio.coin();
-        }
+        this.score += 40;
+        Audio.coin();
       }
     }
 
@@ -1049,10 +978,7 @@ export class Game {
     }
 
     this.ui.updateHUD(this);
-    this.ui.setFuel?.(this.fuel);
-    this.ui.setZone?.(this.zoneType);
   }
 }
-
 
 export { DEVELOPER };
