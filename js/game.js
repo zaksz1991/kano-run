@@ -196,6 +196,11 @@ export class Game {
     this.ui = ui;
     this.renderer3d = renderer3d;
 
+    // Convert radio station objects to their readable names when legacy UI
+    // code converts a station directly to text. No visual logo is inserted.
+    this._installRadioDisplayCompatibility();
+    this._ensureDeveloperCredit();
+
     this.state = STATE.START;
     this.paused = false;
 
@@ -217,13 +222,15 @@ export class Game {
     this.levelProgress = 0;
     this.xp = 0;
 
-    this.speed = BASE_SPEED;
+    // The keke starts stationary. Acceleration requires an explicit gas input.
+    this.speed = 0;
     this.maxSpeed = BASE_MAX_SPEED;
-    this.throttle = 1;
+    this.throttle = 0;
     this.brake = 0;
     this.gasHeld = false;
     this.brakeHeld = false;
-    this._externalThrottle = false;
+    this._externalThrottle = true;
+    this._lastCrashFrame = -Infinity;
 
     this.frame = 0;
     this.roadOff = 0;
@@ -300,6 +307,116 @@ export class Game {
     this.generateMission();
 
     this._bindKeyboard();
+    this._bindDrivingControls();
+  }
+
+
+  _installRadioDisplayCompatibility() {
+    const stations = CONFIG.RADIO || CONFIG.RADIO_STATIONS || [];
+    for (const station of stations) {
+      if (!station || typeof station !== 'object') continue;
+      try {
+        Object.defineProperty(station, Symbol.toPrimitive, {
+          configurable: true,
+          enumerable: false,
+          value() {
+            return String(this.name || this.label || this.title || this.id || 'Radio');
+          }
+        });
+      } catch {
+        // UI.setRadio() may still receive the object; its own renderer can
+        // choose an explicit station.name fallback when needed.
+      }
+    }
+  }
+
+  _ensureDeveloperCredit() {
+    if (typeof document === 'undefined') return;
+    const startScreen = document.getElementById('start-screen');
+    if (!startScreen || document.getElementById('kano-run-developer-credit')) return;
+
+    const credit = document.createElement('p');
+    credit.id = 'kano-run-developer-credit';
+    credit.textContent = 'Developed by Hassan Zakariya · RuffNeck Entertainment';
+    credit.setAttribute('aria-label', 'Developer: Hassan Zakariya, RuffNeck Entertainment');
+    credit.style.cssText = [
+      'display:block',
+      'width:100%',
+      'box-sizing:border-box',
+      'margin:12px 0 0',
+      'padding:4px 8px',
+      'color:rgba(255,255,255,.68)',
+      'font-size:11px',
+      'font-weight:500',
+      'line-height:1.4',
+      'text-align:center'
+    ].join(';');
+    startScreen.appendChild(credit);
+  }
+
+  _bindDrivingControls() {
+    if (typeof document === 'undefined') return;
+
+    let controls = document.getElementById('kano-driving-controls');
+    if (!controls) {
+      controls = document.createElement('div');
+      controls.id = 'kano-driving-controls';
+      controls.setAttribute('aria-label', 'Driving controls');
+      controls.style.cssText = [
+        'position:fixed', 'right:14px', 'bottom:88px', 'z-index:1000',
+        'display:flex', 'flex-direction:column', 'gap:10px',
+        'touch-action:none', 'user-select:none', '-webkit-user-select:none'
+      ].join(';');
+
+      const makeButton = (id, label, background) => {
+        const button = document.createElement('button');
+        button.id = id;
+        button.type = 'button';
+        button.textContent = label;
+        button.setAttribute('aria-label', label.toLowerCase());
+        button.style.cssText = [
+          'width:78px', 'height:58px', 'border:2px solid rgba(255,255,255,.8)',
+          'border-radius:14px', `background:${background}`, 'color:#fff',
+          'font:900 15px system-ui,sans-serif', 'letter-spacing:.4px',
+          'box-shadow:0 4px 12px rgba(0,0,0,.4)', 'touch-action:none',
+          'cursor:pointer', 'padding:0'
+        ].join(';');
+        controls.appendChild(button);
+        return button;
+      };
+
+      const gas = makeButton('kano-gas-btn', 'GAS ▲', '#15803d');
+      const brake = makeButton('kano-brake-btn', 'BRAKE ▼', '#b91c1c');
+
+      const bindHold = (button, down, up) => {
+        const release = (event) => {
+          if (event) event.preventDefault();
+          up();
+          button.style.filter = '';
+          button.style.transform = '';
+        };
+        button.addEventListener('pointerdown', (event) => {
+          event.preventDefault();
+          if (event.button !== undefined && event.button !== 0) return;
+          down();
+          button.style.filter = 'brightness(1.2)';
+          button.style.transform = 'scale(.97)';
+          try { button.setPointerCapture(event.pointerId); } catch {}
+        });
+        button.addEventListener('pointerup', release);
+        button.addEventListener('pointercancel', release);
+        button.addEventListener('lostpointercapture', release);
+        window.addEventListener('blur', () => release());
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) release();
+        });
+        button.addEventListener('contextmenu', (event) => event.preventDefault());
+      };
+
+      bindHold(gas, () => this.gasDown(), () => this.gasUp());
+      bindHold(brake, () => this.brakeDown(), () => this.brakeUp());
+      document.body.appendChild(controls);
+    }
   }
 
   setUI(ui) {
@@ -463,6 +580,15 @@ export class Game {
   left() { this.moveLeft(); }
   right() { this.moveRight(); }
 
+  // Compatibility API used by the 3D/mobile control layer.
+  // direction < 0 moves left; direction > 0 moves right.
+  changeLane(direction = 0) {
+    const value = Number(direction);
+    if (!Number.isFinite(value) || value === 0) return;
+    if (value < 0) this.moveLeft();
+    else this.moveRight();
+  }
+
   gasDown() {
     this.gasHeld = true;
     this._externalThrottle = true;
@@ -471,7 +597,8 @@ export class Game {
 
   gasUp() {
     this.gasHeld = false;
-    this._externalThrottle = false;
+    this.throttle = 0;
+    this._externalThrottle = true;
   }
 
   brakeDown() {
@@ -487,10 +614,12 @@ export class Game {
   setThrottle(value) {
     this.throttle = clamp(Number(value) || 0, 0, 1);
     this._externalThrottle = true;
+    if (this.throttle > 0) this.gasHeld = false;
   }
 
   setBrake(value) {
     this.brake = clamp(Number(value) || 0, 0, 1);
+    if (this.brake > 0) this.brakeHeld = false;
   }
 
   pause() {
@@ -544,24 +673,6 @@ export class Game {
     this.renderer3d?.applyPaint?.(paintId);
     this._ui('setPaint', CONFIG.PAINTS[paintId]);
     return true;
-  }
-
-  // Compatibility hook for builds that call this method during the update loop.
-  // Progression is calculated by updateLevel(); this method only reports the
-  // currently unlocked vehicles and safely restores a valid selection if needed.
-  unlockKekeByProgress() {
-    const catalog = this.getKekeCatalog();
-    const unlocked = catalog.filter((keke) => keke.unlocked);
-
-    if (!unlocked.length) return [];
-
-    const selectedIsUnlocked = unlocked.some((keke) => keke.id === this.selectedKeke);
-    if (!selectedIsUnlocked) {
-      const fallback = unlocked.find((keke) => keke.id === 'standard') || unlocked[0];
-      this.selectKeke(fallback.id, false);
-    }
-
-    return unlocked;
   }
 
   selectKeke(kekeId, persist = true) {
@@ -665,7 +776,13 @@ export class Game {
     this.bestCombo = 0;
     this.nearMissCount = 0;
     this.crashes = 0;
-    this.speed = BASE_SPEED;
+    this.speed = 0;
+    this.throttle = 0;
+    this.brake = 0;
+    this.gasHeld = false;
+    this.brakeHeld = false;
+    this._externalThrottle = true;
+    this._lastCrashFrame = -Infinity;
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
@@ -717,6 +834,38 @@ export class Game {
       ]
     });
     this._ui('updateHUD', this._hudPayload());
+  }
+
+  resize() {
+    const canvas = this.canvas;
+    if (!canvas) return;
+
+    const host = canvas.parentElement;
+    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
+    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const targetWidth = Math.max(Math.round(width * dpr), 1);
+    const targetHeight = Math.max(Math.round(height * dpr), 1);
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    if (this.ctx) {
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    // The renderer reference can be replaced during startup by a compatible
+    // renderer instance or an underlying WebGL object. Only call a real method.
+    const renderer3d = this.renderer3d;
+    if (renderer3d && typeof renderer3d.resize === 'function') {
+      renderer3d.resize();
+    }
   }
 
   retry() {
@@ -865,23 +1014,22 @@ export class Game {
     const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
     const keke = KEKES[this.selectedKeke] || KEKES.standard;
     const driverSpeed = driver?.bonuses?.speed || 0;
+    const throttle = this.gasHeld ? 1 : clamp(Number(this.throttle) || 0, 0, 1);
+    const braking = this.brakeHeld ? 1 : clamp(Number(this.brake) || 0, 0, 1);
 
-    const effectiveThrottle = this.gasHeld || !this._externalThrottle ? 1 : this.throttle;
-    const targetCruise = BASE_SPEED + driverSpeed + keke.speed;
-
-    if (this.brakeHeld || this.brake > 0) {
-      this.speed -= 0.19 + this.speed * 0.018;
-    } else if (effectiveThrottle > 0) {
-      this.speed += (0.035 + effectiveThrottle * 0.025);
+    // Smooth acceleration, stronger braking, and gentle coasting. No hidden cruise
+    // acceleration: the player must hold GAS or set a positive throttle value.
+    if (braking > 0) {
+      this.speed -= (0.075 + this.speed * 0.045) * braking;
+    } else if (throttle > 0) {
+      const acceleration = 0.018 + throttle * 0.025;
+      this.speed += acceleration * (1 + Math.max(0, driverSpeed + keke.speed) * 0.15);
     } else {
-      this.speed -= 0.028;
+      this.speed -= 0.008 + this.speed * 0.012;
     }
 
-    if (this.speed < targetCruise * 0.75 && !(this.brakeHeld || this.brake > 0)) {
-      this.speed += 0.018;
-    }
-
-    this.speed = clamp(this.speed, 0.35, this.maxSpeed);
+    this.maxSpeed = Math.max(5.5, BASE_MAX_SPEED + driverSpeed + (keke.speed || 0));
+    this.speed = clamp(this.speed, 0, this.maxSpeed);
   }
 
   updatePlayer() {
@@ -914,7 +1062,8 @@ export class Game {
   }
 
   trafficSpawnInterval() {
-    return Math.max(34, 82 - this.level * 3 - Math.floor(this.speed));
+    // Leave enough reaction time, especially on mobile and at higher levels.
+    return Math.max(88, 176 - this.level * 4 - Math.floor(this.speed * 2));
   }
 
   passengerSpawnInterval() {
@@ -959,13 +1108,15 @@ export class Game {
   spawnPassengerZone() {
     if (this.paxZones.length >= 8) return;
 
-    const lane = Math.floor(Math.random() * LANES);
+    const lane = Math.random() < 0.5 ? MIN_LANE : MAX_LANE;
+    const roadsideSide = lane === MIN_LANE ? 'left' : 'right';
     const passenger = weightedPick(PASSENGER_TYPES);
     const destination = pick(this.destinationPool());
 
     const zone = {
       id: this.nextZoneId++,
       lane,
+      roadsideSide,
       y: -260 - Math.random() * 260,
       taken: false,
       aishat: passenger.id === 'hajiya',
@@ -1025,7 +1176,7 @@ export class Game {
     for (const obstacle of this.obs) {
       if (obstacle.y < 700) survivors.push(obstacle);
     }
-    this.obs = survivors;
+    this.obs = survivors.filter((obstacle) => !obstacle.collided);
   }
 
   updatePassengerZones() {
@@ -1059,7 +1210,23 @@ export class Game {
   }
 
   updateCheckpoints() {
-    for (const cp of this.checkpoints) cp.y += this.speed;
+    for (const cp of this.checkpoints) {
+      if (cp.handled || !cp.active) continue;
+      cp.y += this.speed;
+
+      const dx = Math.abs(this.playerX - this.laneX(cp.lane));
+      const dy = Math.abs(cp.y - PLAYER_Y);
+      if (
+        !this.eventOpen &&
+        this.checkpointCooldown <= 0 &&
+        dx <= 34 &&
+        dy <= CHECKPOINT_Y
+      ) {
+        // Mark before opening the event so the same checkpoint cannot fire twice.
+        cp.handled = true;
+        this.triggerCheckpointInteraction({ type: cp.type, source: cp });
+      }
+    }
     this.checkpoints = this.checkpoints.filter(
       (cp) => cp.y < 700 && !cp.handled
     );
@@ -1084,11 +1251,14 @@ export class Game {
 
   handleTrafficCollisions() {
     for (const obstacle of this.obs) {
-      const sameLane = obstacle.lane === this.playerLane;
+      if (obstacle.collided) continue;
+      const dx = Math.abs(this.playerX - this.laneX(obstacle.lane));
       const dy = Math.abs(obstacle.y - PLAYER_Y);
+      const overlapsPlayer = dx <= 34;
 
-      if (sameLane && dy <= COLLISION_Y) {
+      if (overlapsPlayer && dy <= COLLISION_Y) {
         if (obstacle.type === 'police' || obstacle.type === 'karota') {
+          obstacle.collided = true;
           this.triggerCheckpointInteraction({
             type: obstacle.type,
             source: obstacle
@@ -1103,7 +1273,8 @@ export class Game {
         !obstacle.scoredNearMiss &&
         dy <= NEAR_MISS_Y &&
         dy > COLLISION_Y &&
-        Math.abs(obstacle.lane - this.playerLane) === 1
+        dx > 34 &&
+        dx <= 88
       ) {
         obstacle.scoredNearMiss = true;
         this.nearMissCount += 1;
@@ -1121,15 +1292,14 @@ export class Game {
     const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
     const invFrames = driver?.bonuses?.invFrames || 10;
 
-    if (this._lastCrashFrame && this.frame - this._lastCrashFrame < invFrames) {
-      return;
-    }
+    if (this.frame - this._lastCrashFrame < invFrames) return;
 
     this._lastCrashFrame = this.frame;
+    if (obstacle) obstacle.collided = true;
     this.crashes += 1;
     this.continuesLeft -= 1;
     this.combo = 0;
-    this.speed = Math.max(2.0, this.speed * 0.55);
+    this.speed = Math.max(0.8, this.speed * 0.55);
     this.shake = 18;
     this.shakeMag = 8;
     this.bounce = 10;
@@ -1165,7 +1335,11 @@ export class Game {
     this.eventContext = null;
     this.state = STATE.PLAY;
     this.paused = false;
-    this.speed = Math.max(2.6, this.speed);
+    this.speed = Math.max(0, this.speed);
+    this.throttle = 0;
+    this.brake = 0;
+    this.gasHeld = false;
+    this.brakeHeld = false;
     this._lastCrashFrame = this.frame;
     this.renderer3d?.setPaused?.(false);
     this._audio(['continue', 'lifeSaver']);
