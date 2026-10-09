@@ -13,6 +13,7 @@ export class Renderer3D {
     this.vehiclePool = [];
     this.zonePool = [];
     this.coinPool = [];
+    this.introPhase = 3;
     this.init();
   }
 
@@ -868,9 +869,16 @@ export class Renderer3D {
       const tx = this.laneToX(g.playerLane);
       this.player.position.x += (tx - this.player.position.x) * 0.22;
       this.player.position.z = PLAYER_Z;
-      this.player.position.y = g.bounce > 0 ? Math.sin(g.bounce * 0.9) * 0.1 : 0;
+      let by = g.bounce > 0 ? Math.sin(g.bounce * 0.9) * 0.1 : 0;
+      // suspension from speed
+      by += Math.sin((g.frame || 0) * 0.3) * Math.min(0.06, (g.speed || 0) * 0.008);
+      this.player.position.y = by;
       this.player.rotation.y = (tx - this.player.position.x) * 0.1;
       this.player.rotation.z = (this.player.position.x - tx) * 0.06;
+      // intro: camera closer during walk-up
+      if ((this.introPhase || 3) < 3) {
+        this.camera.position.z = -2.2 + this.introPhase * 0.4;
+      }
       if (this.playerShadow) {
         this.playerShadow.position.x = this.player.position.x;
         this.playerShadow.position.z = this.player.position.z;

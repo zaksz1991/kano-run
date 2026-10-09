@@ -37,9 +37,12 @@
 
     <div id="controls">
       <button class="ctrl-btn" id="left-btn" type="button">←</button>
-      <div style="display:flex;gap:10px;align-items:center;pointer-events:auto;">
-        <button class="ctrl-btn" id="radio-btn" type="button" style="width:48px;height:48px;font-size:1.1rem;background:linear-gradient(145deg,#7c3aed,#5b21b6);">📻</button>
+      <div style="display:flex;gap:8px;align-items:center;pointer-events:auto;flex-wrap:wrap;justify-content:center;">
+        <button class="ctrl-btn" id="brake-btn" type="button" style="width:56px;height:56px;font-size:0.65rem;background:linear-gradient(145deg,#dc2626,#991b1b);">BRAKE</button>
+        <button class="ctrl-btn" id="radio-btn" type="button" style="width:44px;height:44px;font-size:1rem;background:linear-gradient(145deg,#7c3aed,#5b21b6);">📻</button>
         <button class="ctrl-btn horn" id="horn-btn" type="button">HORN</button>
+        <button class="ctrl-btn" id="gas-btn" type="button" style="width:56px;height:56px;font-size:0.65rem;background:linear-gradient(145deg,#16a34a,#15803d);">GAS</button>
+        <button class="ctrl-btn" id="pause-btn" type="button" style="width:44px;height:44px;font-size:0.7rem;background:linear-gradient(145deg,#475569,#1e293b);">❚❚</button>
       </div>
       <button class="ctrl-btn" id="right-btn" type="button">→</button>
     </div>
@@ -47,6 +50,7 @@
     <div class="screen" id="start-screen">
       <h1>KANO RUN</h1>
       <div class="sub">3D Adaidaita · Kano State</div>
+      <div style="font-size:0.75rem;color:#64748b;margin-bottom:16px;">Developed by <b style="color:#f5c542">RuffNeck</b></div>
       <button class="btn" id="start-btn" type="button">START DRIVING</button>
       <button class="btn secondary" id="route-btn" type="button">SELECT ROUTE</button>
       <button class="btn secondary" id="garage-btn" type="button">DRIVERS / GARAGE</button>

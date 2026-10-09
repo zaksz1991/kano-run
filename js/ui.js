@@ -62,6 +62,24 @@ export class UI {
     const radioBtn = document.getElementById('radio-btn');
     if (radioBtn) radioBtn.onclick = () => this.game.cycleRadio();
 
+    const gas = document.getElementById('gas-btn');
+    const brake = document.getElementById('brake-btn');
+    const pauseBtn = document.getElementById('pause-btn');
+    const holdCtrl = (el, down, up) => {
+      if (!el) return;
+      const d = (e) => { e.preventDefault(); down(); };
+      const u = (e) => { e.preventDefault(); up(); };
+      el.addEventListener('touchstart', d, { passive: false });
+      el.addEventListener('mousedown', d);
+      el.addEventListener('touchend', u);
+      el.addEventListener('mouseup', u);
+      el.addEventListener('mouseleave', u);
+      el.addEventListener('touchcancel', u);
+    };
+    holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.25));
+    holdCtrl(brake, () => this.game.setBrake(true), () => this.game.setBrake(false));
+    if (pauseBtn) pauseBtn.onclick = () => this.game.togglePause();
+
     const muteBtn = document.getElementById('mute-btn');
     if (muteBtn) muteBtn.onclick = () => {
       const next = !Storage.getMuted();
@@ -107,6 +125,13 @@ export class UI {
       if (e.key === 'ArrowRight' || e.key === 'd') this.game.changeLane(1);
       if (e.key === ' ' || e.key === 'h') this.game.horn();
       if (e.key === 'r') this.game.cycleRadio();
+      if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(1);
+      if (e.key === 'ArrowDown' || e.key === 's') this.game.setBrake(true);
+      if (e.key === 'p' || e.key === 'Escape') this.game.togglePause();
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(0.25);
+      if (e.key === 'ArrowDown' || e.key === 's') this.game.setBrake(false);
     });
   }
 
@@ -284,6 +309,11 @@ export class UI {
       box.textContent = `📅 Daily reward ready · Current streak ${streak}`;
       if (claim) claim.style.display = 'inline-block';
     }
+  }
+
+  setPauseUI(on) {
+    const btn = document.getElementById('pause-btn');
+    if (btn) btn.textContent = on ? '▶' : '❚❚';
   }
 
   hideEvent() {

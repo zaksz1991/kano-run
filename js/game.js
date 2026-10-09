@@ -1,4 +1,10 @@
-import { CONFIG, STATE } from './config.js';
+/**
+ * Kano Run 3D — Core game logic (Phase 10)
+ * Developer: RuffNeck
+ * Spec: real driving controls, intro sequence, passengers/destinations,
+ * fare negotiation, KAROTA, traffic AI — preserves missions/storage/HUD.
+ */
+import { CONFIG, STATE, DEVELOPER } from './config.js';
 import { Storage } from './storage.js';
 import { Audio } from './audio.js';
 
@@ -8,6 +14,7 @@ export class Game {
     this.ctx = null;
     this.ui = null;
     this.renderer3d = null;
+
     this.state = STATE.START;
     this.score = 0;
     this.dist = 0;
@@ -19,7 +26,9 @@ export class Game {
     this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
-    this.speed = 3.6;
+    this.speed = 0;
+    this.throttle = 0; // 0..1 gas
+    this.braking = false;
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
@@ -34,56 +43,26 @@ export class Game {
     this.paxZones = [];
     this.dropZones = [];
     this.coins = [];
-    this.keys = {};
     this.trafficJamTimer = 0;
     this.nearMissCooldown = 0;
     this.policeChase = 0;
+    this.karotaTimer = 0;
+    this.landmarkIndex = 0;
+    this.nearMissCount = 0;
+    this.introT = 0;
+
     this.selectedRoute = Storage.getRoute() || 'citycenter';
     this.selectedDriver = Storage.getDriver() || 'ruffneck';
     this.selectedPaint = Storage.getPaint() || 'classic';
+    this.selectedKeke = Storage.get('kanoKeke', 'starter') || 'starter';
     this.radioIndex = Storage.getRadio() || 0;
-    this.nearMissCount = 0;
-    this.landmarkIndex = 0;
-    this.karotaTimer = 0;
     this.high = Storage.getHighScore();
     this.money = Storage.getMoney();
     this.activeMission = null;
-  }
 
-  initDaily() {
-    // daily mission progress tracked in activeMission already; claim is separate
-    this.ui.updateDailyUI(this);
-  }
-
-  claimDaily() {
-    if (Storage.isDailyClaimed()) {
-      this.ui.showMissionToast('Already claimed today');
-      return;
-    }
-    // require a completed run today via high activity: score>500 or dist>1
-    const streak = Storage.claimDaily();
-    const reward = 500 + Math.min(500, streak * 50);
-    this.money += reward;
-    Storage.setMoney(this.money);
-    this.ui.showMissionToast('Daily +₦' + reward + ' · Streak ' + streak);
-    this.ui.updateDailyUI(this);
-  }
-
-  getDriver() {
-    return CONFIG.DRIVERS[this.selectedDriver] || CONFIG.DRIVERS.ruffneck;
-  }
-
-  getBonuses() {
-    return this.getDriver().bonuses || {};
-  }
-
-  cycleRadio() {
-    this.radioIndex = (this.radioIndex + 1) % CONFIG.RADIO.length;
-    Storage.setRadio(this.radioIndex);
-    const st = CONFIG.RADIO[this.radioIndex];
-    this.ui.setRadio(st.name);
-    this.ui.showMissionToast('📻 ' + st.name);
-    Audio.beep(440, 0.05, 'sine', 0.03);
+    // Onboard passengers with destinations
+    this.onboard = []; // { dest, seats, fare }
+    this.passengersWaiting = []; // roadside people with dest
   }
 
   resize() {
@@ -100,12 +79,41 @@ export class Game {
   }
 
   getTimeOfDay() {
-    // cycle every ~90s of play frames
     return (this.frame % 5400) / 5400;
   }
 
+  getDriver() {
+    return CONFIG.DRIVERS[this.selectedDriver] || CONFIG.DRIVERS.ruffneck;
+  }
+
+  getKeke() {
+    return CONFIG.KEKES[this.selectedKeke] || CONFIG.KEKES.starter;
+  }
+
+  getBonuses() {
+    const d = this.getDriver().bonuses || {};
+    const k = this.getKeke();
+    return {
+      ...d,
+      speed: (d.speed || 0) + (k.speed || 0),
+      capacity: k.capacity || 3
+    };
+  }
+
+  cycleRadio() {
+    this.radioIndex = (this.radioIndex + 1) % CONFIG.RADIO.length;
+    Storage.setRadio(this.radioIndex);
+    const st = CONFIG.RADIO[this.radioIndex];
+    this.ui.setRadio(st.name);
+    this.ui.showMissionToast('📻 ' + st.name);
+    Audio.radioTune();
+    Audio.startRadioBed();
+  }
+
+  /** Begin run → intro walk-to-keke, then PLAY */
   start() {
-    this.state = STATE.PLAY;
+    this.state = STATE.INTRO;
+    this.introT = 0;
     this.score = 0;
     this.dist = 0;
     this.paxOnBoard = 0;
@@ -115,7 +123,9 @@ export class Game {
     this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
-    this.speed = 3.6;
+    this.speed = 0;
+    this.throttle = 0;
+    this.braking = false;
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
@@ -125,13 +135,23 @@ export class Game {
     this.paxZones = [];
     this.dropZones = [];
     this.coins = [];
+    this.onboard = [];
+    this.passengersWaiting = [];
     this.trafficJamTimer = 0;
     this.nearMissCooldown = 0;
     this.policeChase = 0;
-    this.nearMissCount = 0;
-    this.landmarkIndex = 0;
     this.karotaTimer = 0;
-    this.activeMission = { ...CONFIG.MISSIONS[Math.floor(Math.random() * CONFIG.MISSIONS.length)], progress: 0 };
+    this.landmarkIndex = 0;
+    this.nearMissCount = 0;
+
+    const b = this.getBonuses();
+    this.capacity = b.capacity || 3;
+
+    this.activeMission = {
+      ...CONFIG.MISSIONS[Math.floor(Math.random() * CONFIG.MISSIONS.length)],
+      progress: 0
+    };
+
     this.ui.showPlaying();
     this.ui.setMission(this.activeMission.text);
     const route = CONFIG.ROUTES[this.selectedRoute];
@@ -140,19 +160,62 @@ export class Game {
     this.ui.setDriverLabel(drv.name + ' · ' + drv.title);
     const st = CONFIG.RADIO[this.radioIndex] || CONFIG.RADIO[0];
     this.ui.setRadio(st.name);
-    // base speed tweak from driver
-    const b = this.getBonuses();
-    this.speed = 3.4 + (b.speed || 0);
-    Audio.startEngine();
-    this.ui.updateHUD(this);
     if (this.renderer3d?.applyPaint) this.renderer3d.applyPaint(this.selectedPaint);
+    if (this.renderer3d) this.renderer3d.introPhase = 0;
+
+    this.ui.showMissionToast('Walking to keke…');
+    this.ui.updateHUD(this);
     this.initDaily();
-    if (!Storage.getSeenTutorial()) {
-      this.ui.showEvent(
-        '🛵 Welcome to Kano Run',
-        'Swipe lanes · Horn to push traffic\nGreen = pick up · Yellow = drop for fare\nWatch for KAROTA checkpoints!',
-        [{ label: 'Got it — Drive!', action: () => { Storage.setSeenTutorial(); this.state = STATE.PLAY; this.ui.showPlaying(); } }]
-      );
+  }
+
+  finishIntro() {
+    this.state = STATE.PLAY;
+    this.throttle = 0.35;
+    Audio.startEngine();
+    Audio.startRadioBed();
+    this.ui.showMissionToast('Engine on — drive!');
+    if (this.renderer3d) this.renderer3d.introPhase = 3;
+  }
+
+  togglePause() {
+    if (this.state === STATE.PLAY) {
+      this.state = STATE.PAUSE;
+      Audio.stopEngine();
+      this.ui.showMissionToast('Paused');
+      this.ui.setPauseUI(true);
+    } else if (this.state === STATE.PAUSE) {
+      this.state = STATE.PLAY;
+      Audio.startEngine();
+      this.ui.setPauseUI(false);
+      this.ui.showMissionToast('Resumed');
+    }
+  }
+
+  setThrottle(v) {
+    this.throttle = Math.max(0, Math.min(1, v));
+  }
+
+  setBrake(on) {
+    this.braking = !!on;
+  }
+
+  changeLane(dir) {
+    if (this.state !== STATE.PLAY && this.state !== STATE.INTRO) return;
+    const n = this.playerLane + dir;
+    if (n >= 0 && n < CONFIG.LANES) {
+      this.playerLane = n;
+      this.bounce = 10;
+    }
+  }
+
+  horn() {
+    if (this.state !== STATE.PLAY) return;
+    Audio.horn();
+    this.inv = Math.max(this.inv, 18);
+    for (const o of this.obs) {
+      if (Math.round(o.lane) === this.playerLane && Math.abs(o.y - this.playerY) < 120) {
+        o.y -= 36;
+      }
     }
   }
 
@@ -164,7 +227,9 @@ export class Game {
   addCombo(n = 1) {
     this.combo += n;
     this.comboTimer = 160;
-    if (this.combo >= 5 && this.combo % 5 === 0) this.ui.showMissionToast(`🔥 ${this.combo}x COMBO!`);
+    if (this.combo >= 5 && this.combo % 5 === 0) {
+      this.ui.showMissionToast('🔥 ' + this.combo + 'x COMBO!');
+    }
   }
 
   getComboMultiplier() {
@@ -175,43 +240,61 @@ export class Game {
     return 1;
   }
 
-  changeLane(dir) {
-    const n = this.playerLane + dir;
-    if (n >= 0 && n < CONFIG.LANES) {
-      this.playerLane = n;
-      this.bounce = 10;
-    }
+  initDaily() {
+    this.ui.updateDailyUI?.(this);
   }
 
-  horn() {
-    Audio.horn();
-    this.inv = Math.max(this.inv, 20);
-    // push nearby traffic
-    for (const o of this.obs) {
-      if (Math.round(o.lane) === this.playerLane && Math.abs(o.y - this.playerY) < 120) {
-        o.y -= 40;
-      }
+  claimDaily() {
+    if (Storage.isDailyClaimed()) {
+      this.ui.showMissionToast('Already claimed today');
+      return;
     }
+    const streak = Storage.claimDaily();
+    const reward = 500 + Math.min(500, streak * 50);
+    this.money += reward;
+    Storage.setMoney(this.money);
+    this.ui.showMissionToast('Daily +₦' + reward + ' · Streak ' + streak);
+    this.ui.updateDailyUI?.(this);
   }
 
+  honorific() {
+    const h = CONFIG.HONORIFICS;
+    return h[Math.floor(Math.random() * h.length)];
+  }
+
+  randomDest() {
+    const d = CONFIG.DESTINATIONS;
+    return d[Math.floor(Math.random() * d.length)];
+  }
+
+  // ——— Opening / crash / continue ———
   gameOver() {
     Audio.crash();
     this.triggerShake(16, 8);
     this.state = STATE.EVENT;
+    this.throttle = 0;
+
     if (this.continuesLeft > 0) {
-      this.ui.showEvent('💥 CRASHED!', `You still have ${this.continuesLeft} free Life Saver${this.continuesLeft > 1 ? 's' : ''} left.\nContinue from here?`, [
-        { label: `Use Free Life Saver (${this.continuesLeft} left)`, action: () => this.useContinue(false) },
-        { label: 'End Run', action: () => this.finalGameOver() }
-      ]);
+      this.ui.showEvent(
+        '💥 CRASHED!',
+        'You still have ' + this.continuesLeft + ' free Life Saver' +
+          (this.continuesLeft > 1 ? 's' : '') + ' left.\nContinue from here?',
+        [
+          { label: 'Use Free Life Saver (' + this.continuesLeft + ' left)', action: () => this.useContinue(false) },
+          { label: 'End Run', action: () => this.finalGameOver() }
+        ]
+      );
     } else {
       const cost = 350 + (this.paidContinuesUsed || 0) * 200;
       const can = this.score >= cost;
-      this.ui.showEvent('💥 No Free Lives Left', can
-        ? `Pay ₦${cost.toLocaleString()} from your score to continue?`
-        : `Need ₦${cost.toLocaleString()} — you have ₦${this.score.toLocaleString()}.`,
+      this.ui.showEvent(
+        '💥 No Free Lives Left',
+        can
+          ? 'Pay ₦' + cost.toLocaleString() + ' from your score to continue?'
+          : 'Need ₦' + cost.toLocaleString() + ' — you have ₦' + this.score.toLocaleString() + '.',
         can
           ? [
-              { label: `Pay ₦${cost.toLocaleString()} & Continue`, action: () => this.useContinue(true) },
+              { label: 'Pay ₦' + cost.toLocaleString() + ' & Continue', action: () => this.useContinue(true) },
               { label: 'End Run', action: () => this.finalGameOver() }
             ]
           : [{ label: 'End Run', action: () => this.finalGameOver() }]
@@ -223,18 +306,22 @@ export class Game {
     try {
       if (isPaid) {
         const cost = 350 + (this.paidContinuesUsed || 0) * 200;
-        if (this.score < cost) { this.finalGameOver(); return; }
+        if (this.score < cost) {
+          this.finalGameOver();
+          return;
+        }
         this.score -= cost;
         this.paidContinuesUsed = (this.paidContinuesUsed || 0) + 1;
         this.continuesLeft = 1;
-        this.ui.showMissionToast(`Paid ₦${cost.toLocaleString()} — continue!`);
+        this.ui.showMissionToast('Paid ₦' + cost.toLocaleString() + ' — continue!');
       } else {
         this.continuesLeft = Math.max(0, this.continuesLeft - 1);
         this.score = Math.max(0, this.score - 80);
       }
       this.inv = 100 + (this.getBonuses().invFrames || 0);
       this.obs = [];
-      this.speed = Math.min(this.speed, 5.5);
+      this.speed = 0;
+      this.throttle = 0.2;
       this.ui.hideEvent();
       this.state = STATE.PLAY;
       this.ui.showPlaying();
@@ -249,13 +336,13 @@ export class Game {
   finalGameOver() {
     this.state = STATE.OVER;
     Audio.stopEngine();
+    Audio.stopRadioBed();
     this.money += Math.floor(this.score * 0.2);
     Storage.setMoney(this.money);
     if (this.score > this.high) {
       this.high = this.score;
       Storage.setHighScore(this.high);
     }
-    // Leaderboard
     const route = CONFIG.ROUTES[this.selectedRoute];
     const driver = this.getDriver();
     Storage.addRun({
@@ -265,8 +352,7 @@ export class Game {
       driver: driver.name,
       at: Date.now()
     });
-    // Achievements
-    for (const ach of (CONFIG.ACHIEVEMENTS || [])) {
+    for (const ach of CONFIG.ACHIEVEMENTS || []) {
       try {
         if (ach.check(this) && Storage.unlockAchievement(ach.id)) {
           this.ui.showMissionToast('🏆 ' + ach.name);
@@ -280,81 +366,123 @@ export class Game {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   }
 
-  boardPassenger(p) {
-    const seats = p.aishat ? Math.min(2, this.capacity - this.paxOnBoard) : 1;
+  laneClear(lane, y, gap = 130, ignore = null) {
+    return !this.obs.some(
+      (o) =>
+        o !== ignore &&
+        Math.round(o.lane) === Math.round(lane) &&
+        Math.abs(o.y - y) < gap
+    );
+  }
+
+  // ——— Passengers ———
+  boardWaiting(p) {
+    const seats = p.aishat ? Math.min(2, this.capacity - this.paxOnBoard) : p.seats || 1;
+    if (this.paxOnBoard + seats > this.capacity) {
+      this.ui.showMissionToast('Keke full!');
+      return false;
+    }
     this.paxOnBoard += seats;
     this.totalPax += seats;
-    let pick = p.aishat ? 550 : (p.vip ? 350 : 120);
+    const fare = p.agreedFare || (p.vip ? 350 : p.aishat ? 550 : 120);
+    this.onboard.push({
+      dest: p.dest || this.randomDest(),
+      seats,
+      fare,
+      name: p.aishat ? 'Aishat' : p.vip ? 'VIP' : 'Passenger'
+    });
+    let pick = fare;
     if (p.aishat && this.getBonuses().aishatBonus) pick += this.getBonuses().aishatBonus;
-    this.score += pick;
-    this.addCombo(p.aishat ? 3 : (p.vip ? 2 : 1));
+    this.score += Math.floor(pick * 0.25); // boarding tip; rest on drop
+    this.addCombo(p.aishat ? 3 : p.vip ? 2 : 1);
     Audio.pickup();
-    if (p.aishat) this.ui.showMissionToast('👩‍👧 Aishat + Hibba boarded!');
-    else if (p.vip) this.ui.showMissionToast('💼 VIP boarded! +₦' + pick);
-    else this.ui.showMissionToast('Passenger in');
+    Audio.voicePickup();
+    if (p.aishat) this.ui.showMissionToast('👩‍👧 Aishat + Hibba → ' + (p.dest || 'town'));
+    else this.ui.showMissionToast((p.vip ? '💼 VIP' : 'Passenger') + ' → ' + (p.dest || '?') + ' · ₦' + fare);
+    return true;
   }
 
   startNegotiation(p) {
     this.state = STATE.EVENT;
     Audio.negotiate();
-    const low = 50;
-    const fair = 120;
-    this.ui.showEvent(
-      '💬 Fare Negotiation',
-      'Passenger: "Aboki, reduce am! I go pay ₦' + low + ' only."\nWhat do you say?',
-      [
-        {
-          label: 'Accept ₦' + low,
-          action: () => {
-            this.paxOnBoard = Math.min(this.capacity, this.paxOnBoard + 1);
-            this.totalPax += 1;
-            this.score += low;
-            this.addCombo(1);
-            Audio.pickup();
-            this.ui.showMissionToast('Boarded for ₦' + low);
-            this.state = STATE.PLAY;
-            this.ui.showPlaying();
-          }
-        },
-        {
-          label: 'Hold ₦' + fair,
-          action: () => {
-            if (Math.random() < 0.55) {
-              this.paxOnBoard = Math.min(this.capacity, this.paxOnBoard + 1);
-              this.totalPax += 1;
-              this.score += fair;
-              this.addCombo(2);
-              Audio.pickup();
-              this.ui.showMissionToast('Agreed ₦' + fair);
-            } else {
-              Audio.alert();
-              this.ui.showMissionToast('Passenger walked away');
-            }
-            this.state = STATE.PLAY;
-            this.ui.showPlaying();
-          }
-        },
-        {
-          label: 'No deal',
-          action: () => {
-            this.ui.showMissionToast('No boarding');
-            this.state = STATE.PLAY;
-            this.ui.showPlaying();
-          }
+    const h = this.honorific();
+    const dest = p.dest || this.randomDest();
+    p.dest = dest;
+    const low = 60 + Math.floor(Math.random() * 40);
+    const fair = 110 + Math.floor(Math.random() * 50);
+    const lineTpl = CONFIG.NEGOTIATE_LINES[Math.floor(Math.random() * CONFIG.NEGOTIATE_LINES.length)];
+    const line = lineTpl.replace(/\{h\}/g, h).replace(/\{low\}/g, String(low)).replace(/\{dest\}/g, dest);
+
+    this.ui.showEvent('💬 Fare — ' + dest, line, [
+      {
+        label: 'Accept ₦' + low,
+        action: () => {
+          p.agreedFare = low;
+          this.boardWaiting(p);
+          this.state = STATE.PLAY;
+          this.ui.showPlaying();
         }
-      ]
+      },
+      {
+        label: 'Hold ₦' + fair,
+        action: () => {
+          if (Math.random() < 0.55) {
+            p.agreedFare = fair;
+            this.boardWaiting(p);
+          } else {
+            Audio.alert();
+            this.ui.showMissionToast(h + ' walked away');
+          }
+          this.state = STATE.PLAY;
+          this.ui.showPlaying();
+        }
+      },
+      {
+        label: 'No deal',
+        action: () => {
+          this.ui.showMissionToast('No boarding');
+          this.state = STATE.PLAY;
+          this.ui.showPlaying();
+        }
+      }
+    ]);
+  }
+
+  tryDropOff() {
+    // "Akwai" — drop when slow enough and has passengers
+    if (this.paxOnBoard <= 0 || this.onboard.length === 0) return;
+    if (this.speed > 3.2) {
+      this.ui.showMissionToast('Akwai! Slow down to drop');
+      return;
+    }
+    const p = this.onboard.shift();
+    this.paxOnBoard = Math.max(0, this.paxOnBoard - (p.seats || 1));
+    this.dropCount += p.seats || 1;
+    const route = CONFIG.ROUTES[this.selectedRoute] || {};
+    const fare = Math.floor(
+      (p.fare || route.baseFare || 140) *
+        this.getComboMultiplier() *
+        (this.getBonuses().fareMult || 1)
     );
+    this.score += fare;
+    this.addCombo(2);
+    Audio.pickup();
+    Audio.voiceDrop();
+    this.ui.showMissionToast('Akwai — ' + (p.dest || 'stop') + ' +₦' + fare);
   }
 
   startKarotaCheckpoint() {
-    this.karotaTimer = 400;
+    this.karotaTimer = 500;
     this.state = STATE.EVENT;
+    this.throttle = 0;
     Audio.alert();
+    Audio.siren();
     this.triggerShake(8, 4);
-    const fine = 200 + Math.floor(Math.random() * 300);
+    const fine = 200 + Math.floor(Math.random() * 350);
+    const h = this.honorific();
     this.ui.showEvent(
       '⚠️ KAROTA Checkpoint',
-      'KAROTA officer flags you down.\n"Paper? Or you go settle ₦' + fine + '?"',
+      'Officer: "' + h + ', paper? Or settle ₦' + fine + '?"\nCheckpoint blocks the road.',
       [
         {
           label: 'Pay ₦' + fine,
@@ -362,16 +490,16 @@ export class Game {
             this.score = Math.max(0, this.score - fine);
             this.ui.showMissionToast('Paid KAROTA ₦' + fine);
             Audio.negotiate();
-            this.inv = 60;
+            this.inv = 70;
             this.state = STATE.PLAY;
             this.ui.showPlaying();
           }
         },
         {
-          label: 'Talk your way out',
+          label: 'Negotiate',
           action: () => {
             if (Math.random() < 0.45) {
-              this.ui.showMissionToast('They waved you on');
+              this.ui.showMissionToast('Waved on — ' + h);
               Audio.success();
               this.score += 80;
             } else {
@@ -379,7 +507,7 @@ export class Game {
               this.ui.showMissionToast('Still paid ₦' + fine);
               Audio.crash();
             }
-            this.inv = 60;
+            this.inv = 70;
             this.state = STATE.PLAY;
             this.ui.showPlaying();
           }
@@ -387,9 +515,10 @@ export class Game {
         {
           label: 'Speed off (risk)',
           action: () => {
-            if (Math.random() < 0.4) {
+            if (Math.random() < 0.38) {
               this.ui.showMissionToast('Escaped!');
               this.addCombo(3);
+              this.policeChase = 180;
               Audio.horn();
             } else {
               this.ui.showMissionToast('Caught — heavy fine');
@@ -406,20 +535,41 @@ export class Game {
     );
   }
 
-  /** Min gap in screen-Y units between vehicles in same lane */
-  laneClear(lane, y, gap = 130, ignore = null) {
-    return !this.obs.some(o =>
-      o !== ignore &&
-      Math.round(o.lane) === Math.round(lane) &&
-      Math.abs(o.y - y) < gap
-    );
-  }
-
+  // ——— Main loop ———
   update() {
-    if (this.state !== STATE.PLAY) {
+    if (this.state === STATE.START || this.state === STATE.OVER || this.state === STATE.EVENT) {
       if (this.shake > 0) this.shake--;
       return;
     }
+
+    if (this.state === STATE.PAUSE) {
+      if (this.shake > 0) this.shake--;
+      return;
+    }
+
+    // INTRO sequence: walk → enter → engine
+    if (this.state === STATE.INTRO) {
+      this.introT++;
+      if (this.renderer3d) {
+        if (this.introT < 50) this.renderer3d.introPhase = 0;
+        else if (this.introT < 100) this.renderer3d.introPhase = 1;
+        else if (this.introT < 140) this.renderer3d.introPhase = 2;
+        else this.renderer3d.introPhase = 3;
+      }
+      if (this.introT === 50) this.ui.showMissionToast('Approaching keke…');
+      if (this.introT === 100) this.ui.showMissionToast('Getting in…');
+      if (this.introT === 140) {
+        Audio.startEngine();
+        this.ui.showMissionToast('Starting engine…');
+      }
+      if (this.introT >= 170) this.finishIntro();
+      this.targetX = this.laneX(this.playerLane);
+      this.playerX += (this.targetX - this.playerX) * 0.2;
+      this.playerY = this.canvas.clientHeight - 195;
+      return;
+    }
+
+    // PLAY
     this.frame++;
     if (this.inv > 0) this.inv--;
     if (this.bounce > 0) this.bounce--;
@@ -427,6 +577,7 @@ export class Game {
     if (this.nearMissCooldown > 0) this.nearMissCooldown--;
     if (this.policeChase > 0) this.policeChase--;
     if (this.trafficJamTimer > 0) this.trafficJamTimer--;
+    if (this.karotaTimer > 0) this.karotaTimer--;
     if (this.comboTimer > 0) {
       this.comboTimer--;
       if (this.comboTimer <= 0) this.combo = 0;
@@ -434,186 +585,153 @@ export class Game {
 
     const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
     const bonuses = this.getBonuses();
-    let baseTop = 7.2 * (route.difficulty || 1) + (bonuses.speed || 0) * 3;
-    if (this.trafficJamTimer > 0) baseTop *= 0.55;
-    // Ruffneck night edge
-    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) baseTop += 0.4;
-    this.speed = Math.min(baseTop, 3.2 + this.dist * 0.018 + (bonuses.speed || 0));
+
+    // Speed from throttle / brake (real driving feel)
+    let targetSpeed = this.throttle * (6.8 * (route.difficulty || 1) + (bonuses.speed || 0) * 3);
+    if (this.braking) targetSpeed = 0;
+    if (this.trafficJamTimer > 0) targetSpeed *= 0.5;
+    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) {
+      targetSpeed += 0.3;
+    }
+    // Smooth accel/decel
+    if (this.speed < targetSpeed) this.speed += 0.08 + this.throttle * 0.12;
+    else this.speed += (targetSpeed - this.speed) * 0.12;
+    if (this.braking) this.speed *= 0.88;
+    this.speed = Math.max(0, Math.min(this.speed, 11));
+
     this.roadOff = (this.roadOff + this.speed * 2) % 58;
     this.dist += this.speed * 0.0055;
-    const b = this.getBonuses();
-    this.score += Math.floor(this.speed * 0.22 * this.getComboMultiplier() * (b.scoreMult || 1));
+    this.score += Math.floor(this.speed * 0.2 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
     Audio.updateEngine(this.speed);
 
-    // Landmark callouts along route
+    // Landmarks
     const marks = route.landmarks || [];
     if (marks.length && this.dist > (this.landmarkIndex + 1) * 2.5 && this.landmarkIndex < marks.length) {
-      const name = marks[this.landmarkIndex];
-      this.landmarkIndex++;
+      const name = marks[this.landmarkIndex++];
       this.ui.showMissionToast('📍 ' + name);
       Audio.success();
     }
 
-    // KAROTA checkpoint event
-    if (this.karotaTimer > 0) this.karotaTimer--;
-    if (this.frame % 720 === 0 && this.dist > 1.5 && this.karotaTimer <= 0 && Math.random() < 0.4) {
+    // KAROTA
+    if (this.frame % 700 === 0 && this.dist > 1.5 && this.karotaTimer <= 0 && Math.random() < 0.42) {
       this.startKarotaCheckpoint();
       return;
+    }
+
+    // Traffic jam
+    if (this.frame % 500 === 0 && Math.random() < 0.32 && this.trafficJamTimer <= 0 && this.dist > 1) {
+      this.trafficJamTimer = 140;
+      this.ui.showMissionToast('🚦 TRAFFIC JAM!');
+      this.triggerShake(5, 3);
     }
 
     this.targetX = this.laneX(this.playerLane);
     this.playerX += (this.targetX - this.playerX) * 0.25;
     this.playerY = this.canvas.clientHeight - 195;
 
-    // ——— Traffic jam event ———
-    if (this.frame % 480 === 0 && Math.random() < 0.35 && this.trafficJamTimer <= 0 && this.dist > 1) {
-      this.trafficJamTimer = 150;
-      this.ui.showMissionToast('🚦 TRAFFIC JAM! Slow down');
-      this.triggerShake(6, 3);
-    }
-
-    // ——— Safe traffic spawn (per-lane gap + prefer non-player lane when close) ———
-    if (this.frame % 48 === 0 && Math.random() < 0.72 && this.trafficJamTimer <= 0) {
+    // Spawn traffic
+    if (this.frame % 48 === 0 && Math.random() < 0.7 && this.trafficJamTimer <= 0) {
       let lane = Math.floor(Math.random() * 3);
-      // Prefer not stacking on player lane at spawn
-      if (lane === this.playerLane && Math.random() < 0.55) {
-        lane = (lane + 1 + Math.floor(Math.random() * 2)) % 3;
-      }
+      if (lane === this.playerLane && Math.random() < 0.5) lane = (lane + 1) % 3;
       if (this.laneClear(lane, -80, 150)) {
-        const roll = Math.random();
-        let type = 'car';
-        if (roll < 0.35) type = 'keke';
-        else if (roll < 0.55) type = 'car';
-        else if (roll < 0.7) type = 'keke';
-        else if (roll < 0.82) type = 'police';
-        else if (roll < 0.92) type = 'karota';
-        else type = 'car';
-
+        const types = ['car', 'keke', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota'];
+        const type = types[Math.floor(Math.random() * types.length)];
         this.obs.push({
           type,
           lane,
           y: -80,
-          w: type === 'keke' ? 46 : 52,
-          h: type === 'keke' ? 64 : 74,
-          speedOff: -0.3 + Math.random() * 0.5, // mostly slower than player flow
-          laneCooldown: 40 + Math.floor(Math.random() * 80)
+          w: type === 'motorcycle' ? 36 : type === 'bus' || type === 'truck' ? 56 : 50,
+          h: type === 'motorcycle' ? 50 : 70,
+          speedOff: -0.4 + Math.random() * 0.5,
+          laneCooldown: 50 + Math.floor(Math.random() * 80)
         });
       }
     }
 
-    // Extra density during jam (spawn ahead in all lanes with gaps)
-    if (this.trafficJamTimer > 80 && this.frame % 30 === 0) {
-      for (let lane = 0; lane < 3; lane++) {
-        if (this.laneClear(lane, -80, 160) && Math.random() < 0.5) {
-          this.obs.push({
-            type: Math.random() < 0.5 ? 'keke' : 'car',
-            lane, y: -80, w: 50, h: 70,
-            speedOff: -0.8,
-            laneCooldown: 120
-          });
-        }
-      }
-    }
-
-    if (this.frame % 95 === 0) {
+    // Waiting passengers (must slow to pick)
+    if (this.frame % 100 === 0) {
       const roll = Math.random();
       this.paxZones.push({
         lane: Math.floor(Math.random() * 3),
         y: -90,
         taken: false,
-        aishat: roll < 0.1,
-        vip: roll >= 0.1 && roll < 0.22
+        aishat: roll < 0.09,
+        vip: roll >= 0.09 && roll < 0.2,
+        dest: this.randomDest(),
+        seats: roll < 0.09 ? 2 : 1,
+        flagging: true
       });
     }
-    if (this.frame % 115 === 0) {
-      this.dropZones.push({ lane: Math.floor(Math.random() * 3), y: -90, used: false });
+    if (this.frame % 120 === 0) {
+      this.dropZones.push({ lane: Math.floor(Math.random() * 3), y: -90, used: false, akwai: true });
     }
-    if (this.frame % 58 === 0) {
+    if (this.frame % 60 === 0) {
       this.coins.push({ lane: Math.floor(Math.random() * 3), y: -60, taken: false, bob: Math.random() * 6 });
     }
 
     const mv = this.speed * 1.1;
     const h = this.canvas.clientHeight;
 
-    // ——— Traffic movement + following distance + overtaking ———
+    // Traffic AI
     for (const o of this.obs) {
-      // Find vehicle ahead in same lane (higher y = closer to player / further down screen)
       let aheadDist = 9999;
       for (const other of this.obs) {
         if (other === o) continue;
         if (Math.round(other.lane) !== Math.round(o.lane)) continue;
-        if (other.y > o.y) {
-          const d = other.y - o.y;
-          if (d < aheadDist) aheadDist = d;
-        }
+        if (other.y > o.y) aheadDist = Math.min(aheadDist, other.y - o.y);
       }
-      // Also respect player if same lane and ahead
       if (Math.round(o.lane) === this.playerLane && this.playerY > o.y) {
         aheadDist = Math.min(aheadDist, this.playerY - o.y);
       }
-
       let move = mv + (o.speedOff || 0);
-      // Brake if too close to vehicle ahead
-      if (aheadDist < 90) move *= 0.25;
-      else if (aheadDist < 130) move *= 0.55;
-
+      if (aheadDist < 90) move *= 0.22;
+      else if (aheadDist < 130) move *= 0.5;
       o.y += move;
       if (o.laneCooldown > 0) o.laneCooldown--;
-
-      // Overtake: change lane only if destination clear and something is blocking ahead
       if (o.laneCooldown <= 0 && aheadDist < 120 && Math.random() < 0.04) {
-        const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
-        for (const dir of dirs) {
+        for (const dir of Math.random() < 0.5 ? [-1, 1] : [1, -1]) {
           const nl = Math.round(o.lane) + dir;
           if (nl < 0 || nl > 2) continue;
-          // Clear of other traffic
           if (!this.laneClear(nl, o.y, 110, o)) continue;
-          // Don't cut into player at close range
           if (nl === this.playerLane && Math.abs(o.y - this.playerY) < 100) continue;
           o.lane = nl;
-          o.laneCooldown = 70 + Math.floor(Math.random() * 50);
+          o.laneCooldown = 70;
           break;
         }
       }
-
-      // Police / KAROTA: occasional "notice" when near player
-      if ((o.type === 'police' || o.type === 'karota') &&
-          Math.round(o.lane) === this.playerLane &&
-          Math.abs(o.y - this.playerY) < 160 &&
-          this.policeChase <= 0 &&
-          Math.random() < 0.01) {
+      if (
+        (o.type === 'police' || o.type === 'karota') &&
+        Math.round(o.lane) === this.playerLane &&
+        Math.abs(o.y - this.playerY) < 160 &&
+        this.policeChase <= 0 &&
+        Math.random() < 0.008
+      ) {
         this.policeChase = 120;
-        this.ui.showMissionToast(o.type === 'karota' ? '⚠️ KAROTA nearby — drive careful!' : '🚨 Police nearby!');
-        this.triggerShake(5, 2);
+        this.ui.showMissionToast(o.type === 'karota' ? '⚠️ KAROTA nearby!' : '🚨 Police nearby!');
+        Audio.siren();
       }
     }
-    this.obs = this.obs.filter(o => o.y < h + 80);
+    this.obs = this.obs.filter((o) => o.y < h + 80);
 
     for (const p of this.paxZones) p.y += mv;
-    this.paxZones = this.paxZones.filter(p => p.y < h + 40 && !p.taken);
+    this.paxZones = this.paxZones.filter((p) => p.y < h + 40 && !p.taken);
     for (const d of this.dropZones) d.y += mv;
-    this.dropZones = this.dropZones.filter(d => d.y < h + 40 && !d.used);
+    this.dropZones = this.dropZones.filter((d) => d.y < h + 40 && !d.used);
     for (const c of this.coins) {
       c.y += mv;
       c.bob += 0.1;
     }
-    this.coins = this.coins.filter(c => c.y < h + 40 && !c.taken);
+    this.coins = this.coins.filter((c) => c.y < h + 40 && !c.taken);
 
-    // ——— Collisions (slightly tighter hitbox) + near miss rewards ———
-    if (this.inv <= 0) {
+    // Collisions
+    if (this.inv <= 0 && this.speed > 0.5) {
       const pb = { x: this.playerX - 20, y: this.playerY - 32, w: 40, h: 60 };
       for (const o of this.obs) {
         const ox = this.laneX(Math.round(o.lane)) - o.w / 2;
         if (this.rectHit(pb, { x: ox, y: o.y + 8, w: o.w, h: o.h - 12 })) {
-          // Police/KAROTA contact costs more message
-          if (o.type === 'police' || o.type === 'karota') {
-            this.ui.showMissionToast(o.type === 'karota' ? 'KAROTA got you!' : 'Police stop!');
-          }
           this.gameOver();
           return;
         }
-
-        // Near miss: adjacent lane, close in Y
         if (
           this.nearMissCooldown <= 0 &&
           Math.round(o.lane) !== this.playerLane &&
@@ -621,8 +739,8 @@ export class Game {
           Math.abs(o.y - this.playerY) < 36
         ) {
           this.nearMissCooldown = 45;
-          this.nearMissCount = (this.nearMissCount || 0) + 1;
-          const nm = Math.floor(60 * (this.getBonuses().nearMissBonus || 1));
+          this.nearMissCount++;
+          const nm = Math.floor(60 * (bonuses.nearMissBonus || 1));
           this.addCombo(2);
           this.score += nm;
           this.ui.showMissionToast('💨 Near miss! +₦' + nm);
@@ -630,31 +748,39 @@ export class Game {
       }
     }
 
-    // ——— Pickups (some negotiate fare) ———
+    // Pick up — must be SLOW
     for (const p of this.paxZones) {
       if (p.taken) continue;
-      if (Math.round(p.lane) === this.playerLane && Math.abs(p.y - this.playerY) < 50 && this.paxOnBoard < this.capacity) {
+      if (Math.round(p.lane) === this.playerLane && Math.abs(p.y - this.playerY) < 52) {
+        if (this.speed > 3.5) {
+          if (this.frame % 30 === 0) this.ui.showMissionToast('Slow down to pick up!');
+          continue;
+        }
+        if (this.paxOnBoard >= this.capacity) continue;
         p.taken = true;
-        // Chance to negotiate (not Aishat)
-        if (!p.aishat && Math.random() < 0.28) {
+        if (!p.aishat && Math.random() < 0.32) {
           this.startNegotiation(p);
           return;
         }
-        this.boardPassenger(p);
+        p.agreedFare = p.vip ? 350 : p.aishat ? 550 : 120 + Math.floor(Math.random() * 40);
+        this.boardWaiting(p);
       }
     }
 
+    // Akwai drop zones — slow required
     for (const d of this.dropZones) {
       if (d.used) continue;
-      if (Math.round(d.lane) === this.playerLane && Math.abs(d.y - this.playerY) < 50 && this.paxOnBoard > 0) {
+      if (
+        Math.round(d.lane) === this.playerLane &&
+        Math.abs(d.y - this.playerY) < 52 &&
+        this.paxOnBoard > 0
+      ) {
+        if (this.speed > 3.2) {
+          if (this.frame % 30 === 0) this.ui.showMissionToast('Akwai! Brake to drop');
+          continue;
+        }
         d.used = true;
-        const n = this.paxOnBoard;
-        this.paxOnBoard = 0;
-        this.dropCount += n;
-        const fare = Math.floor(n * (route.baseFare || 140) * this.getComboMultiplier() * (this.getBonuses().fareMult || 1));
-        this.score += fare;
-        this.addCombo(2);
-        this.ui.showMissionToast(`Drop +₦${fare}`);
+        this.tryDropOff();
       }
     }
 
@@ -674,10 +800,13 @@ export class Game {
       if (m.type === 'score') m.progress = this.score;
       if (m.type === 'pax') m.progress = this.totalPax;
       if (m.type === 'nearmiss') m.progress = this.nearMissCount || 0;
-      this.ui.setMission(`${m.text} (${Math.min(m.target, Math.floor(m.progress))}/${m.target})`);
+      this.ui.setMission(
+        m.text + ' (' + Math.min(m.target, Math.floor(m.progress)) + '/' + m.target + ')'
+      );
     }
 
     this.ui.updateHUD(this);
   }
 }
 
+export { DEVELOPER };

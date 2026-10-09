@@ -1,19 +1,32 @@
-# Kano Run 3D (Phase 9)
+# Kano Run 3D — Phase 10
 
-Three.js / WebGL — Adaidaita Sahu through Kano State.
+**Developer: RuffNeck**
 
-## Phases 1–9
-1. 3D foundation  
-2. Vehicles  
-3. Kano world  
-4. Traffic AI  
-5. Visual polish  
-6. Routes / drivers / radio  
-7. Events / share  
-8. Daily / settings / VIP  
-9. **Identity & replay** — keke paints, local leaderboard, achievements, PWA manifest  
+Drive an Adaidaita Sahu through Kano State (Three.js / WebGL).
+
+## Phase 10 highlights
+- Opening sequence: walk → enter keke → start engine
+- Controls: steer, gas, brake, horn, radio, pause (touch + keyboard)
+- Passengers with destinations (Sabon Gari, Kofar Mata, Fagge, …)
+- Slow down to pick up / **Akwai** drop-off for fare
+- Varied fare negotiation (Oga, Mallam, Hajiya, …)
+- KAROTA checkpoints (pay / negotiate / flee)
+- Traffic AI, near miss, missions, daily, drivers, paints, radio audio bed
+- Developed by **RuffNeck**
+
+## Controls
+| Action | Mobile | Keyboard |
+|--------|--------|----------|
+| Steer | ← → | A/D or arrows |
+| Gas | GAS | W / ↑ |
+| Brake | BRAKE | S / ↓ |
+| Horn | HORN | Space / H |
+| Radio | 📻 | R |
+| Pause | ❚❚ | P / Esc |
 
 ## Deploy
 ```bash
-npm install && npm run build && vercel --prod
+npm install
+npm run build
+vercel --prod
 ```
