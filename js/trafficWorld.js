@@ -7,6 +7,13 @@ function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function fract(v) { return v - Math.floor(v); }
 function seeded(v) { return fract(Math.sin(v * 12.9898) * 43758.5453); }
 
+function vehicleHalfLength(vehicle) {
+  return vehicle.userData?.isKeke ? 1.2 : 1.8;
+}
+
+const MIN_FOLLOW_GAP = 4.8;
+const SAFE_FOLLOW_GAP = 12;
+
 function mat(THREERef, color, roughness = 0.9, metalness = 0) {
   return new THREERef.MeshStandardMaterial({ color, roughness, metalness });
 }
@@ -122,11 +129,21 @@ export class TrafficWorld {
     for (let i = 0; i < trafficCount; i += 1) {
       const isKeke = i % 3 === 0;
       const mesh = isKeke ? makeAmbientKeke(this.THREE, i) : makeAmbientCar(this.THREE, i);
+      const direction = i % 4 === 0 ? -1 : 1;
+      const lane = i % 3;
+      mesh.userData.trafficId = i;
       mesh.userData.speed = (isKeke ? .9 : 1.05) + seeded(i + 4) * .65;
-      mesh.userData.lane = i % 3;
-      mesh.userData.direction = i % 4 === 0 ? -1 : 1;
+      mesh.userData.baseSpeed = mesh.userData.speed;
+      mesh.userData.lane = lane;
+      mesh.userData.homeLane = lane;
+      mesh.userData.targetLane = lane;
+      mesh.userData.direction = direction;
       mesh.userData.phase = seeded(i + 10) * 20;
-      mesh.position.set(LANES[mesh.userData.lane], .02, -28 - i * 13);
+      mesh.userData.laneCooldown = 0;
+      mesh.userData.avoidUntil = 0;
+      mesh.userData.speedScale = 1;
+      mesh.userData.isKeke = isKeke;
+      mesh.position.set(LANES[lane], .02, -28 - i * 13);
       if (mesh.userData.direction < 0) mesh.rotation.y = Math.PI;
       this.group.add(mesh);
       this.traffic.push(mesh);
@@ -147,28 +164,169 @@ export class TrafficWorld {
 
   recycleTraffic(v) {
     const dir = v.userData.direction;
-    if (dir > 0 && v.position.z > 34) {
-      v.position.z = -125 - seeded(this.elapsed * 3 + v.userData.phase) * 45;
-      v.userData.lane = Math.floor(seeded(this.elapsed + v.userData.phase) * 3);
-      v.position.x = LANES[v.userData.lane];
-    } else if (dir < 0 && v.position.z < -145) {
-      v.position.z = 30 + seeded(this.elapsed * 2 + v.userData.phase) * 30;
-      v.userData.lane = Math.floor(seeded(this.elapsed + v.userData.phase + 8) * 3);
-      v.position.x = LANES[v.userData.lane];
+    const needsRecycle = (dir > 0 && v.position.z > 34) || (dir < 0 && v.position.z < -145);
+    if (!needsRecycle) return;
+
+    const candidateLanes = [0, 1, 2].sort((a, b) => {
+      const da = Math.abs(a - v.userData.homeLane);
+      const db = Math.abs(b - v.userData.homeLane);
+      return da - db;
+    });
+    const baseZ = dir > 0
+      ? -145 - seeded(this.elapsed * 3 + v.userData.phase) * 48
+      : 38 + seeded(this.elapsed * 2 + v.userData.phase) * 28;
+
+    let chosenLane = v.userData.homeLane;
+    let chosenZ = baseZ;
+    let found = false;
+    for (const lane of candidateLanes) {
+      let testZ = baseZ;
+      for (let attempt = 0; attempt < 14; attempt += 1) {
+        const occupied = this.traffic.some((other) => {
+          if (other === v || other.userData.direction !== dir) return false;
+          const sameLane = Math.abs(other.position.x - LANES[lane]) < 1.25;
+          const gap = Math.abs(other.position.z - testZ);
+          return sameLane && gap < SAFE_FOLLOW_GAP;
+        });
+        if (!occupied) {
+          chosenLane = lane;
+          chosenZ = testZ;
+          found = true;
+          break;
+        }
+        // Spawn farther behind the traffic flow, not immediately in front of it.
+        testZ -= dir * SAFE_FOLLOW_GAP;
+      }
+      if (found) break;
     }
+
+    v.userData.lane = chosenLane;
+    v.userData.targetLane = chosenLane;
+    v.userData.laneCooldown = 0.7;
+    v.userData.speedScale = 0.6;
+    v.position.x = LANES[chosenLane];
+    v.position.z = chosenZ;
+  }
+
+  findOpenLane(v) {
+    const current = Number.isFinite(v.userData.targetLane) ? v.userData.targetLane : v.userData.lane;
+    const candidates = [0, 1, 2]
+      .filter((lane) => lane !== current)
+      .sort((a, b) => Math.abs(a - current) - Math.abs(b - current));
+
+    for (const lane of candidates) {
+      const x = LANES[lane];
+      const blocked = this.traffic.some((other) => {
+        if (other === v) return false;
+        const closeAheadOrBehind = Math.abs(other.position.z - v.position.z) < 17;
+        const occupiesLane = Math.abs(other.position.x - x) < 1.55 ||
+          Math.abs(LANES[other.userData.targetLane ?? other.userData.lane] - x) < 0.25;
+        return closeAheadOrBehind && occupiesLane;
+      });
+      if (!blocked) return lane;
+    }
+    return null;
   }
 
   updateTraffic(dt, gameSpeed = 1) {
     const playerSpeed = clamp(Number(gameSpeed) || 1, .25, 2.5);
+    const frameStep = Math.max(0, Math.min(Number(dt) || 0, 0.05));
+
+    // First detect imminent head-on conflicts. One vehicle yields to an open
+    // lane; a stable id tie-break prevents both vehicles changing into each other.
+    for (const v of this.traffic) {
+      v.userData.laneCooldown = Math.max(0, (v.userData.laneCooldown || 0) - frameStep);
+      if (v.userData.laneCooldown > 0 || this.elapsed < (v.userData.avoidUntil || 0)) continue;
+
+      for (const other of this.traffic) {
+        if (other === v) continue;
+        if (other.userData.direction === v.userData.direction) continue;
+        if ((v.userData.trafficId || 0) < (other.userData.trafficId || 0)) continue;
+
+        const sameCorridor = Math.abs(v.position.x - other.position.x) < 1.55;
+        const closingGap = Math.abs(v.position.z - other.position.z);
+        if (!sameCorridor || closingGap > 18) continue;
+
+        const lane = this.findOpenLane(v);
+        if (lane !== null) {
+          v.userData.targetLane = lane;
+          v.userData.lane = lane;
+          v.userData.laneCooldown = 1.65;
+          v.userData.avoidUntil = this.elapsed + 1.9;
+          v.userData.speedScale = Math.min(v.userData.speedScale || 1, 0.78);
+        } else {
+          // Crowded road: slow strongly rather than continue into the other car.
+          v.userData.speedScale = Math.min(v.userData.speedScale || 1, 0.12);
+        }
+        break;
+      }
+    }
+
     for (const v of this.traffic) {
       const dir = v.userData.direction;
-      const lane = v.userData.lane;
+      const lane = Number.isFinite(v.userData.targetLane) ? v.userData.targetLane : v.userData.lane;
       const targetX = LANES[lane];
-      v.position.x += (targetX - v.position.x) * Math.min(dt * 1.8, 1);
-      v.position.z += dir * v.userData.speed * (5.5 + playerSpeed * 4.5) * dt;
+      let targetSpeedScale = 1;
+      let nearestAhead = null;
+      let nearestGap = Infinity;
+
+      // Same-direction traffic follows with a safe gap. If the gap shrinks, the
+      // following vehicle brakes and is position-clamped before its body overlaps.
+      for (const other of this.traffic) {
+        if (other === v || other.userData.direction !== dir) continue;
+        const otherLane = Number.isFinite(other.userData.targetLane) ? other.userData.targetLane : other.userData.lane;
+        const laneAligned = Math.abs(LANES[otherLane] - targetX) < 0.3 || Math.abs(other.position.x - targetX) < 0.9;
+        if (!laneAligned) continue;
+
+        const gap = (other.position.z - v.position.z) * dir;
+        if (gap > 0 && gap < nearestGap) {
+          nearestGap = gap;
+          nearestAhead = other;
+        }
+      }
+
+      if (nearestAhead) {
+        const desiredGap = SAFE_FOLLOW_GAP + vehicleHalfLength(v) + vehicleHalfLength(nearestAhead);
+        if (nearestGap < desiredGap) {
+          targetSpeedScale = clamp((nearestGap - MIN_FOLLOW_GAP) / Math.max(desiredGap - MIN_FOLLOW_GAP, 1), 0.04, 1);
+        }
+      }
+
+      // Fade braking smoothly rather than allowing jitter when gaps hover near the limit.
+      const oldScale = Number.isFinite(v.userData.speedScale) ? v.userData.speedScale : 1;
+      v.userData.speedScale = oldScale + (targetSpeedScale - oldScale) * Math.min(frameStep * 4.5, 1);
+
+      v.position.x += (targetX - v.position.x) * Math.min(frameStep * 3.2, 1);
+      const step = dir * v.userData.speed * (5.5 + playerSpeed * 4.5) * frameStep * v.userData.speedScale;
+      v.position.z += step;
+
+      // Hard safety spacing for same-direction pairs if a frame closes the gap fast.
+      if (nearestAhead) {
+        const gapNow = (nearestAhead.position.z - v.position.z) * dir;
+        const minimumGap = MIN_FOLLOW_GAP + vehicleHalfLength(v) + vehicleHalfLength(nearestAhead);
+        if (gapNow < minimumGap) {
+          v.position.z = nearestAhead.position.z - dir * minimumGap;
+          v.userData.speedScale = Math.min(v.userData.speedScale, 0.15);
+        }
+      }
+
+      // Return to the original lane only after the avoidance window and only if clear.
+      if (this.elapsed >= (v.userData.avoidUntil || 0) && v.userData.targetLane !== v.userData.homeLane) {
+        const homeX = LANES[v.userData.homeLane];
+        const homeBlocked = this.traffic.some((other) => {
+          if (other === v) return false;
+          return Math.abs(other.position.x - homeX) < 1.45 && Math.abs(other.position.z - v.position.z) < 18;
+        });
+        if (!homeBlocked && v.userData.laneCooldown <= 0) {
+          v.userData.targetLane = v.userData.homeLane;
+          v.userData.lane = v.userData.homeLane;
+          v.userData.laneCooldown = 1.0;
+        }
+      }
+
       const wobble = Math.sin(this.elapsed * 1.5 + v.userData.phase) * .012;
       v.rotation.z = wobble;
-      for (const wheel of v.userData.wheels || []) wheel.rotation.x -= dir * dt * v.userData.speed * 5;
+      for (const wheel of v.userData.wheels || []) wheel.rotation.x -= dir * frameStep * v.userData.speed * 5 * v.userData.speedScale;
       this.recycleTraffic(v);
     }
   }

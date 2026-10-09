@@ -29,9 +29,46 @@ const BASE_SPEED = 3.6;
 const BASE_MAX_SPEED = 7.2;
 const FRAME_MS = 1000 / 60;
 
-// Wider overlap window so vehicle impacts register reliably at speed.
-const COLLISION_Y = 54;
+const COLLISION_Y = 36;
 const NEAR_MISS_Y = 92;
+
+// Approximate screen-space hitboxes for the player's keke and each traffic type.
+// Dimensions are half-extents; the player's movement is tested across the whole
+// frame so a fast lane change cannot skip through a vehicle between frames.
+const PLAYER_HITBOX = Object.freeze({ halfWidth: 15, halfHeight: 18 });
+const TRAFFIC_HITBOXES = Object.freeze({
+  keke: { halfWidth: 15, halfHeight: 17 },
+  car: { halfWidth: 18, halfHeight: 20 },
+  sedan: { halfWidth: 18, halfHeight: 20 },
+  taxi: { halfWidth: 18, halfHeight: 20 },
+  motorcycle: { halfWidth: 9, halfHeight: 12 },
+  bus: { halfWidth: 23, halfHeight: 26 },
+  truck: { halfWidth: 24, halfHeight: 27 },
+  police: { halfWidth: 19, halfHeight: 20 },
+  karota: { halfWidth: 20, halfHeight: 21 }
+});
+
+function trafficHitbox(type) {
+  return TRAFFIC_HITBOXES[type] || TRAFFIC_HITBOXES.car;
+}
+
+// Test the swept relative movement against an ellipse-normalised hitbox.
+// start/end are the player's offsets from the obstacle at frame boundaries.
+function sweptHitboxContact(startX, startY, endX, endY, halfWidth, halfHeight) {
+  const x0 = startX / Math.max(halfWidth, 1);
+  const y0 = startY / Math.max(halfHeight, 1);
+  const x1 = endX / Math.max(halfWidth, 1);
+  const y1 = endY / Math.max(halfHeight, 1);
+  const vx = x1 - x0;
+  const vy = y1 - y0;
+  const lengthSquared = vx * vx + vy * vy;
+  const t = lengthSquared > 1e-8
+    ? clamp(-(x0 * vx + y0 * vy) / lengthSquared, 0, 1)
+    : 0;
+  const nearestX = x0 + vx * t;
+  const nearestY = y0 + vy * t;
+  return nearestX * nearestX + nearestY * nearestY <= 1;
+}
 const PICKUP_Y = 70;
 const DROPOFF_Y = 72;
 const CHECKPOINT_Y = 70;
@@ -237,6 +274,7 @@ export class Game {
     this.roadOff = 0;
     this.playerLane = 1;
     this.playerX = this.laneX(this.playerLane);
+    this.previousPlayerX = this.playerX;
     this.targetX = this.playerX;
     this.playerY = PLAYER_Y;
     this.playerZ = 0;
@@ -789,6 +827,7 @@ export class Game {
     this.playerLane = 1;
     this.targetX = this.laneX(this.playerLane);
     this.playerX = this.targetX;
+    this.previousPlayerX = this.playerX;
     this.obs = [];
     this.paxZones = [];
     this.dropZones = [];
@@ -1034,6 +1073,7 @@ export class Game {
   }
 
   updatePlayer() {
+    this.previousPlayerX = Number.isFinite(this.playerX) ? this.playerX : this.targetX;
     this.playerX += (this.targetX - this.playerX) * 0.28;
     this.playerY = PLAYER_Y;
 
@@ -1170,6 +1210,8 @@ export class Game {
 
   updateTraffic() {
     for (const obstacle of this.obs) {
+      obstacle.previousY = Number.isFinite(obstacle.y) ? obstacle.y : PLAYER_Y - 1000;
+      obstacle.previousLane = obstacle.lane;
       obstacle.y += this.speed * 1.25 * obstacle.speedFactor;
     }
 
@@ -1252,32 +1294,59 @@ export class Game {
 
   handleTrafficCollisions() {
     for (const obstacle of this.obs) {
-      if (obstacle.collided) continue;
+      if (obstacle.collided || obstacle.collisionConsumed) continue;
 
-      // Use world-space horizontal overlap as well as the lane index. This
-      // catches impacts while steering between lanes, not just lane equality.
       const obstacleX = this.laneX(obstacle.lane);
-      const dx = Math.abs(this.playerX - obstacleX);
-      const dy = Math.abs(obstacle.y - PLAYER_Y);
-      const horizontalOverlap = dx <= 48;
-      const verticalOverlap = dy <= COLLISION_Y;
+      const profile = trafficHitbox(obstacle.type);
+      const halfWidth = PLAYER_HITBOX.halfWidth + profile.halfWidth;
+      const halfHeight = PLAYER_HITBOX.halfHeight + profile.halfHeight;
+      const previousPlayerX = Number.isFinite(this.previousPlayerX)
+        ? this.previousPlayerX
+        : this.playerX;
+      const previousObstacleY = Number.isFinite(obstacle.previousY)
+        ? obstacle.previousY
+        : obstacle.y;
 
-      // Every traffic vehicle is solid, including police and KAROTA vehicles.
-      // Their checkpoint/chase systems remain available when triggered by
-      // their normal gameplay events; direct vehicle impacts cause a crash.
-      if (horizontalOverlap && verticalOverlap) {
-        this.crash(obstacle);
+      const startX = previousPlayerX - obstacleX;
+      const startY = previousObstacleY - PLAYER_Y;
+      const endX = this.playerX - obstacleX;
+      const endY = obstacle.y - PLAYER_Y;
+      const collision = sweptHitboxContact(
+        startX,
+        startY,
+        endX,
+        endY,
+        halfWidth,
+        halfHeight
+      );
+
+      if (collision) {
+        // Police/KAROTA retain their existing interaction flow, but each vehicle
+        // is consumed immediately so it cannot fire repeatedly while overlapping.
+        obstacle.collisionConsumed = true;
+        obstacle.collided = true;
+        if (obstacle.type === 'police' || obstacle.type === 'karota') {
+          this.triggerCheckpointInteraction({
+            type: obstacle.type,
+            source: obstacle
+          });
+        } else {
+          this.crash(obstacle);
+        }
         return;
       }
 
-      // Keep the existing near-miss scoring when the player passes close
-      // without actually overlapping the vehicle.
+      // Near misses are based on the gap outside both vehicle hitboxes rather
+      // than fixed lane-centre distance, so large vehicles are treated fairly.
+      const dx = Math.abs(endX);
+      const dy = Math.abs(endY);
+      const horizontalGap = dx - halfWidth;
       if (
         !obstacle.scoredNearMiss &&
         dy <= NEAR_MISS_Y &&
-        dy > COLLISION_Y &&
-        dx > 48 &&
-        dx <= 100
+        dy > halfHeight &&
+        horizontalGap > 0 &&
+        horizontalGap <= 54
       ) {
         obstacle.scoredNearMiss = true;
         this.nearMissCount += 1;
@@ -1295,10 +1364,15 @@ export class Game {
     const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
     const invFrames = driver?.bonuses?.invFrames || 10;
 
+    // Consume the vehicle even during post-crash invulnerability, otherwise the
+    // same overlapping vehicle could trigger another crash as soon as cooldown ends.
+    if (obstacle) {
+      obstacle.collided = true;
+      obstacle.collisionConsumed = true;
+    }
     if (this.frame - this._lastCrashFrame < invFrames) return;
 
     this._lastCrashFrame = this.frame;
-    if (obstacle) obstacle.collided = true;
     this.crashes += 1;
     this.continuesLeft -= 1;
     this.combo = 0;
@@ -1308,6 +1382,7 @@ export class Game {
     this.bounce = 10;
 
     this._audio(['crash', 'collision', 'playCrash']);
+    this.renderer3d?.onCollision?.();
     this._ui('showToast', 'CRASH!');
 
     if (this.continuesLeft > 0) {
