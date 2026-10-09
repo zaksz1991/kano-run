@@ -1,19 +1,21 @@
-KANO RUN — GAME.JS REPLACEMENT
+KANO RUN — COMPLETE GAME.JS REPLACEMENT
 
-Contents
-- game.js: complete replacement for the project's js/game.js
+File included:
+- game.js — replace the existing js/game.js in the Kano Run project.
 
-Installation
-1. Extract this ZIP.
-2. Back up the existing js/game.js.
-3. Copy the included game.js into the project's js/ folder, replacing the old file.
-4. Do not replace or modify index.html for this change.
+Changes in this build:
+- Gas and brake controls are hidden on the title/start screen and shown during active gameplay.
+- Traffic moves relative to the player's speed instead of every vehicle automatically moving toward the player.
+- Traffic spawns farther ahead with a larger initial gap.
+- Same-lane traffic is separated to reduce vehicles overlapping and driving through each other.
 
-Important gameplay issues reported for the next repair pass
-- Traffic vehicles need visibly distinct models/types, not repeated identical-looking vehicles.
-- Traffic must not spawn behind the player and cause unfair rear-end collisions.
-- Vehicles must avoid or collide with other traffic rather than overlap and keep driving.
-- Passenger pickup zones/passengers must be placed safely off the main roadway, not in active traffic lanes.
+Installation:
+1. Back up the current js/game.js.
+2. Extract this ZIP.
+3. Replace the project's js/game.js with the included game.js.
+4. Do not modify index.html.
+5. Test locally, then deploy to Vercel.
 
-Status
-This ZIP packages the supplied complete game.js replacement. The listed traffic/visual issues are recorded as outstanding requirements; packaging the file does not mean those issues have been verified as fixed. Browser gameplay and Vercel deployment have not been verified.
+Verification status:
+- JavaScript syntax check passed with Node.js.
+- Browser gameplay and Vercel deployment have not been tested here. The fixes therefore are not claimed as fully verified.

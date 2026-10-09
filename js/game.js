@@ -303,6 +303,7 @@ export class Game {
 
     this._bindKeyboard();
     this._bindDrivingControls();
+    this._syncDrivingControlsVisibility();
   }
 
   _bindDrivingControls() {
@@ -315,7 +316,7 @@ export class Game {
       controls.setAttribute('aria-label', 'Driving controls');
       controls.style.cssText = [
         'position:fixed', 'right:14px', 'bottom:88px', 'z-index:1000',
-        'display:flex', 'flex-direction:column', 'gap:10px',
+        'display:none', 'flex-direction:column', 'gap:10px',
         'touch-action:none', 'user-select:none', '-webkit-user-select:none'
       ].join(';');
 
@@ -368,6 +369,15 @@ export class Game {
       bindHold(brake, () => this.brakeDown(), () => this.brakeUp());
       document.body.appendChild(controls);
     }
+    this._syncDrivingControlsVisibility();
+  }
+
+  _syncDrivingControlsVisibility() {
+    if (typeof document === 'undefined') return;
+    const controls = document.getElementById('kano-driving-controls');
+    if (!controls) return;
+    const shouldShow = this.state === STATE.PLAY && !this.paused && !this.eventOpen;
+    controls.style.display = shouldShow ? 'flex' : 'none';
   }
 
   setUI(ui) {
@@ -713,6 +723,7 @@ export class Game {
 
     this.state = STATE.PLAY;
     this.paused = false;
+    this._syncDrivingControlsVisibility();
     this.eventOpen = false;
     this.eventType = null;
     this.eventContext = null;
@@ -880,13 +891,16 @@ export class Game {
 
   update(delta = FRAME_MS) {
     if (this.state !== STATE.PLAY || this.paused) {
+      this._syncDrivingControlsVisibility();
       this.renderer3d?.draw?.(this);
       return;
     }
 
     this.frame += 1;
+    this._syncDrivingControlsVisibility();
 
     if (this.eventOpen || this.state === STATE.EVENT) {
+      this._syncDrivingControlsVisibility();
       this.renderer3d?.draw?.(this);
       return;
     }
@@ -1034,8 +1048,10 @@ export class Game {
 
     const type = pick(types);
 
+    // Spawn only well ahead of the player and preserve a safe gap in the lane.
+    const spawnY = -340 - Math.random() * 240;
     const tooClose = this.obs.some(
-      (o) => o.lane === lane && o.y < -120
+      (o) => o.lane === lane && Math.abs(o.y - spawnY) < 180
     );
 
     if (tooClose) return;
@@ -1043,8 +1059,10 @@ export class Game {
     this.obs.push({
       id: this.nextTrafficId++,
       lane,
-      y: -240 - Math.random() * 300,
+      y: spawnY,
       type,
+      // Relative traffic speed: faster vehicles pull away; slower vehicles
+      // approach gradually. Never move traffic toward the player when stopped.
       speedFactor: 0.82 + Math.random() * 0.34,
       scoredNearMiss: false,
       checkpoint: false
@@ -1113,14 +1131,36 @@ export class Game {
 
   updateTraffic() {
     for (const obstacle of this.obs) {
-      obstacle.y += this.speed * 1.25 * obstacle.speedFactor;
+      const relativeSpeed = 1 - obstacle.speedFactor;
+      obstacle.y += this.speed * relativeSpeed * 1.25;
     }
 
-    const survivors = [];
-    for (const obstacle of this.obs) {
-      if (obstacle.y < 700) survivors.push(obstacle);
+    // Resolve same-lane traffic overlap before collision checks. Vehicles keep
+    // a minimum longitudinal gap; if there is no room, the trailing vehicle
+    // changes to a free adjacent lane or is held behind the vehicle ahead.
+    const ordered = [...this.obs].sort((a, b) => a.y - b.y);
+    const minGap = 76;
+    for (let i = 0; i < ordered.length; i += 1) {
+      const trailing = ordered[i];
+      if (trailing.collided) continue;
+      for (let j = i + 1; j < ordered.length; j += 1) {
+        const leading = ordered[j];
+        if (leading.collided || trailing.lane !== leading.lane) continue;
+        const gap = leading.y - trailing.y;
+        if (gap >= 0 && gap < minGap) {
+          const adjacent = [trailing.lane - 1, trailing.lane + 1]
+            .filter((lane) => lane >= MIN_LANE && lane <= MAX_LANE)
+            .find((lane) => !ordered.some((other) => other !== trailing && other.lane === lane && Math.abs(other.y - trailing.y) < minGap));
+          if (adjacent !== undefined && Math.random() < 0.35) {
+            trailing.lane = adjacent;
+          } else {
+            trailing.y = leading.y - minGap;
+          }
+        }
+      }
     }
-    this.obs = survivors.filter((obstacle) => !obstacle.collided);
+
+    this.obs = this.obs.filter((obstacle) => obstacle.y < 700 && !obstacle.collided);
   }
 
   updatePassengerZones() {
