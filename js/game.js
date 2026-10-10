@@ -124,6 +124,33 @@ export class Game {
     return CONFIG.KEKES[this.selectedKeke] || CONFIG.KEKES.starter;
   }
 
+  /** Unlock kekes as the player levels up (safe no-op if already unlocked) */
+  unlockKekeByProgress() {
+    const order = ['starter', 'ruffgold', 'sky', 'heavy', 'night', 'royal'];
+    const need = [1, 2, 3, 5, 7, 10];
+    const lvl = this.level || 1;
+    let unlocked = [];
+    try {
+      unlocked = Storage.get('kanoUnlockedKekes', ['starter']) || ['starter'];
+    } catch (e) {
+      unlocked = ['starter'];
+    }
+    if (!Array.isArray(unlocked)) unlocked = ['starter'];
+    let changed = false;
+    for (let i = 0; i < order.length; i++) {
+      if (lvl >= need[i] && unlocked.indexOf(order[i]) < 0) {
+        unlocked.push(order[i]);
+        changed = true;
+        if (CONFIG.KEKES && CONFIG.KEKES[order[i]]) {
+          this.ui?.showMissionToast?.('🛵 Unlocked: ' + CONFIG.KEKES[order[i]].name);
+        }
+      }
+    }
+    if (changed) {
+      try { Storage.set('kanoUnlockedKekes', unlocked); } catch (e) {}
+    }
+  }
+
   getBonuses() {
     const d = this.getDriver().bonuses || {};
     const k = this.getKeke();
@@ -144,11 +171,11 @@ export class Game {
     Audio.startRadioBed();
   }
 
-  /** Begin run → intro walk-to-keke, then PLAY */
+  /** Begin run — always PLAY with immediate forward motion */
   start() {
-    const skipIntro = Storage.getSeenTutorial() && Storage.get('kanoSkipIntro', false);
-    this.state = skipIntro ? STATE.PLAY : STATE.INTRO;
-    this.introT = 0;
+    // Skip intro always so the game never feels frozen
+    this.state = STATE.PLAY;
+    this.introT = 999;
     this.fuel = 100;
     this.zoneType = 'road'; // road | junction | market
     this.zoneTimer = 0;
@@ -173,8 +200,8 @@ export class Game {
     this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
-    this.speed = 0;
-    this.throttle = 0;
+    this.speed = 3.5;
+    this.throttle = 0.7;
     this.braking = false;
     this.frame = 0;
     this.roadOff = 0;
@@ -217,32 +244,32 @@ export class Game {
     if (this.renderer3d?.applyPaint) this.renderer3d.applyPaint(this.selectedPaint);
     if (this.renderer3d) this.renderer3d.introPhase = 0;
 
-    if (this.state === STATE.PLAY) {
-      this.throttle = 0.35;
-      Audio.startEngine();
-      Audio.startRadioBed();
-      this.ui.showMissionToast('Drive!');
-      if (this.renderer3d) this.renderer3d.introPhase = 3;
-    } else {
-      this.ui.showMissionToast('Walking to keke…');
-    }
+    this.throttle = 0.7;
+    this.speed = 3.5;
+    this.state = STATE.PLAY;
+    try { Audio.startEngine(); Audio.startRadioBed(); } catch (e) {}
+    this.ui.showMissionToast('Driving! GAS = faster · BRAKE = stop');
+    if (this.renderer3d) this.renderer3d.introPhase = 3;
+    try { Storage.setSeenTutorial(); Storage.set('kanoSkipIntro', true); } catch (e) {}
     this.ui.updateHUD(this);
     this.initDaily();
   }
 
   finishIntro() {
     this.state = STATE.PLAY;
-    this.throttle = 0.2;
+    this.throttle = 0.55;
+    this.speed = 2.8;
     Audio.startEngine();
     Audio.startRadioBed();
+    try { Storage.setSeenTutorial(); Storage.set('kanoSkipIntro', true); } catch (e) {}
     const tips = [
-      'Sannu da aiki — load at the park',
-      'Morning rush — traffic will be tight',
+      'Sannu da aiki — hold GAS to go faster',
+      'Road is moving — steer and avoid traffic',
       'Watch KAROTA at junctions',
-      'Full load rides slower — that is normal'
+      'Brake almost stop to load passengers'
     ];
     this.ui.showMissionToast(tips[Math.floor(Math.random() * tips.length)]);
-    Audio.speak('Sannu da aiki', { rate: 0.92, pitch: 1 });
+    try { Audio.speak('Sannu da aiki', { rate: 0.92, pitch: 1 }); } catch (e) {}
     if (this.renderer3d) this.renderer3d.introPhase = 3;
   }
 
@@ -818,7 +845,7 @@ export class Game {
         Audio.startEngine();
         this.ui.showMissionToast('Starting engine…');
       }
-      if (this.introT >= 170) this.finishIntro();
+      if (this.introT >= 90) this.finishIntro();
       this.targetX = this.laneX(this.playerLane);
       this.playerX += (this.targetX - this.playerX) * 0.2;
       this.playerY = this.canvas.clientHeight - 195;
@@ -842,36 +869,34 @@ export class Game {
     const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
     const bonuses = this.getBonuses();
 
-    // Realistic keke dynamics: slow accel, strong engine braking, load penalty
+    // Forward motion: always crawl unless braking (endless-runner feel + gas boost)
     const loadFactor = 1 - Math.min(0.22, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.22);
-    const dmgFactor = 1 - Math.min(0.45, (100 - (this.condition || 100)) / 100 * 0.5);
+    const dmgFactor = 1 - Math.min(0.4, (100 - (this.condition || 100)) / 100 * 0.45);
     const tyreGrip = 1 - Math.min(0.25, (this.damageTyres || 0) / 100 * 0.25);
-    const top = (5.8 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.2) * loadFactor * dmgFactor;
-    let targetSpeed = this.throttle * top;
+    const top = (7.2 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.5) * loadFactor * dmgFactor;
+    // Base cruise so the road always moves; GAS raises speed, BRAKE stops
+    const baseCruise = this.braking ? 0 : 3.2;
+    let targetSpeed = baseCruise + Math.max(0.35, this.throttle) * (top - baseCruise);
     if (this.braking) targetSpeed = 0;
-    if (this.trafficJamTimer > 0) targetSpeed *= 0.45;
-    if (this.parkOnly) targetSpeed = Math.min(targetSpeed, 3.2); // forced slow in junction/market
-    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) targetSpeed += 0.25;
-    // Accel: heavy at low speed, weaker near top (like small engine)
-    const accel = (0.045 + this.throttle * 0.09) * loadFactor * this.weatherGrip * dmgFactor * (1 - (this.damageEngine || 0) / 250);
+    if (this.trafficJamTimer > 0) targetSpeed *= 0.5;
+    if (this.parkOnly) targetSpeed = Math.min(targetSpeed, 3.8);
+    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) targetSpeed += 0.3;
+    const accel = (0.08 + this.throttle * 0.14) * loadFactor * this.weatherGrip * dmgFactor * (1 - (this.damageEngine || 0) / 280);
     if (this.speed < targetSpeed) this.speed += accel;
-    else this.speed += (targetSpeed - this.speed) * (0.08 + (1 - this.throttle) * 0.06);
-    // Brakes
-    if (this.braking) this.speed *= 0.82 * this.weatherGrip * tyreGrip;
-    // Coasting drag
-    if (this.throttle < 0.15 && !this.braking) this.speed *= 0.985;
+    else this.speed += (targetSpeed - this.speed) * 0.14;
+    if (this.braking) this.speed *= 0.78 * this.weatherGrip * tyreGrip;
     // Fuel
     if (this.speed > 0.25) {
-      this.fuel = Math.max(0, this.fuel - 0.01 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
+      this.fuel = Math.max(0, this.fuel - 0.008 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
     }
     if (this.fuel <= 0) {
-      this.speed *= 0.9;
+      this.speed = Math.min(this.speed, 2.2);
       if (this.frame % 70 === 0) this.ui.showMissionToast('Out of fuel — limp mode');
     } else if (this.fuel < 18 && this.frame % 100 === 0) {
       this.ui.showMissionToast('Low fuel — find petrol');
       Audio.voiceLowFuel();
     }
-    this.speed = Math.max(0, Math.min(this.speed, 9.5));
+    this.speed = Math.max(0, Math.min(this.speed, 11));
 
     // Condition warnings
     if (this.condition < 25 && this.frame % 120 === 0) {
@@ -879,45 +904,31 @@ export class Game {
     } else if (this.condition < 50 && this.frame % 200 === 0) {
       this.ui.showMissionToast('Keke needs maintenance');
     }
-    // Engine sputter when very damaged
     if (this.damageEngine > 60 && this.throttle > 0.5 && Math.random() < 0.02) {
-      this.speed *= 0.7;
+      this.speed *= 0.75;
       this.ui.showMissionToast('Engine struggling');
       Audio.brake();
     }
 
-    // Idle at standstill — real keke waits for passengers
     if (this.speed < 0.35) {
       this.stoppedFrames = (this.stoppedFrames || 0) + 1;
       if (this.stoppedFrames === 90) this.ui.showMissionToast('Waiting for passengers…');
     } else {
       this.stoppedFrames = 0;
-    this.condition = 100; // overall vehicle health 0-100
-    this.damageBody = 0;
-    this.damageEngine = 0;
-    this.damageTyres = 0;
     }
     if (this.pickupCooldown > 0) this.pickupCooldown--;
 
-    this.roadOff = (this.roadOff + this.speed * 2) % 58;
-    this.dist += this.speed * 0.0055;
-    this.score += Math.floor(this.speed * 0.06 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
+    // Stronger scroll so movement is clearly visible
+    this.roadOff = (this.roadOff + this.speed * 3.2) % 58;
+    this.dist += this.speed * 0.006;
+    this.score += Math.floor(this.speed * 0.08 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
     Audio.updateEngine(this.speed);
 
-    // Sync weather grip from renderer weather if available
+    // Weather grip
     const w = this.renderer3d?.weather || 'clear';
     if (w === 'rain') this.weatherGrip = 0.88;
     else if (w === 'harmattan') this.weatherGrip = 0.94;
     else this.weatherGrip = 1;
-    this.heatComplaints = 0;
-    this.lastHonkFrame = 0;
-    this.lifeTipsShown = 0;
-    this.pickupCooldown = 0;
-    this.stoppedFrames = 0;
-    this.condition = 100; // overall vehicle health 0-100
-    this.damageBody = 0;
-    this.damageEngine = 0;
-    this.damageTyres = 0;
 
     // Level from distance
     const newLevel = 1 + Math.floor(this.dist / 2.5);
@@ -925,7 +936,7 @@ export class Game {
       this.level = newLevel;
       this.ui.showMissionToast('📶 Level ' + this.level);
       Audio.success();
-      this.unlockKekeByProgress();
+      try { this.unlockKekeByProgress(); } catch (e) {}
     }
     this.ui.setLevel?.(this.level);
     this.ui.setOnboardDest?.(this.onboard);
