@@ -45,23 +45,9 @@ export class UI {
     if (got) got.onclick = () => this.hideHelp(true);
     document.getElementById('retry-btn').onclick = () => this.game.start();
     document.getElementById('home-btn').onclick = () => this.goMainMenu();
-    // Pause → Main Menu
+    // Pause → Main Menu (menu-btn created dynamically in setPauseUI)
     const menuBtn = document.getElementById('menu-btn');
     if (menuBtn) menuBtn.onclick = () => this.goMainMenu();
-    // Long-press pause or second control: menu from HUD
-    const pauseBtn = document.getElementById('pause-btn');
-    if (pauseBtn) {
-      let holdT = null;
-      pauseBtn.addEventListener('contextmenu', (e) => e.preventDefault());
-      pauseBtn.addEventListener('touchstart', () => {
-        holdT = setTimeout(() => this.goMainMenu(), 650);
-      }, { passive: true });
-      pauseBtn.addEventListener('touchend', () => clearTimeout(holdT));
-      pauseBtn.addEventListener('mousedown', () => {
-        holdT = setTimeout(() => this.goMainMenu(), 650);
-      });
-      pauseBtn.addEventListener('mouseup', () => clearTimeout(holdT));
-    }
     const shareBtn = document.getElementById('share-btn');
     if (shareBtn) shareBtn.onclick = () => this.shareRun(this.game);
     document.getElementById('route-btn').onclick = () => {
@@ -117,7 +103,18 @@ export class UI {
     // Release gas → cruise (not full stop). Only BRAKE stops.
     holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.45));
     holdCtrl(brake, () => this.game.setBrake(true), () => this.game.setBrake(false));
-    if (pauseBtn) pauseBtn.onclick = () => this.game.togglePause();
+    if (pauseBtn) {
+      pauseBtn.onclick = () => this.game.togglePause();
+      // Long-press pause → main menu
+      let holdT = null;
+      pauseBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+      const startHold = () => { holdT = setTimeout(() => this.goMainMenu(), 650); };
+      const endHold = () => clearTimeout(holdT);
+      pauseBtn.addEventListener('touchstart', startHold, { passive: true });
+      pauseBtn.addEventListener('touchend', endHold);
+      pauseBtn.addEventListener('mousedown', startHold);
+      pauseBtn.addEventListener('mouseup', endHold);
+    }
     const camBtn = document.getElementById('cam-btn');
     if (camBtn) camBtn.onclick = () => this.game.toggleCabin();
 
