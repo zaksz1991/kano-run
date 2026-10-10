@@ -1,0 +1,17 @@
+function loop(timestamp) {
+  if (!lastFrameTime) lastFrameTime = timestamp;
+  const delta = Math.min(32, Math.max(0, timestamp - lastFrameTime));
+  lastFrameTime = timestamp;
+
+  // Game simulation uses milliseconds; Renderer3D.render() expects seconds.
+  // Without this call, the road, environment and player keke are never drawn.
+  try {
+    game.update(delta);
+  } finally {
+    if (renderer && typeof renderer.render === 'function') {
+      renderer.render(delta / 1000);
+    }
+    syncDrivingControls();
+    requestAnimationFrame(loop);
+  }
+}
