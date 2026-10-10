@@ -1,0 +1,13 @@
+/* Kano Run UI compatibility bridge
+   Append this block to the END of js/ui.js, after the exported UI class.
+   It restores method names expected by the deployed game controller.
+*/
+
+UI.prototype.setMission = function setMission(message) {
+  const label = this.el('mission-label');
+  if (label) label.textContent = `🎯 ${String(message ?? '')}`;
+};
+
+UI.prototype.showMissionToast = function showMissionToast(message) {
+  this.showToast(message);
+};
