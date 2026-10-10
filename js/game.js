@@ -7,6 +7,18 @@
 import { CONFIG, STATE, DEVELOPER } from './config.js';
 import { Storage } from './storage.js';
 import { Audio } from './audio.js';
+import {
+  nextRoadSegment,
+  generateRunMissions,
+  collisionTier,
+  radioAnnouncement,
+  karotaFine,
+  pickPaxClass,
+  pickDestination,
+  getLevelBand,
+  WORLD_EVENTS,
+  DISTRICTS
+} from './systems.js';
 
 export class Game {
   constructor(canvas) {
@@ -32,6 +44,19 @@ export class Game {
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
+    // —— Systems state ——
+    this.roadSegment = null;
+    this.segmentDist = 0;
+    this.visitedDistricts = [];
+    this.runMissions = [];
+    this.wantedLevel = 0;
+    this.karotaFines = 0;
+    this.worldEvent = null;
+    this.worldEventTimer = 0;
+    this.steerPenalty = 0;
+    this.fuelPickups = 0;
+    this.bestCombo = 0;
+    this.pendingJunction = null;
     this.playerX = 0;
     this.targetX = 0;
     this.playerY = 0;
@@ -124,6 +149,33 @@ export class Game {
     return CONFIG.KEKES[this.selectedKeke] || CONFIG.KEKES.starter;
   }
 
+  /** Unlock kekes as the player levels up (safe no-op if already unlocked) */
+  unlockKekeByProgress() {
+    const order = ['starter', 'ruffgold', 'sky', 'heavy', 'night', 'royal'];
+    const need = [1, 2, 3, 5, 7, 10];
+    const lvl = this.level || 1;
+    let unlocked = [];
+    try {
+      unlocked = Storage.get('kanoUnlockedKekes', ['starter']) || ['starter'];
+    } catch (e) {
+      unlocked = ['starter'];
+    }
+    if (!Array.isArray(unlocked)) unlocked = ['starter'];
+    let changed = false;
+    for (let i = 0; i < order.length; i++) {
+      if (lvl >= need[i] && unlocked.indexOf(order[i]) < 0) {
+        unlocked.push(order[i]);
+        changed = true;
+        if (CONFIG.KEKES && CONFIG.KEKES[order[i]]) {
+          this.ui?.showMissionToast?.('🛵 Unlocked: ' + CONFIG.KEKES[order[i]].name);
+        }
+      }
+    }
+    if (changed) {
+      try { Storage.set('kanoUnlockedKekes', unlocked); } catch (e) {}
+    }
+  }
+
   getBonuses() {
     const d = this.getDriver().bonuses || {};
     const k = this.getKeke();
@@ -144,11 +196,11 @@ export class Game {
     Audio.startRadioBed();
   }
 
-  /** Begin run → intro walk-to-keke, then PLAY */
+  /** Begin run — always PLAY with immediate forward motion */
   start() {
-    const skipIntro = Storage.getSeenTutorial() && Storage.get('kanoSkipIntro', false);
-    this.state = skipIntro ? STATE.PLAY : STATE.INTRO;
-    this.introT = 0;
+    // Skip intro always so the game never feels frozen
+    this.state = STATE.PLAY;
+    this.introT = 999;
     this.fuel = 100;
     this.zoneType = 'road'; // road | junction | market
     this.zoneTimer = 0;
@@ -173,12 +225,29 @@ export class Game {
     this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
-    this.speed = 0;
-    this.throttle = 0;
+    this.speed = 3.5;
+    this.throttle = 0.7;
     this.braking = false;
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
+    this.smoothLane = 1;
+    this.playerLaneX = 0;
+    if (this.controls) this.controls.reset(1);
+    // Systems reset
+    this.roadSegment = nextRoadSegment('straight', 1);
+    this.segmentDist = 0;
+    this.visitedDistricts = [this.roadSegment.district];
+    this.runMissions = generateRunMissions();
+    this.wantedLevel = 0;
+    this.karotaFines = 0;
+    this.worldEvent = null;
+    this.worldEventTimer = 0;
+    this.steerPenalty = 0;
+    this.fuelPickups = 0;
+    this.bestCombo = 0;
+    this.pendingJunction = null;
+    this.activeMission = this.runMissions[0] || this.activeMission;
     this.inv = 0;
     this.bounce = 0;
     this.obs = [];
@@ -217,44 +286,50 @@ export class Game {
     if (this.renderer3d?.applyPaint) this.renderer3d.applyPaint(this.selectedPaint);
     if (this.renderer3d) this.renderer3d.introPhase = 0;
 
-    if (this.state === STATE.PLAY) {
-      this.throttle = 0.35;
+    this.throttle = 0.7;
+    this.speed = 3.5;
+    this.state = STATE.PLAY;
+    try {
+      Audio.ensure();
       Audio.startEngine();
       Audio.startRadioBed();
-      this.ui.showMissionToast('Drive!');
-      if (this.renderer3d) this.renderer3d.introPhase = 3;
-    } else {
-      this.ui.showMissionToast('Walking to keke…');
-    }
+      const st = (CONFIG.RADIO && CONFIG.RADIO[this.radioIndex]) || { name: 'Radio Kano' };
+      Audio.speak(st.name + '. Sannu da aiki.', { rate: 0.95 });
+    } catch (e) {}
+    this.ui.showMissionToast('Driving! GAS = faster · BRAKE = stop');
+    if (this.renderer3d) this.renderer3d.introPhase = 3;
+    try { Storage.setSeenTutorial(); Storage.set('kanoSkipIntro', true); } catch (e) {}
     this.ui.updateHUD(this);
     this.initDaily();
   }
 
   finishIntro() {
     this.state = STATE.PLAY;
-    this.throttle = 0.2;
+    this.throttle = 0.55;
+    this.speed = 2.8;
     Audio.startEngine();
     Audio.startRadioBed();
+    try { Storage.setSeenTutorial(); Storage.set('kanoSkipIntro', true); } catch (e) {}
     const tips = [
-      'Sannu da aiki — load at the park',
-      'Morning rush — traffic will be tight',
+      'Sannu da aiki — hold GAS to go faster',
+      'Road is moving — steer and avoid traffic',
       'Watch KAROTA at junctions',
-      'Full load rides slower — that is normal'
+      'Brake almost stop to load passengers'
     ];
     this.ui.showMissionToast(tips[Math.floor(Math.random() * tips.length)]);
-    Audio.speak('Sannu da aiki', { rate: 0.92, pitch: 1 });
+    try { Audio.speak('Sannu da aiki', { rate: 0.92, pitch: 1 }); } catch (e) {}
     if (this.renderer3d) this.renderer3d.introPhase = 3;
   }
 
   togglePause() {
     if (this.state === STATE.PLAY) {
       this.state = STATE.PAUSE;
-      Audio.stopEngine();
-      this.ui.showMissionToast('Paused');
+      try { Audio.stopEngine(); } catch (e) {}
+      this.ui.showMissionToast('Paused · MAIN MENU available');
       this.ui.setPauseUI(true);
     } else if (this.state === STATE.PAUSE) {
       this.state = STATE.PLAY;
-      Audio.startEngine();
+      try { Audio.startEngine(); } catch (e) {}
       this.ui.setPauseUI(false);
       this.ui.showMissionToast('Resumed');
     }
@@ -343,8 +418,19 @@ export class Game {
     if (on && !was && this.speed > 2) Audio.brake();
   }
 
+  /** Prefer Controls module; dir < 0 = left, dir > 0 = right */
   changeLane(dir) {
     if (this.state !== STATE.PLAY && this.state !== STATE.INTRO) return;
+    // Damaged steering: delayed / unreliable
+    if (this.steerPenalty > 60 && Math.random() < 0.35) {
+      this.ui.showMissionToast('Steering damaged!');
+      return;
+    }
+    if (this.controls) {
+      if (dir < 0) this.controls.steerLeft();
+      else this.controls.steerRight();
+      return;
+    }
     const n = this.playerLane + dir;
     if (n >= 0 && n < CONFIG.LANES) {
       this.playerLane = n;
@@ -352,14 +438,184 @@ export class Game {
     }
   }
 
+  cycleRadio() {
+    const list = CONFIG.RADIO || [
+      { name: 'Freedom Radio' }, { name: 'Arewa Radio' }, { name: 'Rahama Radio' },
+      { name: 'Radio Kano' }, { name: 'Cool FM' }, { name: 'Express Radio' }
+    ];
+    this.radioIndex = ((this.radioIndex || 0) + 1) % list.length;
+    const st = list[this.radioIndex];
+    this.ui.setRadio?.(st.name);
+    try {
+      Audio.ensure();
+      Audio.radioTune(st.name);
+    } catch (e) {}
+    this.ui.showMissionToast('📻 ' + st.name);
+  }
+
   horn() {
     if (this.state !== STATE.PLAY) return;
     Audio.horn();
+    try { Audio.speakHausa?.('horn'); } catch (e) {}
     this.inv = Math.max(this.inv, 18);
     for (const o of this.obs) {
       if (Math.round(o.lane) === this.playerLane && Math.abs(o.y - this.playerY) < 120) {
         o.y -= 36;
+        // 5. Traffic reacts to horn — accelerate away
+        o.speed = (o.speed || 1) * 1.15;
       }
+    }
+  }
+
+  // ——— 1. ROAD NETWORK ———
+  updateRoadNetwork() {
+    if (!this.roadSegment) this.roadSegment = nextRoadSegment('straight', this.level || 1);
+    const need = this.roadSegment.choice ? 2.2 : 1.6 + Math.random() * 0.8;
+    if (this.segmentDist < need) return;
+
+    if (this.roadSegment.choice && !this.pendingJunction) {
+      this.pendingJunction = true;
+      this.state = STATE.EVENT;
+      this.throttle = 0.2;
+      const distA = pickDestination();
+      const distB = pickDestination();
+      this.ui.showEvent(
+        '🛤️ ' + (this.roadSegment.name || 'Junction'),
+        'Choose route · current district: ' + (this.roadSegment.district || 'Kano'),
+        [
+          {
+            label: '← LEFT · ' + distA,
+            action: () => this.resolveJunction('left', distA)
+          },
+          {
+            label: 'STRAIGHT · keep going',
+            action: () => this.resolveJunction('straight', this.roadSegment.district)
+          },
+          {
+            label: 'RIGHT → · ' + distB,
+            action: () => this.resolveJunction('right', distB)
+          }
+        ]
+      );
+      return;
+    }
+
+    if (!this.pendingJunction) {
+      this.advanceSegment();
+    }
+  }
+
+  resolveJunction(choice, district) {
+    this.pendingJunction = false;
+    this.segmentDist = 0;
+    this.roadSegment = nextRoadSegment(choice === 'straight' ? 'straight' : (choice === 'left' ? 'curve_l' : 'curve_r'), this.level || 1);
+    this.roadSegment.district = district || this.roadSegment.district;
+    if (district && this.visitedDistricts.indexOf(district) < 0) {
+      this.visitedDistricts.push(district);
+      this.score += 80;
+      this.ui.showMissionToast('📍 Entered ' + district);
+    }
+    this.state = STATE.PLAY;
+    this.ui.hideEvent?.();
+    this.ui.showPlaying?.();
+    this.ui.setRouteLabel?.(this.roadSegment.name + ' · ' + this.roadSegment.district);
+  }
+
+  advanceSegment() {
+    const prev = this.roadSegment?.id || 'straight';
+    this.roadSegment = nextRoadSegment(prev, this.level || 1);
+    this.segmentDist = 0;
+    const d = this.roadSegment.district;
+    if (d && this.visitedDistricts.indexOf(d) < 0) {
+      this.visitedDistricts.push(d);
+      this.score += 50;
+    }
+    this.ui.setRouteLabel?.(this.roadSegment.name + ' · ' + d);
+    if (this.roadSegment.id === 'market') {
+      this.zoneType = 'market';
+      this.parkOnly = true;
+    } else if (this.roadSegment.id === 'junction' || this.roadSegment.id === 'roundabout') {
+      this.zoneType = 'junction';
+      this.parkOnly = false;
+    } else {
+      this.zoneType = 'road';
+      this.parkOnly = false;
+    }
+  }
+
+  // ——— 10. WORLD EVENTS ———
+  updateWorldEvents() {
+    if (this.worldEventTimer > 0) {
+      this.worldEventTimer--;
+      if (this.worldEventTimer <= 0) {
+        this.worldEvent = null;
+        this.weatherGrip = 1;
+        this.ui.showMissionToast('Event cleared');
+      }
+      return;
+    }
+    const band = getLevelBand(this.level || 1);
+    if (this.frame % 700 === 0 && this.dist > 1.5 && Math.random() < 0.28 * (band.event || 1)) {
+      const ev = WORLD_EVENTS[Math.floor(Math.random() * WORLD_EVENTS.length)];
+      this.worldEvent = ev;
+      this.worldEventTimer = ev.duration;
+      if (ev.grip) this.weatherGrip = ev.grip;
+      this.ui.showMissionToast(ev.msg);
+      try { Audio.speak(ev.msg.replace(/[^\w\s.,'-]/g, ''), { rate: 0.95 }); } catch (e) {}
+    }
+  }
+
+  // ——— 3. MISSIONS ———
+  tickRunMissions() {
+    if (!this.runMissions || !this.runMissions.length) return;
+    const stats = {
+      totalPax: this.totalPax,
+      score: this.score,
+      dist: this.dist,
+      districts: this.visitedDistricts.length,
+      karotaFines: this.karotaFines,
+      dropCount: this.dropCount
+    };
+    for (const m of this.runMissions) {
+      if (m.done) continue;
+      const val = stats[m.key] ?? 0;
+      if (m.invert) {
+        // success if still 0 at end — checked on over; during run just track
+        m.progress = val;
+      } else {
+        m.progress = val;
+        if (val >= m.n) {
+          m.done = true;
+          this.score += m.reward;
+          this.ui.showMissionToast('✅ Mission: ' + m.text + ' +₦' + m.reward);
+          Audio.success();
+        }
+      }
+    }
+    // show first incomplete as active
+    const next = this.runMissions.find((m) => !m.done);
+    if (next) {
+      this.activeMission = { text: next.text + ' (' + Math.floor(next.progress) + '/' + next.n + ')', progress: next.progress };
+      this.ui.setMission?.(this.activeMission.text);
+    }
+  }
+
+  // ——— 4. COLLISION TIERS ———
+  applyCollisionImpact() {
+    const tier = collisionTier(this.speed);
+    this.triggerShake(tier.shake, Math.min(12, tier.shake / 2));
+    this.applyDamage('body', tier.dmg * 0.6);
+    this.applyDamage('engine', tier.dmg * 0.25);
+    if (tier.tier === 'high' || tier.tier === 'critical') {
+      this.applyDamage('tyres', tier.dmg * 0.2);
+    }
+    this.speed *= tier.speedMul;
+    this.steerPenalty = tier.steerPenalty;
+    this.ui.showMissionToast(tier.msg);
+    Audio.crash();
+    if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
+    if (tier.tier === 'critical' && this.condition < 20) {
+      this.onCrash();
     }
   }
 
@@ -543,13 +799,16 @@ export class Game {
     }
     this.paxOnBoard += seats;
     this.totalPax += seats;
-    const fare = p.agreedFare || (p.vip ? 350 : p.aishat ? 550 : 120);
+    const mult = p.fareMult || (p.vip ? 2.2 : 1);
+    const base = p.agreedFare || (p.aishat ? 550 : 120);
+    const fare = Math.floor(base * mult);
     this.onboard.push({
       dest: p.dest || this.randomDest(),
       seats,
       fare,
       size: p.size || 'normal',
-      name: p.aishat ? 'Aishat' : p.vip ? 'VIP' : 'Passenger'
+      paxClass: p.paxClass || 'worker',
+      name: p.aishat ? 'Aishat' : (p.paxClassName || (p.vip ? 'VIP' : 'Passenger'))
     });
     let pick = fare;
     if (p.aishat && this.getBonuses().aishatBonus) pick += this.getBonuses().aishatBonus;
@@ -562,7 +821,10 @@ export class Game {
     if (p.aishat) this.ui.showMissionToast('Aishat + Hibba → ' + (p.dest || 'town'));
     else if (p.size === 'big' || p.size === 'fat' || p.size === 'tall')
       this.ui.showMissionToast('Tight fit (' + p.size + ') → ' + (p.dest || '?') + ' · ₦' + fare);
-    else this.ui.showMissionToast((p.vip ? 'VIP' : 'Passenger') + ' → ' + (p.dest || '?') + ' · ₦' + fare);
+    else {
+      const cls = p.paxClassName || (p.vip ? 'VIP' : 'Passenger');
+      this.ui.showMissionToast(cls + ' → ' + (p.dest || '?') + ' · ₦' + fare);
+    }
     return true;
   }
 
@@ -818,7 +1080,7 @@ export class Game {
         Audio.startEngine();
         this.ui.showMissionToast('Starting engine…');
       }
-      if (this.introT >= 170) this.finishIntro();
+      if (this.introT >= 90) this.finishIntro();
       this.targetX = this.laneX(this.playerLane);
       this.playerX += (this.targetX - this.playerX) * 0.2;
       this.playerY = this.canvas.clientHeight - 195;
@@ -842,36 +1104,34 @@ export class Game {
     const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
     const bonuses = this.getBonuses();
 
-    // Realistic keke dynamics: slow accel, strong engine braking, load penalty
+    // Forward motion: always crawl unless braking (endless-runner feel + gas boost)
     const loadFactor = 1 - Math.min(0.22, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.22);
-    const dmgFactor = 1 - Math.min(0.45, (100 - (this.condition || 100)) / 100 * 0.5);
+    const dmgFactor = 1 - Math.min(0.4, (100 - (this.condition || 100)) / 100 * 0.45);
     const tyreGrip = 1 - Math.min(0.25, (this.damageTyres || 0) / 100 * 0.25);
-    const top = (5.8 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.2) * loadFactor * dmgFactor;
-    let targetSpeed = this.throttle * top;
+    const top = (7.2 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.5) * loadFactor * dmgFactor;
+    // Base cruise so the road always moves; GAS raises speed, BRAKE stops
+    const baseCruise = this.braking ? 0 : 3.2;
+    let targetSpeed = baseCruise + Math.max(0.35, this.throttle) * (top - baseCruise);
     if (this.braking) targetSpeed = 0;
-    if (this.trafficJamTimer > 0) targetSpeed *= 0.45;
-    if (this.parkOnly) targetSpeed = Math.min(targetSpeed, 3.2); // forced slow in junction/market
-    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) targetSpeed += 0.25;
-    // Accel: heavy at low speed, weaker near top (like small engine)
-    const accel = (0.045 + this.throttle * 0.09) * loadFactor * this.weatherGrip * dmgFactor * (1 - (this.damageEngine || 0) / 250);
+    if (this.trafficJamTimer > 0) targetSpeed *= 0.5;
+    if (this.parkOnly) targetSpeed = Math.min(targetSpeed, 3.8);
+    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) targetSpeed += 0.3;
+    const accel = (0.08 + this.throttle * 0.14) * loadFactor * this.weatherGrip * dmgFactor * (1 - (this.damageEngine || 0) / 280);
     if (this.speed < targetSpeed) this.speed += accel;
-    else this.speed += (targetSpeed - this.speed) * (0.08 + (1 - this.throttle) * 0.06);
-    // Brakes
-    if (this.braking) this.speed *= 0.82 * this.weatherGrip * tyreGrip;
-    // Coasting drag
-    if (this.throttle < 0.15 && !this.braking) this.speed *= 0.985;
+    else this.speed += (targetSpeed - this.speed) * 0.14;
+    if (this.braking) this.speed *= 0.78 * this.weatherGrip * tyreGrip;
     // Fuel
     if (this.speed > 0.25) {
-      this.fuel = Math.max(0, this.fuel - 0.01 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
+      this.fuel = Math.max(0, this.fuel - 0.008 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
     }
     if (this.fuel <= 0) {
-      this.speed *= 0.9;
+      this.speed = Math.min(this.speed, 2.2);
       if (this.frame % 70 === 0) this.ui.showMissionToast('Out of fuel — limp mode');
     } else if (this.fuel < 18 && this.frame % 100 === 0) {
       this.ui.showMissionToast('Low fuel — find petrol');
       Audio.voiceLowFuel();
     }
-    this.speed = Math.max(0, Math.min(this.speed, 9.5));
+    this.speed = Math.max(0, Math.min(this.speed, 11));
 
     // Condition warnings
     if (this.condition < 25 && this.frame % 120 === 0) {
@@ -879,45 +1139,74 @@ export class Game {
     } else if (this.condition < 50 && this.frame % 200 === 0) {
       this.ui.showMissionToast('Keke needs maintenance');
     }
-    // Engine sputter when very damaged
     if (this.damageEngine > 60 && this.throttle > 0.5 && Math.random() < 0.02) {
-      this.speed *= 0.7;
+      this.speed *= 0.75;
       this.ui.showMissionToast('Engine struggling');
       Audio.brake();
     }
 
-    // Idle at standstill — real keke waits for passengers
     if (this.speed < 0.35) {
       this.stoppedFrames = (this.stoppedFrames || 0) + 1;
       if (this.stoppedFrames === 90) this.ui.showMissionToast('Waiting for passengers…');
     } else {
       this.stoppedFrames = 0;
-    this.condition = 100; // overall vehicle health 0-100
-    this.damageBody = 0;
-    this.damageEngine = 0;
-    this.damageTyres = 0;
     }
     if (this.pickupCooldown > 0) this.pickupCooldown--;
 
-    this.roadOff = (this.roadOff + this.speed * 2) % 58;
-    this.dist += this.speed * 0.0055;
-    this.score += Math.floor(this.speed * 0.06 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
+    // Stronger scroll so movement is clearly visible
+    this.roadOff = (this.roadOff + this.speed * 3.2) % 58;
+    this.dist += this.speed * 0.006;
+    this.segmentDist += this.speed * 0.006;
+    this.score += Math.floor(this.speed * 0.08 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
     Audio.updateEngine(this.speed);
+    if (this.combo > this.bestCombo) this.bestCombo = this.combo;
 
-    // Sync weather grip from renderer weather if available
+    // —— 1. ROAD NETWORK: advance segment / offer junction choice ——
+    this.updateRoadNetwork();
+
+    // —— 10. WORLD EVENTS ——
+    this.updateWorldEvents();
+
+    // —— 6. RADIO dynamic content ——
+    if (this.frame > 0 && this.frame % 850 === 0) {
+      const line = radioAnnouncement({
+        district: this.roadSegment?.district,
+        roadType: this.roadSegment?.id,
+        weather: this.renderer3d?.weather,
+        karotaSoon: this.karotaTimer <= 0 && Math.random() < 0.4,
+        mission: this.activeMission?.text,
+        event: this.worldEvent?.msg
+      });
+      try { Audio.speak(line, { rate: 0.92, volume: 0.7 }); } catch (e) {}
+      this.ui.showMissionToast('📻 ' + line);
+    }
+
+    // —— 3. Mission progress ——
+    this.tickRunMissions();
+
+    // Level band label
+    const band = getLevelBand(this.level || 1);
+    if (this.frame % 120 === 0) this.ui.setLevel?.(this.level + ' · ' + band.area);
+
+    // Steer penalty decay
+    if (this.steerPenalty > 0) this.steerPenalty--;
+
+    // Event modifiers on speed
+    if (this.worldEvent?.speedCap) {
+      this.speed = Math.min(this.speed, this.worldEvent.speedCap);
+    }
+    if (this.roadSegment?.slow) {
+      this.speed = Math.min(this.speed, 4.2);
+    }
+    if (this.worldEvent?.fuelDrain && this.speed > 0.25) {
+      this.fuel = Math.max(0, this.fuel - 0.006 * this.worldEvent.fuelDrain);
+    }
+
+    // Weather grip
     const w = this.renderer3d?.weather || 'clear';
     if (w === 'rain') this.weatherGrip = 0.88;
     else if (w === 'harmattan') this.weatherGrip = 0.94;
     else this.weatherGrip = 1;
-    this.heatComplaints = 0;
-    this.lastHonkFrame = 0;
-    this.lifeTipsShown = 0;
-    this.pickupCooldown = 0;
-    this.stoppedFrames = 0;
-    this.condition = 100; // overall vehicle health 0-100
-    this.damageBody = 0;
-    this.damageEngine = 0;
-    this.damageTyres = 0;
 
     // Level from distance
     const newLevel = 1 + Math.floor(this.dist / 2.5);
@@ -925,7 +1214,7 @@ export class Game {
       this.level = newLevel;
       this.ui.showMissionToast('📶 Level ' + this.level);
       Audio.success();
-      this.unlockKekeByProgress();
+      try { this.unlockKekeByProgress(); } catch (e) {}
     }
     this.ui.setLevel?.(this.level);
     this.ui.setOnboardDest?.(this.onboard);
@@ -938,8 +1227,10 @@ export class Game {
       Audio.success();
     }
 
-    // KAROTA — common at junctions, markets, crowded roads (keke regulators)
-    if (this.frame % 380 === 0 && this.dist > 0.8 && this.karotaTimer <= 0 && Math.random() < 0.55) {
+    // KAROTA — more likely on junction/market segments; fines + wanted
+    const bandK = getLevelBand(this.level || 1);
+    const karotaChance = 0.4 * (bandK.karota || 1) * (this.roadSegment?.id === 'market' || this.roadSegment?.id === 'junction' ? 1.5 : 1);
+    if (this.frame % 360 === 0 && this.dist > 0.8 && this.karotaTimer <= 0 && Math.random() < karotaChance) {
       this.startKarotaCheckpoint();
       return;
     }
@@ -1035,18 +1326,23 @@ export class Game {
       }
     }
 
-    // Waiting passengers (must slow to pick)
+    // Waiting passengers — classes + destinations (economy system)
     if (this.frame % 100 === 0) {
       const roll = Math.random();
       const sizes = ['normal', 'normal', 'normal', 'tall', 'fat', 'big'];
       const isPark = Math.random() < 0.45 || this.parkOnly;
+      const paxClass = pickPaxClass(this.level || 1);
+      const dest = pickDestination();
       this.paxZones.push({
         lane: Math.floor(Math.random() * 3),
         y: -90,
         taken: false,
         aishat: roll < 0.09,
-        vip: roll >= 0.09 && roll < 0.2,
-        dest: this.randomDest(),
+        vip: paxClass.id === 'vip' || (roll >= 0.09 && roll < 0.15),
+        paxClass: paxClass.id,
+        paxClassName: paxClass.name,
+        fareMult: paxClass.fareMult,
+        dest,
         seats: roll < 0.09 ? 2 : 1,
         size: sizes[Math.floor(Math.random() * sizes.length)],
         flagging: true,
@@ -1063,7 +1359,7 @@ export class Game {
     const mv = this.speed * 1.1;
     const h = this.canvas.clientHeight;
 
-    // Traffic AI
+    // Traffic AI — stop / queue / overtake / merge (structure, not graphics)
     for (const o of this.obs) {
       let aheadDist = 9999;
       for (const other of this.obs) {
@@ -1075,9 +1371,24 @@ export class Game {
         aheadDist = Math.min(aheadDist, this.playerY - o.y);
       }
       let move = mv + (o.speedOff || 0);
-      if (aheadDist < 90) move *= 0.22;
+      // Queue / stop
+      if (aheadDist < 70) move *= 0.05;
+      else if (aheadDist < 90) move *= 0.22;
       else if (aheadDist < 130) move *= 0.5;
+      // Junction / market slowdown
+      if (this.roadSegment?.id === 'junction' || this.roadSegment?.id === 'roundabout') move *= 0.7;
+      if (this.roadSegment?.slow) move *= 0.65;
+      if (this.worldEvent?.id === 'convoy') move *= 0.4;
       o.y += move;
+      // Overtake / merge when blocked
+      if (o.laneCooldown > 0) o.laneCooldown--;
+      else if (aheadDist < 100 && Math.random() < 0.04) {
+        const alt = Math.round(o.lane) === 0 ? 1 : Math.round(o.lane) === 2 ? 1 : (Math.random() < 0.5 ? 0 : 2);
+        if (this.laneClear(alt, o.y - 40, 100)) {
+          o.lane = alt;
+          o.laneCooldown = 60 + Math.floor(Math.random() * 40);
+        }
+      }
       if (o.laneCooldown > 0) o.laneCooldown--;
       if (o.laneCooldown <= 0 && aheadDist < 120 && Math.random() < 0.04) {
         for (const dir of Math.random() < 0.5 ? [-1, 1] : [1, -1]) {
@@ -1133,22 +1444,15 @@ export class Game {
             this.inv = 40;
             continue;
           }
-          // Low-speed scrape survives; high-speed = crash
-          if (this.speed < 2.2) {
-            this.speed *= 0.5;
-            this.score = Math.max(0, this.score - 30);
-            this.applyDamage('body', 8 + Math.random() * 6);
-            if (Math.random() < 0.12) this.applyDamage('tyres', 10);
-            if (Math.random() < 0.06) this.triggerPuncture('scrape hit tyre');
-            this.triggerShake(6, 3);
-            Audio.brake();
-            this.inv = 25;
-            this.ui.showMissionToast('Scrape — body damage');
-            o.y += 40;
-            continue;
+          // Tiered collision: low / medium / high / critical
+          this.applyCollisionImpact();
+          o.y += 50;
+          this.inv = this.speed < 2.5 ? 30 : 55;
+          if (this.condition < 15 || (this.speed > 7 && this.condition < 35)) {
+            this.gameOver();
+            return;
           }
-          this.gameOver();
-          return;
+          continue;
         }
         if (
           this.nearMissCooldown <= 0 &&

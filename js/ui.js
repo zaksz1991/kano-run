@@ -26,6 +26,7 @@ export class UI {
     this.bind();
     this.renderRoutes();
     this.renderDrivers();
+    this.renderQuickDrivers();
     document.getElementById('hs').textContent = game.high;
     this.syncSettingsButtons();
     this.updateDailyUI(game);
@@ -43,7 +44,24 @@ export class UI {
     const got = document.getElementById('help-gotit');
     if (got) got.onclick = () => this.hideHelp(true);
     document.getElementById('retry-btn').onclick = () => this.game.start();
-    document.getElementById('home-btn').onclick = () => this.showStart();
+    document.getElementById('home-btn').onclick = () => this.goMainMenu();
+    // Pause → Main Menu
+    const menuBtn = document.getElementById('menu-btn');
+    if (menuBtn) menuBtn.onclick = () => this.goMainMenu();
+    // Long-press pause or second control: menu from HUD
+    const pauseBtn = document.getElementById('pause-btn');
+    if (pauseBtn) {
+      let holdT = null;
+      pauseBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+      pauseBtn.addEventListener('touchstart', () => {
+        holdT = setTimeout(() => this.goMainMenu(), 650);
+      }, { passive: true });
+      pauseBtn.addEventListener('touchend', () => clearTimeout(holdT));
+      pauseBtn.addEventListener('mousedown', () => {
+        holdT = setTimeout(() => this.goMainMenu(), 650);
+      });
+      pauseBtn.addEventListener('mouseup', () => clearTimeout(holdT));
+    }
     const shareBtn = document.getElementById('share-btn');
     if (shareBtn) shareBtn.onclick = () => this.shareRun(this.game);
     document.getElementById('route-btn').onclick = () => {
@@ -96,7 +114,8 @@ export class UI {
       el.addEventListener('mouseleave', u);
       el.addEventListener('touchcancel', u);
     };
-    holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.25));
+    // Release gas → cruise (not full stop). Only BRAKE stops.
+    holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.45));
     holdCtrl(brake, () => this.game.setBrake(true), () => this.game.setBrake(false));
     if (pauseBtn) pauseBtn.onclick = () => this.game.togglePause();
     const camBtn = document.getElementById('cam-btn');
@@ -124,36 +143,7 @@ export class UI {
     const claimBtn = document.getElementById('claim-daily');
     if (claimBtn) claimBtn.onclick = () => this.game.claimDaily();
 
-    const left = document.getElementById('left-btn');
-    const right = document.getElementById('right-btn');
-    const horn = document.getElementById('horn-btn');
-    const hold = (el, fn) => {
-      let t;
-      const start = (e) => { e.preventDefault(); fn(); t = setInterval(fn, 140); };
-      const end = () => clearInterval(t);
-      el.addEventListener('touchstart', start, { passive: false });
-      el.addEventListener('mousedown', start);
-      el.addEventListener('touchend', end);
-      el.addEventListener('mouseup', end);
-      el.addEventListener('mouseleave', end);
-    };
-    hold(left, () => this.game.changeLane(-1));
-    hold(right, () => this.game.changeLane(1));
-    horn.addEventListener('click', () => this.game.horn());
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft' || e.key === 'a') this.game.changeLane(-1);
-      if (e.key === 'ArrowRight' || e.key === 'd') this.game.changeLane(1);
-      if (e.key === ' ' || e.key === 'h') this.game.horn();
-      if (e.key === 'r') this.game.cycleRadio();
-      if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(1);
-      if (e.key === 'ArrowDown' || e.key === 's') this.game.setBrake(true);
-      if (e.key === 'p' || e.key === 'Escape') this.game.togglePause();
-      if (e.key === 'c') this.game.toggleCabin();
-    });
-    window.addEventListener('keyup', (e) => {
-      if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(0.25);
-      if (e.key === 'ArrowDown' || e.key === 's') this.game.setBrake(false);
-    });
+    // Driving controls (steer / gas / swipe / keyboard) live in Controls module.
   }
 
   renderRoutes() {
@@ -442,6 +432,32 @@ export class UI {
     }
   }
 
+  renderQuickDrivers() {
+    const box = document.getElementById('quick-drivers');
+    if (!box) return;
+    box.innerHTML = '';
+    Object.values(CONFIG.DRIVERS || {}).forEach((d) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const sel = this.game.selectedDriver === d.id;
+      btn.style.cssText = 'padding:8px 12px;border-radius:20px;border:1px solid ' +
+        (sel ? '#f5c542' : 'rgba(255,255,255,0.12)') +
+        ';background:' + (sel ? 'rgba(245,197,66,0.2)' : 'rgba(255,255,255,0.05)') +
+        ';color:' + (sel ? '#f5c542' : '#e2e8f0') +
+        ';font-size:0.75rem;font-weight:600;cursor:pointer;font-family:inherit;';
+      btn.textContent = d.name;
+      btn.onclick = () => {
+        this.game.selectedDriver = d.id;
+        Storage.setDriver(d.id);
+        this.renderQuickDrivers();
+        this.renderDrivers();
+        this.updateSelectionStatus();
+        this.showMissionToast('Driver: ' + d.name);
+      };
+      box.appendChild(btn);
+    });
+  }
+
   updateSelectionStatus() {
     const el = document.getElementById('selection-status');
     const roadBtn = document.getElementById('road-btn');
@@ -449,8 +465,9 @@ export class UI {
     const route = CONFIG.ROUTES[this.game.selectedRoute];
     const driver = CONFIG.DRIVERS[this.game.selectedDriver] || CONFIG.DRIVERS.ruffneck;
     const road = (CONFIG.ROAD_MODES && CONFIG.ROAD_MODES[this.game.selectedRoadMode]) || { name: 'Two-way' };
+    const nRoutes = Object.keys(CONFIG.ROUTES || {}).length;
     el.innerHTML = '<b style="color:#f5c542">' + driver.name + '</b> · ' +
-      (route ? route.name : 'Route') + '<br>' + road.name + ' · Cap 5 (2 front + 3 back)';
+      (route ? route.name : 'Route') + '<br>' + road.name + ' · ' + nRoutes + ' routes · Cap 5';
     if (roadBtn) roadBtn.textContent = 'ROAD: ' + (road.name || 'TWO-WAY').toUpperCase();
   }
 
@@ -546,6 +563,67 @@ export class UI {
   setPauseUI(on) {
     const btn = document.getElementById('pause-btn');
     if (btn) btn.textContent = on ? '▶' : '❚❚';
+    // Show menu strip while paused
+    let bar = document.getElementById('pause-menu-bar');
+    if (on) {
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'pause-menu-bar';
+        bar.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:500;display:flex;flex-direction:column;gap:10px;align-items:center;background:rgba(10,15,28,.92);padding:20px 28px;border-radius:16px;border:1px solid rgba(245,197,66,.35);';
+        bar.innerHTML = '<div style="color:#f5c542;font-weight:700;margin-bottom:4px;">Paused</div>';
+        const resume = document.createElement('button');
+        resume.className = 'btn';
+        resume.type = 'button';
+        resume.textContent = 'RESUME';
+        resume.onclick = () => this.game.togglePause();
+        const menu = document.createElement('button');
+        menu.className = 'btn secondary';
+        menu.type = 'button';
+        menu.id = 'menu-btn';
+        menu.textContent = 'MAIN MENU';
+        menu.onclick = () => this.goMainMenu();
+        bar.appendChild(resume);
+        bar.appendChild(menu);
+        document.body.appendChild(bar);
+      }
+      bar.style.display = 'flex';
+    } else if (bar) {
+      bar.style.display = 'none';
+    }
+  }
+
+  /** Return to main menu from pause / game over */
+  goMainMenu() {
+    try {
+      this.game.state = STATE.START;
+      this.game.speed = 0;
+      this.game.throttle = 0;
+      try { Audio.stopEngine(); Audio.stopRadioBed(); } catch (e) {}
+      this.hideEvent();
+      const bar = document.getElementById('pause-menu-bar');
+      if (bar) bar.style.display = 'none';
+      this.showStart();
+      this.showMissionToast('Main menu');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  showStart() {
+    if (this.startScreen) this.startScreen.style.display = 'flex';
+    if (this.routeScreen) this.routeScreen.style.display = 'none';
+    if (this.garageScreen) this.garageScreen.style.display = 'none';
+    if (this.overScreen) this.overScreen.style.display = 'none';
+    this.hideEvent();
+    this.updateSelectionStatus();
+  }
+
+  showPlaying() {
+    if (this.startScreen) this.startScreen.style.display = 'none';
+    if (this.routeScreen) this.routeScreen.style.display = 'none';
+    if (this.garageScreen) this.garageScreen.style.display = 'none';
+    if (this.overScreen) this.overScreen.style.display = 'none';
+    this.hideEvent();
   }
 
   hideEvent() {
