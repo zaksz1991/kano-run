@@ -23,7 +23,7 @@ export const Audio = {
     if (this.ctx?.state === 'suspended') this.ctx.resume();
   },
 
-  /** Prefer a local/African English voice if the browser has one */
+  /** Prefer Nigerian / African English; fall back to any English */
   pickVoice() {
     if (!window.speechSynthesis) return null;
     const voices = window.speechSynthesis.getVoices() || [];
@@ -40,13 +40,30 @@ export const Audio = {
       const u = new SpeechSynthesisUtterance(String(text));
       u.rate = opts.rate ?? 0.95;
       u.pitch = opts.pitch ?? 1;
-      u.volume = opts.volume ?? 0.85;
+      u.volume = opts.volume ?? 0.9;
       const v = this.pickVoice();
       if (v) u.voice = v;
       window.speechSynthesis.speak(u);
     } catch (e) {
       /* ignore */
     }
+  },
+
+  /** Short Hausa / Kano street cues (spoken by browser TTS) */
+  speakHausa(key) {
+    const lines = {
+      go: 'Mu tafi. Let\'s go.',
+      stop: 'Tsaya. Stop.',
+      fare: 'Nawa ne. How much is the fare?',
+      karota: 'KAROTA check. Akwai parking.',
+      passenger: 'Ina so in hau. I want to board.',
+      drop: 'Akwai. Drop here.',
+      thank: 'Na gode. Thank you.',
+      radio: 'Radio Kano. Kai.',
+      horn: 'Kai! Move!',
+      police: 'Yan sanda. Police.'
+    };
+    this.speak(lines[key] || key, { rate: 0.9, pitch: 1.05 });
   },
 
   beep(freq, dur, type = 'square', vol = 0.04) {
@@ -202,37 +219,87 @@ export const Audio = {
   startRadioBed() {
     this.ensure();
     if (!this.ctx || this.muted || this.radioOsc) return;
+    // Two-tone "station" bed so radio is clearly audible
     this.radioOsc = this.ctx.createOscillator();
+    this.radioOsc2 = this.ctx.createOscillator();
     this.radioGain = this.ctx.createGain();
     this.radioOsc.type = 'triangle';
-    this.radioOsc.frequency.value = 220 + Math.random() * 80;
-    this.radioGain.gain.value = 0.006;
+    this.radioOsc2.type = 'sine';
+    this.radioOsc.frequency.value = 196 + Math.random() * 40;
+    this.radioOsc2.frequency.value = 294 + Math.random() * 50;
+    this.radioGain.gain.value = 0.028;
     this.radioOsc.connect(this.radioGain);
+    this.radioOsc2.connect(this.radioGain);
     this.radioGain.connect(this.ctx.destination);
     this.radioOsc.start();
+    this.radioOsc2.start();
   },
 
   stopRadioBed() {
     try {
       this.radioOsc?.stop();
       this.radioOsc?.disconnect();
+      this.radioOsc2?.stop();
+      this.radioOsc2?.disconnect();
     } catch (e) {}
     this.radioOsc = null;
+    this.radioOsc2 = null;
     this.radioGain = null;
   },
 
-  radioTune() {
+  /** Map station names → public/audio/*.mp3 */
+  stationFile(name) {
+    const n = String(name || '').toLowerCase();
+    if (n.includes('freedom')) return '/audio/freedom.mp3';
+    if (n.includes('arewa')) return '/audio/arewa.mp3';
+    if (n.includes('rahama')) return '/audio/rahama.mp3';
+    if (n.includes('cool')) return '/audio/cool.mp3';
+    if (n.includes('wazobia')) return '/audio/wazobia.mp3';
+    if (n.includes('ruffneck')) return '/audio/ruffneck.mp3';
+    if (n.includes('kano') || n.includes('radio')) return '/audio/radio-kano.mp3';
+    return '/audio/radio-kano.mp3';
+  },
+
+  playSample(url, vol = 0.5, loop = false) {
+    if (this.muted) return null;
+    try {
+      const a = new window.Audio(url);
+      a.volume = vol;
+      a.loop = loop;
+      a.play().catch(() => {});
+      return a;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  stopSample(a) {
+    try {
+      if (a) {
+        a.pause();
+        a.currentTime = 0;
+      }
+    } catch (e) {}
+  },
+
+  radioTune(stationName) {
     this.stopRadioBed();
-    this.beep(600, 0.05, 'sine', 0.03);
-    this.beep(800, 0.05, 'sine', 0.03);
-    setTimeout(() => this.startRadioBed(), 120);
-    this.speak('Radio', { rate: 1.1, volume: 0.5 });
+    this.stopSample(this._radioEl);
+    this.beep(600, 0.06, 'sine', 0.04);
+    this.beep(800, 0.06, 'sine', 0.04);
+    const name = stationName || 'Radio Kano';
+    const file = this.stationFile(name);
+    this._radioEl = this.playSample(file, 0.35, true);
+    if (!this._radioEl) setTimeout(() => this.startRadioBed(), 100);
+    this.speak(name + '. Kai.', { rate: 0.95, volume: 0.7 });
   },
 
   horn() {
     this.ensure();
-    if (!this.ctx || this.muted) return;
-    // Dual-tone vehicle horn
+    if (this.muted) return;
+    // Prefer uploaded horn.mp3
+    if (this.playSample('/audio/horn.mp3', 0.7, false)) return;
+    if (!this.ctx) return;
     const t = this.ctx.currentTime;
     for (const freq of [380, 480]) {
       const o = this.ctx.createOscillator();

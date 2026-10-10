@@ -1,5 +1,7 @@
-// Phase 2 — vehicle quality + clearer player keke
+// Kano Run 3D renderer + animation system + ModelManager
 import * as THREE from '../vendor/three.module.js';
+import { AnimSystem } from './animation.js';
+import { ModelManager } from './ModelManager.js';
 
 const LANE_X = [-2.4, 0, 2.4];
 const ROAD_LEN = 120;
@@ -15,10 +17,117 @@ export class Renderer3D {
     this.coinPool = [];
     this.introPhase = 3;
     this.cabinCam = false;
-    this.cameraMode = 'chase'; // chase | driver | passenger | road
-    this.camPos = new THREE.Vector3(0, 6, -3.5);
-    this.camLook = new THREE.Vector3(0, 0.9, 16);
-    this.init();
+    this.cameraMode = 'chase';
+    this.camPos = null;
+    this.camLook = null;
+    this.anim = new AnimSystem();
+    this.models = new ModelManager({ baseUrl: '/' });
+    try {
+      this.init();
+      // GLB Integration Pass — load all available models then swap placeholders
+      const KEYS = [
+        'keke', 'car', 'motorcycle', 'passenger', 'pedestrian', 'karota',
+        'police', 'taxi', 'bus', 'truck', 'robber', 'market', 'bustop', 'bustation', 'bicycle'
+      ];
+      this.models.preload(KEYS).then(() => {
+        this._integrateAllGlbs();
+        const rep = this.models.report();
+        console.log('[KanoRun] GLB Integration Report', rep);
+        window.KanoRunAssets = rep;
+      });
+    } catch (err) {
+      console.error('Renderer3D init failed', err);
+      this.ready = false;
+      throw err;
+    }
+  }
+
+  /** Replace player + vehicle pools with GLB instances (no BoxGeometry if load OK) */
+  _integrateAllGlbs() {
+    if (!this.scene || !this.models) return;
+
+    // 1. Player keke
+    if (this.models.has('keke') && this.player) {
+      try {
+        const next = this.models.getInstance('keke');
+        next.position.copy(this.player.position);
+        // re-attach headlights if present
+        if (this.headlightL) {
+          this.player.remove(this.headlightL);
+          this.player.remove(this.headlightR);
+          next.add(this.headlightL);
+          next.add(this.headlightR);
+          if (this.headlightL.target) next.add(this.headlightL.target);
+          if (this.headlightR.target) next.add(this.headlightR.target);
+        }
+        this.scene.remove(this.player);
+        this.player = next;
+        this.scene.add(this.player);
+        console.log('[KanoRun] Player → keke.glb');
+      } catch (e) {
+        console.warn('keke upgrade failed', e);
+      }
+    }
+
+    // 2. Traffic pools — clear procedural, refill from GLB
+    const types = ['car', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota', 'robber'];
+    const counts = { car: 6, keke: 5, taxi: 3, bus: 2, motorcycle: 3, truck: 2, police: 2, karota: 2, robber: 2 };
+
+    if (this.vehiclePool) {
+      for (const m of this.vehiclePool) {
+        this.scene.remove(m);
+      }
+    }
+    this.vehiclePool = [];
+    this.typedPools = {};
+    for (const t of types) {
+      this.typedPools[t] = [];
+      const n = counts[t] || 2;
+      for (let i = 0; i < n; i++) {
+        const mesh = this.models.getInstance(t);
+        mesh.visible = false;
+        mesh.userData.poolType = t;
+        this.scene.add(mesh);
+        this.vehiclePool.push(mesh);
+        this.typedPools[t].push(mesh);
+      }
+      const src = this.models.has(t) ? t + '.glb' : 'PLACEHOLDER';
+      console.log('[KanoRun] Pool', t, '×' + n, '←', src);
+    }
+
+    // 3. Asphalt road texture if available
+    this._applyRoadTexture();
+  }
+
+  _applyRoadTexture() {
+    if (!this.roadMesh) return;
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      '/textures/asphalt.jpg',
+      (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(2, 24);
+        tex.anisotropy = 4;
+        const mat = new THREE.MeshStandardMaterial({
+          map: tex,
+          roughness: 0.92,
+          metalness: 0.05,
+          color: 0xcccccc
+        });
+        // optional potholes overlay as second attempt
+        loader.load('/textures/potholes.jpg', (pot) => {
+          pot.wrapS = pot.wrapT = THREE.RepeatWrapping;
+          pot.repeat.set(3, 20);
+          mat.roughnessMap = pot;
+          mat.needsUpdate = true;
+        }, undefined, () => {});
+        this.roadMesh.material = mat;
+        this.roadMesh.material.needsUpdate = true;
+        console.log('[KanoRun] Road ← asphalt.jpg');
+      },
+      undefined,
+      () => console.warn('[KanoRun] asphalt.jpg not loaded — keeping procedural road')
+    );
   }
 
   init() {
@@ -27,29 +136,62 @@ export class Renderer3D {
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: true,
-      powerPreference: 'high-performance'
+      powerPreference: 'high-performance',
+      alpha: false,
+      failIfMajorPerformanceCaveat: false
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    if (!this.renderer || !this.renderer.getContext()) {
+      throw new Error('WebGL context unavailable');
+    }
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(w, h, false);
-    this.renderer.setClearColor(0x0a1020, 1);
+    this.renderer.setClearColor(0x6ec5f0, 1);
+    try {
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      if (THREE.SRGBColorSpace) this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+      if (THREE.ACESFilmicToneMapping) {
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.15;
+      }
+    } catch (e) {
+      /* older three / limited GPU */
+    }
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x0a1020, 30, 100);
+    // Stronger fog = clearer depth (near sharp, far fades)
+    this.scene.fog = new THREE.Fog(0x8ec8e8, 18, 70);
 
-    // Higher camera, look slightly down so full keke is visible
-    this.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 160);
-    this.camera.position.set(0, 6.2, -3.5);
-    this.camera.lookAt(0, 0.8, 18);
+    // Lower, closer camera = stronger 3D perspective (not top-down flat)
+    this.camera = new THREE.PerspectiveCamera(58, w / h, 0.1, 200);
+    this.camera.position.set(0, 4.2, -5.5);
+    this.camera.lookAt(0, 0.6, 22);
 
-    this.scene.add(new THREE.AmbientLight(0x9aacc8, 0.6));
-    this.sun = new THREE.DirectionalLight(0xfff1c9, 1.1);
-    this.sun.position.set(10, 20, 8);
+    // Richer lighting for volume
+    this.scene.add(new THREE.AmbientLight(0xb8c8e0, 0.45));
+    this.sun = new THREE.DirectionalLight(0xfff0d0, 1.35);
+    this.sun.position.set(12, 28, 10);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.camera.near = 2;
+    this.sun.shadow.camera.far = 90;
+    this.sun.shadow.camera.left = -18;
+    this.sun.shadow.camera.right = 18;
+    this.sun.shadow.camera.top = 40;
+    this.sun.shadow.camera.bottom = -8;
+    this.sun.shadow.bias = -0.0003;
     this.scene.add(this.sun);
-    this.hemlight = new THREE.HemisphereLight(0x87b5ff, 0x3d4a32, 0.4);
+    this.hemlight = new THREE.HemisphereLight(0x87b5ff, 0x5a4a32, 0.55);
     this.scene.add(this.hemlight);
+    // Fill light from front for vehicle sides
+    const fill = new THREE.DirectionalLight(0xa0c4ff, 0.25);
+    fill.position.set(-6, 8, -4);
+    this.scene.add(fill);
 
+    this.buildSky();
     this.buildRoad();
     this.buildCityscape();
+    this.buildHorizon();
 
     this.player = this.makeKeke(0xfbbf24, true);
     this.player.position.set(0, 0, PLAYER_Z);
@@ -205,6 +347,54 @@ export class Renderer3D {
     });
   }
 
+  /** Sky dome — gradient sphere for real 3D sky */
+  buildSky() {
+    const geo = new THREE.SphereGeometry(90, 24, 16);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x6ec5f0,
+      side: THREE.BackSide,
+      depthWrite: false
+    });
+    this.sky = new THREE.Mesh(geo, mat);
+    this.scene.add(this.sky);
+  }
+
+  /** Distant hills + ground plane for depth layers */
+  buildHorizon() {
+    this.horizon = new THREE.Group();
+    // Far ground
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(80, 160),
+      this.mat(0x3d5a3a, { roughness: 1 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(0, -0.08, 40);
+    ground.receiveShadow = true;
+    this.horizon.add(ground);
+    // Hills left/right
+    for (let i = 0; i < 8; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const hill = new THREE.Mesh(
+        new THREE.ConeGeometry(4 + Math.random() * 3, 3 + Math.random() * 4, 6),
+        this.mat(0x4a6340, { roughness: 0.95 })
+      );
+      hill.position.set(side * (14 + (i % 4) * 3), 1.2, 30 + i * 8);
+      hill.rotation.y = Math.random();
+      this.horizon.add(hill);
+    }
+    // Distant blocky skyline
+    for (let i = 0; i < 12; i++) {
+      const h = 4 + Math.random() * 10;
+      const b = new THREE.Mesh(
+        new THREE.BoxGeometry(2.2 + Math.random(), h, 2),
+        this.mat(0x2a3548 + Math.floor(Math.random() * 0x101010), { roughness: 0.85 })
+      );
+      b.position.set((i - 6) * 3.5, h / 2, 55 + (i % 3) * 4);
+      this.horizon.add(b);
+    }
+    this.scene.add(this.horizon);
+  }
+
   buildRoad() {
     // Main asphalt with procedural texture
     const roadTex = this.makeRoadTexture();
@@ -217,6 +407,7 @@ export class Renderer3D {
     const road = new THREE.Mesh(new THREE.PlaneGeometry(9.5, ROAD_LEN), roadMat);
     road.rotation.x = -Math.PI / 2;
     road.position.set(0, 0, ROAD_LEN / 2 - 4);
+    road.receiveShadow = true;
     this.roadMesh = road;
     this.scene.add(road);
 
@@ -304,10 +495,10 @@ export class Renderer3D {
       }
     }
 
-    // A few pedestrians on shoulders
-    for (let i = 0; i < 22; i++) {
+    // More visible pedestrians on shoulders (denser)
+    for (let i = 0; i < 40; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      this.addPedestrian(side * (4.7 + (i % 3) * 0.2), i * 5.2 + 2);
+      this.addPedestrian(side * (4.5 + (i % 4) * 0.25), i * 3.8 + 1.5);
     }
 
     // Kano-style city gates / welcome arches spanning the road
@@ -573,29 +764,30 @@ export class Renderer3D {
   }
 
   addPedestrian(x, z) {
-    const shirtColors = [0x3b82f6, 0xec4899, 0x22c55e, 0xeab308, 0xa855f7, 0xf8fafc];
+    const shirtColors = [0x3b82f6, 0xec4899, 0x22c55e, 0xeab308, 0xa855f7, 0xf8fafc, 0xf97316];
     const shirt = shirtColors[Math.floor(Math.random() * shirtColors.length)];
+    const s = 1.4; // larger so people are visible from chase cam
     // body
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.5, 0.2),
+      new THREE.BoxGeometry(0.32 * s, 0.55 * s, 0.22 * s),
       this.mat(shirt, { roughness: 0.8 })
     );
-    body.position.set(x, 0.85, z);
+    body.position.set(x, 0.95 * s, z);
     this.buildings.add(body);
     // head
     const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 8, 8),
-      this.mat(0xfcd34d, { roughness: 0.7 })
+      new THREE.SphereGeometry(0.16 * s, 8, 8),
+      this.mat(0xc4a574, { roughness: 0.7 })
     );
-    head.position.set(x, 1.25, z);
+    head.position.set(x, 1.4 * s, z);
     this.buildings.add(head);
     // legs
-    for (const dx of [-0.07, 0.07]) {
+    for (const dx of [-0.1 * s, 0.1 * s]) {
       const leg = new THREE.Mesh(
-        new THREE.BoxGeometry(0.1, 0.45, 0.1),
+        new THREE.BoxGeometry(0.12 * s, 0.5 * s, 0.12 * s),
         this.mat(0x1e293b, { roughness: 0.9 })
       );
-      leg.position.set(x + dx, 0.35, z);
+      leg.position.set(x + dx, 0.4 * s, z);
       this.buildings.add(leg);
     }
   }
@@ -767,9 +959,12 @@ export class Renderer3D {
     return g;
   }
 
-  /** Police / KAROTA variant */
+  /** Police / KAROTA — KAROTA = yellow shirt + black trousers + stick */
   makeEnforcer(kind = 'police') {
-    const color = kind === 'karota' ? 0xf59e0b : 0x1e40af;
+    if (kind === 'karota') {
+      return this.makeKarotaOfficer();
+    }
+    const color = 0x1e40af;
     const g = this.makeCar(color);
     // Light bar
     const bar = new THREE.Mesh(
@@ -791,6 +986,57 @@ export class Renderer3D {
     blue.position.set(0.2, 1.05, -0.1);
     g.add(blue);
     g.userData.kind = kind;
+    return g;
+  }
+
+  /** KAROTA officer: yellow shirt, black trousers, stick — roadside figure */
+  makeKarotaOfficer() {
+    const g = new THREE.Group();
+    const skin = this.mat(0xc4a574, { roughness: 0.8 });
+    const shirt = this.mat(0xfacc15, { roughness: 0.65 }); // yellow uniform shirt
+    const pants = this.mat(0x0f172a, { roughness: 0.9 }); // black trousers
+    const stickM = this.mat(0x78350f, { roughness: 0.7 });
+    // legs
+    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.45, 0.16), pants);
+    legL.position.set(-0.1, 0.25, 0);
+    g.add(legL);
+    const legR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.45, 0.16), pants);
+    legR.position.set(0.1, 0.25, 0);
+    g.add(legR);
+    // torso yellow
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.28), shirt);
+    body.position.set(0, 0.7, 0);
+    g.add(body);
+    // head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.22), skin);
+    head.position.set(0, 1.05, 0);
+    g.add(head);
+    // beret / cap
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.08, 10), this.mat(0x1e293b));
+    cap.position.set(0, 1.18, 0);
+    g.add(cap);
+    // arms
+    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), shirt);
+    armL.position.set(-0.3, 0.7, 0);
+    g.add(armL);
+    const armR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), shirt);
+    armR.position.set(0.3, 0.7, 0.05);
+    armR.rotation.z = -0.4;
+    g.add(armR);
+    // stick in right hand
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 6), stickM);
+    stick.position.set(0.42, 0.85, 0.15);
+    stick.rotation.z = 0.35;
+    g.add(stick);
+    // small checkpoint cone next to officer
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.18, 0.45, 8),
+      this.mat(0xf97316, { roughness: 0.6 })
+    );
+    cone.position.set(0.55, 0.22, -0.15);
+    g.add(cone);
+    g.userData.kind = 'karota';
+    g.scale.set(1.35, 1.35, 1.35);
     return g;
   }
 
@@ -900,7 +1146,12 @@ export class Renderer3D {
   }
 
   laneToX(lane) {
-    return LANE_X[Math.max(0, Math.min(2, Math.round(lane)))];
+    // Float lane: 0 = left, 1 = center, 2 = right (screen space, +X = right)
+    const i = Math.max(0, Math.min(2, Number(lane) || 0));
+    const a = Math.floor(i);
+    const b = Math.min(2, a + 1);
+    const t = i - a;
+    return LANE_X[a] + (LANE_X[b] - LANE_X[a]) * t;
   }
 
   cycleCamera() {
@@ -953,7 +1204,14 @@ export class Renderer3D {
     this.renderer.setPixelRatio(low ? 1 : Math.min(window.devicePixelRatio || 1, 1.75));
     this.renderer.setSize(this.canvas.clientWidth || 390, this.canvas.clientHeight || 700, false);
     if (this.rain) this.rain.visible = !low;
-    if (this.dust && low) this.dustMat.opacity = Math.min(this.dustMat.opacity, 0.15);
+    if (this.dust && low && this.dustMat) this.dustMat.opacity = Math.min(this.dustMat.opacity, 0.15);
+  }
+
+  /** Safe weather toast — never throws if UI missing */
+  uiWeatherToast(msg) {
+    try {
+      this.game?.ui?.showMissionToast?.(msg);
+    } catch (e) {}
   }
 
   resize() {
@@ -966,11 +1224,15 @@ export class Renderer3D {
   }
 
   draw() {
-    this.render();
+    try {
+      this.render();
+    } catch (e) {
+      console.error('3D draw error', e);
+    }
   }
 
   render() {
-    if (!this.ready) return;
+    if (!this.ready || !this.renderer || !this.scene || !this.camera) return;
     const g = this.game;
     const tod = typeof g.getTimeOfDay === 'function' ? g.getTimeOfDay() : 0.2;
     const spd = g.speed || 3;
@@ -980,8 +1242,8 @@ export class Renderer3D {
       // night
       this.renderer.setClearColor(0x020617, 1);
       this.scene.fog.color.setHex(0x020617);
-      this.scene.fog.near = 22;
-      this.scene.fog.far = 75;
+      this.scene.fog.near = 12;
+      this.scene.fog.far = 55;
       this.sun.intensity = 0.18;
       this.hemlight.intensity = 0.12;
       if (this.sky) this.sky.material.color.setHex(0x020617);
@@ -999,8 +1261,8 @@ export class Renderer3D {
       // dusk
       this.renderer.setClearColor(0x7c3aed, 1);
       this.scene.fog.color.setHex(0x4c1d95);
-      this.scene.fog.near = 28;
-      this.scene.fog.far = 90;
+      this.scene.fog.near = 16;
+      this.scene.fog.far = 60;
       this.sun.intensity = 0.45;
       this.hemlight.intensity = 0.25;
       if (this.sky) this.sky.material.color.setHex(0x5b21b6);
@@ -1010,32 +1272,35 @@ export class Renderer3D {
       // afternoon warm
       this.renderer.setClearColor(0x38bdf8, 1);
       this.scene.fog.color.setHex(0x7dd3fc);
-      this.scene.fog.near = 35;
-      this.scene.fog.far = 100;
-      this.sun.intensity = 1.05;
-      this.hemlight.intensity = 0.4;
+      this.scene.fog.near = 18;
+      this.scene.fog.far = 68;
+      this.sun.intensity = 1.2;
+      this.hemlight.intensity = 0.5;
       if (this.sky) this.sky.material.color.setHex(0x38bdf8);
       if (this.headlightL) this.headlightL.intensity = 0;
       if (this.headlightR) this.headlightR.intensity = 0;
     } else {
-      // bright morning
-      this.renderer.setClearColor(0x7dd3fc, 1);
-      this.scene.fog.color.setHex(0xbae6fd);
-      this.scene.fog.near = 40;
-      this.scene.fog.far = 110;
-      this.sun.intensity = 1.2;
-      this.hemlight.intensity = 0.5;
-      if (this.sky) this.sky.material.color.setHex(0x7dd3fc);
+      // bright morning — tight fog = clear near depth
+      this.renderer.setClearColor(0x6ec5f0, 1);
+      this.scene.fog.color.setHex(0x8ec8e8);
+      this.scene.fog.near = 18;
+      this.scene.fog.far = 70;
+      this.sun.intensity = 1.35;
+      this.hemlight.intensity = 0.55;
+      if (this.sky) this.sky.material.color.setHex(0x6ec5f0);
       if (this.headlightL) this.headlightL.intensity = 0;
       if (this.headlightR) this.headlightR.intensity = 0;
     }
 
     // ——— Weather cycle (clear → harmattan dust → rain) ———
-    if ((g.frame || 0) % 900 === 0 && g.state === 1) {
+    // STATE.PLAY = 2 (not 1 = INTRO). Never call missing methods.
+    if ((g.frame || 0) % 900 === 0 && g.state === 2) {
       const r = Math.random();
       this.weather = r < 0.55 ? 'clear' : r < 0.8 ? 'harmattan' : 'rain';
-      if (this.weather === 'rain') this.uiWeatherToast('🌧️ Rain in Kano');
-      if (this.weather === 'harmattan') this.uiWeatherToast('🏜️ Harmattan haze');
+      try {
+        if (this.weather === 'rain') g.ui?.showMissionToast?.('🌧️ Rain in Kano');
+        if (this.weather === 'harmattan') g.ui?.showMissionToast?.('🏜️ Harmattan haze');
+      } catch (e) {}
     }
     // Apply weather look
     if (this.weather === 'rain') {
@@ -1082,29 +1347,24 @@ export class Renderer3D {
       this.rain.geometry.attributes.position.needsUpdate = true;
     }
 
-    if (this.laneMarks) this.laneMarks.position.z = -((g.roadOff || 0) * 0.08) % 3.2;
-    if (this.buildings) this.buildings.position.z = -((g.roadOff || 0) * 0.04) % 6.2;
+    // Visible world scroll tied to speed / roadOff (parallax layers)
+    if (this.laneMarks) this.laneMarks.position.z = -((g.roadOff || 0) * 0.28) % 3.2;
+    if (this.buildings) this.buildings.position.z = -((g.roadOff || 0) * 0.16) % 6.2;
+    if (this.horizon) this.horizon.position.z = -((g.roadOff || 0) * 0.05) % 8;
+    if (this.roadMesh && this.roadMesh.material && this.roadMesh.material.map) {
+      this.roadMesh.material.map.offset.y = -((g.roadOff || 0) * 0.04) % 1;
+    }
 
-    // Player keke + shadow
+    // Player keke — smooth lane + full anim system (suspension, lean, wheels)
     if (this.player) {
-      const tx = this.laneToX(g.playerLane);
-      this.player.position.x += (tx - this.player.position.x) * 0.22;
+      const lane = (typeof g.smoothLane === 'number') ? g.smoothLane : (g.playerLane ?? 1);
+      const tx = this.laneToX(lane);
+      this.player.position.x += (tx - this.player.position.x) * 0.28;
       this.player.position.z = PLAYER_Z;
-      let by = g.bounce > 0 ? Math.sin(g.bounce * 0.9) * 0.1 : 0;
-      // suspension from speed
-      by += Math.sin((g.frame || 0) * 0.3) * Math.min(0.06, (g.speed || 0) * 0.008);
-      this.player.position.y = by;
-      this.player.rotation.y = (tx - this.player.position.x) * 0.1;
-      this.player.rotation.z = (this.player.position.x - tx) * 0.06;
-      // Wheel spin by speed
-      const spin = (g.speed || 0) * 0.35;
-      this.player.traverse((ch) => {
-        if (ch.isMesh && ch.geometry?.type === 'CylinderGeometry') {
-          const p = ch.geometry.parameters;
-          if (p && p.radiusTop && p.radiusTop < 0.3) ch.rotation.x += spin;
-        }
-      });
-      // intro: camera closer during walk-up
+      if (this.anim) {
+        this.anim.tick(16);
+        this.anim.animatePlayer(this.player, g);
+      }
       if ((this.introPhase || 3) < 3) {
         this.camera.position.z = -2.2 + this.introPhase * 0.4;
       }
@@ -1114,6 +1374,10 @@ export class Renderer3D {
         this.playerShadow.scale.setScalar(0.9 + Math.abs(this.player.position.y) * 2);
       }
     }
+    // Living world: pedestrians bob
+    if (this.anim && this.buildings) this.anim.animatePedestrians(this.buildings, g.roadOff);
+    // GLB animation mixers
+    if (this.models) this.models.update(0.016);
 
     // Multi-camera: chase | driver | passenger | road
     let sx = 0, sy = 0;
@@ -1146,10 +1410,10 @@ export class Renderer3D {
       targetLook = new THREE.Vector3(px * 0.1, 0.4, PLAYER_Z + 18);
       if (this.player) this.player.visible = false;
     } else {
-      // Cinematic chase
-      targetFov = 48 + Math.min(6, Math.max(0, spd - 4) * 1.0);
-      targetPos = new THREE.Vector3(px * 0.45 + sx, 5.8 + sy + bob, -3.8);
-      targetLook = new THREE.Vector3(px * 0.28, 0.85, 15);
+      // Cinematic chase — lower + closer = strong 3D perspective
+      targetFov = 56 + Math.min(8, Math.max(0, spd - 3) * 1.2);
+      targetPos = new THREE.Vector3(px * 0.55 + sx, 3.6 + sy + bob, -6.2);
+      targetLook = new THREE.Vector3(px * 0.35, 0.5, 18);
       if (this.player) this.player.visible = true;
     }
 
@@ -1182,11 +1446,17 @@ export class Renderer3D {
       if (used[type] >= pool.length) continue;
       const mesh = pool[used[type]++];
       mesh.visible = true;
+      const z = this.screenYToZ(o.y, py);
       mesh.position.x = this.laneToX(o.lane);
-      mesh.position.z = this.screenYToZ(o.y, py);
+      mesh.position.z = z;
       mesh.position.y = 0;
-      // slight lean when changing lanes feel
-      mesh.rotation.y = Math.sin((g.frame || 0) * 0.05 + o.y * 0.01) * 0.03;
+      // Depth scale: far = smaller (stronger 3D read)
+      const depthScale = Math.max(0.45, Math.min(1.15, 1.05 - z * 0.012));
+      mesh.scale.setScalar(depthScale);
+      mesh.rotation.y = Math.sin((g.frame || 0) * 0.05 + o.y * 0.01) * 0.04;
+      mesh.traverse((ch) => {
+        if (ch.isMesh) { ch.castShadow = true; ch.receiveShadow = true; }
+      });
     }
 
     let zi = 0;

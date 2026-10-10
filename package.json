@@ -1,8 +1,8 @@
 {
   "name": "kano-run",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
-  "description": "Kano Run 3D \u2014 Adaidaita Sahu through Kano. Game Developer: Hassan Zakariya",
+  "description": "Kano Run 3D — Adaidaita Sahu through Kano. Game Developer: Hassan Zakariya",
   "author": "Hassan Zakariya",
   "license": "MIT",
   "type": "module",
@@ -10,6 +10,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
   },
   "devDependencies": {
     "vite": "^5.4.0"
