@@ -26,6 +26,7 @@ export class UI {
     this.bind();
     this.renderRoutes();
     this.renderDrivers();
+    this.renderQuickDrivers();
     document.getElementById('hs').textContent = game.high;
     this.syncSettingsButtons();
     this.updateDailyUI(game);
@@ -96,7 +97,8 @@ export class UI {
       el.addEventListener('mouseleave', u);
       el.addEventListener('touchcancel', u);
     };
-    holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.25));
+    // Release gas → cruise (not full stop). Only BRAKE stops.
+    holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.45));
     holdCtrl(brake, () => this.game.setBrake(true), () => this.game.setBrake(false));
     if (pauseBtn) pauseBtn.onclick = () => this.game.togglePause();
     const camBtn = document.getElementById('cam-btn');
@@ -124,36 +126,7 @@ export class UI {
     const claimBtn = document.getElementById('claim-daily');
     if (claimBtn) claimBtn.onclick = () => this.game.claimDaily();
 
-    const left = document.getElementById('left-btn');
-    const right = document.getElementById('right-btn');
-    const horn = document.getElementById('horn-btn');
-    const hold = (el, fn) => {
-      let t;
-      const start = (e) => { e.preventDefault(); fn(); t = setInterval(fn, 140); };
-      const end = () => clearInterval(t);
-      el.addEventListener('touchstart', start, { passive: false });
-      el.addEventListener('mousedown', start);
-      el.addEventListener('touchend', end);
-      el.addEventListener('mouseup', end);
-      el.addEventListener('mouseleave', end);
-    };
-    hold(left, () => this.game.changeLane(-1));
-    hold(right, () => this.game.changeLane(1));
-    horn.addEventListener('click', () => this.game.horn());
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft' || e.key === 'a') this.game.changeLane(-1);
-      if (e.key === 'ArrowRight' || e.key === 'd') this.game.changeLane(1);
-      if (e.key === ' ' || e.key === 'h') this.game.horn();
-      if (e.key === 'r') this.game.cycleRadio();
-      if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(1);
-      if (e.key === 'ArrowDown' || e.key === 's') this.game.setBrake(true);
-      if (e.key === 'p' || e.key === 'Escape') this.game.togglePause();
-      if (e.key === 'c') this.game.toggleCabin();
-    });
-    window.addEventListener('keyup', (e) => {
-      if (e.key === 'ArrowUp' || e.key === 'w') this.game.setThrottle(0.25);
-      if (e.key === 'ArrowDown' || e.key === 's') this.game.setBrake(false);
-    });
+    // Driving controls (steer / gas / swipe / keyboard) live in Controls module.
   }
 
   renderRoutes() {
@@ -442,6 +415,32 @@ export class UI {
     }
   }
 
+  renderQuickDrivers() {
+    const box = document.getElementById('quick-drivers');
+    if (!box) return;
+    box.innerHTML = '';
+    Object.values(CONFIG.DRIVERS || {}).forEach((d) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const sel = this.game.selectedDriver === d.id;
+      btn.style.cssText = 'padding:8px 12px;border-radius:20px;border:1px solid ' +
+        (sel ? '#f5c542' : 'rgba(255,255,255,0.12)') +
+        ';background:' + (sel ? 'rgba(245,197,66,0.2)' : 'rgba(255,255,255,0.05)') +
+        ';color:' + (sel ? '#f5c542' : '#e2e8f0') +
+        ';font-size:0.75rem;font-weight:600;cursor:pointer;font-family:inherit;';
+      btn.textContent = d.name;
+      btn.onclick = () => {
+        this.game.selectedDriver = d.id;
+        Storage.setDriver(d.id);
+        this.renderQuickDrivers();
+        this.renderDrivers();
+        this.updateSelectionStatus();
+        this.showMissionToast('Driver: ' + d.name);
+      };
+      box.appendChild(btn);
+    });
+  }
+
   updateSelectionStatus() {
     const el = document.getElementById('selection-status');
     const roadBtn = document.getElementById('road-btn');
@@ -449,8 +448,9 @@ export class UI {
     const route = CONFIG.ROUTES[this.game.selectedRoute];
     const driver = CONFIG.DRIVERS[this.game.selectedDriver] || CONFIG.DRIVERS.ruffneck;
     const road = (CONFIG.ROAD_MODES && CONFIG.ROAD_MODES[this.game.selectedRoadMode]) || { name: 'Two-way' };
+    const nRoutes = Object.keys(CONFIG.ROUTES || {}).length;
     el.innerHTML = '<b style="color:#f5c542">' + driver.name + '</b> · ' +
-      (route ? route.name : 'Route') + '<br>' + road.name + ' · Cap 5 (2 front + 3 back)';
+      (route ? route.name : 'Route') + '<br>' + road.name + ' · ' + nRoutes + ' routes · Cap 5';
     if (roadBtn) roadBtn.textContent = 'ROAD: ' + (road.name || 'TWO-WAY').toUpperCase();
   }
 

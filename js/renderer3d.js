@@ -392,10 +392,10 @@ export class Renderer3D {
       }
     }
 
-    // A few pedestrians on shoulders
-    for (let i = 0; i < 22; i++) {
+    // More visible pedestrians on shoulders (denser)
+    for (let i = 0; i < 40; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      this.addPedestrian(side * (4.7 + (i % 3) * 0.2), i * 5.2 + 2);
+      this.addPedestrian(side * (4.5 + (i % 4) * 0.25), i * 3.8 + 1.5);
     }
 
     // Kano-style city gates / welcome arches spanning the road
@@ -661,29 +661,30 @@ export class Renderer3D {
   }
 
   addPedestrian(x, z) {
-    const shirtColors = [0x3b82f6, 0xec4899, 0x22c55e, 0xeab308, 0xa855f7, 0xf8fafc];
+    const shirtColors = [0x3b82f6, 0xec4899, 0x22c55e, 0xeab308, 0xa855f7, 0xf8fafc, 0xf97316];
     const shirt = shirtColors[Math.floor(Math.random() * shirtColors.length)];
+    const s = 1.4; // larger so people are visible from chase cam
     // body
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.5, 0.2),
+      new THREE.BoxGeometry(0.32 * s, 0.55 * s, 0.22 * s),
       this.mat(shirt, { roughness: 0.8 })
     );
-    body.position.set(x, 0.85, z);
+    body.position.set(x, 0.95 * s, z);
     this.buildings.add(body);
     // head
     const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 8, 8),
-      this.mat(0xfcd34d, { roughness: 0.7 })
+      new THREE.SphereGeometry(0.16 * s, 8, 8),
+      this.mat(0xc4a574, { roughness: 0.7 })
     );
-    head.position.set(x, 1.25, z);
+    head.position.set(x, 1.4 * s, z);
     this.buildings.add(head);
     // legs
-    for (const dx of [-0.07, 0.07]) {
+    for (const dx of [-0.1 * s, 0.1 * s]) {
       const leg = new THREE.Mesh(
-        new THREE.BoxGeometry(0.1, 0.45, 0.1),
+        new THREE.BoxGeometry(0.12 * s, 0.5 * s, 0.12 * s),
         this.mat(0x1e293b, { roughness: 0.9 })
       );
-      leg.position.set(x + dx, 0.35, z);
+      leg.position.set(x + dx, 0.4 * s, z);
       this.buildings.add(leg);
     }
   }
@@ -855,9 +856,12 @@ export class Renderer3D {
     return g;
   }
 
-  /** Police / KAROTA variant */
+  /** Police / KAROTA — KAROTA = yellow shirt + black trousers + stick */
   makeEnforcer(kind = 'police') {
-    const color = kind === 'karota' ? 0xf59e0b : 0x1e40af;
+    if (kind === 'karota') {
+      return this.makeKarotaOfficer();
+    }
+    const color = 0x1e40af;
     const g = this.makeCar(color);
     // Light bar
     const bar = new THREE.Mesh(
@@ -879,6 +883,57 @@ export class Renderer3D {
     blue.position.set(0.2, 1.05, -0.1);
     g.add(blue);
     g.userData.kind = kind;
+    return g;
+  }
+
+  /** KAROTA officer: yellow shirt, black trousers, stick — roadside figure */
+  makeKarotaOfficer() {
+    const g = new THREE.Group();
+    const skin = this.mat(0xc4a574, { roughness: 0.8 });
+    const shirt = this.mat(0xfacc15, { roughness: 0.65 }); // yellow uniform shirt
+    const pants = this.mat(0x0f172a, { roughness: 0.9 }); // black trousers
+    const stickM = this.mat(0x78350f, { roughness: 0.7 });
+    // legs
+    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.45, 0.16), pants);
+    legL.position.set(-0.1, 0.25, 0);
+    g.add(legL);
+    const legR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.45, 0.16), pants);
+    legR.position.set(0.1, 0.25, 0);
+    g.add(legR);
+    // torso yellow
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.28), shirt);
+    body.position.set(0, 0.7, 0);
+    g.add(body);
+    // head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.22), skin);
+    head.position.set(0, 1.05, 0);
+    g.add(head);
+    // beret / cap
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.08, 10), this.mat(0x1e293b));
+    cap.position.set(0, 1.18, 0);
+    g.add(cap);
+    // arms
+    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), shirt);
+    armL.position.set(-0.3, 0.7, 0);
+    g.add(armL);
+    const armR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), shirt);
+    armR.position.set(0.3, 0.7, 0.05);
+    armR.rotation.z = -0.4;
+    g.add(armR);
+    // stick in right hand
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 6), stickM);
+    stick.position.set(0.42, 0.85, 0.15);
+    stick.rotation.z = 0.35;
+    g.add(stick);
+    // small checkpoint cone next to officer
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.18, 0.45, 8),
+      this.mat(0xf97316, { roughness: 0.6 })
+    );
+    cone.position.set(0.55, 0.22, -0.15);
+    g.add(cone);
+    g.userData.kind = 'karota';
+    g.scale.set(1.35, 1.35, 1.35);
     return g;
   }
 
@@ -988,7 +1043,12 @@ export class Renderer3D {
   }
 
   laneToX(lane) {
-    return LANE_X[Math.max(0, Math.min(2, Math.round(lane)))];
+    // Float lane: 0 = left, 1 = center, 2 = right (screen space, +X = right)
+    const i = Math.max(0, Math.min(2, Number(lane) || 0));
+    const a = Math.floor(i);
+    const b = Math.min(2, a + 1);
+    const t = i - a;
+    return LANE_X[a] + (LANE_X[b] - LANE_X[a]) * t;
   }
 
   cycleCamera() {
@@ -1192,10 +1252,11 @@ export class Renderer3D {
       this.roadMesh.material.map.offset.y = -((g.roadOff || 0) * 0.04) % 1;
     }
 
-    // Player keke + shadow
+    // Player keke + shadow — smoothLane for fluid Traffic Rider style steering
     if (this.player) {
-      const tx = this.laneToX(g.playerLane);
-      this.player.position.x += (tx - this.player.position.x) * 0.22;
+      const lane = (typeof g.smoothLane === 'number') ? g.smoothLane : (g.playerLane ?? 1);
+      const tx = this.laneToX(lane);
+      this.player.position.x += (tx - this.player.position.x) * 0.28;
       this.player.position.z = PLAYER_Z;
       let by = g.bounce > 0 ? Math.sin(g.bounce * 0.9) * 0.1 : 0;
       // suspension from speed

@@ -206,6 +206,9 @@ export class Game {
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
+    this.smoothLane = 1;
+    this.playerLaneX = 0;
+    if (this.controls) this.controls.reset(1);
     this.inv = 0;
     this.bounce = 0;
     this.obs = [];
@@ -247,7 +250,13 @@ export class Game {
     this.throttle = 0.7;
     this.speed = 3.5;
     this.state = STATE.PLAY;
-    try { Audio.startEngine(); Audio.startRadioBed(); } catch (e) {}
+    try {
+      Audio.ensure();
+      Audio.startEngine();
+      Audio.startRadioBed();
+      const st = (CONFIG.RADIO && CONFIG.RADIO[this.radioIndex]) || { name: 'Radio Kano' };
+      Audio.speak(st.name + '. Sannu da aiki.', { rate: 0.95 });
+    } catch (e) {}
     this.ui.showMissionToast('Driving! GAS = faster · BRAKE = stop');
     if (this.renderer3d) this.renderer3d.introPhase = 3;
     try { Storage.setSeenTutorial(); Storage.set('kanoSkipIntro', true); } catch (e) {}
@@ -370,8 +379,14 @@ export class Game {
     if (on && !was && this.speed > 2) Audio.brake();
   }
 
+  /** Prefer Controls module; dir < 0 = left, dir > 0 = right */
   changeLane(dir) {
     if (this.state !== STATE.PLAY && this.state !== STATE.INTRO) return;
+    if (this.controls) {
+      if (dir < 0) this.controls.steerLeft();
+      else this.controls.steerRight();
+      return;
+    }
     const n = this.playerLane + dir;
     if (n >= 0 && n < CONFIG.LANES) {
       this.playerLane = n;
@@ -379,9 +394,23 @@ export class Game {
     }
   }
 
+  cycleRadio() {
+    const list = CONFIG.RADIO || [];
+    if (!list.length) return;
+    this.radioIndex = ((this.radioIndex || 0) + 1) % list.length;
+    const st = list[this.radioIndex];
+    this.ui.setRadio?.(st.name);
+    try {
+      Audio.ensure();
+      Audio.radioTune(st.name);
+    } catch (e) {}
+    this.ui.showMissionToast('📻 ' + st.name);
+  }
+
   horn() {
     if (this.state !== STATE.PLAY) return;
     Audio.horn();
+    try { Audio.speakHausa?.('horn'); } catch (e) {}
     this.inv = Math.max(this.inv, 18);
     for (const o of this.obs) {
       if (Math.round(o.lane) === this.playerLane && Math.abs(o.y - this.playerY) < 120) {
