@@ -379,6 +379,11 @@ export class Renderer3D {
     window.addEventListener('resize', this.onResize);
     this.onDiagnosticsKey = (event) => {
       if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.key === 'F2') {
+        event.preventDefault();
+        this.toggleControlsHelp();
+        return;
+      }
       if (event.key === 'F3') {
         event.preventDefault();
         this.toggleDiagnostics();
@@ -389,11 +394,231 @@ export class Renderer3D {
         const levels = ['low', 'medium', 'high'];
         const next = levels[(levels.indexOf(this.quality) + 1) % levels.length];
         this.applyQuality(next);
+        this.showCaptureNotice(`Graphics quality: ${next.toUpperCase()}`);
+        return;
+      }
+      if (event.key === 'F5') {
+        // Prevent the browser's normal refresh shortcut while the game is active.
+        event.preventDefault();
+        this.captureScreenshot();
+        return;
+      }
+      if (event.key === 'F6') {
+        event.preventDefault();
+        this.toggleFullscreen();
+        return;
+      }
+      if (event.key === 'F7') {
+        event.preventDefault();
+        this.exportDiagnostics();
+        return;
+      }
+      if (event.key === 'F8') {
+        event.preventDefault();
+        this.copyDiagnosticsSummary();
       }
     };
     window.addEventListener('keydown', this.onDiagnosticsKey);
 
     this.ready = true;
+  }
+
+  async toggleFullscreen() {
+    const target = this.webglHost || this.canvas;
+    if (!target || typeof document === 'undefined') return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        this.showCaptureNotice('Fullscreen off');
+      } else if (target.requestFullscreen) {
+        await target.requestFullscreen();
+        this.showCaptureNotice('Fullscreen on · press F6 or Esc to exit');
+      } else {
+        this.showCaptureNotice('Fullscreen is not supported by this browser');
+      }
+    } catch {
+      this.showCaptureNotice('Fullscreen request was blocked by the browser');
+    }
+    this.resize?.();
+  }
+
+  async copyDiagnosticsSummary() {
+    const info = this.renderer?.info || {};
+    const memory = info.memory || {};
+    const render = info.render || {};
+    const summary = [
+      'KANO RUN · QUICK DIAGNOSTICS',
+      `Time: ${new Date().toISOString()}`,
+      `Graphics quality: ${this.quality || 'unknown'}`,
+      `FPS: ${Number.isFinite(this.diagnosticsFps) ? this.diagnosticsFps : 'not measured yet'}`,
+      `Pixel ratio: ${this.renderer?.getPixelRatio?.() ?? 'unavailable'}`,
+      `Canvas: ${this.canvas?.width ?? '?'} × ${this.canvas?.height ?? '?'}`,
+      `Draw calls: ${render.calls ?? 'unavailable'}`,
+      `Triangles: ${render.triangles ?? 'unavailable'}`,
+      `Geometries: ${memory.geometries ?? 'unavailable'}`,
+      `Textures: ${memory.textures ?? 'unavailable'}`,
+      `WebGL context lost: ${Boolean(this.contextLost)}`,
+      `User agent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'unavailable'}`
+    ].join('\n');
+    try {
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(summary);
+      } else {
+        const area = document.createElement('textarea');
+        area.value = summary;
+        area.setAttribute('readonly', '');
+        area.style.cssText = 'position:fixed;left:-9999px;top:0;';
+        document.body.appendChild(area);
+        area.select();
+        const copied = document.execCommand('copy');
+        area.remove();
+        if (!copied) throw new Error('Clipboard copy unavailable');
+      }
+      this.showCaptureNotice('Quick diagnostics copied · paste into a message');
+    } catch {
+      this.showCaptureNotice('Clipboard unavailable · use F7 to export JSON');
+    }
+  }
+
+  exportDiagnostics() {
+    const info = this.renderer?.info || {};
+    const memory = info.memory || {};
+    const render = info.render || {};
+    const report = {
+      app: 'Kano Run',
+      capturedAt: new Date().toISOString(),
+      quality: this.quality || 'unknown',
+      pixelRatio: this.renderer?.getPixelRatio?.() ?? null,
+      canvas: {
+        width: this.canvas?.width ?? null,
+        height: this.canvas?.height ?? null,
+        clientWidth: this.canvas?.clientWidth ?? null,
+        clientHeight: this.canvas?.clientHeight ?? null
+      },
+      viewport: {
+        width: typeof window !== 'undefined' ? window.innerWidth : null,
+        height: typeof window !== 'undefined' ? window.innerHeight : null,
+        devicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio : null
+      },
+      performance: {
+        fps: Number.isFinite(this.diagnosticsFps) ? this.diagnosticsFps : null,
+        drawCalls: render.calls ?? null,
+        triangles: render.triangles ?? null,
+        geometries: memory.geometries ?? null,
+        textures: memory.textures ?? null
+      },
+      webgl: {
+        contextLost: Boolean(this.contextLost),
+        rendererAvailable: Boolean(this.renderer)
+      },
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null
+    };
+    try {
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `kano-run-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this.showCaptureNotice('Performance diagnostics saved as JSON');
+    } catch {
+      this.showCaptureNotice('Could not export diagnostics in this browser');
+    }
+  }
+
+  toggleControlsHelp() {
+    if (typeof document === 'undefined' || !this.webglHost) return;
+    if (!this.controlsHelpElement) {
+      const panel = document.createElement('section');
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-label', 'Kano Run keyboard shortcuts');
+      panel.style.cssText = 'position:absolute;z-index:10001;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,calc(100% - 28px));box-sizing:border-box;padding:18px;border:1px solid rgba(0,180,216,.75);border-radius:12px;background:rgba(5,15,28,.96);color:#f4f9ff;font:14px/1.55 system-ui,sans-serif;box-shadow:0 12px 34px rgba(0,0,0,.4);';
+      const heading = document.createElement('h2');
+      heading.textContent = 'Kano Run · Quick Help';
+      heading.style.cssText = 'margin:0 0 12px;font-size:18px;';
+      const list = document.createElement('div');
+      list.style.cssText = 'display:grid;grid-template-columns:72px 1fr;gap:7px 10px;';
+      const shortcuts = [
+        ['F2', 'Show or hide this help'],
+        ['F3', 'Show or hide performance diagnostics'],
+        ['F4', 'Cycle Low, Medium, High graphics'],
+        ['F5', 'Save a PNG screenshot'],
+        ['F6', 'Toggle fullscreen mode'],
+        ['F7', 'Download performance diagnostics as JSON'],
+        ['F8', 'Copy a compact diagnostics summary']
+      ];
+      for (const [key, description] of shortcuts) {
+        const keyLabel = document.createElement('strong');
+        keyLabel.textContent = key;
+        keyLabel.style.color = '#00b4d8';
+        const detail = document.createElement('span');
+        detail.textContent = description;
+        list.append(keyLabel, detail);
+      }
+      const note = document.createElement('p');
+      note.textContent = 'Driving controls remain unchanged. Shortcuts may depend on browser focus.';
+      note.style.cssText = 'margin:14px 0 0;color:#b8c7d8;font-size:12px;';
+      panel.append(heading, list, note);
+      const computed = window.getComputedStyle(this.webglHost);
+      if (computed.position === 'static') this.webglHost.style.position = 'relative';
+      this.webglHost.appendChild(panel);
+      this.controlsHelpElement = panel;
+    } else {
+      this.controlsHelpElement.remove();
+      this.controlsHelpElement = null;
+    }
+  }
+
+  showCaptureNotice(message) {
+    if (!this.webglHost || typeof document === 'undefined') return;
+    if (!this.captureNotice) {
+      const notice = document.createElement('div');
+      notice.setAttribute('role', 'status');
+      notice.setAttribute('aria-live', 'polite');
+      notice.style.cssText = 'position:absolute;z-index:10000;left:50%;top:12px;transform:translateX(-50%);padding:9px 13px;border-radius:8px;background:rgba(11,30,58,.94);color:#fff;font:600 13px/1.35 system-ui,sans-serif;box-shadow:0 3px 14px rgba(0,0,0,.25);pointer-events:none;max-width:90%;text-align:center;';
+      const computed = window.getComputedStyle(this.webglHost);
+      if (computed.position === 'static') this.webglHost.style.position = 'relative';
+      this.webglHost.appendChild(notice);
+      this.captureNotice = notice;
+    }
+    this.captureNotice.textContent = message;
+    clearTimeout(this.captureNoticeTimer);
+    this.captureNoticeTimer = setTimeout(() => {
+      this.captureNotice?.remove();
+      this.captureNotice = null;
+    }, 2200);
+  }
+
+  captureScreenshot() {
+    const canvas = this.renderer?.domElement;
+    if (!canvas) {
+      this.showCaptureNotice('Screenshot unavailable');
+      return;
+    }
+    try {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          this.showCaptureNotice('Screenshot could not be created');
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `kano-run-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        this.showCaptureNotice('Screenshot saved');
+      }, 'image/png');
+    } catch (error) {
+      this.showCaptureNotice('Screenshot unavailable on this canvas');
+    }
   }
 
   readQuality() {
@@ -2167,6 +2392,11 @@ export class Renderer3D {
       window.removeEventListener('resize', this.onResize);
       if (this.onDiagnosticsKey) window.removeEventListener('keydown', this.onDiagnosticsKey);
       this.diagnosticsElement?.remove?.();
+      this.controlsHelpElement?.remove?.();
+      this.controlsHelpElement = null;
+      clearTimeout(this.captureNoticeTimer);
+      this.captureNotice?.remove?.();
+      this.captureNotice = null;
       this.diagnosticsElement = null;
       this.reducedMotionQuery?.removeEventListener?.('change', this.onReducedMotionChange);
     } catch {
