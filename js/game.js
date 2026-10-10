@@ -1,1994 +1,1288 @@
-import { CONFIG, STATE } from './config.js';
+/**
+ * Kano Run 3D — Core game logic
+ * Game Developer: Hassan Zakariya
+ * Spec: real driving controls, intro sequence, passengers/destinations,
+ * fare negotiation, KAROTA, traffic AI — preserves missions/storage/HUD.
+ */
+import { CONFIG, STATE, DEVELOPER } from './config.js';
 import { Storage } from './storage.js';
 import { Audio } from './audio.js';
 
-/*
- * Kano Run — Adaidaita Sahu
- * Game core — specification-aligned replacement
- *
- * Responsibilities:
- * - gameplay state and progression
- * - correct left/right steering
- * - keyboard + mobile-facing control methods
- * - traffic, passengers, fares and destinations
- * - negotiation and KAROTA interactions
- * - levels, missions, combos, achievements and continues
- * - opening sequence state
- * - route / driver / paint / keke / radio selection
- *
- * The renderer remains responsible for 3D presentation.
- * The audio module remains responsible for sound generation/playback.
- */
-
-const PLAYER_Y = 500;
-const LANES = 3;
-const MIN_LANE = 0;
-const MAX_LANE = LANES - 1;
-
-const BASE_SPEED = 3.6;
-const BASE_MAX_SPEED = 7.2;
-const FRAME_MS = 1000 / 60;
-
-const COLLISION_Y = 36;
-const NEAR_MISS_Y = 92;
-
-// Approximate screen-space hitboxes for the player's keke and each traffic type.
-// Dimensions are half-extents; the player's movement is tested across the whole
-// frame so a fast lane change cannot skip through a vehicle between frames.
-const PLAYER_HITBOX = Object.freeze({ halfWidth: 15, halfHeight: 18 });
-const TRAFFIC_HITBOXES = Object.freeze({
-  keke: { halfWidth: 15, halfHeight: 17 },
-  car: { halfWidth: 18, halfHeight: 20 },
-  sedan: { halfWidth: 18, halfHeight: 20 },
-  taxi: { halfWidth: 18, halfHeight: 20 },
-  motorcycle: { halfWidth: 9, halfHeight: 12 },
-  bus: { halfWidth: 23, halfHeight: 26 },
-  truck: { halfWidth: 24, halfHeight: 27 },
-  police: { halfWidth: 19, halfHeight: 20 },
-  karota: { halfWidth: 20, halfHeight: 21 }
-});
-
-function trafficHitbox(type) {
-  return TRAFFIC_HITBOXES[type] || TRAFFIC_HITBOXES.car;
-}
-
-// Test the swept relative movement against an ellipse-normalised hitbox.
-// start/end are the player's offsets from the obstacle at frame boundaries.
-function sweptHitboxContact(startX, startY, endX, endY, halfWidth, halfHeight) {
-  const x0 = startX / Math.max(halfWidth, 1);
-  const y0 = startY / Math.max(halfHeight, 1);
-  const x1 = endX / Math.max(halfWidth, 1);
-  const y1 = endY / Math.max(halfHeight, 1);
-  const vx = x1 - x0;
-  const vy = y1 - y0;
-  const lengthSquared = vx * vx + vy * vy;
-  const t = lengthSquared > 1e-8
-    ? clamp(-(x0 * vx + y0 * vy) / lengthSquared, 0, 1)
-    : 0;
-  const nearestX = x0 + vx * t;
-  const nearestY = y0 + vy * t;
-  return nearestX * nearestX + nearestY * nearestY <= 1;
-}
-const PICKUP_Y = 70;
-const DROPOFF_Y = 72;
-const CHECKPOINT_Y = 70;
-
-const KANО_DESTINATIONS = [
-  'Sabon Gari',
-  'Kofar Mata',
-  'Fagge',
-  'Farm Centre',
-  'Hotoro',
-  'Zoo Road',
-  'Naibawa',
-  'Tarauni',
-  'Dala',
-  'Kantin Kwari',
-  'Kofar Wambai',
-  'Kumbotso',
-  'Sharada',
-  'Bompai',
-  'Gwale',
-  'Kabuga',
-  'BUK Road',
-  'Waje',
-  'Rijiyar Zaki',
-  'Yankaba',
-  'Challawa',
-  'Nassarawa GRA',
-  'Airport Road'
-];
-
-const PASSENGER_TYPES = [
-  { id: 'standard', name: 'Passenger', seats: 1, fare: 1.0, weight: 50 },
-  { id: 'student', name: 'Student', seats: 1, fare: 0.88, weight: 18 },
-  { id: 'worker', name: 'Worker', seats: 1, fare: 1.08, weight: 18 },
-  { id: 'market', name: 'Market Customer', seats: 1, fare: 1.05, weight: 8 },
-  { id: 'elder', name: 'Elder', seats: 1, fare: 1.12, weight: 3 },
-  { id: 'hajiya', name: 'Hajiya', seats: 1, fare: 1.18, weight: 3 }
-];
-
-const GREETINGS = [
-  'Oga, ina kwana?',
-  'Mai Gida, please slow down.',
-  'Mallam, ina zuwa can.',
-  'Yallabai, zan je can.',
-  'Dan uwa, tsaya kadan.',
-  'Aboki, akwai wuri?',
-  'Driver, wannan hanyar za mu bi.',
-  'Baba, tsaya a gabana.',
-  'Mama, akwai wuri?',
-  'Hajiya, a hankali don Allah.'
-];
-
-const KABATA_VOICES = [
-  'Akwai!',
-  'Akwai wuri?',
-  'Driver, tsaya nan.',
-  'Oga, a tsaya.',
-  'Mallam, ka sauke ni nan.',
-  'Yallabai, nan ne.'
-];
-
-const KEKES = {
-  standard: {
-    id: 'standard',
-    name: 'Standard Keke',
-    title: 'Everyday Adaidaita',
-    color: 0xfbbf24,
-    unlockLevel: 1,
-    speed: 0,
-    handling: 1,
-    capacity: 3,
-    fare: 1,
-    description: 'Balanced yellow city keke.'
-  },
-  luxury: {
-    id: 'luxury',
-    name: 'Luxury Keke',
-    title: 'Comfort Ride',
-    color: 0xeab308,
-    unlockLevel: 3,
-    speed: 0.15,
-    handling: 1.05,
-    capacity: 3,
-    fare: 1.12,
-    description: 'Better comfort and fare potential.'
-  },
-  cargo: {
-    id: 'cargo',
-    name: 'Cargo Keke',
-    title: 'Load Runner',
-    color: 0x22c55e,
-    unlockLevel: 5,
-    speed: -0.2,
-    handling: 0.92,
-    capacity: 3,
-    fare: 1.18,
-    description: 'Built for heavier roadside loads.'
-  },
-  open: {
-    id: 'open',
-    name: 'Open Keke',
-    title: 'Market Runner',
-    color: 0x38bdf8,
-    unlockLevel: 7,
-    speed: 0.08,
-    handling: 1.08,
-    capacity: 3,
-    fare: 1.1,
-    description: 'Quick handling for dense market routes.'
-  },
-  police: {
-    id: 'police',
-    name: 'Police Keke',
-    title: 'Enforcement Variant',
-    color: 0x1e40af,
-    unlockLevel: 10,
-    speed: 0.25,
-    handling: 1.02,
-    capacity: 3,
-    fare: 0.95,
-    description: 'Special unlock for advanced progression.'
-  },
-  karota: {
-    id: 'karota',
-    name: 'KAROTA Keke',
-    title: 'Checkpoint Variant',
-    color: 0xf59e0b,
-    unlockLevel: 12,
-    speed: 0.18,
-    handling: 1.0,
-    capacity: 3,
-    fare: 1.0,
-    description: 'Advanced utility variant.'
-  }
-};
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function weightedPick(items) {
-  const total = items.reduce((sum, item) => sum + (item.weight || 1), 0);
-  let r = Math.random() * total;
-  for (const item of items) {
-    r -= item.weight || 1;
-    if (r <= 0) return item;
-  }
-  return items[items.length - 1];
-}
-
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export class Game {
-  constructor(canvas, ui = null, renderer3d = null) {
+  constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas?.getContext?.('2d') || null;
-    this.ui = ui;
-    this.renderer3d = renderer3d;
-
-    // Convert radio station objects to their readable names when legacy UI
-    // code converts a station directly to text. No visual logo is inserted.
-    this._installRadioDisplayCompatibility();
-    this._ensureDeveloperCredit();
+    this.ctx = null;
+    this.ui = null;
+    this.renderer3d = null;
 
     this.state = STATE.START;
-    this.paused = false;
-
     this.score = 0;
-    this.money = 0;
     this.dist = 0;
+    this.paxOnBoard = 0;
     this.totalPax = 0;
-    this.completedTrips = 0;
-    this.paxCount = 0;
+    this.dropCount = 0;
     this.capacity = 3;
-
     this.continuesLeft = 3;
+    this.paidContinuesUsed = 0;
     this.combo = 0;
-    this.bestCombo = 0;
-    this.nearMissCount = 0;
-    this.crashes = 0;
-
-    this.level = 1;
-    this.levelProgress = 0;
-    this.xp = 0;
-
-    // The keke starts stationary. Acceleration requires an explicit gas input.
+    this.comboTimer = 0;
     this.speed = 0;
-    this.maxSpeed = BASE_MAX_SPEED;
-    this.throttle = 0;
-    this.brake = 0;
-    this.gasHeld = false;
-    this.brakeHeld = false;
-    this._externalThrottle = true;
-    this._lastCrashFrame = -Infinity;
-
+    this.throttle = 0; // 0..1 gas
+    this.braking = false;
     this.frame = 0;
     this.roadOff = 0;
     this.playerLane = 1;
-    this.playerX = this.laneX(this.playerLane);
-    this.previousPlayerX = this.playerX;
-    this.targetX = this.playerX;
-    this.playerY = PLAYER_Y;
-    this.playerZ = 0;
+    this.playerX = 0;
+    this.targetX = 0;
+    this.playerY = 0;
+    this.inv = 0;
     this.bounce = 0;
     this.shake = 0;
     this.shakeMag = 0;
-
     this.obs = [];
     this.paxZones = [];
     this.dropZones = [];
     this.coins = [];
-    this.checkpoints = [];
-
-    this.currentPassengers = [];
-    this.nextPassengerId = 1;
-    this.nextTrafficId = 1;
-    this.nextZoneId = 1;
-
-    this.eventOpen = false;
-    this.eventType = null;
-    this.eventContext = null;
-    this._resumeStateAfterEvent = STATE.PLAY;
-
-    this.introSequence = {
-      active: false,
-      stage: 'idle',
-      timer: 0,
-      driverId: 'ruffneck',
-      paintId: 'classic'
-    };
-
-    this.routeId = 'citycenter';
-    this.selectedRoute = null;
-    this.selectedDriver = 'ruffneck';
-    this.selectedPaint = 'classic';
-    this.selectedRadio = 'freedom';
-    this.selectedKeke = 'standard';
-
-    this.radioIndex = 0;
-    this.lastRadioSwitchFrame = -999;
-
-    this.lastSpawnFrame = 0;
-    this.lastPassengerFrame = 0;
-    this.lastCoinFrame = 0;
-    this.lastCheckpointFrame = 0;
-    this.lastLandmarkIndex = -1;
-
-    this.karotaWanted = false;
-    this.karotaHeat = 0;
+    this.trafficJamTimer = 0;
+    this.nearMissCooldown = 0;
     this.policeChase = 0;
-    this.checkpointCooldown = 0;
-
-    this.weatherState = 'clear';
-    this.mission = null;
-    this.missionIndex = 0;
-    this.dailyClaimed = false;
-    this.dailyReward = 500;
-
-    this.lastDropDestination = null;
-    this.lastPassenger = null;
-    this.lastFare = 0;
-
-    this._storageLoad();
-    this.selectRoute(this.routeId, false);
-    this.selectDriver(this.selectedDriver, false);
-    this.selectPaint(this.selectedPaint, false);
-    this.selectKeke(this.selectedKeke, false);
-    this.selectRadio(this.selectedRadio, false);
-    this.generateMission();
-
-    this._bindKeyboard();
-    this._bindDrivingControls();
-  }
-
-
-  _installRadioDisplayCompatibility() {
-    const stations = CONFIG.RADIO || CONFIG.RADIO_STATIONS || [];
-    for (const station of stations) {
-      if (!station || typeof station !== 'object') continue;
-      try {
-        Object.defineProperty(station, Symbol.toPrimitive, {
-          configurable: true,
-          enumerable: false,
-          value() {
-            return String(this.name || this.label || this.title || this.id || 'Radio');
-          }
-        });
-      } catch {
-        // UI.setRadio() may still receive the object; its own renderer can
-        // choose an explicit station.name fallback when needed.
-      }
-    }
-  }
-
-  _ensureDeveloperCredit() {
-    if (typeof document === 'undefined') return;
-    const startScreen = document.getElementById('start-screen');
-    if (!startScreen || document.getElementById('kano-run-developer-credit')) return;
-
-    const credit = document.createElement('p');
-    credit.id = 'kano-run-developer-credit';
-    credit.textContent = 'Developed by Hassan Zakariya · RuffNeck Entertainment';
-    credit.setAttribute('aria-label', 'Developer: Hassan Zakariya, RuffNeck Entertainment');
-    credit.style.cssText = [
-      'display:block',
-      'width:100%',
-      'box-sizing:border-box',
-      'margin:12px 0 0',
-      'padding:4px 8px',
-      'color:rgba(255,255,255,.68)',
-      'font-size:11px',
-      'font-weight:500',
-      'line-height:1.4',
-      'text-align:center'
-    ].join(';');
-    startScreen.appendChild(credit);
-  }
-
-  _bindDrivingControls() {
-    if (typeof document === 'undefined') return;
-
-    let controls = document.getElementById('kano-driving-controls');
-    if (!controls) {
-      controls = document.createElement('div');
-      controls.id = 'kano-driving-controls';
-      controls.setAttribute('aria-label', 'Driving controls');
-      controls.style.cssText = [
-        'position:fixed', 'right:14px', 'bottom:88px', 'z-index:1000',
-        'display:flex', 'flex-direction:column', 'gap:10px',
-        'touch-action:none', 'user-select:none', '-webkit-user-select:none'
-      ].join(';');
-
-      const makeButton = (id, label, background) => {
-        const button = document.createElement('button');
-        button.id = id;
-        button.type = 'button';
-        button.textContent = label;
-        button.setAttribute('aria-label', label.toLowerCase());
-        button.style.cssText = [
-          'width:78px', 'height:58px', 'border:2px solid rgba(255,255,255,.8)',
-          'border-radius:14px', `background:${background}`, 'color:#fff',
-          'font:900 15px system-ui,sans-serif', 'letter-spacing:.4px',
-          'box-shadow:0 4px 12px rgba(0,0,0,.4)', 'touch-action:none',
-          'cursor:pointer', 'padding:0'
-        ].join(';');
-        controls.appendChild(button);
-        return button;
-      };
-
-      const gas = makeButton('kano-gas-btn', 'GAS ▲', '#15803d');
-      const brake = makeButton('kano-brake-btn', 'BRAKE ▼', '#b91c1c');
-
-      const bindHold = (button, down, up) => {
-        const release = (event) => {
-          if (event) event.preventDefault();
-          up();
-          button.style.filter = '';
-          button.style.transform = '';
-        };
-        button.addEventListener('pointerdown', (event) => {
-          event.preventDefault();
-          if (event.button !== undefined && event.button !== 0) return;
-          down();
-          button.style.filter = 'brightness(1.2)';
-          button.style.transform = 'scale(.97)';
-          try { button.setPointerCapture(event.pointerId); } catch {}
-        });
-        button.addEventListener('pointerup', release);
-        button.addEventListener('pointercancel', release);
-        button.addEventListener('lostpointercapture', release);
-        window.addEventListener('blur', () => release());
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) release();
-        });
-        button.addEventListener('contextmenu', (event) => event.preventDefault());
-      };
-
-      bindHold(gas, () => this.gasDown(), () => this.gasUp());
-      bindHold(brake, () => this.brakeDown(), () => this.brakeUp());
-      document.body.appendChild(controls);
-    }
-  }
-
-  setUI(ui) {
-    this.ui = ui;
-    return this;
-  }
-
-  setRenderer(renderer) {
-    this.renderer3d = renderer;
-    return this;
-  }
-
-  _storageRead(key, fallback = null) {
-    try {
-      if (typeof Storage?.get === 'function') return Storage.get(key) ?? fallback;
-      if (typeof Storage?.load === 'function') return Storage.load(key) ?? fallback;
-      if (typeof localStorage !== 'undefined') {
-        const value = localStorage.getItem(`kanoRun:${key}`);
-        if (value == null) return fallback;
-        try { return JSON.parse(value); } catch { return value; }
-      }
-    } catch {}
-    return fallback;
-  }
-
-  _storageWrite(key, value) {
-    try {
-      if (typeof Storage?.set === 'function') {
-        Storage.set(key, value);
-        return;
-      }
-      if (typeof Storage?.save === 'function') {
-        Storage.save(key, value);
-        return;
-      }
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(`kanoRun:${key}`, JSON.stringify(value));
-      }
-    } catch {}
-  }
-
-  _storageLoad() {
-    this.routeId = this._storageRead('route', this._storageRead('selectedRoute', 'citycenter'));
-    this.selectedDriver = this._storageRead('driver', this._storageRead('selectedDriver', 'ruffneck'));
-    this.selectedPaint = this._storageRead('paint', this._storageRead('selectedPaint', 'classic'));
-    this.selectedRadio = this._storageRead('radio', this._storageRead('selectedRadio', 'freedom'));
-    this.selectedKeke = this._storageRead('keke', this._storageRead('selectedKeke', 'standard'));
-    this.money = Number(this._storageRead('money', 0)) || 0;
-
-    const claimedDate = this._storageRead('dailyClaimDate', null);
-    this.dailyClaimed = claimedDate === todayKey();
-  }
-
-  _saveSelection() {
-    this._storageWrite('route', this.routeId);
-    this._storageWrite('driver', this.selectedDriver);
-    this._storageWrite('paint', this.selectedPaint);
-    this._storageWrite('radio', this.selectedRadio);
-    this._storageWrite('keke', this.selectedKeke);
-    this._storageWrite('money', this.money);
-  }
-
-  _ui(method, ...args) {
-    try {
-      const fn = this.ui?.[method];
-      if (typeof fn === 'function') return fn.apply(this.ui, args);
-    } catch {}
-    return undefined;
-  }
-
-  _audio(methodNames, ...args) {
-    for (const name of methodNames) {
-      try {
-        const fn = Audio?.[name];
-        if (typeof fn === 'function') {
-          fn.apply(Audio, args);
-          return true;
-        }
-      } catch {}
-    }
-    return false;
-  }
-
-  _bindKeyboard() {
-    if (typeof window === 'undefined') return;
-
-    window.addEventListener('keydown', (event) => {
-      if (event.repeat) return;
-
-      switch (event.code) {
-        case 'ArrowLeft':
-        case 'KeyA':
-          event.preventDefault();
-          this.moveLeft();
-          break;
-        case 'ArrowRight':
-        case 'KeyD':
-          event.preventDefault();
-          this.moveRight();
-          break;
-        case 'ArrowUp':
-        case 'KeyW':
-        case 'Space':
-          event.preventDefault();
-          this.gasDown();
-          break;
-        case 'ArrowDown':
-        case 'KeyS':
-          event.preventDefault();
-          this.brakeDown();
-          break;
-        case 'KeyP':
-          event.preventDefault();
-          this.togglePause();
-          break;
-        case 'KeyH':
-          event.preventDefault();
-          this.horn();
-          break;
-        case 'KeyR':
-          event.preventDefault();
-          this.nextRadio();
-          break;
-        default:
-          break;
-      }
-    });
-
-    window.addEventListener('keyup', (event) => {
-      switch (event.code) {
-        case 'ArrowUp':
-        case 'KeyW':
-        case 'Space':
-          this.gasUp();
-          break;
-        case 'ArrowDown':
-        case 'KeyS':
-          this.brakeUp();
-          break;
-        default:
-          break;
-      }
-    });
-  }
-
-  // Mobile/control API. All devices use the same lane logic.
-  moveLeft() {
-    if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
-    this.playerLane = clamp(this.playerLane - 1, MIN_LANE, MAX_LANE);
-    this.targetX = this.laneX(this.playerLane);
-    this._audio(['steer', 'playSteer']);
-  }
-
-  moveRight() {
-    if (this.state !== STATE.PLAY || this.paused || this.eventOpen) return;
-    this.playerLane = clamp(this.playerLane + 1, MIN_LANE, MAX_LANE);
-    this.targetX = this.laneX(this.playerLane);
-    this._audio(['steer', 'playSteer']);
-  }
-
-  left() { this.moveLeft(); }
-  right() { this.moveRight(); }
-
-  // Compatibility API used by the 3D/mobile control layer.
-  // direction < 0 moves left; direction > 0 moves right.
-  changeLane(direction = 0) {
-    const value = Number(direction);
-    if (!Number.isFinite(value) || value === 0) return;
-    if (value < 0) this.moveLeft();
-    else this.moveRight();
-  }
-
-  gasDown() {
-    this.gasHeld = true;
-    this._externalThrottle = true;
-    this.throttle = 1;
-  }
-
-  gasUp() {
-    this.gasHeld = false;
-    this.throttle = 0;
-    this._externalThrottle = true;
-  }
-
-  brakeDown() {
-    this.brakeHeld = true;
-    this.brake = 1;
-  }
-
-  brakeUp() {
-    this.brakeHeld = false;
-    this.brake = 0;
-  }
-
-  setThrottle(value) {
-    this.throttle = clamp(Number(value) || 0, 0, 1);
-    this._externalThrottle = true;
-    if (this.throttle > 0) this.gasHeld = false;
-  }
-
-  setBrake(value) {
-    this.brake = clamp(Number(value) || 0, 0, 1);
-    if (this.brake > 0) this.brakeHeld = false;
-  }
-
-  pause() {
-    if (this.state !== STATE.PLAY || this.eventOpen) return;
-    this.paused = true;
-    this._audio(['pause']);
-    this.renderer3d?.setPaused?.(true);
-    this._ui('showPaused');
-  }
-
-  resume() {
-    if (this.state !== STATE.PLAY) return;
-    this.paused = false;
-    this._audio(['resume']);
-    this.renderer3d?.setPaused?.(false);
-    this._ui('showPlaying');
-  }
-
-  togglePause() {
-    if (this.paused) this.resume();
-    else this.pause();
-  }
-
-  horn() {
-    this._audio(['horn', 'playHorn', 'beep'], 'horn');
-    this._ui('showToast', 'HORN');
-  }
-
-  selectRoute(routeId, persist = true) {
-    if (!CONFIG.ROUTES?.[routeId]) return false;
-    this.routeId = routeId;
-    this.selectedRoute = CONFIG.ROUTES[routeId];
-    if (persist) this._saveSelection();
-    this._ui('setRoute', this.selectedRoute);
-    return true;
-  }
-
-  selectDriver(driverId, persist = true) {
-    const driver = CONFIG.DRIVERS?.[driverId];
-    if (!driver || driver.unlocked === false) return false;
-    this.selectedDriver = driverId;
-    if (persist) this._saveSelection();
-    this._ui('setDriver', driver);
-    return true;
-  }
-
-  selectPaint(paintId, persist = true) {
-    if (!CONFIG.PAINTS?.[paintId]) return false;
-    this.selectedPaint = paintId;
-    if (persist) this._saveSelection();
-    this.renderer3d?.applyPaint?.(paintId);
-    this._ui('setPaint', CONFIG.PAINTS[paintId]);
-    return true;
-  }
-
-  selectKeke(kekeId, persist = true) {
-    const keke = KEKES[kekeId];
-    if (!keke) return false;
-    if (this.level < keke.unlockLevel) {
-      this._ui('showToast', `${keke.name} unlocks at level ${keke.unlockLevel}.`);
-      return false;
-    }
-    this.selectedKeke = kekeId;
-    this.capacity = keke.capacity;
-    if (persist) this._saveSelection();
-    this._ui('setKeke', keke);
-    this.renderer3d?.setKeke?.(kekeId, keke);
-    return true;
-  }
-
-  selectRadio(radioId, persist = true) {
-    const radios = CONFIG.RADIO || [];
-    const idx = radios.findIndex((r) => r.id === radioId);
-    if (idx < 0) return false;
-    this.radioIndex = idx;
-    this.selectedRadio = radios[idx].id;
-    if (persist) this._saveSelection();
-    this._activateRadio();
-    return true;
-  }
-
-  nextRadio() {
-    const radios = CONFIG.RADIO || [];
-    if (!radios.length) return;
-    this.radioIndex = (this.radioIndex + 1) % radios.length;
-    this.selectedRadio = radios[this.radioIndex].id;
-    this.lastRadioSwitchFrame = this.frame;
-    this._saveSelection();
-    this._activateRadio();
-  }
-
-  previousRadio() {
-    const radios = CONFIG.RADIO || [];
-    if (!radios.length) return;
-    this.radioIndex = (this.radioIndex - 1 + radios.length) % radios.length;
-    this.selectedRadio = radios[this.radioIndex].id;
-    this.lastRadioSwitchFrame = this.frame;
-    this._saveSelection();
-    this._activateRadio();
-  }
-
-  _activateRadio() {
-    const station = (CONFIG.RADIO || [])[this.radioIndex];
-    if (!station) return;
-
-    this._audio(
-      ['setRadioStation', 'setRadio', 'playRadio', 'radio'],
-      station.id,
-      station.name
-    );
-
-    this._ui('setRadio', station);
-    this._ui('showToast', `📻 ${station.name}`);
-  }
-
-  getKekeCatalog() {
-    return Object.values(KEKES).map((keke) => ({
-      ...keke,
-      unlocked: this.level >= keke.unlockLevel,
-      selected: this.selectedKeke === keke.id
-    }));
-  }
-
-  getDriverCatalog() {
-    return Object.values(CONFIG.DRIVERS || {}).map((driver) => ({
-      ...driver,
-      selected: this.selectedDriver === driver.id
-    }));
-  }
-
-  getRouteCatalog() {
-    return Object.values(CONFIG.ROUTES || {}).map((route) => ({
-      ...route,
-      selected: this.routeId === route.id
-    }));
-  }
-
-  start() {
-    if (this.state === STATE.PLAY && !this.paused) return;
-
-    this.state = STATE.PLAY;
-    this.paused = false;
-    this.eventOpen = false;
-    this.eventType = null;
-    this.eventContext = null;
-
-    this.score = 0;
-    this.dist = 0;
-    this.totalPax = 0;
-    this.completedTrips = 0;
-    this.paxCount = 0;
-    this.continuesLeft = 3;
-    this.combo = 0;
-    this.bestCombo = 0;
+    this.karotaTimer = 0;
+    this.landmarkIndex = 0;
     this.nearMissCount = 0;
-    this.crashes = 0;
-    this.speed = 0;
-    this.throttle = 0;
-    this.brake = 0;
-    this.gasHeld = false;
-    this.brakeHeld = false;
-    this._externalThrottle = true;
-    this._lastCrashFrame = -Infinity;
-    this.frame = 0;
-    this.roadOff = 0;
-    this.playerLane = 1;
-    this.targetX = this.laneX(this.playerLane);
-    this.playerX = this.targetX;
-    this.previousPlayerX = this.playerX;
-    this.obs = [];
-    this.paxZones = [];
-    this.dropZones = [];
-    this.coins = [];
-    this.checkpoints = [];
-    this.currentPassengers = [];
-    this.karotaHeat = 0;
-    this.karotaWanted = false;
-    this.policeChase = 0;
-    this.checkpointCooldown = 0;
+    this.introT = 0;
+    this.fuel = 100;
+    this.zoneType = 'road'; // road | junction | market
+    this.zoneTimer = 0;
+    this.parkOnly = false; // true inside market/junction regulation
+    this.cabinCam = false;
+    this.weatherGrip = 1;
+    this.heatComplaints = 0;
+    this.lastHonkFrame = 0;
+    this.lifeTipsShown = 0;
+    this.pickupCooldown = 0;
+    this.stoppedFrames = 0;
+    this.condition = 100; // overall vehicle health 0-100
+    this.damageBody = 0;
+    this.damageEngine = 0;
+    this.damageTyres = 0;
+    this.puncture = false;
+    this.tireWearAccum = 0;
+    this.level = 1;
 
-    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
-    const keke = KEKES[this.selectedKeke] || KEKES.standard;
+    this.selectedRoute = Storage.getRoute() || 'citycenter';
+    this.selectedDriver = Storage.getDriver() || 'ruffneck';
+    this.selectedPaint = Storage.getPaint() || 'classic';
+    this.selectedKeke = Storage.get('kanoKeke', 'starter') || 'starter';
+    this.selectedRoadMode = Storage.get('kanoRoadMode', 'twoway') || 'twoway';
+    this.radioIndex = Storage.getRadio() || 0;
+    this.high = Storage.getHighScore();
+    this.money = Storage.getMoney();
+    this.activeMission = null;
 
-    this.capacity = keke.capacity;
-    this.maxSpeed = BASE_MAX_SPEED + (driver?.bonuses?.speed || 0) + (keke.speed || 0);
-    this.maxSpeed = Math.max(5.5, this.maxSpeed);
-
-    this.introSequence = {
-      active: true,
-      stage: 'walk_to_keke',
-      timer: 0,
-      driverId: this.selectedDriver,
-      paintId: this.selectedPaint
-    };
-
-    this.renderer3d?.applyPaint?.(this.selectedPaint);
-    this.renderer3d?.setKeke?.(this.selectedKeke, keke);
-    this.renderer3d?.startOpeningSequence?.(this.selectedDriver, this.selectedPaint, this.selectedKeke);
-
-    this._audio(['ensure', 'start']);
-    this._activateRadio();
-    this._ui('showPlaying');
-    this._ui('showEvent', {
-      title: 'Kano Run',
-      text: `RuffNeck Adaidaita Sahu — ${this.selectedRoute?.name || 'Kano Route'}\n\nYour driver walks to the keke, boards and starts the engine.`,
-      actions: [
-        {
-          label: 'START ROUTE',
-          onClick: () => {
-            this.closeEvent();
-          }
-        }
-      ]
-    });
-    this._ui('updateHUD', this._hudPayload());
+    // Onboard passengers with destinations
+    this.onboard = []; // { dest, seats, fare }
+    this.passengersWaiting = []; // roadside people with dest
   }
 
   resize() {
-    const canvas = this.canvas;
-    if (!canvas) return;
-
-    const host = canvas.parentElement;
-    const width = Math.max(host?.clientWidth || canvas.clientWidth || window.innerWidth || 1, 1);
-    const height = Math.max(host?.clientHeight || canvas.clientHeight || window.innerHeight || 1, 1);
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const targetWidth = Math.max(Math.round(width * dpr), 1);
-    const targetHeight = Math.max(Math.round(height * dpr), 1);
-
-    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-    }
-
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    if (this.ctx) {
-      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-
-    // The renderer reference can be replaced during startup by a compatible
-    // renderer instance or an underlying WebGL object. Only call a real method.
-    const renderer3d = this.renderer3d;
-    if (renderer3d && typeof renderer3d.resize === 'function') {
-      renderer3d.resize();
-    }
+    const r = this.canvas.parentElement.getBoundingClientRect();
+    this.canvas.style.width = r.width + 'px';
+    this.canvas.style.height = r.height + 'px';
+    if (this.renderer3d?.resize) this.renderer3d.resize();
   }
 
-  retry() {
-    this.start();
-  }
-
-  restart() {
-    this.start();
-  }
-
-  closeEvent() {
-    this.eventOpen = false;
-    this.eventType = null;
-    this.eventContext = null;
-    this.state = this._resumeStateAfterEvent || STATE.PLAY;
-    this.paused = false;
-    this.renderer3d?.setPaused?.(false);
-    this._ui('hideEvent');
-    this._ui('showPlaying');
-  }
-
-  showEvent(event) {
-    this.eventOpen = true;
-    this.state = STATE.EVENT;
-    this._resumeStateAfterEvent = STATE.PLAY;
-    this.eventType = event?.type || 'generic';
-    this.eventContext = event?.context || null;
-    this._ui('showEvent', event);
-  }
-
-  updateOpeningSequence() {
-    if (!this.introSequence.active) return false;
-
-    this.introSequence.timer += 1;
-
-    if (this.introSequence.stage === 'walk_to_keke') {
-      if (this.introSequence.timer >= 70) {
-        this.introSequence.stage = 'boarding';
-        this.introSequence.timer = 0;
-        this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-        this._audio(['walk', 'playWalk']);
-      }
-    } else if (this.introSequence.stage === 'boarding') {
-      if (this.introSequence.timer >= 48) {
-        this.introSequence.stage = 'engine_start';
-        this.introSequence.timer = 0;
-        this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-      }
-    } else if (this.introSequence.stage === 'engine_start') {
-      if (this.introSequence.timer === 1) {
-        this._audio(['engineStart', 'startEngine', 'playEngineStart']);
-      }
-      if (this.introSequence.timer >= 48) {
-        this.introSequence.stage = 'driving';
-        this.introSequence.active = false;
-        this.introSequence.timer = 0;
-        this._audio(['drive', 'startEngine']);
-        this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-        this._ui('hideEvent');
-      }
-    }
-
-    this.renderer3d?.updateOpeningSequence?.(this.introSequence);
-    return this.introSequence.active;
-  }
-
-  update(delta = FRAME_MS) {
-    if (this.state !== STATE.PLAY || this.paused) {
-      this.renderer3d?.draw?.(this);
-      return;
-    }
-
-    this.frame += 1;
-
-    if (this.eventOpen || this.state === STATE.EVENT) {
-      this.renderer3d?.draw?.(this);
-      return;
-    }
-
-    if (this.introSequence.active) {
-      this.updateOpeningSequence();
-      this.renderer3d?.draw?.(this);
-      this._updateHUDEveryFrame();
-      return;
-    }
-
-    if (this.bounce > 0) this.bounce -= 1;
-    if (this.shake > 0) this.shake -= 1;
-    if (this.checkpointCooldown > 0) this.checkpointCooldown -= 1;
-
-    this.updateDrivingSpeed();
-    this.updatePlayer();
-
-    this.roadOff += this.speed;
-    this.dist += this.speed * 0.00016;
-    this.xp += this.speed * 0.02;
-    this.updateLevel();
-
-    if (this.frame - this.lastSpawnFrame >= this.trafficSpawnInterval()) {
-      this.spawnTraffic();
-      this.lastSpawnFrame = this.frame;
-    }
-
-    if (this.frame - this.lastPassengerFrame >= this.passengerSpawnInterval()) {
-      this.spawnPassengerZone();
-      this.lastPassengerFrame = this.frame;
-    }
-
-    if (this.frame - this.lastCoinFrame >= 85) {
-      this.spawnCoin();
-      this.lastCoinFrame = this.frame;
-    }
-
-    if (this.frame - this.lastCheckpointFrame >= this.checkpointInterval()) {
-      this.spawnCheckpoint();
-      this.lastCheckpointFrame = this.frame;
-    }
-
-    this.updateTraffic();
-    this.updatePassengerZones();
-    this.updateDropZones();
-    this.updateCoins();
-    this.updateCheckpoints();
-    this.updatePoliceChase();
-
-    this.handleTrafficCollisions();
-    this.handlePassengerInteractions();
-    this.handleCoinCollection();
-    this.updateMissionProgress();
-    this.updateDailyProgress();
-    this.updateLandmarks();
-
-    if (this.speed > 0.2) {
-      this._audio(['updateEngine'], this.speed, this.throttle, this.brake);
-    }
-
-    this.renderer3d?.draw?.(this);
-    this._updateHUDEveryFrame();
-  }
-
-  draw() {
-    this.renderer3d?.draw?.(this);
-  }
-
-  updateDrivingSpeed() {
-    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
-    const keke = KEKES[this.selectedKeke] || KEKES.standard;
-    const driverSpeed = driver?.bonuses?.speed || 0;
-    const throttle = this.gasHeld ? 1 : clamp(Number(this.throttle) || 0, 0, 1);
-    const braking = this.brakeHeld ? 1 : clamp(Number(this.brake) || 0, 0, 1);
-
-    // Smooth acceleration, stronger braking, and gentle coasting. No hidden cruise
-    // acceleration: the player must hold GAS or set a positive throttle value.
-    if (braking > 0) {
-      this.speed -= (0.075 + this.speed * 0.045) * braking;
-    } else if (throttle > 0) {
-      const acceleration = 0.018 + throttle * 0.025;
-      this.speed += acceleration * (1 + Math.max(0, driverSpeed + keke.speed) * 0.15);
-    } else {
-      this.speed -= 0.008 + this.speed * 0.012;
-    }
-
-    this.maxSpeed = Math.max(5.5, BASE_MAX_SPEED + driverSpeed + (keke.speed || 0));
-    this.speed = clamp(this.speed, 0, this.maxSpeed);
-  }
-
-  updatePlayer() {
-    this.previousPlayerX = Number.isFinite(this.playerX) ? this.playerX : this.targetX;
-    this.playerX += (this.targetX - this.playerX) * 0.28;
-    this.playerY = PLAYER_Y;
-
-    if (Math.abs(this.playerX - this.targetX) > 0.05) {
-      this.bounce = Math.max(this.bounce, 2);
-    }
-  }
-
-  laneX(lane) {
-    const laneMap = [110, 195, 280];
-    return laneMap[clamp(Math.round(lane), 0, 2)];
+  laneX(l) {
+    const pad = 18;
+    const lw = (this.canvas.clientWidth - pad * 2) / CONFIG.LANES;
+    return pad + l * lw + lw / 2;
   }
 
   getTimeOfDay() {
-    const cycle = (this.frame % 5400) / 5400;
-    return cycle;
+    return (this.frame % 5400) / 5400;
   }
 
-  getWeather() {
-    return this.weatherState;
+  /** 0 morning rush → 0.25 midday → 0.5 evening → night */
+  isPeakHour() {
+    const t = this.getTimeOfDay();
+    return (t > 0.05 && t < 0.18) || (t > 0.45 && t < 0.58);
   }
 
-  setWeather(weather) {
-    const allowed = ['clear', 'harmattan', 'rain'];
-    if (!allowed.includes(weather)) return;
-    this.weatherState = weather;
+  fareScale() {
+    // Evening/night slightly higher; midday lower competition
+    const t = this.getTimeOfDay();
+    if (t > 0.55) return 1.2;
+    if (this.isPeakHour()) return 1.1;
+    if (t > 0.25 && t < 0.4) return 0.9;
+    return 1;
   }
 
-  trafficSpawnInterval() {
-    // Leave enough reaction time, especially on mobile and at higher levels.
-    return Math.max(88, 176 - this.level * 4 - Math.floor(this.speed * 2));
+  getDriver() {
+    return CONFIG.DRIVERS[this.selectedDriver] || CONFIG.DRIVERS.ruffneck;
   }
 
-  passengerSpawnInterval() {
-    return Math.max(105, 230 - this.level * 5);
+  getKeke() {
+    return CONFIG.KEKES[this.selectedKeke] || CONFIG.KEKES.starter;
   }
 
-  checkpointInterval() {
-    return Math.max(520, 1050 - this.level * 15);
+  getBonuses() {
+    const d = this.getDriver().bonuses || {};
+    const k = this.getKeke();
+    return {
+      ...d,
+      speed: (d.speed || 0) + (k.speed || 0),
+      capacity: k.capacity || 3
+    };
   }
 
-  spawnTraffic() {
-    if (this.obs.length >= 18) return;
-
-    const lane = Math.floor(Math.random() * LANES);
-    const types = [
-      'keke', 'keke', 'car', 'car', 'taxi', 'bus',
-      'motorcycle', 'truck'
-    ];
-
-    if (this.level >= 4) types.push('police');
-    if (this.level >= 6) types.push('karota');
-
-    const type = pick(types);
-
-    const tooClose = this.obs.some(
-      (o) => o.lane === lane && o.y < -120
-    );
-
-    if (tooClose) return;
-
-    this.obs.push({
-      id: this.nextTrafficId++,
-      lane,
-      y: -240 - Math.random() * 300,
-      type,
-      speedFactor: 0.82 + Math.random() * 0.34,
-      scoredNearMiss: false,
-      checkpoint: false
-    });
+  cycleRadio() {
+    this.radioIndex = (this.radioIndex + 1) % CONFIG.RADIO.length;
+    Storage.setRadio(this.radioIndex);
+    const st = CONFIG.RADIO[this.radioIndex];
+    this.ui.setRadio(st.name);
+    this.ui.showMissionToast('📻 ' + st.name);
+    Audio.radioTune();
+    Audio.startRadioBed();
   }
 
-  spawnPassengerZone() {
-    if (this.paxZones.length >= 8) return;
+  /** Begin run → intro walk-to-keke, then PLAY */
+  start() {
+    const skipIntro = Storage.getSeenTutorial() && Storage.get('kanoSkipIntro', false);
+    this.state = skipIntro ? STATE.PLAY : STATE.INTRO;
+    this.introT = 0;
+    this.fuel = 100;
+    this.zoneType = 'road'; // road | junction | market
+    this.zoneTimer = 0;
+    this.parkOnly = false; // true inside market/junction regulation
+    this.cabinCam = false;
+    this.weatherGrip = 1;
+    this.heatComplaints = 0;
+    this.lastHonkFrame = 0;
+    this.lifeTipsShown = 0;
+    this.pickupCooldown = 0;
+    this.stoppedFrames = 0;
+    this.condition = 100; // overall vehicle health 0-100
+    this.damageBody = 0;
+    this.damageEngine = 0;
+    this.damageTyres = 0;
+    this.score = 0;
+    this.dist = 0;
+    this.paxOnBoard = 0;
+    this.totalPax = 0;
+    this.dropCount = 0;
+    this.continuesLeft = 3;
+    this.paidContinuesUsed = 0;
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.speed = 0;
+    this.throttle = 0;
+    this.braking = false;
+    this.frame = 0;
+    this.roadOff = 0;
+    this.playerLane = 1;
+    this.inv = 0;
+    this.bounce = 0;
+    this.obs = [];
+    this.paxZones = [];
+    this.dropZones = [];
+    this.coins = [];
+    this.onboard = [];
+    this.passengersWaiting = [];
+    this.trafficJamTimer = 0;
+    this.nearMissCooldown = 0;
+    this.policeChase = 0;
+    this.karotaTimer = 0;
+    this.landmarkIndex = 0;
+    this.nearMissCount = 0;
+    this.level = 1;
+    this.roadCondition = 'clear';
+    this.roadCondTimer = 0;
+    this.destinationsServed = [];
 
-    const lane = Math.random() < 0.5 ? MIN_LANE : MAX_LANE;
-    const roadsideSide = lane === MIN_LANE ? 'left' : 'right';
-    const passenger = weightedPick(PASSENGER_TYPES);
-    const destination = pick(this.destinationPool());
+    const b = this.getBonuses();
+    this.capacity = b.capacity || CONFIG.DEFAULT_CAPACITY || 5;
 
-    const zone = {
-      id: this.nextZoneId++,
-      lane,
-      roadsideSide,
-      y: -260 - Math.random() * 260,
-      taken: false,
-      aishat: passenger.id === 'hajiya',
-      vip: passenger.id === 'elder' || passenger.id === 'worker',
-      flagging: true,
-      passenger,
-      passengerName: passenger.name,
-      destination,
-      fareBase: (this.selectedRoute?.baseFare || 150) * passenger.fare,
-      waitFrames: 0
+    this.activeMission = {
+      ...CONFIG.MISSIONS[Math.floor(Math.random() * CONFIG.MISSIONS.length)],
+      progress: 0
     };
 
-    this.paxZones.push(zone);
+    this.ui.showPlaying();
+    this.ui.setMission(this.activeMission.text);
+    const route = CONFIG.ROUTES[this.selectedRoute];
+    this.ui.setRouteLabel(route ? route.name : '');
+    const drv = this.getDriver();
+    this.ui.setDriverLabel(drv.name + ' · ' + drv.title);
+    const st = CONFIG.RADIO[this.radioIndex] || CONFIG.RADIO[0];
+    this.ui.setRadio(st.name);
+    if (this.renderer3d?.applyPaint) this.renderer3d.applyPaint(this.selectedPaint);
+    if (this.renderer3d) this.renderer3d.introPhase = 0;
+
+    if (this.state === STATE.PLAY) {
+      this.throttle = 0.35;
+      Audio.startEngine();
+      Audio.startRadioBed();
+      this.ui.showMissionToast('Drive!');
+      if (this.renderer3d) this.renderer3d.introPhase = 3;
+    } else {
+      this.ui.showMissionToast('Walking to keke…');
+    }
+    this.ui.updateHUD(this);
+    this.initDaily();
   }
 
-  destinationPool() {
-    const route = this.selectedRoute;
-    const landmarks = route?.landmarks || [];
-    const merged = [
-      ...KANО_DESTINATIONS,
-      ...landmarks
+  finishIntro() {
+    this.state = STATE.PLAY;
+    this.throttle = 0.2;
+    Audio.startEngine();
+    Audio.startRadioBed();
+    const tips = [
+      'Sannu da aiki — load at the park',
+      'Morning rush — traffic will be tight',
+      'Watch KAROTA at junctions',
+      'Full load rides slower — that is normal'
     ];
-    return [...new Set(merged)];
+    this.ui.showMissionToast(tips[Math.floor(Math.random() * tips.length)]);
+    Audio.speak('Sannu da aiki', { rate: 0.92, pitch: 1 });
+    if (this.renderer3d) this.renderer3d.introPhase = 3;
   }
 
-  spawnCoin() {
-    if (this.coins.length >= 10) return;
-    this.coins.push({
-      lane: Math.floor(Math.random() * LANES),
-      y: -180 - Math.random() * 520,
-      taken: false,
-      bob: Math.random() * Math.PI * 2,
-      value: 25 + this.level * 5
-    });
-  }
-
-  spawnCheckpoint() {
-    if (this.checkpoints.length >= 2 || this.checkpointCooldown > 0) return;
-
-    const lane = Math.floor(Math.random() * LANES);
-    this.checkpoints.push({
-      id: `karota-${this.frame}-${lane}`,
-      lane,
-      y: -380 - Math.random() * 180,
-      type: Math.random() < 0.52 ? 'karota' : 'police',
-      active: true,
-      handled: false
-    });
-  }
-
-  updateTraffic() {
-    for (const obstacle of this.obs) {
-      obstacle.previousY = Number.isFinite(obstacle.y) ? obstacle.y : PLAYER_Y - 1000;
-      obstacle.previousLane = obstacle.lane;
-      obstacle.y += this.speed * 1.25 * obstacle.speedFactor;
-    }
-
-    const survivors = [];
-    for (const obstacle of this.obs) {
-      if (obstacle.y < 700) survivors.push(obstacle);
-    }
-    this.obs = survivors.filter((obstacle) => !obstacle.collided);
-  }
-
-  updatePassengerZones() {
-    for (const zone of this.paxZones) {
-      zone.y += this.speed;
-      zone.waitFrames += 1;
-      if (zone.waitFrames > 120 && zone.y > PLAYER_Y + 80) {
-        zone.taken = true;
-      }
-    }
-
-    this.paxZones = this.paxZones.filter(
-      (zone) => !zone.taken || zone.y < PLAYER_Y + 120
-    );
-  }
-
-  updateDropZones() {
-    for (const zone of this.dropZones) {
-      zone.y += this.speed;
-      if (zone.y > 700) zone.used = true;
-    }
-    this.dropZones = this.dropZones.filter((zone) => !zone.used);
-  }
-
-  updateCoins() {
-    for (const coin of this.coins) {
-      coin.y += this.speed;
-      coin.bob = (coin.bob || 0) + 0.08;
-    }
-    this.coins = this.coins.filter((coin) => coin.y < 700 && !coin.taken);
-  }
-
-  updateCheckpoints() {
-    for (const cp of this.checkpoints) {
-      if (cp.handled || !cp.active) continue;
-      cp.y += this.speed;
-
-      const dx = Math.abs(this.playerX - this.laneX(cp.lane));
-      const dy = Math.abs(cp.y - PLAYER_Y);
-      if (
-        !this.eventOpen &&
-        this.checkpointCooldown <= 0 &&
-        dx <= 34 &&
-        dy <= CHECKPOINT_Y
-      ) {
-        // Mark before opening the event so the same checkpoint cannot fire twice.
-        cp.handled = true;
-        this.triggerCheckpointInteraction({ type: cp.type, source: cp });
-      }
-    }
-    this.checkpoints = this.checkpoints.filter(
-      (cp) => cp.y < 700 && !cp.handled
-    );
-  }
-
-  updatePoliceChase() {
-    if (this.policeChase <= 0) return;
-
-    this.policeChase -= 1;
-    this.karotaWanted = true;
-
-    if (this.frame % 90 === 0) {
-      this._audio(['police', 'karotaAlert', 'siren']);
-      this._ui('showToast', '🚨 KAROTA is following you. Slow down and clear the checkpoint.');
-    }
-
-    if (this.policeChase === 0) {
-      this.karotaWanted = false;
-      this.karotaHeat = Math.max(0, this.karotaHeat - 2);
+  togglePause() {
+    if (this.state === STATE.PLAY) {
+      this.state = STATE.PAUSE;
+      Audio.stopEngine();
+      this.ui.showMissionToast('Paused');
+      this.ui.setPauseUI(true);
+    } else if (this.state === STATE.PAUSE) {
+      this.state = STATE.PLAY;
+      Audio.startEngine();
+      this.ui.setPauseUI(false);
+      this.ui.showMissionToast('Resumed');
     }
   }
 
-  handleTrafficCollisions() {
-    for (const obstacle of this.obs) {
-      if (obstacle.collided || obstacle.collisionConsumed) continue;
+  recalcCondition() {
+    // Weighted wear
+    this.condition = Math.max(0, Math.min(100,
+      100 - this.damageBody * 0.35 - this.damageEngine * 0.4 - this.damageTyres * 0.25
+    ));
+  }
 
-      const obstacleX = this.laneX(obstacle.lane);
-      const profile = trafficHitbox(obstacle.type);
-      const halfWidth = PLAYER_HITBOX.halfWidth + profile.halfWidth;
-      const halfHeight = PLAYER_HITBOX.halfHeight + profile.halfHeight;
-      const previousPlayerX = Number.isFinite(this.previousPlayerX)
-        ? this.previousPlayerX
-        : this.playerX;
-      const previousObstacleY = Number.isFinite(obstacle.previousY)
-        ? obstacle.previousY
-        : obstacle.y;
+  applyDamage(kind, amount) {
+    if (kind === 'body') this.damageBody = Math.min(100, this.damageBody + amount);
+    else if (kind === 'engine') this.damageEngine = Math.min(100, this.damageEngine + amount);
+    else if (kind === 'tyres') this.damageTyres = Math.min(100, this.damageTyres + amount);
+    else {
+      this.damageBody = Math.min(100, this.damageBody + amount * 0.5);
+      this.damageEngine = Math.min(100, this.damageEngine + amount * 0.3);
+    }
+    this.recalcCondition();
+    if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
+  }
 
-      const startX = previousPlayerX - obstacleX;
-      const startY = previousObstacleY - PLAYER_Y;
-      const endX = this.playerX - obstacleX;
-      const endY = obstacle.y - PLAYER_Y;
-      const collision = sweptHitboxContact(
-        startX,
-        startY,
-        endX,
-        endY,
-        halfWidth,
-        halfHeight
-      );
+  repairVehicle(level = 'full') {
+    if (level === 'full') {
+      this.damageBody = 0;
+      this.damageEngine = 0;
+      this.damageTyres = 0;
+      this.puncture = false;
+      this.tireWearAccum = 0;
+    } else if (level === 'quick') {
+      this.damageBody = Math.max(0, this.damageBody - 25);
+      this.damageEngine = Math.max(0, this.damageEngine - 20);
+      this.damageTyres = Math.max(0, this.damageTyres - 20);
+      if (this.damageTyres < 50) this.puncture = false;
+    } else if (level === 'tyres') {
+      this.damageTyres = 0;
+      this.puncture = false;
+      this.tireWearAccum = 0;
+    }
+    this.recalcCondition();
+    if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
+  }
 
-      if (collision) {
-        // Police/KAROTA retain their existing interaction flow, but each vehicle
-        // is consumed immediately so it cannot fire repeatedly while overlapping.
-        obstacle.collisionConsumed = true;
-        obstacle.collided = true;
-        if (obstacle.type === 'police' || obstacle.type === 'karota') {
-          this.triggerCheckpointInteraction({
-            type: obstacle.type,
-            source: obstacle
-          });
-        } else {
-          this.crash(obstacle);
-        }
-        return;
-      }
+  /** Sudden puncture — flat until tyres repaired */
+  triggerPuncture(reason) {
+    if (this.puncture) return;
+    this.puncture = true;
+    this.damageTyres = Math.min(100, this.damageTyres + 35 + Math.random() * 20);
+    this.recalcCondition();
+    this.speed *= 0.4;
+    this.triggerShake(10, 5);
+    Audio.brake();
+    Audio.speak('Puncture. Flat tyre.', { rate: 0.95 });
+    this.ui.showMissionToast('💥 Puncture! ' + (reason || 'Flat tyre') + ' — limp to mechanic');
+    if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
+  }
 
-      // Near misses are based on the gap outside both vehicle hitboxes rather
-      // than fixed lane-centre distance, so large vehicles are treated fairly.
-      const dx = Math.abs(endX);
-      const dy = Math.abs(endY);
-      const horizontalGap = dx - halfWidth;
-      if (
-        !obstacle.scoredNearMiss &&
-        dy <= NEAR_MISS_Y &&
-        dy > halfHeight &&
-        horizontalGap > 0 &&
-        horizontalGap <= 54
-      ) {
-        obstacle.scoredNearMiss = true;
-        this.nearMissCount += 1;
-        this.combo += 1;
-        this.bestCombo = Math.max(this.bestCombo, this.combo);
-        this.score += Math.round(25 * (1 + this.combo * 0.1));
-        this.xp += 8;
-        this._audio(['nearMiss', 'playNearMiss']);
-        this._ui('showCombo', this.combo);
+  toggleCabin() {
+    if (this.renderer3d?.cycleCamera) {
+      const mode = this.renderer3d.cycleCamera();
+      this.cabinCam = mode === 'driver';
+      this.cameraMode = mode;
+      const labels = {
+        chase: 'Chase camera',
+        driver: 'Driver view',
+        passenger: 'Passenger seat',
+        road: 'Road / hood view'
+      };
+      this.ui.showMissionToast(labels[mode] || mode);
+      this.ui.setCamLabel?.(mode);
+    } else {
+      this.cabinCam = !this.cabinCam;
+      this.ui.showMissionToast(this.cabinCam ? 'Driver view' : 'Chase view');
+    }
+  }
+
+  setThrottle(v) {
+    this.throttle = Math.max(0, Math.min(1, v));
+  }
+
+  setBrake(on) {
+    const was = this.braking;
+    this.braking = !!on;
+    if (on && !was && this.speed > 2) Audio.brake();
+  }
+
+  changeLane(dir) {
+    if (this.state !== STATE.PLAY && this.state !== STATE.INTRO) return;
+    const n = this.playerLane + dir;
+    if (n >= 0 && n < CONFIG.LANES) {
+      this.playerLane = n;
+      this.bounce = 10;
+    }
+  }
+
+  horn() {
+    if (this.state !== STATE.PLAY) return;
+    Audio.horn();
+    this.inv = Math.max(this.inv, 18);
+    for (const o of this.obs) {
+      if (Math.round(o.lane) === this.playerLane && Math.abs(o.y - this.playerY) < 120) {
+        o.y -= 36;
       }
     }
   }
 
-  crash(obstacle) {
-    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
-    const invFrames = driver?.bonuses?.invFrames || 10;
+  triggerShake(frames = 12, mag = 6) {
+    this.shake = frames;
+    this.shakeMag = mag;
+  }
 
-    // Consume the vehicle even during post-crash invulnerability, otherwise the
-    // same overlapping vehicle could trigger another crash as soon as cooldown ends.
-    if (obstacle) {
-      obstacle.collided = true;
-      obstacle.collisionConsumed = true;
+  addCombo(n = 1) {
+    this.combo += n;
+    this.comboTimer = 160;
+    if (this.combo >= 5 && this.combo % 5 === 0) {
+      this.ui.showMissionToast('🔥 ' + this.combo + 'x COMBO!');
     }
-    if (this.frame - this._lastCrashFrame < invFrames) return;
+  }
 
-    this._lastCrashFrame = this.frame;
-    this.crashes += 1;
-    this.continuesLeft -= 1;
-    this.combo = 0;
-    this.speed = Math.max(0.8, this.speed * 0.55);
-    this.shake = 18;
-    this.shakeMag = 8;
-    this.bounce = 10;
+  getComboMultiplier() {
+    if (this.combo >= 12) return 2;
+    if (this.combo >= 7) return 1.6;
+    if (this.combo >= 4) return 1.3;
+    if (this.combo >= 2) return 1.15;
+    return 1;
+  }
 
-    this._audio(['crash', 'collision', 'playCrash']);
-    this.renderer3d?.onCollision?.();
-    this._ui('showToast', 'CRASH!');
+  initDaily() {
+    this.ui.updateDailyUI?.(this);
+  }
+
+  claimDaily() {
+    if (Storage.isDailyClaimed()) {
+      this.ui.showMissionToast('Already claimed today');
+      return;
+    }
+    const streak = Storage.claimDaily();
+    const reward = 500 + Math.min(500, streak * 50);
+    this.money += reward;
+    Storage.setMoney(this.money);
+    this.ui.showMissionToast('Daily +₦' + reward + ' · Streak ' + streak);
+    this.ui.updateDailyUI?.(this);
+  }
+
+  honorific() {
+    const h = CONFIG.HONORIFICS;
+    return h[Math.floor(Math.random() * h.length)];
+  }
+
+  randomDest() {
+    const d = CONFIG.DESTINATIONS;
+    return d[Math.floor(Math.random() * d.length)];
+  }
+
+  // ——— Opening / crash / continue ———
+  gameOver() {
+    Audio.crash();
+    this.applyDamage('body', 18 + Math.random() * 12);
+    this.applyDamage('engine', 10 + Math.random() * 10);
+    this.applyDamage('tyres', 6 + Math.random() * 8);
+    this.triggerShake(16, 8);
+    try { if (navigator.vibrate) navigator.vibrate(80); } catch {}
+    this.state = STATE.EVENT;
+    this.throttle = 0;
 
     if (this.continuesLeft > 0) {
-      this.showEvent({
-        type: 'continue',
-        title: 'Crash',
-        text: `You hit a ${obstacle?.type || 'vehicle'}. Continue the run? You have ${this.continuesLeft} Life Saver${this.continuesLeft === 1 ? '' : 's'} left.`,
-        context: { obstacle },
-        actions: [
-          {
-            label: 'CONTINUE',
-            onClick: () => this.continueRun()
-          },
-          {
-            label: 'END RUN',
-            onClick: () => this.finishRun()
-          }
+      this.ui.showEvent(
+        '💥 CRASHED!',
+        'You still have ' + this.continuesLeft + ' free Life Saver' +
+          (this.continuesLeft > 1 ? 's' : '') + ' left.\nContinue from here?',
+        [
+          { label: 'Use Free Life Saver (' + this.continuesLeft + ' left)', action: () => this.useContinue(false) },
+          { label: 'End Run', action: () => this.finalGameOver() }
         ]
-      });
-    } else {
-      this.finishRun();
-    }
-  }
-
-  continueRun() {
-    this.eventOpen = false;
-    this.eventType = null;
-    this.eventContext = null;
-    this.state = STATE.PLAY;
-    this.paused = false;
-    this.speed = Math.max(0, this.speed);
-    this.throttle = 0;
-    this.brake = 0;
-    this.gasHeld = false;
-    this.brakeHeld = false;
-    this._lastCrashFrame = this.frame;
-    this.renderer3d?.setPaused?.(false);
-    this._audio(['continue', 'lifeSaver']);
-    this._ui('hideEvent');
-    this._ui('showToast', 'Life Saver used. Keep driving.');
-  }
-
-  handlePassengerInteractions() {
-    if (this.currentPassengers.length > 0) {
-      for (const drop of this.dropZones) {
-        if (drop.used) continue;
-        if (drop.lane !== this.playerLane) continue;
-
-        const dy = Math.abs(drop.y - PLAYER_Y);
-        if (dy <= DROPOFF_Y && this.speed <= 3.0) {
-          this.completeDropOff(drop);
-          return;
-        }
-      }
-    }
-
-    if (this.currentPassengers.length < this.capacity) {
-      for (const zone of this.paxZones) {
-        if (zone.taken) continue;
-        if (zone.lane !== this.playerLane) continue;
-
-        const dy = Math.abs(zone.y - PLAYER_Y);
-        if (dy <= PICKUP_Y && this.speed <= 3.25) {
-          this.startPassengerNegotiation(zone);
-          return;
-        }
-      }
-    }
-  }
-
-  startPassengerNegotiation(zone) {
-    if (this.eventOpen) return;
-
-    const greeting = GREETINGS[(this.totalPax + zone.id) % GREETINGS.length];
-    const routeBase = zone.fareBase;
-    const suggested = Math.max(80, Math.round(routeBase));
-    const low = Math.max(60, Math.round(routeBase * 0.82));
-    const high = Math.round(routeBase * 1.26);
-
-    zone.negotiating = true;
-    this.showEvent({
-      type: 'fare',
-      title: `${greeting}`,
-      text: `${zone.passenger.name} wants to go to ${zone.destination}. Suggested fare: ₦${suggested}.\n\nChoose how you handle the fare.`,
-      context: { zone },
-      actions: [
-        {
-          label: `ACCEPT ₦${suggested}`,
-          onClick: () => this.acceptPassenger(zone, suggested, 'standard')
-        },
-        {
-          label: `NEGOTIATE ₦${high}`,
-          onClick: () => this.acceptPassenger(zone, high, 'high')
-        },
-        {
-          label: `FAIR ₦${low}`,
-          onClick: () => this.acceptPassenger(zone, low, 'fair')
-        },
-        {
-          label: 'LET THEM GO',
-          onClick: () => this.rejectPassenger(zone)
-        }
-      ]
-    });
-
-    this._audio(['passengerCall', 'passengerHail', 'voice'], greeting);
-  }
-
-  acceptPassenger(zone, fare, mode) {
-    if (!zone || zone.taken) {
-      this.closeEvent();
-      return;
-    }
-
-    const driver = CONFIG.DRIVERS?.[this.selectedDriver] || CONFIG.DRIVERS?.ruffneck;
-    let finalFare = fare;
-
-    if (mode === 'high') {
-      const accepted = Math.random() < 0.68;
-      if (!accepted) {
-        finalFare = Math.max(60, Math.round(fare * 0.82));
-        this._ui('showToast', 'Passenger negotiated you down.');
-      }
-    }
-
-    if (zone.aishat && driver?.bonuses?.aishatBonus) {
-      finalFare += driver.bonuses.aishatBonus;
-    }
-
-    finalFare *= driver?.bonuses?.fareMult || 1;
-    finalFare *= KEKES[this.selectedKeke]?.fare || 1;
-    finalFare = Math.max(50, Math.round(finalFare));
-
-    if (this.currentPassengers.length >= this.capacity) {
-      this._ui('showToast', 'Keke is full.');
-      this.closeEvent();
-      return;
-    }
-
-    zone.taken = true;
-    zone.flagging = false;
-    zone.negotiating = false;
-
-    const passenger = {
-      id: zone.id,
-      type: zone.passenger.id,
-      name: zone.passenger.name,
-      seats: zone.passenger.seats,
-      destination: zone.destination,
-      fare: finalFare,
-      boardedFrame: this.frame
-    };
-
-    this.currentPassengers.push(passenger);
-    this.paxCount = this.currentPassengers.length;
-    this.totalPax += 1;
-    this.lastPassenger = passenger;
-    this.lastFare = finalFare;
-
-    const drop = {
-      id: `drop-${zone.id}`,
-      lane: this.playerLane,
-      y: -260 - Math.random() * 220,
-      used: false,
-      destination: zone.destination,
-      passengerId: passenger.id,
-      fare: finalFare,
-      passenger
-    };
-
-    this.dropZones.push(drop);
-
-    this.combo += 1;
-    this.bestCombo = Math.max(this.bestCombo, this.combo);
-    this.score += Math.round(finalFare * 0.35);
-    this.xp += 20;
-
-    this._audio(['pickup', 'passengerPickup', 'playPickup']);
-    this._ui('showToast', `${passenger.name} aboard → ${passenger.destination}`);
-    this.closeEvent();
-  }
-
-  rejectPassenger(zone) {
-    if (!zone) {
-      this.closeEvent();
-      return;
-    }
-
-    zone.taken = true;
-    zone.flagging = false;
-    zone.negotiating = false;
-    this.combo = 0;
-    this._ui('showToast', 'Passenger missed the ride.');
-    this.closeEvent();
-  }
-
-  completeDropOff(drop) {
-    if (!drop || drop.used) return;
-
-    drop.used = true;
-    const idx = this.currentPassengers.findIndex(
-      (p) => p.id === drop.passengerId
-    );
-
-    const passenger = idx >= 0 ? this.currentPassengers[idx] : null;
-    if (idx >= 0) this.currentPassengers.splice(idx, 1);
-
-    this.paxCount = this.currentPassengers.length;
-    this.completedTrips += 1;
-
-    const routeMultiplier = this.selectedRoute?.difficulty || 1;
-    const comboMultiplier = 1 + Math.min(this.combo, 10) * 0.06;
-    const finalFare = Math.max(
-      50,
-      Math.round((passenger?.fare || drop.fare || 100) * comboMultiplier)
-    );
-
-    this.money += finalFare;
-    this.score += finalFare;
-    this.xp += 30 + finalFare * 0.04;
-
-    if (this.combo > 0) this.combo += 1;
-    else this.combo = 1;
-
-    this.bestCombo = Math.max(this.bestCombo, this.combo);
-    this.lastFare = finalFare;
-    this.lastDropDestination = drop.destination;
-
-    this._audio(['dropoff', 'passengerDropoff', 'playDropoff']);
-    this._ui('showToast', `Akwai! Dropped at ${drop.destination}. +₦${finalFare}`);
-
-    if (this.mission?.type === 'drop') {
-      this.mission.progress += 1;
-    }
-
-    this._saveSelection();
-  }
-
-  handleCoinCollection() {
-    for (const coin of this.coins) {
-      if (coin.taken) continue;
-      if (coin.lane !== this.playerLane) continue;
-      if (Math.abs(coin.y - PLAYER_Y) > 46) continue;
-
-      coin.taken = true;
-      this.score += coin.value;
-      this.money += coin.value;
-      this.xp += 5;
-      this._audio(['coin', 'collectCoin', 'playCoin']);
-      this._ui('showToast', `+₦${coin.value}`);
-    }
-  }
-
-  triggerCheckpointInteraction({ type, source }) {
-    if (this.eventOpen) return;
-    if (this.checkpointCooldown > 0) return;
-
-    const fineBase = type === 'karota'
-      ? 450 + this.level * 45
-      : 300 + this.level * 30;
-
-    this.checkpointCooldown = 240;
-    this.eventType = type;
-    this.eventContext = { source };
-
-    this.showEvent({
-      type: 'karota',
-      title: type === 'karota' ? 'KAROTA CHECKPOINT' : 'POLICE CHECKPOINT',
-      text: `Officer has stopped your keke. Fine: ₦${fineBase}.\n\nKeep the interaction controlled; driving away may start a pursuit.`,
-      context: { source, fineBase },
-      actions: [
-        {
-          label: `PAY ₦${fineBase}`,
-          onClick: () => this.payCheckpointFine(fineBase)
-        },
-        {
-          label: 'NEGOTIATE',
-          onClick: () => this.negotiateCheckpoint(fineBase)
-        },
-        {
-          label: 'DISPUTE',
-          onClick: () => this.disputeCheckpoint(fineBase)
-        },
-        {
-          label: 'DRIVE OFF',
-          onClick: () => this.escapeCheckpoint()
-        }
-      ]
-    });
-
-    this._audio(type === 'karota'
-      ? ['karota', 'checkpoint', 'voice']
-      : ['police', 'checkpoint', 'siren']);
-  }
-
-  payCheckpointFine(fine) {
-    const amount = Math.min(this.money, fine);
-    this.money -= amount;
-    this.score = Math.max(0, this.score - amount);
-    this.karotaHeat = Math.max(0, this.karotaHeat - 2);
-    this.karotaWanted = false;
-    this.policeChase = 0;
-    this._ui('showToast', `Fine paid: ₦${amount}`);
-    this._saveSelection();
-    this.closeEvent();
-  }
-
-  negotiateCheckpoint(fine) {
-    const success = Math.random() < 0.52;
-    if (success) {
-      const reduced = Math.max(50, Math.round(fine * 0.55));
-      this.money -= Math.min(this.money, reduced);
-      this.karotaHeat = Math.max(0, this.karotaHeat - 1);
-      this._ui('showToast', `Negotiated checkpoint fine: ₦${reduced}`);
-      this._saveSelection();
-      this.closeEvent();
-      return;
-    }
-
-    this.karotaHeat += 1;
-    this._ui('showToast', 'Negotiation failed.');
-    this.closeEvent();
-  }
-
-  disputeCheckpoint(fine) {
-    const successful = Math.random() < 0.36;
-    if (successful) {
-      this.karotaHeat = Math.max(0, this.karotaHeat - 1);
-      this._ui('showToast', 'Officer released you after checking the vehicle.');
-      this.closeEvent();
-      return;
-    }
-
-    const surcharge = Math.round(fine * 0.25);
-    this.money -= Math.min(this.money, surcharge);
-    this.karotaHeat += 2;
-    this._ui('showToast', `Dispute failed. Extra cost: ₦${surcharge}`);
-    this._saveSelection();
-    this.closeEvent();
-  }
-
-  escapeCheckpoint() {
-    this.karotaHeat += 3;
-    this.karotaWanted = true;
-    this.policeChase = 600 + this.level * 30;
-    this.speed = Math.min(this.maxSpeed, this.speed + 0.7);
-    this._audio(['siren', 'policeChase']);
-    this._ui('showToast', '🚨 Pursuit started — avoid the police vehicle.');
-    this.closeEvent();
-  }
-
-  updateMissionProgress() {
-    if (!this.mission) return;
-
-    switch (this.mission.type) {
-      case 'dist':
-        this.mission.progress = this.dist;
-        break;
-      case 'score':
-        this.mission.progress = this.score;
-        break;
-      case 'pax':
-        this.mission.progress = this.totalPax;
-        break;
-      case 'drop':
-        // drop count is represented by completedTrips below
-        this.mission.progress = this.completedTrips;
-        break;
-      case 'nearmiss':
-        this.mission.progress = this.nearMissCount;
-        break;
-      default:
-        break;
-    }
-
-    if (this.mission.progress >= this.mission.target) {
-      if (!this.mission.completed) {
-        this.mission.completed = true;
-        const reward = 350 + this.level * 75;
-        this.money += reward;
-        this.score += reward;
-        this.xp += 100;
-        this._audio(['mission', 'missionComplete']);
-        this._ui('showToast', `Mission complete! +₦${reward}`);
-        this.generateMission();
-        this._saveSelection();
-      }
-    }
-  }
-
-  generateMission() {
-    const base = (CONFIG.MISSIONS || [])[this.missionIndex % (CONFIG.MISSIONS?.length || 1)];
-    this.missionIndex += 1;
-
-    if (!base) {
-      this.mission = {
-        text: 'Drive 2 km',
-        type: 'dist',
-        target: 2,
-        progress: 0,
-        completed: false
-      };
-      return;
-    }
-
-    this.mission = {
-      ...base,
-      progress: 0,
-      completed: false
-    };
-  }
-
-  updateLevel() {
-    const thresholds = [0, 1.2, 3, 5.5, 8.5, 12, 16, 21, 27, 34, 42, 52];
-    let newLevel = 1;
-
-    for (let i = 1; i < thresholds.length; i++) {
-      if (this.dist >= thresholds[i]) newLevel = i + 1;
-      else break;
-    }
-
-    if (newLevel > this.level) {
-      const oldLevel = this.level;
-      this.level = newLevel;
-      this.maxSpeed += Math.min(0.2, (this.level - oldLevel) * 0.08);
-      this.xp += 150;
-      this._ui('showToast', `LEVEL UP — Level ${this.level}`);
-
-      const nextKeke = this.getKekeCatalog().find(
-        (k) => k.unlockLevel === this.level
       );
-      if (nextKeke) {
-        this._ui('showToast', `Unlocked: ${nextKeke.name}`);
+    } else {
+      const cost = 350 + (this.paidContinuesUsed || 0) * 200;
+      const can = this.score >= cost;
+      this.ui.showEvent(
+        '💥 No Free Lives Left',
+        can
+          ? 'Pay ₦' + cost.toLocaleString() + ' from your score to continue?'
+          : 'Need ₦' + cost.toLocaleString() + ' — you have ₦' + this.score.toLocaleString() + '.',
+        can
+          ? [
+              { label: 'Pay ₦' + cost.toLocaleString() + ' & Continue', action: () => this.useContinue(true) },
+              { label: 'End Run', action: () => this.finalGameOver() }
+            ]
+          : [{ label: 'End Run', action: () => this.finalGameOver() }]
+      );
+    }
+  }
+
+  useContinue(isPaid) {
+    try {
+      if (isPaid) {
+        const cost = 350 + (this.paidContinuesUsed || 0) * 200;
+        if (this.score < cost) {
+          this.finalGameOver();
+          return;
+        }
+        this.score -= cost;
+        this.paidContinuesUsed = (this.paidContinuesUsed || 0) + 1;
+        this.continuesLeft = 1;
+        this.ui.showMissionToast('Paid ₦' + cost.toLocaleString() + ' — continue!');
+      } else {
+        this.continuesLeft = Math.max(0, this.continuesLeft - 1);
+        this.score = Math.max(0, this.score - 80);
       }
+      this.inv = 100 + (this.getBonuses().invFrames || 0);
+      this.obs = [];
+      this.speed = 0;
+      this.throttle = 0.2;
+      this.ui.hideEvent();
+      this.state = STATE.PLAY;
+      this.ui.showPlaying();
+      this.ui.updateHUD(this);
+      Audio.startEngine();
+    } catch (e) {
+      console.error(e);
+      this.finalGameOver();
     }
   }
 
-  updateLandmarks() {
-    if (!this.selectedRoute?.landmarks?.length) return;
-
-    const segment = Math.floor(this.dist * 0.85) % this.selectedRoute.landmarks.length;
-    if (segment !== this.lastLandmarkIndex) {
-      this.lastLandmarkIndex = segment;
-      const landmark = this.selectedRoute.landmarks[segment];
-      this._ui('showLandmark', landmark);
+  finalGameOver() {
+    this.state = STATE.OVER;
+    Audio.stopEngine();
+    Audio.stopRadioBed();
+    this.money += Math.floor(this.score * 0.2);
+    Storage.setMoney(this.money);
+    if (this.score > this.high) {
+      this.high = this.score;
+      Storage.setHighScore(this.high);
     }
+    const route = CONFIG.ROUTES[this.selectedRoute];
+    const driver = this.getDriver();
+    Storage.addRun({
+      score: Math.floor(this.score),
+      dist: Number(this.dist.toFixed(1)),
+      route: route?.name || this.selectedRoute,
+      driver: driver.name,
+      at: Date.now()
+    });
+    for (const ach of CONFIG.ACHIEVEMENTS || []) {
+      try {
+        if (ach.check(this) && Storage.unlockAchievement(ach.id)) {
+          this.ui.showMissionToast('🏆 ' + ach.name);
+        }
+      } catch {}
+    }
+    Storage.set('kanoLastRun', {
+      score: Math.floor(this.score),
+      dist: Number(this.dist.toFixed(1)),
+      level: this.level,
+      drops: this.dropCount,
+      dests: (this.destinationsServed || []).slice(-6),
+      driver: this.getDriver().name
+    });
+    this.ui.showGameOver(this);
   }
 
-  updateDailyProgress() {
-    if (!this.mission) return;
-    if (this.frame % 300 !== 0) return;
-    this._ui('updateDailyMission', this.getDailyStatus());
+  rectHit(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   }
 
-  getDailyStatus() {
-    return {
-      claimed: this.dailyClaimed,
-      reward: this.dailyReward,
-      date: todayKey(),
-      progress: Math.min(1, this.dist / 1.5),
-      description: 'Drive 1.5 km today to unlock your daily reward.'
-    };
+  laneClear(lane, y, gap = 130, ignore = null) {
+    return !this.obs.some(
+      (o) =>
+        o !== ignore &&
+        Math.round(o.lane) === Math.round(lane) &&
+        Math.abs(o.y - y) < gap
+    );
   }
 
-  claimDailyReward() {
-    if (this.dailyClaimed) {
-      this._ui('showToast', 'Daily reward already claimed today.');
+  // ——— Passengers ———
+  boardWaiting(p) {
+    // Realistic keke: 2 front (beside driver) + 3 back = 5
+    let seats = p.seats || 1;
+    if (p.aishat) seats = Math.min(2, seats);
+    if (p.size === 'big' || p.size === 'tall' || p.size === 'fat') seats = 2;
+    if (this.paxOnBoard + seats > this.capacity) {
+      this.ui.showMissionToast(p.size && p.size !== 'normal' ? 'No space for big passenger!' : 'Keke full! (5 max)');
       return false;
     }
-
-    if (this.dist < 1.5 && this.state === STATE.PLAY) {
-      this._ui('showToast', 'Drive 1.5 km to claim today’s reward.');
-      return false;
-    }
-
-    this.dailyClaimed = true;
-    this.money += this.dailyReward;
-    this.score += this.dailyReward;
-    this.xp += 50;
-    this._storageWrite('dailyClaimDate', todayKey());
-    this._saveSelection();
-    this._audio(['reward', 'dailyReward']);
-    this._ui('showToast', `Daily reward claimed: ₦${this.dailyReward}`);
+    this.paxOnBoard += seats;
+    this.totalPax += seats;
+    const fare = p.agreedFare || (p.vip ? 350 : p.aishat ? 550 : 120);
+    this.onboard.push({
+      dest: p.dest || this.randomDest(),
+      seats,
+      fare,
+      size: p.size || 'normal',
+      name: p.aishat ? 'Aishat' : p.vip ? 'VIP' : 'Passenger'
+    });
+    let pick = fare;
+    if (p.aishat && this.getBonuses().aishatBonus) pick += this.getBonuses().aishatBonus;
+    this.score += Math.floor(pick * 0.25 * this.fareScale());
+    this.addCombo(p.aishat ? 3 : p.vip ? 2 : 1);
+    Audio.pickup();
+    Audio.voicePickup();
+    Audio.voiceSannu();
+    this.pickupCooldown = 50;
+    if (p.aishat) this.ui.showMissionToast('Aishat + Hibba → ' + (p.dest || 'town'));
+    else if (p.size === 'big' || p.size === 'fat' || p.size === 'tall')
+      this.ui.showMissionToast('Tight fit (' + p.size + ') → ' + (p.dest || '?') + ' · ₦' + fare);
+    else this.ui.showMissionToast((p.vip ? 'VIP' : 'Passenger') + ' → ' + (p.dest || '?') + ' · ₦' + fare);
     return true;
   }
 
-  finishRun() {
-    this.state = STATE.OVER;
-    this.paused = false;
-    this.eventOpen = false;
-    this.continuesLeft = Math.max(0, this.continuesLeft);
-    this._audio(['gameOver', 'over']);
-    this._saveSelection();
+  startNegotiation(p) {
+    this.state = STATE.EVENT;
+    Audio.negotiate();
+    const h = this.honorific();
+    const dest = p.dest || this.randomDest();
+    p.dest = dest;
+    const low = 60 + Math.floor(Math.random() * 40);
+    const fair = 110 + Math.floor(Math.random() * 50);
+    const lineTpl = CONFIG.NEGOTIATE_LINES[Math.floor(Math.random() * CONFIG.NEGOTIATE_LINES.length)];
+    const line = lineTpl.replace(/\{h\}/g, h).replace(/\{low\}/g, String(low)).replace(/\{dest\}/g, dest);
 
-    const achievementRewards = this.checkAchievements();
-    const finalReward = achievementRewards;
-
-    if (finalReward > 0) {
-      this.money += finalReward;
-      this.score += finalReward;
-    }
-
-    const finalStats = {
-      score: Math.round(this.score),
-      money: Math.round(this.money),
-      dist: Number(this.dist.toFixed(2)),
-      passengers: this.totalPax,
-      drops: this.completedTrips,
-      bestCombo: this.bestCombo,
-      nearMisses: this.nearMissCount,
-      level: this.level,
-      route: this.selectedRoute?.name || this.routeId,
-      driver: CONFIG.DRIVERS?.[this.selectedDriver]?.name || this.selectedDriver,
-      keke: KEKES[this.selectedKeke]?.name || this.selectedKeke,
-      achievementReward: finalReward
-    };
-
-    this._ui('showOver', finalStats);
-    this._ui('updateFinalStats', finalStats);
+    this.ui.showEvent('💬 Fare — ' + dest, line, [
+      {
+        label: 'Accept ₦' + low,
+        action: () => {
+          p.agreedFare = low;
+          this.boardWaiting(p);
+          this.state = STATE.PLAY;
+          this.ui.showPlaying();
+        }
+      },
+      {
+        label: 'Hold ₦' + fair,
+        action: () => {
+          if (Math.random() < 0.55) {
+            p.agreedFare = fair;
+            this.boardWaiting(p);
+          } else {
+            Audio.alert();
+            this.ui.showMissionToast(h + ' walked away');
+          }
+          this.state = STATE.PLAY;
+          this.ui.showPlaying();
+        }
+      },
+      {
+        label: 'No deal',
+        action: () => {
+          this.ui.showMissionToast('No boarding');
+          this.state = STATE.PLAY;
+          this.ui.showPlaying();
+        }
+      }
+    ]);
   }
 
-  gameOver() {
-    this.finishRun();
+  tryDropOff() {
+    if (this.paxOnBoard <= 0 || this.onboard.length === 0) return;
+    if (this.speed > 2.2) {
+      this.ui.showMissionToast('Akwai! Almost stop to drop');
+      return;
+    }
+    const p = this.onboard.shift();
+    this.paxOnBoard = Math.max(0, this.paxOnBoard - (p.seats || 1));
+    this.dropCount += p.seats || 1;
+    const route = CONFIG.ROUTES[this.selectedRoute] || {};
+    let fare = Math.floor(
+      (p.fare || route.baseFare || 140) *
+        this.getComboMultiplier() *
+        (this.getBonuses().fareMult || 1) *
+        this.fareScale()
+    );
+    // Destination match bonus — landmark / route name
+    const marks = (route.landmarks || []).map(s => s.toLowerCase());
+    const dest = (p.dest || '').toLowerCase();
+    let bonusNote = '';
+    if (dest && (marks.some(m => m.includes(dest.slice(0, 5)) || dest.includes(m.slice(0, 5))) ||
+        (route.name || '').toLowerCase().includes(dest.slice(0, 5)))) {
+      fare = Math.floor(fare * 1.35);
+      bonusNote = ' ★ route match';
+    }
+    this.score += fare;
+    this.destinationsServed = this.destinationsServed || [];
+    this.destinationsServed.push(p.dest || 'stop');
+    this.addCombo(2);
+    Audio.pickup();
+    Audio.voiceDrop();
+    this.ui.showMissionToast('Akwai! (' + (p.dest || 'stop') + ') +₦' + fare + bonusNote);
+    Audio.voiceAkwai();
   }
 
-  checkAchievements() {
-    let reward = 0;
-    const earned = [];
+  startYanDaba() {
+    this.state = STATE.EVENT;
+    this.throttle = 0;
+    Audio.alert();
+    Audio.voiceYanDaba();
+    this.triggerShake(10, 5);
+    try { if (navigator.vibrate) navigator.vibrate([40, 40, 80]); } catch (e) {}
+    const loss = 150 + Math.floor(Math.random() * 400);
+    this.ui.showEvent(
+      'Yan Daba Checkpoint',
+      'Bad boys block the road!\n"Bring phone! Bring money!"\nThey search passengers…',
+      [
+        {
+          label: 'Hand over ₦' + loss,
+          action: () => {
+            this.score = Math.max(0, this.score - loss);
+            this.ui.showMissionToast('Robbed of ₦' + loss);
+            Audio.crash();
+            this.inv = 80;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Speed away (risk)',
+          action: () => {
+            if (Math.random() < 0.4) {
+              this.ui.showMissionToast('Escaped Yan Daba!');
+              this.addCombo(3);
+              Audio.horn();
+              this.policeChase = 100;
+            } else {
+              this.score = Math.max(0, this.score - Math.floor(loss * 1.5));
+              this.ui.showMissionToast('Caught — lost more');
+              Audio.crash();
+              this.triggerShake(14, 7);
+            }
+            this.inv = 50;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Call for help',
+          action: () => {
+            if (Math.random() < 0.5) {
+              this.ui.showMissionToast('People gathered — they fled');
+              Audio.success();
+              this.score += 50;
+            } else {
+              this.score = Math.max(0, this.score - loss);
+              this.ui.showMissionToast('Too late — ₦' + loss + ' gone');
+              Audio.crash();
+            }
+            this.inv = 60;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        }
+      ]
+    );
+  }
 
-    for (const achievement of CONFIG.ACHIEVEMENTS || []) {
-      let passed = false;
-      try {
-        passed = Boolean(achievement.check?.(this));
-      } catch {}
-      if (!passed) continue;
+  startKarotaCheckpoint() {
+    this.karotaTimer = 320;
+    this.state = STATE.EVENT;
+    this.throttle = 0;
+    Audio.alert();
+    Audio.siren();
+    Audio.voiceKarota();
+    this.triggerShake(6, 3);
+    const fine = 150 + Math.floor(Math.random() * 250);
+    const h = this.honorific();
+    const spots = [
+      'junction',
+      'market frontage',
+      'busy roadside',
+      'no-parking zone',
+      'crowded loading point',
+      'flyover underpass'
+    ];
+    const spot = spots[Math.floor(Math.random() * spots.length)];
+    const reasons = [
+      'No parking / loading here — move!',
+      'Keke no dey stop for this junction!',
+      'You block the road — fine!',
+      'Papers and badge — KAROTA check!',
+      'Wrong stop near market — settle!'
+    ];
+    const reason = reasons[Math.floor(Math.random() * reasons.length)];
+    this.ui.showEvent(
+      'KAROTA Checkpoint',
+      'Uniformed KAROTA at the ' + spot + '.\n"' + h + '! ' + reason + '"\nFine about ₦' + fine + '.',
+      [
+        {
+          label: 'Pay ₦' + fine,
+          action: () => {
+            this.score = Math.max(0, this.score - fine);
+            this.ui.showMissionToast('Paid KAROTA ₦' + fine);
+            Audio.negotiate();
+            this.inv = 70;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Apologize & move',
+          action: () => {
+            if (Math.random() < 0.55) {
+              this.ui.showMissionToast('KAROTA waved you on');
+              Audio.success();
+              this.score += 40;
+            } else {
+              this.score = Math.max(0, this.score - fine);
+              this.ui.showMissionToast('Still fined ₦' + fine);
+              Audio.crash();
+            }
+            this.inv = 70;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Argue (risk)',
+          action: () => {
+            if (Math.random() < 0.3) {
+              this.ui.showMissionToast('They let you go');
+              this.addCombo(2);
+              Audio.horn();
+            } else {
+              this.ui.showMissionToast('Extra fine — attitude');
+              this.score = Math.max(0, this.score - Math.floor(fine * 1.8));
+              this.triggerShake(10, 5);
+              Audio.crash();
+            }
+            this.inv = 50;
+            this.state = STATE.PLAY;
+            this.ui.showPlaying();
+          }
+        }
+      ]
+    );
+  }
 
-      const storageKey = `achievement:${achievement.id}`;
-      if (this._storageRead(storageKey, false)) continue;
-
-      this._storageWrite(storageKey, true);
-      reward += 150;
-      earned.push(achievement);
+  // ——— Main loop ———
+  update() {
+    if (this.state === STATE.START || this.state === STATE.OVER || this.state === STATE.EVENT) {
+      if (this.shake > 0) this.shake--;
+      return;
     }
 
-    if (earned.length) {
-      for (const achievement of earned) {
-        this._ui('showToast', `Achievement: ${achievement.name}`);
+    if (this.state === STATE.PAUSE) {
+      if (this.shake > 0) this.shake--;
+      return;
+    }
+
+    // INTRO sequence: walk → enter → engine
+    if (this.state === STATE.INTRO) {
+      this.introT++;
+      if (this.renderer3d) {
+        if (this.introT < 50) this.renderer3d.introPhase = 0;
+        else if (this.introT < 100) this.renderer3d.introPhase = 1;
+        else if (this.introT < 140) this.renderer3d.introPhase = 2;
+        else this.renderer3d.introPhase = 3;
+      }
+      if (this.introT === 50) this.ui.showMissionToast('Approaching keke…');
+      if (this.introT === 100) this.ui.showMissionToast('Getting in…');
+      if (this.introT === 140) {
+        Audio.startEngine();
+        this.ui.showMissionToast('Starting engine…');
+      }
+      if (this.introT >= 170) this.finishIntro();
+      this.targetX = this.laneX(this.playerLane);
+      this.playerX += (this.targetX - this.playerX) * 0.2;
+      this.playerY = this.canvas.clientHeight - 195;
+      return;
+    }
+
+    // PLAY
+    this.frame++;
+    if (this.inv > 0) this.inv--;
+    if (this.bounce > 0) this.bounce--;
+    if (this.shake > 0) this.shake--;
+    if (this.nearMissCooldown > 0) this.nearMissCooldown--;
+    if (this.policeChase > 0) this.policeChase--;
+    if (this.trafficJamTimer > 0) this.trafficJamTimer--;
+    if (this.karotaTimer > 0) this.karotaTimer--;
+    if (this.comboTimer > 0) {
+      this.comboTimer--;
+      if (this.comboTimer <= 0) this.combo = 0;
+    }
+
+    const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
+    const bonuses = this.getBonuses();
+
+    // Realistic keke dynamics: slow accel, strong engine braking, load penalty
+    const loadFactor = 1 - Math.min(0.22, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.22);
+    const dmgFactor = 1 - Math.min(0.45, (100 - (this.condition || 100)) / 100 * 0.5);
+    const tyreGrip = 1 - Math.min(0.25, (this.damageTyres || 0) / 100 * 0.25);
+    const top = (5.8 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.2) * loadFactor * dmgFactor;
+    let targetSpeed = this.throttle * top;
+    if (this.braking) targetSpeed = 0;
+    if (this.trafficJamTimer > 0) targetSpeed *= 0.45;
+    if (this.parkOnly) targetSpeed = Math.min(targetSpeed, 3.2); // forced slow in junction/market
+    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) targetSpeed += 0.25;
+    // Accel: heavy at low speed, weaker near top (like small engine)
+    const accel = (0.045 + this.throttle * 0.09) * loadFactor * this.weatherGrip * dmgFactor * (1 - (this.damageEngine || 0) / 250);
+    if (this.speed < targetSpeed) this.speed += accel;
+    else this.speed += (targetSpeed - this.speed) * (0.08 + (1 - this.throttle) * 0.06);
+    // Brakes
+    if (this.braking) this.speed *= 0.82 * this.weatherGrip * tyreGrip;
+    // Coasting drag
+    if (this.throttle < 0.15 && !this.braking) this.speed *= 0.985;
+    // Fuel
+    if (this.speed > 0.25) {
+      this.fuel = Math.max(0, this.fuel - 0.01 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
+    }
+    if (this.fuel <= 0) {
+      this.speed *= 0.9;
+      if (this.frame % 70 === 0) this.ui.showMissionToast('Out of fuel — limp mode');
+    } else if (this.fuel < 18 && this.frame % 100 === 0) {
+      this.ui.showMissionToast('Low fuel — find petrol');
+      Audio.voiceLowFuel();
+    }
+    this.speed = Math.max(0, Math.min(this.speed, 9.5));
+
+    // Condition warnings
+    if (this.condition < 25 && this.frame % 120 === 0) {
+      this.ui.showMissionToast('Keke condition critical — find mechanic');
+    } else if (this.condition < 50 && this.frame % 200 === 0) {
+      this.ui.showMissionToast('Keke needs maintenance');
+    }
+    // Engine sputter when very damaged
+    if (this.damageEngine > 60 && this.throttle > 0.5 && Math.random() < 0.02) {
+      this.speed *= 0.7;
+      this.ui.showMissionToast('Engine struggling');
+      Audio.brake();
+    }
+
+    // Idle at standstill — real keke waits for passengers
+    if (this.speed < 0.35) {
+      this.stoppedFrames = (this.stoppedFrames || 0) + 1;
+      if (this.stoppedFrames === 90) this.ui.showMissionToast('Waiting for passengers…');
+    } else {
+      this.stoppedFrames = 0;
+    this.condition = 100; // overall vehicle health 0-100
+    this.damageBody = 0;
+    this.damageEngine = 0;
+    this.damageTyres = 0;
+    }
+    if (this.pickupCooldown > 0) this.pickupCooldown--;
+
+    this.roadOff = (this.roadOff + this.speed * 2) % 58;
+    this.dist += this.speed * 0.0055;
+    this.score += Math.floor(this.speed * 0.06 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
+    Audio.updateEngine(this.speed);
+
+    // Sync weather grip from renderer weather if available
+    const w = this.renderer3d?.weather || 'clear';
+    if (w === 'rain') this.weatherGrip = 0.88;
+    else if (w === 'harmattan') this.weatherGrip = 0.94;
+    else this.weatherGrip = 1;
+    this.heatComplaints = 0;
+    this.lastHonkFrame = 0;
+    this.lifeTipsShown = 0;
+    this.pickupCooldown = 0;
+    this.stoppedFrames = 0;
+    this.condition = 100; // overall vehicle health 0-100
+    this.damageBody = 0;
+    this.damageEngine = 0;
+    this.damageTyres = 0;
+
+    // Level from distance
+    const newLevel = 1 + Math.floor(this.dist / 2.5);
+    if (newLevel > this.level) {
+      this.level = newLevel;
+      this.ui.showMissionToast('📶 Level ' + this.level);
+      Audio.success();
+      this.unlockKekeByProgress();
+    }
+    this.ui.setLevel?.(this.level);
+    this.ui.setOnboardDest?.(this.onboard);
+
+    // Landmarks
+    const marks = route.landmarks || [];
+    if (marks.length && this.dist > (this.landmarkIndex + 1) * 2.5 && this.landmarkIndex < marks.length) {
+      const name = marks[this.landmarkIndex++];
+      this.ui.showMissionToast('📍 ' + name);
+      Audio.success();
+    }
+
+    // KAROTA — common at junctions, markets, crowded roads (keke regulators)
+    if (this.frame % 380 === 0 && this.dist > 0.8 && this.karotaTimer <= 0 && Math.random() < 0.55) {
+      this.startKarotaCheckpoint();
+      return;
+    }
+
+    // Yan Daba — rare criminal ambush (not common)
+    if (this.frame % 1800 === 0 && this.dist > 4 && Math.random() < 0.12) {
+      this.startYanDaba();
+      return;
+    }
+
+    // Traffic jam
+    if (this.frame % 500 === 0 && Math.random() < 0.32 && this.trafficJamTimer <= 0 && this.dist > 1) {
+      this.trafficJamTimer = 140;
+      this.ui.showMissionToast('🚦 TRAFFIC JAM!');
+      this.triggerShake(5, 3);
+    }
+
+    // Mud / bad road
+    if (this.roadCondTimer > 0) this.roadCondTimer--;
+    else this.roadCondition = 'clear';
+    if (this.frame % 420 === 0 && Math.random() < 0.3 && this.roadCondTimer <= 0 && this.dist > 0.8) {
+      this.roadCondition = Math.random() < 0.5 ? 'muddy' : 'bad';
+      this.roadCondTimer = 130;
+      this.ui.showMissionToast(this.roadCondition === 'muddy' ? '🟤 MUDDY ROAD!' : '⚠️ BAD ROAD!');
+    }
+    if (this.roadCondition === 'muddy') this.speed *= 0.97;
+    if (this.roadCondition === 'bad') {
+      this.speed *= 0.98;
+      if (this.frame % 20 === 0) this.bounce = Math.max(this.bounce, 6);
+      if (this.frame % 40 === 0 && this.speed > 2) {
+        this.applyDamage('tyres', 1.2 + Math.random());
+        if (this.damageTyres > 40 && this.frame % 80 === 0) {
+          this.ui.showMissionToast('Tyres wearing on bad road');
+        }
       }
     }
 
-    return reward;
-  }
+    // Gradual tire wear from speed + load + road
+    if (this.speed > 1 && !this.puncture) {
+      const wear = 0.008 * this.speed * (1 + this.paxOnBoard * 0.08) *
+        (this.roadCondition === 'bad' ? 2.2 : this.roadCondition === 'muddy' ? 1.4 : 1);
+      this.tireWearAccum = (this.tireWearAccum || 0) + wear;
+      if (this.tireWearAccum >= 1) {
+        const add = Math.floor(this.tireWearAccum);
+        this.tireWearAccum -= add;
+        this.applyDamage('tyres', add * 0.35);
+      }
+      // Puncture risk rises with tyre damage and bad road
+      const risk = (this.damageTyres / 100) * 0.0015 *
+        (this.roadCondition === 'bad' ? 3 : 1) *
+        (this.speed > 6 ? 1.5 : 1);
+      if (Math.random() < risk) {
+        this.triggerPuncture(this.roadCondition === 'bad' ? 'nail / pothole' : 'worn tyre');
+      }
+    }
 
-  _hudPayload() {
-    const radio = (CONFIG.RADIO || [])[this.radioIndex];
-    return {
-      score: Math.round(this.score),
-      money: Math.round(this.money),
-      dist: Number(this.dist.toFixed(1)),
-      pax: this.paxCount,
-      capacity: this.capacity,
-      lives: this.continuesLeft,
-      combo: this.combo,
-      level: this.level,
-      speed: Number(this.speed.toFixed(1)),
-      mission: this.mission,
-      route: this.selectedRoute,
-      driver: CONFIG.DRIVERS?.[this.selectedDriver],
-      keke: KEKES[this.selectedKeke],
-      radio,
-      weather: this.weatherState,
-      karotaWanted: this.karotaWanted,
-      policeChase: this.policeChase > 0,
-      passengers: this.currentPassengers.map((p) => ({
-        destination: p.destination,
-        fare: p.fare,
-        type: p.type
-      }))
-    };
-  }
+    // Flat tyre limp mode
+    if (this.puncture) {
+      this.speed = Math.min(this.speed, 2.8);
+      if (this.frame % 50 === 0) this.bounce = Math.max(this.bounce, 8);
+      if (this.frame % 100 === 0) this.ui.showMissionToast('Flat tyre — max crawl speed');
+    }
 
-  _updateHUDEveryFrame() {
-    if (this.frame % 4 !== 0) return;
-    this._ui('updateHUD', this._hudPayload());
-    this._ui('updateDailyMission', this.getDailyStatus());
-  }
+    this.targetX = this.laneX(this.playerLane);
+    this.playerX += (this.targetX - this.playerX) * 0.25;
+    this.playerY = this.canvas.clientHeight - 195;
 
-  getState() {
-    return {
-      state: this.state,
-      paused: this.paused,
-      frame: this.frame,
-      score: this.score,
-      money: this.money,
-      dist: this.dist,
-      playerLane: this.playerLane,
-      playerX: this.playerX,
-      playerY: this.playerY,
-      speed: this.speed,
-      level: this.level,
-      currentPassengers: this.currentPassengers,
-      obs: this.obs,
-      paxZones: this.paxZones,
-      dropZones: this.dropZones,
-      coins: this.coins,
-      checkpoints: this.checkpoints
-    };
+    // Spawn traffic (denser during police chase)
+    const chase = this.policeChase > 0;
+    const peak = this.isPeakHour();
+    const spawnEvery = chase ? 28 : peak ? 36 : 55;
+    const spawnChance = chase ? 0.9 : peak ? 0.85 : 0.55;
+    if (this.frame % spawnEvery === 0 && Math.random() < spawnChance && this.trafficJamTimer <= 0) {
+      let lane = Math.floor(Math.random() * 3);
+      if (lane === this.playerLane && Math.random() < 0.5) lane = (lane + 1) % 3;
+      if (this.laneClear(lane, -80, 150)) {
+        let types = ['car', 'keke', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota', 'robber'];
+        if (chase) types = ['police', 'karota', 'car', 'police', 'keke'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        const roadMode = (CONFIG.ROAD_MODES && CONFIG.ROAD_MODES[this.selectedRoadMode]) || { oppositeChance: 0.35 };
+        const opposite = roadMode.oppositeChance > 0 && Math.random() < roadMode.oppositeChance;
+        this.obs.push({
+          type,
+          lane: opposite ? 0 : lane,
+          y: -80,
+          w: type === 'motorcycle' ? 36 : type === 'bus' || type === 'truck' ? 56 : 50,
+          h: type === 'motorcycle' ? 50 : 70,
+          speedOff: opposite ? 0.9 + Math.random() * 0.6 : -0.9 + Math.random() * 0.5,
+          opposite: !!opposite,
+          robber: type === 'robber',
+          laneCooldown: 50 + Math.floor(Math.random() * 80)
+        });
+      }
+    }
+
+    // Waiting passengers (must slow to pick)
+    if (this.frame % 100 === 0) {
+      const roll = Math.random();
+      const sizes = ['normal', 'normal', 'normal', 'tall', 'fat', 'big'];
+      const isPark = Math.random() < 0.45 || this.parkOnly;
+      this.paxZones.push({
+        lane: Math.floor(Math.random() * 3),
+        y: -90,
+        taken: false,
+        aishat: roll < 0.09,
+        vip: roll >= 0.09 && roll < 0.2,
+        dest: this.randomDest(),
+        seats: roll < 0.09 ? 2 : 1,
+        size: sizes[Math.floor(Math.random() * sizes.length)],
+        flagging: true,
+        isPark
+      });
+    }
+    if (this.frame % 120 === 0) {
+      this.dropZones.push({ lane: Math.floor(Math.random() * 3), y: -90, used: false, akwai: true });
+    }
+    if (this.frame % 140 === 0 && Math.random() < 0.4) {
+      this.coins.push({ lane: Math.floor(Math.random() * 3), y: -60, taken: false, bob: Math.random() * 6 });
+    }
+
+    const mv = this.speed * 1.1;
+    const h = this.canvas.clientHeight;
+
+    // Traffic AI
+    for (const o of this.obs) {
+      let aheadDist = 9999;
+      for (const other of this.obs) {
+        if (other === o) continue;
+        if (Math.round(other.lane) !== Math.round(o.lane)) continue;
+        if (other.y > o.y) aheadDist = Math.min(aheadDist, other.y - o.y);
+      }
+      if (Math.round(o.lane) === this.playerLane && this.playerY > o.y) {
+        aheadDist = Math.min(aheadDist, this.playerY - o.y);
+      }
+      let move = mv + (o.speedOff || 0);
+      if (aheadDist < 90) move *= 0.22;
+      else if (aheadDist < 130) move *= 0.5;
+      o.y += move;
+      if (o.laneCooldown > 0) o.laneCooldown--;
+      if (o.laneCooldown <= 0 && aheadDist < 120 && Math.random() < 0.04) {
+        for (const dir of Math.random() < 0.5 ? [-1, 1] : [1, -1]) {
+          const nl = Math.round(o.lane) + dir;
+          if (nl < 0 || nl > 2) continue;
+          if (!this.laneClear(nl, o.y, 110, o)) continue;
+          if (nl === this.playerLane && Math.abs(o.y - this.playerY) < 100) continue;
+          o.lane = nl;
+          o.laneCooldown = 70;
+          break;
+        }
+      }
+      if (
+        (o.type === 'police' || o.type === 'karota') &&
+        Math.round(o.lane) === this.playerLane &&
+        Math.abs(o.y - this.playerY) < 160 &&
+        this.policeChase <= 0 &&
+        Math.random() < 0.008
+      ) {
+        this.policeChase = 120;
+        this.ui.showMissionToast(o.type === 'karota' ? '⚠️ KAROTA nearby!' : '🚨 Police nearby!');
+        Audio.siren();
+      }
+    }
+    this.obs = this.obs.filter((o) => o.y < h + 80);
+
+    for (const p of this.paxZones) p.y += mv;
+    this.paxZones = this.paxZones.filter((p) => p.y < h + 40 && !p.taken);
+    for (const d of this.dropZones) d.y += mv;
+    this.dropZones = this.dropZones.filter((d) => d.y < h + 40 && !d.used);
+    for (const c of this.coins) {
+      c.y += mv;
+      c.bob += 0.1;
+    }
+    this.coins = this.coins.filter((c) => c.y < h + 40 && !c.taken);
+
+    // Collisions
+    if (this.inv <= 0 && this.speed > 0.5) {
+      const pb = { x: this.playerX - 20, y: this.playerY - 32, w: 40, h: 60 };
+      for (const o of this.obs) {
+        const ox = this.laneX(Math.round(o.lane)) - o.w / 2;
+        if (this.rectHit(pb, { x: ox, y: o.y + 10, w: o.w * 0.85, h: o.h - 16 })) {
+          if (o.robber || o.type === 'robber') {
+            const theft = 100 + Math.floor(Math.random() * 250);
+            this.score = Math.max(0, this.score - theft);
+            this.ui.showMissionToast('Robber keke! -₦' + theft);
+            Audio.alert();
+            o.y = 9999;
+            if (Math.random() < 0.35) {
+              this.gameOver();
+              return;
+            }
+            this.inv = 40;
+            continue;
+          }
+          // Low-speed scrape survives; high-speed = crash
+          if (this.speed < 2.2) {
+            this.speed *= 0.5;
+            this.score = Math.max(0, this.score - 30);
+            this.applyDamage('body', 8 + Math.random() * 6);
+            if (Math.random() < 0.12) this.applyDamage('tyres', 10);
+            if (Math.random() < 0.06) this.triggerPuncture('scrape hit tyre');
+            this.triggerShake(6, 3);
+            Audio.brake();
+            this.inv = 25;
+            this.ui.showMissionToast('Scrape — body damage');
+            o.y += 40;
+            continue;
+          }
+          this.gameOver();
+          return;
+        }
+        if (
+          this.nearMissCooldown <= 0 &&
+          Math.round(o.lane) !== this.playerLane &&
+          Math.abs(Math.round(o.lane) - this.playerLane) === 1 &&
+          Math.abs(o.y - this.playerY) < 36
+        ) {
+          this.nearMissCooldown = 45;
+          this.nearMissCount++;
+          const nm = Math.floor(60 * (bonuses.nearMissBonus || 1));
+          this.addCombo(2);
+          this.score += nm;
+          this.ui.showMissionToast('💨 Near miss! +₦' + nm);
+        }
+      }
+    }
+
+    // Pick up — must be SLOW; park rules in market/junction
+    for (const p of this.paxZones) {
+      if (p.taken) continue;
+      if (Math.round(p.lane) === this.playerLane && Math.abs(p.y - this.playerY) < 52) {
+        if (this.speed > 2.4) {
+          if (this.frame % 40 === 0) this.ui.showMissionToast('Almost stop to load — like real park');
+          continue;
+        }
+        if (this.pickupCooldown > 0) continue;
+        if (this.paxOnBoard >= this.capacity) continue;
+        // Illegal loading when park-only zone and not a marked park stop
+        if (this.parkOnly && !p.isPark) {
+          p.taken = true;
+          if (Math.random() < 0.55) {
+            this.ui.showMissionToast('KAROTA: No loading here!');
+            Audio.alert();
+            this.score = Math.max(0, this.score - (80 + Math.floor(Math.random() * 120)));
+            // chance of full checkpoint
+            if (Math.random() < 0.35) {
+              this.startKarotaCheckpoint();
+              return;
+            }
+          } else {
+            // sneaky board
+            p.agreedFare = 100 + Math.floor(Math.random() * 40);
+            this.boardWaiting(p);
+          }
+          continue;
+        }
+        p.taken = true;
+        if (!p.aishat && Math.random() < 0.32) {
+          this.startNegotiation(p);
+          return;
+        }
+        p.agreedFare = p.vip ? 300 + Math.floor(Math.random()*100) : p.aishat ? 400 + Math.floor(Math.random()*150) : 100 + Math.floor(Math.random() * 80);
+        this.boardWaiting(p);
+      }
+    }
+
+    // Akwai drop zones — slow required
+    for (const d of this.dropZones) {
+      if (d.used) continue;
+      if (
+        Math.round(d.lane) === this.playerLane &&
+        Math.abs(d.y - this.playerY) < 52 &&
+        this.paxOnBoard > 0
+      ) {
+        if (this.speed > 2.2) {
+          if (this.frame % 40 === 0) this.ui.showMissionToast('Akwai! Brake to drop');
+          continue;
+        }
+        d.used = true;
+        this.tryDropOff();
+      }
+    }
+
+    for (const c of this.coins) {
+      if (c.taken) continue;
+      if (Math.hypot(this.playerX - this.laneX(c.lane), this.playerY - c.y) < 42) {
+        c.taken = true;
+        if (c.petrol) {
+          this.fuel = Math.min(100, this.fuel + 45);
+          this.ui.showMissionToast('⛽ Refueled');
+          Audio.success();
+          Audio.voiceRefuel();
+        } else if (c.repair) {
+          // Mechanic: pay from score for repair
+          const cost = this.condition >= 85 ? 0 : 120 + Math.floor((100 - this.condition) * 3);
+          if (cost === 0 && !this.puncture) {
+            this.ui.showMissionToast('Mechanic: keke still fine');
+          } else if (this.score >= cost || this.puncture) {
+            const pay = this.puncture ? Math.max(cost, 150) : cost;
+            if (this.score >= pay) {
+              this.score -= pay;
+              this.repairVehicle('full');
+              this.ui.showMissionToast(
+                (this.puncture ? '🔧 New tyre + repair — ₦' : '🔧 Repaired — ₦') + pay
+              );
+              Audio.success();
+              Audio.speak('Tyres fixed. Keke ready.', { rate: 0.95 });
+            } else {
+              this.repairVehicle('tyres');
+              this.score = Math.max(0, this.score - 80);
+              this.ui.showMissionToast('🔧 Tyre only fixed — ₦80');
+              Audio.success();
+            }
+          } else {
+            this.repairVehicle('quick');
+            this.ui.showMissionToast('🔧 Quick fix only — need ₦' + cost + ' for full');
+            Audio.negotiate();
+          }
+        } else {
+          this.score += 40;
+          Audio.coin();
+        }
+      }
+    }
+
+    if (this.activeMission) {
+      const m = this.activeMission;
+      if (m.type === 'drop') m.progress = this.dropCount;
+      if (m.type === 'dist') m.progress = this.dist;
+      if (m.type === 'score') m.progress = this.score;
+      if (m.type === 'pax') m.progress = this.totalPax;
+      if (m.type === 'nearmiss') m.progress = this.nearMissCount || 0;
+      this.ui.setMission(
+        m.text + ' (' + Math.min(m.target, Math.floor(m.progress)) + '/' + m.target + ')'
+      );
+    }
+
+    this.ui.updateHUD(this);
+    this.ui.setFuel?.(this.fuel);
+    this.ui.setZone?.(this.zoneType);
+    this.ui.setCondition?.(this.condition);
+    this.ui.setTyreStatus?.(this.puncture, this.damageTyres);
   }
 }
+
+
+export { DEVELOPER };
