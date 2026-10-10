@@ -1,6 +1,8 @@
 /* Kano Run — audio adapter
- * Uses existing files in /public/audio; no audio assets are replaced.
- * Effects without dedicated MP3s use lightweight Web Audio tones.
+ * Runtime repair: use window.Audio explicitly because this module also exports
+ * an object named Audio. This prevents the exported object shadowing the
+ * browser's HTMLAudioElement constructor.
+ * Existing public/audio files are preserved and reused.
  */
 const ASSET_BASE = '/audio/';
 const FILES = {
@@ -10,13 +12,13 @@ const FILES = {
   whistle: 'whistle.mp3'
 };
 const RADIO_FILES = {
-  'radio kano': 'radio', 'kano': 'radio', 'radio-kano': 'radio',
-  'arewa radio': 'arewa', 'arewa': 'arewa',
-  'cool fm': 'cool', 'cool': 'cool',
-  'freedom radio': 'freedom', 'freedom': 'freedom',
-  'rahama radio': 'rahama', 'rahama': 'rahama',
-  'ruffneck radio': 'ruffneck', 'ruffneck': 'ruffneck',
-  'wazobia fm': 'wazobia', 'wazobia': 'wazobia'
+  'radio kano': 'radio', kano: 'radio', 'radio-kano': 'radio',
+  'arewa radio': 'arewa', arewa: 'arewa',
+  'cool fm': 'cool', cool: 'cool',
+  'freedom radio': 'freedom', freedom: 'freedom',
+  'rahama radio': 'rahama', rahama: 'rahama',
+  'ruffneck radio': 'ruffneck', ruffneck: 'ruffneck',
+  'wazobia fm': 'wazobia', wazobia: 'wazobia'
 };
 const tracks = new Map();
 let audioContext = null;
@@ -25,56 +27,65 @@ let muted = false;
 let engineStarted = false;
 
 function getTrack(key) {
-  if (!FILES[key]) return null;
+  if (!FILES[key] || typeof window === 'undefined' || typeof window.Audio !== 'function') return null;
   if (!tracks.has(key)) {
-    const a = new Audio(`${ASSET_BASE}${FILES[key]}`);
-    a.preload = key === 'engine' ? 'auto' : 'metadata';
-    a.loop = key === 'engine' || key === 'radio' || key === 'arewa' || key === 'cool' || key === 'freedom' || key === 'rahama' || key === 'ruffneck' || key === 'wazobia';
-    a.volume = key === 'engine' ? 0.28 : key === 'horn' || key === 'whistle' ? 0.75 : 0.42;
-    a.addEventListener('error', () => console.warn(`[Kano Run audio] Could not load /audio/${FILES[key]}`), { once: true });
-    tracks.set(key, a);
+    // IMPORTANT: window.Audio avoids collision with the exported Audio object below.
+    const track = new window.Audio(`${ASSET_BASE}${FILES[key]}`);
+    track.preload = key === 'engine' ? 'auto' : 'metadata';
+    track.loop = ['engine', 'radio', 'arewa', 'cool', 'freedom', 'rahama', 'ruffneck', 'wazobia'].includes(key);
+    track.volume = key === 'engine' ? 0.28 : (key === 'horn' || key === 'whistle' ? 0.75 : 0.42);
+    track.addEventListener('error', () => console.warn(`[Kano Run audio] Could not load /audio/${FILES[key]}`), { once: true });
+    tracks.set(key, track);
   }
   return tracks.get(key);
 }
 function play(key, options = {}) {
   if (muted || typeof window === 'undefined') return Promise.resolve(false);
-  const a = getTrack(key);
-  if (!a) return Promise.resolve(false);
+  const track = getTrack(key);
+  if (!track) return Promise.resolve(false);
   try {
-    if (options.restart !== false) a.currentTime = 0;
-    if (options.volume != null) a.volume = Math.max(0, Math.min(1, options.volume));
-    if (options.loop != null) a.loop = !!options.loop;
-    const result = a.play();
+    if (options.restart !== false) track.currentTime = 0;
+    if (options.volume != null) track.volume = Math.max(0, Math.min(1, options.volume));
+    if (options.loop != null) track.loop = !!options.loop;
+    const result = track.play();
     return result?.then ? result.then(() => true).catch(() => false) : Promise.resolve(true);
   } catch { return Promise.resolve(false); }
 }
 function stop(key, reset = false) {
-  const a = tracks.get(key);
-  if (!a) return;
-  try { a.pause(); if (reset) a.currentTime = 0; } catch {}
+  const track = tracks.get(key);
+  if (!track) return;
+  try { track.pause(); if (reset) track.currentTime = 0; } catch {}
 }
 function context() {
   if (typeof window === 'undefined') return null;
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return null;
-  try { audioContext ||= new Ctx(); if (audioContext.state === 'suspended') audioContext.resume().catch(() => {}); return audioContext; } catch { return null; }
+  try {
+    if (!audioContext) audioContext = new Ctx();
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+    return audioContext;
+  } catch { return null; }
 }
 function tone(freq = 440, duration = 0.12, type = 'sine', volume = 0.055) {
   if (muted) return;
-  const ctx = context(); if (!ctx) return;
+  const ctx = context();
+  if (!ctx) return;
   try {
-    const osc = ctx.createOscillator(), gain = ctx.createGain();
-    osc.type = type; osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
     gain.gain.setValueAtTime(volume, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-    osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + duration);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + duration);
   } catch {}
 }
 function speak(text, options = {}) {
   if (muted || typeof window === 'undefined' || !('speechSynthesis' in window) || !text) return;
   try {
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(String(text));
+    const utterance = new window.SpeechSynthesisUtterance(String(text));
     utterance.rate = Math.max(0.65, Math.min(1.35, Number(options.rate) || 1));
     utterance.pitch = Math.max(0.5, Math.min(2, Number(options.pitch) || 1));
     utterance.volume = Math.max(0, Math.min(1, Number(options.volume) || 0.85));
@@ -87,27 +98,36 @@ function speak(text, options = {}) {
 function normaliseRadio(name) {
   const value = String(name || '').trim().toLowerCase();
   if (RADIO_FILES[value]) return RADIO_FILES[value];
-  if (value.includes('arewa')) return 'arewa';
-  if (value.includes('freedom')) return 'freedom';
-  if (value.includes('rahama')) return 'rahama';
-  if (value.includes('ruffneck')) return 'ruffneck';
-  if (value.includes('wazobia')) return 'wazobia';
-  if (value.includes('cool')) return 'cool';
+  for (const key of ['arewa', 'freedom', 'rahama', 'ruffneck', 'wazobia', 'cool']) {
+    if (value.includes(key)) return key;
+  }
   return 'radio';
 }
-function stopAllRadio() { for (const key of ['radio','arewa','cool','freedom','rahama','ruffneck','wazobia']) stop(key); }
-
+function stopAllRadio() {
+  for (const key of ['radio', 'arewa', 'cool', 'freedom', 'rahama', 'ruffneck', 'wazobia']) stop(key);
+}
 export const Audio = {
   ensure() { context(); return this; },
-  setMuted(value) { muted = !!value; if (muted) { stop('engine'); stopAllRadio(); try { window.speechSynthesis?.cancel(); } catch {} } return muted; },
+  setMuted(value) {
+    muted = !!value;
+    if (muted) {
+      stop('engine'); stopAllRadio();
+      try { window.speechSynthesis?.cancel(); } catch {}
+    }
+    return muted;
+  },
   toggleMute() { return this.setMuted(!muted); },
   isMuted() { return muted; },
   startEngine() { engineStarted = true; return play('engine', { restart: false, loop: true }); },
   stopEngine() { engineStarted = false; stop('engine'); },
   updateEngine(speed) {
-    const a = getTrack('engine'); if (!a) return;
+    const track = getTrack('engine');
+    if (!track) return;
     const n = Number(speed) || 0;
-    try { a.playbackRate = Math.max(0.82, Math.min(1.55, 0.85 + n / 34)); a.volume = muted ? 0 : Math.max(0.12, Math.min(0.38, 0.15 + n / 150)); } catch {}
+    try {
+      track.playbackRate = Math.max(0.82, Math.min(1.55, 0.85 + n / 34));
+      track.volume = muted ? 0 : Math.max(0.12, Math.min(0.38, 0.15 + n / 150));
+    } catch {}
     if (n > 0.25 && !engineStarted) this.startEngine();
     if (n <= 0.25 && engineStarted) this.stopEngine();
   },
@@ -123,7 +143,8 @@ export const Audio = {
   negotiate() { tone(360, 0.1, 'triangle'); setTimeout(() => tone(430, 0.12, 'triangle'), 100); },
   alert() { tone(740, 0.11, 'square', 0.035); setTimeout(() => tone(540, 0.12, 'square', 0.035), 140); },
   siren() { tone(650, 0.24, 'sawtooth', 0.04); setTimeout(() => tone(880, 0.24, 'sawtooth', 0.04), 250); },
-  speak, speakHausa(text) { if (text === 'horn') return; speak(text, { rate: 0.92 }); },
+  speak,
+  speakHausa(text) { if (text === 'horn') return; speak(text, { rate: 0.92 }); },
   voicePickup() { speak('Akwai wuri?'); },
   voiceSannu() { speak('Sannu da aiki.'); },
   voiceDrop() { speak('Na gode. Sai anjima.'); },
@@ -135,7 +156,9 @@ export const Audio = {
   steer() { tone(300, 0.045, 'triangle', 0.018); },
   playSteer() { this.steer(); },
   whistle() { play('whistle'); },
-  destroy() { stop('engine'); stopAllRadio(); try { window.speechSynthesis?.cancel(); } catch {} }
+  destroy() {
+    stop('engine'); stopAllRadio();
+    try { window.speechSynthesis?.cancel(); } catch {}
+  }
 };
-
 export default Audio;
