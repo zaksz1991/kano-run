@@ -186,26 +186,6 @@ export class Game {
     };
   }
 
-  // Compatibility bridge for older renderer/weather callbacks.
-  uiWeatherToast(message) {
-    const text = String(message ?? '');
-    if (typeof this.ui?.showMissionToast === 'function') {
-      this.ui.showMissionToast(text);
-      return;
-    }
-    if (typeof this.ui?.showToast === 'function') this.ui.showToast(text);
-  }
-
-  cycleRadio() {
-    this.radioIndex = (this.radioIndex + 1) % CONFIG.RADIO.length;
-    Storage.setRadio(this.radioIndex);
-    const st = CONFIG.RADIO[this.radioIndex];
-    this.ui.setRadio(st.name);
-    this.ui.showMissionToast('📻 ' + st.name);
-    Audio.radioTune();
-    Audio.startRadioBed();
-  }
-
   /** Begin run — always PLAY with immediate forward motion */
   start() {
     // Skip intro always so the game never feels frozen
@@ -235,8 +215,8 @@ export class Game {
     this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
-    this.speed = 3.5;
-    this.throttle = 0.7;
+    this.speed = 2.2;
+    this.throttle = 0.35;
     this.braking = false;
     this.frame = 0;
     this.roadOff = 0;
@@ -296,8 +276,8 @@ export class Game {
     if (this.renderer3d?.applyPaint) this.renderer3d.applyPaint(this.selectedPaint);
     if (this.renderer3d) this.renderer3d.introPhase = 0;
 
-    this.throttle = 0.7;
-    this.speed = 3.5;
+    this.throttle = 0.35;
+    this.speed = 2.2;
     this.state = STATE.PLAY;
     try {
       Audio.ensure();
@@ -453,19 +433,25 @@ export class Game {
       { name: 'Freedom Radio' }, { name: 'Arewa Radio' }, { name: 'Rahama Radio' },
       { name: 'Radio Kano' }, { name: 'Cool FM' }, { name: 'Express Radio' }
     ];
+    if (!Array.isArray(list) || list.length === 0) return;
+
     this.radioIndex = ((this.radioIndex || 0) + 1) % list.length;
     const st = list[this.radioIndex];
+
+    try {
+      Storage.setRadio(this.radioIndex);
+    } catch (e) {}
+
     this.ui.setRadio?.(st.name);
+    this.ui.showMissionToast('📻 ' + st.name);
+
     try {
       Audio.ensure();
       Audio.radioTune(st.name);
-    } catch (e) {}
-    this.ui.showMissionToast('📻 ' + st.name);
-  }
-
-  // Public alias used by UI controls and main.js.
-  nextRadio() {
-    return this.cycleRadio();
+      Audio.startRadioBed();
+    } catch (e) {
+      console.warn('Radio playback could not start:', e);
+    }
   }
 
   horn() {
@@ -1125,7 +1111,7 @@ export class Game {
     const tyreGrip = 1 - Math.min(0.25, (this.damageTyres || 0) / 100 * 0.25);
     const top = (7.2 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.5) * loadFactor * dmgFactor;
     // Base cruise so the road always moves; GAS raises speed, BRAKE stops
-    const baseCruise = this.braking ? 0 : 3.2;
+    const baseCruise = this.braking ? 0 : 1.8;
     let targetSpeed = baseCruise + Math.max(0.35, this.throttle) * (top - baseCruise);
     if (this.braking) targetSpeed = 0;
     if (this.trafficJamTimer > 0) targetSpeed *= 0.5;
@@ -1316,12 +1302,12 @@ export class Game {
     // Spawn traffic (denser during police chase)
     const chase = this.policeChase > 0;
     const peak = this.isPeakHour();
-    const spawnEvery = chase ? 28 : peak ? 36 : 55;
-    const spawnChance = chase ? 0.9 : peak ? 0.85 : 0.55;
+    const spawnEvery = chase ? 40 : peak ? 50 : 70;
+    const spawnChance = chase ? 0.75 : peak ? 0.65 : 0.45;
     if (this.frame % spawnEvery === 0 && Math.random() < spawnChance && this.trafficJamTimer <= 0) {
       let lane = Math.floor(Math.random() * 3);
       if (lane === this.playerLane && Math.random() < 0.5) lane = (lane + 1) % 3;
-      if (this.laneClear(lane, -80, 150)) {
+      if (this.laneClear(lane, -80, 190)) {
         let types = ['car', 'keke', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota', 'robber'];
         if (chase) types = ['police', 'karota', 'car', 'police', 'keke'];
         const type = types[Math.floor(Math.random() * types.length)];
