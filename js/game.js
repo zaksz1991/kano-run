@@ -1424,11 +1424,10 @@ export class Game {
       let lane = Math.floor(Math.random() * 3);
       if (lane === this.playerLane && Math.random() < 0.5) lane = (lane + 1) % 3;
       if (this.laneClear(lane, -80, 150)) {
-        // Traffic only — never spawn people as road obstacles
+        // Traffic only — never people (types list has no pedestrian/passenger)
         let types = ['car', 'keke', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota', 'robber'];
         if (chase) types = ['police', 'karota', 'car', 'police', 'keke'];
         const type = types[Math.floor(Math.random() * types.length)];
-        if (type === 'pedestrian' || type === 'passenger') continue;
         const roadMode = (CONFIG.ROAD_MODES && CONFIG.ROAD_MODES[this.selectedRoadMode]) || { oppositeChance: 0.35 };
         const opposite = roadMode.oppositeChance > 0 && Math.random() < roadMode.oppositeChance;
         this.obs.push({
