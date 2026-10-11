@@ -162,7 +162,7 @@ export class Renderer3D {
     return this.mat(fallbackColor || 0xeab308, { roughness: 0.7 });
   }
 
-  /** Place a real GLB only — never a box placeholder; feet on ground */
+  /** Place a real GLB only — never a box placeholder; full body above ground */
   _placeGlb(key, x, z, opts = {}) {
     if (!this.models?.has?.(key)) {
       return null;
@@ -170,13 +170,16 @@ export class Renderer3D {
     try {
       const inst = this.models.getInstance(key, opts);
       if (!inst || inst.userData?.isPlaceholder) return null;
-      // Sit on ground (Y=0): re-align pivot if model still sunk
       inst.position.set(x, 0, z);
+      if (opts.rotY != null) inst.rotation.y = opts.rotY;
       inst.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(inst);
-      if (box.min.y < -0.02) inst.position.y -= box.min.y;
+      // Lift so feet sit slightly above road (never half-buried)
+      if (Number.isFinite(box.min.y)) {
+        inst.position.y = -box.min.y + 0.04;
+      }
       if (opts.y != null) inst.position.y = opts.y;
-      if (opts.rotY != null) inst.rotation.y = opts.rotY;
+      inst.userData.baseZ = z;
       this.buildings.add(inst);
       this._glbPlaced = (this._glbPlaced || 0) + 1;
       return inst;
@@ -853,34 +856,35 @@ export class Renderer3D {
   }
 
   addPedestrian(x, z) {
-    // Prefer pedestrian.glb / passenger.glb
+    // Prefer pedestrian.glb / passenger.glb — full body above ground
     const key = Math.random() < 0.5 && this.models?.has?.('passenger') ? 'passenger' : 'pedestrian';
-    if (this._placeGlb(key, x, z, { rotY: Math.random() * Math.PI * 2, scale: 1 })) return;
+    if (this._placeGlb(key, x, z, { rotY: Math.random() * Math.PI * 2, scale: 1.15 })) return;
+
+    // One group so the whole person scrolls together (not half buried)
+    const g = new THREE.Group();
+    g.position.set(x, 0.02, z);
     const shirtColors = [0x3b82f6, 0xec4899, 0x22c55e, 0xeab308, 0xa855f7, 0xf8fafc, 0xf97316];
     const shirt = shirtColors[Math.floor(Math.random() * shirtColors.length)];
-    const s = 1.0;
+    const legs = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.55, 0.16),
+      this.mat(0x1e293b, { roughness: 0.9 })
+    );
+    legs.position.y = 0.28;
+    g.add(legs);
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28 * s, 0.5 * s, 0.18 * s),
+      new THREE.BoxGeometry(0.3, 0.48, 0.2),
       this.mat(shirt, { roughness: 0.8 })
     );
-    body.position.set(x, 0.85 * s, z);
-    this.buildings.add(body);
-    // head
+    body.position.y = 0.78;
+    g.add(body);
     const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16 * s, 8, 8),
+      new THREE.SphereGeometry(0.14, 8, 8),
       this.mat(0xc4a574, { roughness: 0.7 })
     );
-    head.position.set(x, 1.4 * s, z);
-    this.buildings.add(head);
-    // legs
-    for (const dx of [-0.1 * s, 0.1 * s]) {
-      const leg = new THREE.Mesh(
-        new THREE.BoxGeometry(0.12 * s, 0.5 * s, 0.12 * s),
-        this.mat(0x1e293b, { roughness: 0.9 })
-      );
-      leg.position.set(x + dx, 0.4 * s, z);
-      this.buildings.add(leg);
-    }
+    head.position.y = 1.18;
+    g.add(head);
+    g.userData.baseZ = z;
+    this.buildings.add(g);
   }
 
   /** Keke NAPEP style — yellow body, black canopy, 3 wheels */
@@ -1490,27 +1494,28 @@ export class Renderer3D {
       this.rain.geometry.attributes.position.needsUpdate = true;
     }
 
-    // ——— WORLD SCROLL (strong) ———
+    // ——— WORLD SCROLL (slower, calmer) ———
     const scroll = (g.roadOff || 0);
     if (this.roadMesh?.material?.map) {
-      this.roadMesh.material.map.offset.y = -(scroll * 0.12) % 1;
+      this.roadMesh.material.map.offset.y = -(scroll * 0.045) % 1;
       this.roadMesh.material.map.needsUpdate = true;
     }
     if (this.laneMarks) {
-      this.laneMarks.position.z = -(scroll * 0.9) % 3.5;
+      this.laneMarks.position.z = -(scroll * 0.45) % 3.5;
     }
     if (this.buildings) {
       this.buildings.position.z = 0;
       this.buildings.children.forEach((ch) => {
         if (ch.userData.baseZ == null) ch.userData.baseZ = ch.position.z;
-        let z = ch.userData.baseZ - (scroll * 1.35) % 180;
+        // Slower environment motion so world doesn't blur past
+        let z = ch.userData.baseZ - (scroll * 0.55) % 180;
         while (z < -25) z += 180;
         while (z > 155) z -= 180;
         ch.position.z = z;
       });
     }
     if (this.horizon) {
-      this.horizon.position.z = -(scroll * 0.25) % 24;
+      this.horizon.position.z = -(scroll * 0.12) % 24;
     }
 
     // Player keke — slide sideways into lane, ALWAYS face forward (straight)
