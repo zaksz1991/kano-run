@@ -23,7 +23,7 @@ import {
 } from './systems.js';
 
 /** Match renderer 3-lane highway */
-const LANE_WORLD_X = [-4.2, 0, 4.2];
+const LANE_WORLD_X = [-2.2, 0, 2.2];
 
 export class Game {
   constructor(canvas) {
@@ -203,13 +203,9 @@ export class Game {
 
   /** Begin run — always PLAY with immediate forward motion */
   start() {
-    // Opening sequence: walk → enter keke → engine (skip after first play)
-    let skipIntro = false;
-    try {
-      skipIntro = !!(Storage.getSeenTutorial() && Storage.get('kanoSkipIntro', false));
-    } catch (e) {}
-    this.state = skipIntro ? STATE.PLAY : STATE.INTRO;
-    this.introT = skipIntro ? 999 : 0;
+    // Skip long intro — go straight to driving so keke always moves
+    this.state = STATE.PLAY;
+    this.introT = 999;
     this.fuel = 100;
     this.zoneType = 'road'; // road | junction | market
     this.zoneTimer = 0;
@@ -313,6 +309,7 @@ export class Game {
 
     this.throttle = 0.7;
     this.speed = 3.5;
+    this.braking = false;
     this.state = STATE.PLAY;
     try {
       Audio.ensure();
@@ -1206,25 +1203,22 @@ export class Game {
     const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
     const bonuses = this.getBonuses();
 
-    // Forward motion — always roll unless actively braking
-    const loadFactor = 1 - Math.min(0.22, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.22);
-    const dmgFactor = 1 - Math.min(0.4, (100 - (this.condition || 100)) / 100 * 0.45);
-    const tyreGrip = 1 - Math.min(0.25, (this.damageTyres || 0) / 100 * 0.25);
-    const top = (6.5 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.5) * loadFactor * dmgFactor;
-    // Default throttle if unset so keke never sits at 0 km/h
-    if (this.throttle == null || this.throttle < 0.15) this.throttle = 0.55;
-    const baseCruise = this.braking ? 0 : 2.8;
-    let targetSpeed = baseCruise + Math.max(0.25, this.throttle) * (top - baseCruise);
-    if (this.braking) targetSpeed = 0;
-    // Hard floor so world always scrolls in PLAY
-    if (!this.braking && targetSpeed < 2.2) targetSpeed = 2.2;
-    if (this.trafficJamTimer > 0) targetSpeed *= 0.5;
-    if (this.parkOnly) targetSpeed = Math.min(targetSpeed, 3.8);
-    if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) targetSpeed += 0.3;
-    const accel = (0.08 + this.throttle * 0.14) * loadFactor * this.weatherGrip * dmgFactor * (1 - (this.damageEngine || 0) / 280);
-    if (this.speed < targetSpeed) this.speed += accel;
-    else this.speed += (targetSpeed - this.speed) * 0.14;
-    if (this.braking) this.speed *= 0.78 * this.weatherGrip * tyreGrip;
+    // ——— MOVEMENT (bulletproof) ———
+    // Never leave throttle at 0 while driving
+    if (typeof this.throttle !== 'number' || this.throttle < 0.2) this.throttle = 0.6;
+    this.braking = !!this.braking;
+
+    const loadFactor = 1 - Math.min(0.2, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.2);
+    const top = (6.0 + (bonuses.speed || 0) * 2) * loadFactor;
+    let targetSpeed = this.braking ? 0 : (2.5 + this.throttle * (top - 2.5));
+    if (!this.braking && targetSpeed < 2.5) targetSpeed = 2.5;
+    if (this.trafficJamTimer > 0 && !this.braking) targetSpeed = Math.max(1.5, targetSpeed * 0.55);
+
+    // Smooth toward target
+    this.speed += (targetSpeed - this.speed) * (this.braking ? 0.25 : 0.12);
+    if (this.braking) this.speed *= 0.85;
+    // Absolute floor while not braking — fixes "0 km/h stuck"
+    if (!this.braking) this.speed = Math.max(2.5, this.speed);
     // Fuel
     if (this.speed > 0.25) {
       this.fuel = Math.max(0, this.fuel - 0.008 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
@@ -1236,18 +1230,13 @@ export class Game {
       this.ui.showMissionToast('Low fuel — find petrol');
       Audio.voiceLowFuel();
     }
-    this.speed = Math.max(0, Math.min(this.speed, 11));
+    this.speed = Math.max(this.braking ? 0 : 2.5, Math.min(this.speed, 10));
 
     // Condition warnings
     if (this.condition < 25 && this.frame % 120 === 0) {
       this.ui.showMissionToast('Keke condition critical — find mechanic');
     } else if (this.condition < 50 && this.frame % 200 === 0) {
       this.ui.showMissionToast('Keke needs maintenance');
-    }
-    if (this.damageEngine > 60 && this.throttle > 0.5 && Math.random() < 0.02) {
-      this.speed *= 0.75;
-      this.ui.showMissionToast('Engine struggling');
-      Audio.brake();
     }
 
     if (this.speed < 0.35) {
@@ -1258,9 +1247,10 @@ export class Game {
     }
     if (this.pickupCooldown > 0) this.pickupCooldown--;
 
-    // roadOff + distance in km (slower, more “real” Kano travel feel)
-    this.roadOff = (this.roadOff + this.speed * 6.5) % 10000;
-    const kmPerFrame = this.speed * 0.0032;
+    // World scroll — always advances while moving
+    const move = Math.max(this.speed, this.braking ? 0 : 2.5);
+    this.roadOff = (this.roadOff + move * 7.0) % 10000;
+    const kmPerFrame = move * 0.0035;
     this.dist += kmPerFrame;
     this.meters = (this.meters || 0) + kmPerFrame * 1000;
     this.segmentDist += kmPerFrame;

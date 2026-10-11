@@ -33,8 +33,15 @@ export class Controls {
     // LANE_X = [-5.5, 0, 5.5] → index 0 left, 2 right
     this._hold(left, () => this.steerLeft());
     this._hold(right, () => this.steerRight());
-    this._press(gas, () => this.game.setThrottle?.(1), () => this.game.setThrottle?.(0.5));
-    this._press(brake, () => this.game.setBrake?.(true), () => this.game.setBrake?.(false));
+    this._press(gas, () => this.game.setThrottle?.(1), () => this.game.setThrottle?.(0.6));
+    this._press(brake, () => this.game.setBrake?.(true), () => {
+      this.game.setBrake?.(false);
+      if ((this.game.throttle || 0) < 0.2) this.game.setThrottle?.(0.6);
+    });
+    window.addEventListener('blur', () => {
+      this.game.setBrake?.(false);
+      if ((this.game.throttle || 0) < 0.2) this.game.setThrottle?.(0.6);
+    });
     if (horn) horn.addEventListener('click', (e) => { e.preventDefault(); this.game.horn?.(); });
     if (pauseBtn) {
       pauseBtn.addEventListener('click', (e) => {
