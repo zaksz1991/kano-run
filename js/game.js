@@ -18,7 +18,8 @@ import {
   pickHonorific,
   getLevelBand,
   WORLD_EVENTS,
-  DISTRICTS
+  DISTRICTS,
+  biomeForDistance
 } from './systems.js';
 
 /** Match renderer 3-lane highway */
@@ -1297,12 +1298,37 @@ export class Game {
     this.ui.setLevel?.(this.level);
     this.ui.setOnboardDest?.(this.onboard);
 
-    // Landmarks
+    // Long-distance world biome changes
+    const biome = biomeForDistance(this.dist);
+    if (biome && biome.id !== this.currentBiomeId) {
+      this.currentBiomeId = biome.id;
+      this.ui.showMissionToast(biome.msg || ('📍 ' + biome.name));
+      try { this.renderer3d?.applyWorldBiome?.(biome); } catch (e) {}
+      Audio.success();
+    }
+
+    // Landmarks along the route
     const marks = route.landmarks || [];
-    if (marks.length && this.dist > (this.landmarkIndex + 1) * 2.5 && this.landmarkIndex < marks.length) {
+    if (marks.length && this.dist > (this.landmarkIndex + 1) * 3.5 && this.landmarkIndex < marks.length) {
       const name = marks[this.landmarkIndex++];
       this.ui.showMissionToast('📍 ' + name);
       Audio.success();
+    }
+
+    // Approach warning for pick / drop checkpoints
+    for (const p of this.paxZones) {
+      if (p.taken) continue;
+      const dy = p.y - this.playerY;
+      if (dy > -180 && dy < -40 && Math.round(p.lane) === this.playerLane && this.frame % 40 === 0) {
+        this.ui.showMissionToast('🟢 STOP PAD ahead — brake to pick up → ' + (p.dest || 'town'));
+      }
+    }
+    for (const d of this.dropZones) {
+      if (d.used) continue;
+      const dy = d.y - this.playerY;
+      if (dy > -180 && dy < -40 && Math.round(d.lane) === this.playerLane && this.frame % 45 === 0) {
+        this.ui.showMissionToast('🟡 DROP ZONE ahead — brake for Akwai');
+      }
     }
 
     // KAROTA — more likely on junction/market segments; fines + wanted
@@ -1406,11 +1432,11 @@ export class Game {
       }
     }
 
-    // Waiting passengers — classes + destinations (economy system)
-    if (this.frame % 100 === 0) {
+    // Highlighted pick-up checkpoints (green stop pads)
+    if (this.frame % 90 === 0 && this.paxZones.length < 6) {
       const roll = Math.random();
       const sizes = ['normal', 'normal', 'normal', 'tall', 'fat', 'big'];
-      const isPark = Math.random() < 0.45 || this.parkOnly;
+      const isPark = true; // marked stop pad = legal park
       const paxClass = pickPaxClass(this.level || 1);
       const dest = pickDestination();
       this.paxZones.push({
@@ -1418,7 +1444,7 @@ export class Game {
         y: -90,
         taken: false,
         aishat: roll < 0.09,
-        vip: paxClass.id === 'vip' || (roll >= 0.09 && roll < 0.15),
+        vip: paxClass.id === 'vip' || (roll >= 0.09 && roll < 0.14),
         paxClass: paxClass.id,
         paxClassName: paxClass.name,
         fareMult: paxClass.fareMult,
@@ -1426,11 +1452,21 @@ export class Game {
         seats: roll < 0.09 ? 2 : 1,
         size: sizes[Math.floor(Math.random() * sizes.length)],
         flagging: true,
-        isPark
+        isPark,
+        checkpoint: true
       });
     }
-    if (this.frame % 120 === 0) {
-      this.dropZones.push({ lane: Math.floor(Math.random() * 3), y: -90, used: false, akwai: true });
+    // Yellow drop checkpoints — prefer destinations of onboard passengers
+    if (this.frame % 110 === 0 && this.onboard.length > 0 && this.dropZones.length < 4) {
+      const prefer = this.onboard[0]?.dest || pickDestination();
+      this.dropZones.push({
+        lane: Math.floor(Math.random() * 3),
+        y: -90,
+        used: false,
+        akwai: true,
+        dest: prefer,
+        checkpoint: true
+      });
     }
     if (this.frame % 140 === 0 && Math.random() < 0.4) {
       this.coins.push({ lane: Math.floor(Math.random() * 3), y: -60, taken: false, bob: Math.random() * 6 });

@@ -1089,23 +1089,75 @@ export class Renderer3D {
     return g;
   }
 
-  makeZone(color) {
+  /** Highlighted stop pad — kind: 'pick' | 'drop' | 'default' */
+  makeZone(color, kind = 'default') {
     const g = new THREE.Group();
+    const isDrop = kind === 'drop' || color === 0xfbbf24;
+    const isPick = kind === 'pick' || !isDrop;
+    const col = isDrop ? 0xfbbf24 : 0x22c55e;
+    // Wide glowing stop pad
+    const pad = new THREE.Mesh(
+      new THREE.CircleGeometry(1.15, 32),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+    );
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.y = 0.04;
+    g.add(pad);
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.55, 0.78, 28),
-      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.9 })
+      new THREE.RingGeometry(0.95, 1.2, 32),
+      new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide, transparent: true, opacity: 0.95 })
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.06;
     g.add(ring);
+    // Pole + flag so player sees checkpoint from far
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 1.6, 8),
+      this.mat(0x94a3b8, { roughness: 0.5, metalness: 0.4 })
+    );
+    pole.position.set(1.1, 0.8, 0);
+    g.add(pole);
+    const flag = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 0.32, 0.04),
+      this.mat(col, { emissive: col, emissiveIntensity: 0.55, roughness: 0.4 })
+    );
+    flag.position.set(1.35, 1.4, 0);
+    g.add(flag);
+    // Inner disc
     const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(0.5, 24),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.DoubleSide })
+      new THREE.CircleGeometry(0.7, 24),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
     );
     disc.rotation.x = -Math.PI / 2;
     disc.position.y = 0.05;
     g.add(disc);
+    g.userData.kind = isDrop ? 'drop' : 'pick';
+    g.userData.pulse = Math.random() * Math.PI * 2;
     return g;
+  }
+
+  /** Change world look by distance biome */
+  applyWorldBiome(biome) {
+    if (!biome || this._lastBiome === biome.id) return;
+    this._lastBiome = biome.id;
+    if (this.scene?.fog) {
+      this.scene.fog.color.setHex(biome.fog || 0x8ec8e8);
+      this.scene.fog.near = biome.fogNear || 16;
+      this.scene.fog.far = biome.fogFar || 70;
+    }
+    if (this.sky?.material) this.sky.material.color.setHex(biome.sky || 0x6ec5f0);
+    if (this.sun) this.sun.intensity = biome.sun ?? 1.2;
+    if (this.hemlight) this.hemlight.intensity = biome.hem ?? 0.5;
+    // Tint roadside slightly
+    if (this.buildings) {
+      this.buildings.traverse((ch) => {
+        if (ch.isMesh && ch.material?.color && ch.geometry?.type === 'BoxGeometry') {
+          const base = ch.userData.biomeBase || ch.material.color.getHex();
+          if (!ch.userData.biomeBase) ch.userData.biomeBase = base;
+          ch.material.color.setHex(biome.buildingTint != null ? biome.buildingTint : base);
+        }
+      });
+    }
   }
 
   makeCoin() {
@@ -1508,11 +1560,19 @@ export class Renderer3D {
       mesh.visible = true;
       mesh.position.x = this.laneToX(z.lane);
       mesh.position.z = this.screenYToZ(z.y, py);
-      const col = z.kind === 'd' ? 0xfbbf24 : z.aishat ? 0xf472b6 : z.vip ? 0xa78bfa : 0x4ade80;
+      // Green = pick · Yellow = drop · Pink = Aishat · Purple = VIP
+      const col = z.kind === 'd' ? 0xfbbf24 : z.aishat ? 0xf472b6 : z.vip ? 0xa78bfa : 0x22c55e;
       mesh.children.forEach((ch) => {
-        if (ch.material) ch.material.color.setHex(col);
+        if (ch.material) {
+          if (ch.material.color) ch.material.color.setHex(col);
+          if (ch.material.emissive) {
+            ch.material.emissive.setHex(col);
+            ch.material.emissiveIntensity = 0.5 + Math.sin((g.frame || 0) * 0.15) * 0.25;
+          }
+        }
       });
-      const pulse = 1 + Math.sin((g.frame || 0) * 0.12) * 0.08;
+      // Strong pulse so stop pads are obvious
+      const pulse = 1 + Math.sin((g.frame || 0) * 0.18 + (z.lane || 0)) * 0.18;
       mesh.scale.set(pulse, 1, pulse);
     }
     while (zi < this.zonePool.length) this.zonePool[zi++].visible = false;

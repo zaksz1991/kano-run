@@ -21,6 +21,27 @@ export const ROAD_TYPES = {
   highway: { id: 'highway', name: 'Highway', difficulty: 1.05, traffic: 1.2 }
 };
 
+/**
+ * Long-distance world biomes — visual + gameplay shift every few km
+ */
+export const WORLD_BIOMES = [
+  { id: 'city_morning', minKm: 0, name: 'Kano City Morning', sky: 0x6ec5f0, fog: 0x8ec8e8, fogNear: 18, fogFar: 72, sun: 1.3, hem: 0.55, buildingTint: null, traffic: 1, msg: '🏙️ Entering city corridor' },
+  { id: 'market_belt', minKm: 3, name: 'Market Belt', sky: 0xf59e0b, fog: 0xd97706, fogNear: 14, fogFar: 55, sun: 1.1, hem: 0.45, buildingTint: 0x44403c, traffic: 1.4, msg: '🛒 Market belt — slow & careful' },
+  { id: 'industrial', minKm: 7, name: 'Industrial Zone', sky: 0x64748b, fog: 0x475569, fogNear: 12, fogFar: 50, sun: 0.85, hem: 0.35, buildingTint: 0x334155, traffic: 1.25, msg: '🏭 Industrial area — trucks ahead' },
+  { id: 'residential', minKm: 12, name: 'Residential Quarters', sky: 0x7dd3fc, fog: 0xa5f3fc, fogNear: 16, fogFar: 65, sun: 1.15, hem: 0.5, buildingTint: 0x3f3a32, traffic: 0.85, msg: '🏘️ Residential streets' },
+  { id: 'highway_out', minKm: 18, name: 'Outer Highway', sky: 0x38bdf8, fog: 0x0ea5e9, fogNear: 22, fogFar: 90, sun: 1.4, hem: 0.6, buildingTint: 0x292524, traffic: 1.1, msg: '🛣️ Outer highway — open road' },
+  { id: 'dusk_city', minKm: 25, name: 'Dusk Return', sky: 0x7c3aed, fog: 0x4c1d95, fogNear: 14, fogFar: 58, sun: 0.5, hem: 0.28, buildingTint: 0x1e1b4b, traffic: 1.2, msg: '🌆 Dusk over Kano' },
+  { id: 'night_run', minKm: 32, name: 'Night Run', sky: 0x020617, fog: 0x020617, fogNear: 10, fogFar: 48, sun: 0.2, hem: 0.12, buildingTint: 0x0f172a, traffic: 0.9, msg: '🌙 Night run — lights on' }
+];
+
+export function biomeForDistance(distKm) {
+  let cur = WORLD_BIOMES[0];
+  for (const b of WORLD_BIOMES) {
+    if (distKm >= b.minKm) cur = b;
+  }
+  return cur;
+}
+
 /** Kano destinations — Phase 10 passenger requests */
 export const DISTRICTS = [
   'Sabon Gari', 'Kofar Mata', 'Fagge', 'Farm Centre', 'Hotoro', 'Zoo Road',
