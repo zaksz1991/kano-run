@@ -1198,8 +1198,8 @@ export class Game {
     }
     if (this.pickupCooldown > 0) this.pickupCooldown--;
 
-    // Stronger scroll so movement is clearly visible
-    this.roadOff = (this.roadOff + this.speed * 3.2) % 58;
+    // roadOff drives environment scroll (large modulus so world keeps flowing)
+    this.roadOff = (this.roadOff + this.speed * 4.5) % 10000;
     this.dist += this.speed * 0.006;
     this.segmentDist += this.speed * 0.006;
     this.score += Math.floor(this.speed * 0.08 * this.getComboMultiplier() * (bonuses.scoreMult || 1));

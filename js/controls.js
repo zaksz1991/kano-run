@@ -66,9 +66,9 @@ export class Controls {
     }
   }
 
-  // User-confirmed invert fix: LEFT button was moving vehicle right
-  steerLeft() { this.setTargetLane(this.targetLane + 1); }
-  steerRight() { this.setTargetLane(this.targetLane - 1); }
+  // LANE_X [-4.2,0,4.2]: 0=left, 2=right — LEFT decreases lane index
+  steerLeft() { this.setTargetLane(this.targetLane - 1); }
+  steerRight() { this.setTargetLane(this.targetLane + 1); }
 
   setTargetLane(n) {
     this.targetLane = Math.max(0, Math.min(this.laneCount - 1, Math.round(n)));

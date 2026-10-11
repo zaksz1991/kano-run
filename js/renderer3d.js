@@ -1351,23 +1351,61 @@ export class Renderer3D {
       this.rain.geometry.attributes.position.needsUpdate = true;
     }
 
-    // Visible world scroll tied to speed / roadOff (parallax layers)
-    if (this.laneMarks) this.laneMarks.position.z = -((g.roadOff || 0) * 0.28) % 3.2;
-    if (this.buildings) this.buildings.position.z = -((g.roadOff || 0) * 0.16) % 6.2;
-    if (this.horizon) this.horizon.position.z = -((g.roadOff || 0) * 0.05) % 8;
-    if (this.roadMesh && this.roadMesh.material && this.roadMesh.material.map) {
-      this.roadMesh.material.map.offset.y = -((g.roadOff || 0) * 0.04) % 1;
+    // ——— WORLD SCROLL (environment must move toward camera) ———
+    const scroll = (g.roadOff || 0);
+    const scrollSpeed = Math.max(0.02, (spd || 0) * 0.015);
+    // Road texture flies under the keke
+    if (this.roadMesh?.material?.map) {
+      this.roadMesh.material.map.offset.y = -(scroll * 0.08) % 1;
+      this.roadMesh.material.map.needsUpdate = true;
+    }
+    // Lane paint dashes
+    if (this.laneMarks) {
+      this.laneMarks.position.z = -(scroll * 0.55) % 3.5;
+    }
+    // Buildings / roadside — strong motion + recycle far objects
+    if (this.buildings) {
+      this.buildings.position.z = 0;
+      this.buildings.children.forEach((ch) => {
+        if (ch.userData.baseZ == null) ch.userData.baseZ = ch.position.z;
+        let z = ch.userData.baseZ - (scroll * 0.85) % 160;
+        // wrap into visible range ahead of player
+        while (z < -20) z += 160;
+        while (z > 140) z -= 160;
+        ch.position.z = z;
+      });
+    }
+    if (this.horizon) {
+      this.horizon.position.z = -(scroll * 0.12) % 20;
     }
 
-    // Player keke — smooth lane + full anim system (suspension, lean, wheels)
+    // Player keke — slide sideways into lane, ALWAYS face forward (straight)
     if (this.player) {
       const lane = (typeof g.smoothLane === 'number') ? g.smoothLane : (g.playerLane ?? 1);
       const tx = this.laneToX(lane);
-      this.player.position.x += (tx - this.player.position.x) * 0.28;
+      // Fast, clean lane change — no diagonal drift
+      this.player.position.x += (tx - this.player.position.x) * 0.35;
       this.player.position.z = PLAYER_Z;
+      // Face straight down the road (+Z). Only tiny lean while changing lanes.
+      const dx = tx - this.player.position.x;
+      this.player.rotation.y = 0; // straight ahead
+      this.player.rotation.z = THREE.MathUtils.clamp(-dx * 0.04, -0.08, 0.08);
+      this.player.rotation.x = 0;
+      // Suspension bounce only
+      let by = 0;
+      if (g.bounce > 0) by = Math.sin(g.bounce * 0.8) * 0.08;
+      by += Math.sin((g.frame || 0) * 0.35) * Math.min(0.05, spd * 0.006);
+      this.player.position.y = by;
       if (this.anim) {
         this.anim.tick(16);
-        this.anim.animatePlayer(this.player, g);
+        // wheel spin only — do not override facing from animatePlayer
+        try {
+          this.player.traverse((ch) => {
+            if (ch.isMesh && ch.geometry?.type === 'CylinderGeometry') {
+              ch.rotation.x += spd * 0.4;
+            }
+          });
+        } catch (e) {}
       }
       if ((this.introPhase || 3) < 3) {
         this.camera.position.z = -2.2 + this.introPhase * 0.4;
@@ -1378,9 +1416,8 @@ export class Renderer3D {
         this.playerShadow.scale.setScalar(0.9 + Math.abs(this.player.position.y) * 2);
       }
     }
-    // Living world: pedestrians bob
-    if (this.anim && this.buildings) this.anim.animatePedestrians(this.buildings, g.roadOff);
-    // GLB animation mixers
+    // Pedestrian bob
+    if (this.anim && this.buildings) this.anim.animatePedestrians(this.buildings, scroll);
     if (this.models) this.models.update(0.016);
 
     // Multi-camera: chase | driver | passenger | road
