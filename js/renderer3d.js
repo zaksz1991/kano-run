@@ -3,12 +3,12 @@ import * as THREE from '../vendor/three.module.js';
 import { AnimSystem } from './animation.js';
 import { ModelManager } from './ModelManager.js';
 
-// Lane 0 = LEFT of screen, lane 2 = RIGHT (camera faces +Z, +X = right)
-// Wider road — previous 9.5-unit strip felt tiny
-const LANE_X = [-3.6, 0, 3.6];
-const ROAD_WIDTH = 14.5;
-const ROAD_LEN = 140;
-const PLAYER_Z = 6.2;
+// VERY WIDE road — fills the phone screen
+// Lane 0 = LEFT, lane 2 = RIGHT
+const LANE_X = [-5.5, 0, 5.5];
+const ROAD_WIDTH = 22;
+const ROAD_LEN = 160;
+const PLAYER_Z = 7;
 
 export class Renderer3D {
   constructor(game) {
@@ -165,10 +165,10 @@ export class Renderer3D {
     // Stronger fog = clearer depth (near sharp, far fades)
     this.scene.fog = new THREE.Fog(0x8ec8e8, 18, 70);
 
-    // Wider FOV + slightly higher chase cam so the full road fills the view
-    this.camera = new THREE.PerspectiveCamera(62, w / h, 0.1, 220);
-    this.camera.position.set(0, 5.4, -7.2);
-    this.camera.lookAt(0, 0.5, 26);
+    // Low chase camera + wide FOV so ROAD_WIDTH 22 fills the view
+    this.camera = new THREE.PerspectiveCamera(68, w / h, 0.1, 250);
+    this.camera.position.set(0, 6.8, -9.5);
+    this.camera.lookAt(0, 0.4, 30);
 
     // Richer lighting for volume
     this.scene.add(new THREE.AmbientLight(0xb8c8e0, 0.45));
@@ -485,8 +485,8 @@ export class Renderer3D {
     for (const side of [-1, 1]) {
       for (let i = 0; i < types.length; i++) {
         const z = i * 6.5 + (side > 0 ? 2 : 0);
-        // Push buildings outside the wider ROAD_WIDTH asphalt
-        const xBase = side * (9.2 + (i % 3) * 0.5);
+        // Outside wide asphalt (ROAD_WIDTH 22)
+        const xBase = side * (13.5 + (i % 3) * 0.6);
         const kind = types[i];
         if (kind === 'mosque') this.addMosque(xBase, z, side);
         else if (kind === 'market') this.addMarketStall(xBase, z, side);

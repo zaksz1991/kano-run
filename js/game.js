@@ -21,8 +21,8 @@ import {
   DISTRICTS
 } from './systems.js';
 
-/** Match renderer LANE_X (wide road Phase 10) */
-const LANE_WORLD_X = [-3.6, 0, 3.6];
+/** Match renderer LANE_X (very wide road) */
+const LANE_WORLD_X = [-5.5, 0, 5.5];
 
 export class Game {
   constructor(canvas) {
