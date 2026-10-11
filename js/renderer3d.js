@@ -1,12 +1,12 @@
-// Kano Run 3D renderer + animation system + ModelManager
-import * as THREE from '../vendor/three.module.js';
+// Kano Run 3D renderer — same `three` package as ModelManager/GLTFLoader
+import * as THREE from 'three';
 import { AnimSystem } from './animation.js';
 import { ModelManager } from './ModelManager.js';
 
-// VERY WIDE road — fills the phone screen
-// Lane 0 = LEFT, lane 2 = RIGHT
-const LANE_X = [-5.5, 0, 5.5];
-const ROAD_WIDTH = 22;
+// 3-lane TWO-WAY highway (wide enough for keke travel)
+// Lane 0 = LEFT (oncoming possible), 1 = CENTER, 2 = RIGHT
+export const LANE_X = [-4.2, 0, 4.2];
+const ROAD_WIDTH = 16;
 const ROAD_LEN = 160;
 const PLAYER_Z = 7;
 
@@ -165,10 +165,10 @@ export class Renderer3D {
     // Stronger fog = clearer depth (near sharp, far fades)
     this.scene.fog = new THREE.Fog(0x8ec8e8, 18, 70);
 
-    // Low chase camera + wide FOV so ROAD_WIDTH 22 fills the view
-    this.camera = new THREE.PerspectiveCamera(68, w / h, 0.1, 250);
-    this.camera.position.set(0, 6.8, -9.5);
-    this.camera.lookAt(0, 0.4, 30);
+    // Chase cam framed on full 3-lane highway
+    this.camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 250);
+    this.camera.position.set(0, 5.8, -8.5);
+    this.camera.lookAt(0, 0.35, 28);
 
     // Richer lighting for volume
     this.scene.add(new THREE.AmbientLight(0xb8c8e0, 0.45));
@@ -306,37 +306,45 @@ export class Renderer3D {
   }
 
   makeRoadTexture() {
+    // 3-lane two-way highway texture (full width markings)
     const cv = document.createElement('canvas');
-    cv.width = 256;
-    cv.height = 256;
+    cv.width = 512;
+    cv.height = 512;
     const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#2a2e35';
-    ctx.fillRect(0, 0, 256, 256);
-    // asphalt noise
-    for (let i = 0; i < 4000; i++) {
-      const g = 30 + Math.random() * 40;
-      ctx.fillStyle = 'rgba(' + g + ',' + g + ',' + (g + 5) + ',0.35)';
-      ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+    ctx.fillStyle = '#2c3138';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 8000; i++) {
+      const g = 28 + Math.random() * 45;
+      ctx.fillStyle = 'rgba(' + g + ',' + g + ',' + (g + 6) + ',0.3)';
+      ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
     }
-    // center dashes
-    ctx.strokeStyle = '#eab308';
-    ctx.lineWidth = 6;
-    ctx.setLineDash([28, 22]);
+    // Outer white edges
+    ctx.strokeStyle = '#f1f5f9';
+    ctx.lineWidth = 10;
     ctx.beginPath();
-    ctx.moveTo(128, 0);
-    ctx.lineTo(128, 256);
+    ctx.moveTo(18, 0); ctx.lineTo(18, 512);
+    ctx.moveTo(494, 0); ctx.lineTo(494, 512);
     ctx.stroke();
-    // edge lines
-    ctx.setLineDash([]);
-    ctx.strokeStyle = '#f8fafc';
-    ctx.lineWidth = 4;
+    // Lane dividers at 1/3 and 2/3 — dashed white
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 6;
+    ctx.setLineDash([36, 28]);
     ctx.beginPath();
-    ctx.moveTo(24, 0); ctx.lineTo(24, 256);
-    ctx.moveTo(232, 0); ctx.lineTo(232, 256);
+    ctx.moveTo(512 / 3, 0); ctx.lineTo(512 / 3, 512);
+    ctx.moveTo((512 * 2) / 3, 0); ctx.lineTo((512 * 2) / 3, 512);
+    ctx.stroke();
+    // Center double yellow (two-way)
+    ctx.setLineDash([]);
+    ctx.strokeStyle = '#eab308';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(250, 0); ctx.lineTo(250, 512);
+    ctx.moveTo(262, 0); ctx.lineTo(262, 512);
     ctx.stroke();
     const tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1, 18);
+    tex.repeat.set(1, 20);
+    tex.anisotropy = 4;
     return tex;
   }
 
@@ -399,12 +407,12 @@ export class Renderer3D {
   }
 
   buildRoad() {
-    // Wide Kano dual carriage feel — ROAD_WIDTH ~14.5 units
+    // 3-lane two-way highway — geometry width matches LANE_X travel
     const roadTex = this.makeRoadTexture();
     const roadMat = new THREE.MeshStandardMaterial({
       map: roadTex,
-      roughness: 0.94,
-      metalness: 0.06,
+      roughness: 0.92,
+      metalness: 0.05,
       color: 0xffffff
     });
     const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_LEN), roadMat);
@@ -414,20 +422,11 @@ export class Renderer3D {
     this.roadMesh = road;
     this.scene.add(road);
 
-    // Center darker wear strip
-    const wear = new THREE.Mesh(
-      new THREE.PlaneGeometry(4.5, ROAD_LEN),
-      this.mat(0x243040, { roughness: 0.96, metalness: 0.04 })
-    );
-    wear.rotation.x = -Math.PI / 2;
-    wear.position.set(0, 0.005, ROAD_LEN / 2 - 4);
-    this.scene.add(wear);
-
-    // Shoulders (dusty dirt) — outside the asphalt
-    const shoulderX = ROAD_WIDTH / 2 + 1.8;
+    // Dirt shoulders
+    const shoulderX = ROAD_WIDTH / 2 + 2.2;
     for (const sx of [-shoulderX, shoulderX]) {
       const sh = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.6, ROAD_LEN),
+        new THREE.PlaneGeometry(4.2, ROAD_LEN),
         this.mat(0x5c5346, { roughness: 0.98 })
       );
       sh.rotation.x = -Math.PI / 2;
@@ -435,37 +434,35 @@ export class Renderer3D {
       this.scene.add(sh);
     }
 
-    // Yellow edge lines at asphalt edges
-    const edgeX = ROAD_WIDTH / 2 - 0.35;
-    const lineMat = new THREE.MeshBasicMaterial({ color: 0xeab308 });
-    for (const lx of [-edgeX, edgeX]) {
-      const line = new THREE.Mesh(new THREE.PlaneGeometry(0.18, ROAD_LEN), lineMat);
-      line.rotation.x = -Math.PI / 2;
-      line.position.set(lx, 0.02, ROAD_LEN / 2 - 4);
-      this.scene.add(line);
-    }
-
-    // White edge ticks
-    const white = new THREE.MeshBasicMaterial({ color: 0xe2e8f0 });
-    for (let z = 0; z < ROAD_LEN; z += 8) {
-      for (const lx of [-(edgeX - 0.2), edgeX - 0.2]) {
-        const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 0.7), white);
-        tick.rotation.x = -Math.PI / 2;
-        tick.position.set(lx, 0.022, z);
-        this.scene.add(tick);
-      }
-    }
-
-    // Lane dashes between the 3 lanes
+    // Physical lane markers at true LANE_X boundaries
     this.laneMarks = new THREE.Group();
-    const dashMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
-    for (let z = 0; z < ROAD_LEN; z += 3.2) {
-      for (const lx of [LANE_X[0] / 2, LANE_X[2] / 2]) {
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 1.5), dashMat);
+    const midL = (LANE_X[0] + LANE_X[1]) / 2;
+    const midR = (LANE_X[1] + LANE_X[2]) / 2;
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+    for (let z = 0; z < ROAD_LEN; z += 3.5) {
+      for (const lx of [midL, midR]) {
+        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 1.6), dashMat);
         dash.rotation.x = -Math.PI / 2;
-        dash.position.set(lx, 0.025, z);
+        dash.position.set(lx, 0.03, z);
         this.laneMarks.add(dash);
       }
+    }
+    // Double yellow center (two-way)
+    const yel = new THREE.MeshBasicMaterial({ color: 0xeab308 });
+    for (const ox of [-0.12, 0.12]) {
+      const yl = new THREE.Mesh(new THREE.PlaneGeometry(0.1, ROAD_LEN), yel);
+      yl.rotation.x = -Math.PI / 2;
+      yl.position.set(ox, 0.028, ROAD_LEN / 2 - 4);
+      this.laneMarks.add(yl);
+    }
+    // White edge lines
+    const edgeX = ROAD_WIDTH / 2 - 0.25;
+    const white = new THREE.MeshBasicMaterial({ color: 0xf1f5f9 });
+    for (const lx of [-edgeX, edgeX]) {
+      const el = new THREE.Mesh(new THREE.PlaneGeometry(0.16, ROAD_LEN), white);
+      el.rotation.x = -Math.PI / 2;
+      el.position.set(lx, 0.026, ROAD_LEN / 2 - 4);
+      this.laneMarks.add(el);
     }
     this.scene.add(this.laneMarks);
   }
@@ -485,8 +482,8 @@ export class Renderer3D {
     for (const side of [-1, 1]) {
       for (let i = 0; i < types.length; i++) {
         const z = i * 6.5 + (side > 0 ? 2 : 0);
-        // Outside wide asphalt (ROAD_WIDTH 22)
-        const xBase = side * (13.5 + (i % 3) * 0.6);
+        // Outside 3-lane highway asphalt
+        const xBase = side * (10.5 + (i % 3) * 0.5);
         const kind = types[i];
         if (kind === 'mosque') this.addMosque(xBase, z, side);
         else if (kind === 'market') this.addMarketStall(xBase, z, side);

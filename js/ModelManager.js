@@ -3,7 +3,8 @@
  * Loads public/models/*.glb with auto-scale (people not giant)
  * Game Developer: Hassan Zakariya
  */
-import * as THREE from '../vendor/three.module.js';
+// Must use same `three` package as GLTFLoader (vendor copy breaks loading)
+import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 const MODEL_MAP = {
