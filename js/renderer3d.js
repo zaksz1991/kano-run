@@ -162,7 +162,7 @@ export class Renderer3D {
     return this.mat(fallbackColor || 0xeab308, { roughness: 0.7 });
   }
 
-  /** Place a real GLB only — never a box placeholder; full body above ground */
+  /** Place a real GLB only — feet on ground, never giant people */
   _placeGlb(key, x, z, opts = {}) {
     if (!this.models?.has?.(key)) {
       return null;
@@ -170,13 +170,17 @@ export class Renderer3D {
     try {
       const inst = this.models.getInstance(key, opts);
       if (!inst || inst.userData?.isPlaceholder) return null;
+      // People must stay smaller than keke
+      if (key === 'pedestrian' || key === 'passenger') {
+        inst.scale.multiplyScalar(0.7);
+      }
       inst.position.set(x, 0, z);
       if (opts.rotY != null) inst.rotation.y = opts.rotY;
       inst.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(inst);
-      // Lift so feet sit slightly above road (never half-buried)
       if (Number.isFinite(box.min.y)) {
-        inst.position.y = -box.min.y + 0.04;
+        // Whole body above ground plane
+        inst.position.y = -box.min.y + 0.02;
       }
       if (opts.y != null) inst.position.y = opts.y;
       inst.userData.baseZ = z;
@@ -856,32 +860,32 @@ export class Renderer3D {
   }
 
   addPedestrian(x, z) {
-    // Prefer pedestrian.glb / passenger.glb — full body above ground
+    // Human scale vs keke (~1.9m) → people ~1.0–1.1m tall, never giant
     const key = Math.random() < 0.5 && this.models?.has?.('passenger') ? 'passenger' : 'pedestrian';
-    if (this._placeGlb(key, x, z, { rotY: Math.random() * Math.PI * 2, scale: 1.15 })) return;
+    if (this._placeGlb(key, x, z, { rotY: Math.random() * Math.PI * 2, scale: 0.65 })) return;
 
-    // One group so the whole person scrolls together (not half buried)
     const g = new THREE.Group();
-    g.position.set(x, 0.02, z);
+    g.position.set(x, 0, z);
     const shirtColors = [0x3b82f6, 0xec4899, 0x22c55e, 0xeab308, 0xa855f7, 0xf8fafc, 0xf97316];
     const shirt = shirtColors[Math.floor(Math.random() * shirtColors.length)];
+    // Total height ~1.05 units — smaller than keke
     const legs = new THREE.Mesh(
-      new THREE.BoxGeometry(0.22, 0.55, 0.16),
+      new THREE.BoxGeometry(0.16, 0.38, 0.12),
       this.mat(0x1e293b, { roughness: 0.9 })
     );
-    legs.position.y = 0.28;
+    legs.position.y = 0.19;
     g.add(legs);
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, 0.48, 0.2),
+      new THREE.BoxGeometry(0.22, 0.34, 0.14),
       this.mat(shirt, { roughness: 0.8 })
     );
-    body.position.y = 0.78;
+    body.position.y = 0.55;
     g.add(body);
     const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 8, 8),
+      new THREE.SphereGeometry(0.1, 8, 8),
       this.mat(0xc4a574, { roughness: 0.7 })
     );
-    head.position.y = 1.18;
+    head.position.y = 0.82;
     g.add(head);
     g.userData.baseZ = z;
     this.buildings.add(g);
@@ -1494,46 +1498,47 @@ export class Renderer3D {
       this.rain.geometry.attributes.position.needsUpdate = true;
     }
 
-    // ——— WORLD SCROLL (slower, calmer) ———
-    const scroll = (g.roadOff || 0);
+    // ——— KEKE DRIVES THROUGH WORLD (player advances; world recycled behind) ———
+    // Travel distance in world units — keke moves forward, not “world sliding at you”
+    this.travelZ = (this.travelZ || 0) + spd * 0.11;
+    const travel = this.travelZ;
+
     if (this.roadMesh?.material?.map) {
-      this.roadMesh.material.map.offset.y = -(scroll * 0.045) % 1;
+      this.roadMesh.material.map.offset.y = -(travel * 0.08) % 1;
       this.roadMesh.material.map.needsUpdate = true;
     }
     if (this.laneMarks) {
-      this.laneMarks.position.z = -(scroll * 0.45) % 3.5;
+      this.laneMarks.position.z = -(travel * 0.35) % 3.5;
     }
+    // Buildings stay in world space relative to travel — recycle behind camera
     if (this.buildings) {
-      this.buildings.position.z = 0;
       this.buildings.children.forEach((ch) => {
         if (ch.userData.baseZ == null) ch.userData.baseZ = ch.position.z;
-        // Slower environment motion so world doesn't blur past
-        let z = ch.userData.baseZ - (scroll * 0.55) % 180;
-        while (z < -25) z += 180;
-        while (z > 155) z -= 180;
+        // Object world Z fixed; we show relative to travel (player going into scene)
+        let z = ch.userData.baseZ - (travel % 180);
+        while (z < -20) z += 180;
+        while (z > 160) z -= 180;
         ch.position.z = z;
       });
     }
     if (this.horizon) {
-      this.horizon.position.z = -(scroll * 0.12) % 24;
+      this.horizon.position.z = -(travel * 0.08) % 24;
     }
 
-    // Player keke — slide sideways into lane, ALWAYS face forward (straight)
+    // Player keke — moves with travel (slight forward feel) + lane change
     if (this.player) {
       const lane = (typeof g.smoothLane === 'number') ? g.smoothLane : (g.playerLane ?? 1);
       const tx = this.laneToX(lane);
-      // Fast, clean lane change — no diagonal drift
       this.player.position.x += (tx - this.player.position.x) * 0.35;
+      // Fixed on screen but travelZ drives environment = driving into Kano
       this.player.position.z = PLAYER_Z;
-      // Face straight down the road (+Z). Only tiny lean while changing lanes.
       const dx = tx - this.player.position.x;
-      this.player.rotation.y = 0; // straight ahead
+      this.player.rotation.y = 0;
       this.player.rotation.z = THREE.MathUtils.clamp(-dx * 0.04, -0.08, 0.08);
-      this.player.rotation.x = 0;
-      // Suspension bounce only
+      this.player.rotation.x = THREE.MathUtils.clamp(-spd * 0.008, -0.06, 0);
       let by = 0;
-      if (g.bounce > 0) by = Math.sin(g.bounce * 0.8) * 0.08;
-      by += Math.sin((g.frame || 0) * 0.35) * Math.min(0.05, spd * 0.006);
+      if (g.bounce > 0) by = Math.sin(g.bounce * 0.8) * 0.06;
+      by += Math.sin((g.frame || 0) * 0.3) * Math.min(0.04, spd * 0.005);
       this.player.position.y = by;
       if (this.anim) {
         this.anim.tick(16);
@@ -1555,8 +1560,8 @@ export class Renderer3D {
         this.playerShadow.scale.setScalar(0.9 + Math.abs(this.player.position.y) * 2);
       }
     }
-    // Pedestrian bob
-    if (this.anim && this.buildings) this.anim.animatePedestrians(this.buildings, scroll);
+    // Pedestrian bob (subtle — do not sink into ground)
+    if (this.anim && this.buildings) this.anim.animatePedestrians(this.buildings, travel);
     if (this.models) this.models.update(0.016);
 
     // Multi-camera: chase | driver | passenger | road

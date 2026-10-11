@@ -1246,10 +1246,10 @@ export class Game {
     }
     if (this.pickupCooldown > 0) this.pickupCooldown--;
 
-    // World scroll — moderate pace (not hyperspeed)
+    // Travel progress (renderer advances world from speed)
     const move = Math.max(this.speed, this.braking ? 0 : 2.5);
-    this.roadOff = (this.roadOff + move * 3.2) % 10000;
-    const kmPerFrame = move * 0.0022;
+    this.roadOff = (this.roadOff + move * 2.2) % 10000;
+    const kmPerFrame = move * 0.0018;
     this.dist += kmPerFrame;
     this.meters = (this.meters || 0) + kmPerFrame * 1000;
     this.segmentDist += kmPerFrame;

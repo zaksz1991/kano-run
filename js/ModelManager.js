@@ -28,8 +28,8 @@ const MODEL_MAP = {
 // Keke larger than people — people must stay human-scale
 const TARGET_HEIGHT = {
   keke: 1.9, car: 1.35, taxi: 1.35, bus: 2.2, truck: 2.0,
-  motorcycle: 1.15, police: 1.45, karota: 1.5, pedestrian: 1.6,
-  passenger: 1.6, robber: 1.2, bicycle: 0.85, market: 2.0,
+  motorcycle: 1.15, police: 1.45, karota: 1.5, pedestrian: 1.05,
+  passenger: 1.05, robber: 1.1, bicycle: 0.85, market: 2.0,
   bustop: 1.8, bustation: 2.6
 };
 
