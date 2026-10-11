@@ -98,12 +98,87 @@ export class Renderer3D {
       console.log('[KanoRun] Pool', t, '×' + n, '←', src);
     }
 
-    // 3. Asphalt road texture if available
+    // 3. Asphalt + wall/market textures
     this._applyRoadTexture();
+
+    // 4. Rebuild roadside AFTER models loaded so market/bustop/pedestrian GLBs are used
+    if (this.buildings) {
+      this.scene.remove(this.buildings);
+      this.buildings = null;
+    }
+    this.buildCityscape();
+    console.log('[KanoRun] Cityscape rebuilt with GLB preference');
+  }
+
+  /** Load public/textures/* once — Asset Integration */
+  _loadWorldTextures() {
+    this.textureCache = this.textureCache || {};
+    const loader = new THREE.TextureLoader();
+    const load = (key, url, repeatX = 2, repeatY = 2) => {
+      loader.load(
+        url,
+        (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(repeatX, repeatY);
+          tex.anisotropy = 4;
+          this.textureCache[key] = tex;
+          console.log('[KanoRun] Texture ←', url);
+        },
+        undefined,
+        () => console.warn('[KanoRun] Texture missing', url)
+      );
+    };
+    load('asphalt', '/textures/asphalt.jpg', 2, 24);
+    load('potholes', '/textures/potholes.jpg', 3, 20);
+    load('wall', '/textures/building-wall.jpg', 2, 2);
+    load('market', '/textures/market-stall.jpg', 1, 1);
+  }
+
+  _wallMat(fallbackColor) {
+    const map = this.textureCache?.wall;
+    if (map) {
+      return new THREE.MeshStandardMaterial({
+        map: map.clone ? map : map,
+        roughness: 0.9,
+        metalness: 0.05,
+        color: 0xcccccc
+      });
+    }
+    return this.mat(fallbackColor || 0x64748b, { roughness: 0.9 });
+  }
+
+  _marketMat(fallbackColor) {
+    const map = this.textureCache?.market;
+    if (map) {
+      return new THREE.MeshStandardMaterial({
+        map,
+        roughness: 0.85,
+        metalness: 0.05,
+        color: 0xffffff
+      });
+    }
+    return this.mat(fallbackColor || 0xeab308, { roughness: 0.7 });
+  }
+
+  /** Place a GLB from ModelManager, or null if missing */
+  _placeGlb(key, x, z, opts = {}) {
+    if (!this.models?.has?.(key)) return null;
+    try {
+      const inst = this.models.getInstance(key, opts);
+      if (!inst || inst.userData?.isPlaceholder) return null;
+      inst.position.set(x, opts.y || 0, z);
+      if (opts.rotY != null) inst.rotation.y = opts.rotY;
+      if (opts.scale != null) inst.scale.multiplyScalar(opts.scale);
+      this.buildings.add(inst);
+      return inst;
+    } catch (e) {
+      return null;
+    }
   }
 
   _applyRoadTexture() {
     if (!this.roadMesh) return;
+    this._loadWorldTextures();
     const loader = new THREE.TextureLoader();
     loader.load(
       '/textures/asphalt.jpg',
@@ -111,16 +186,18 @@ export class Renderer3D {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
         tex.repeat.set(2, 24);
         tex.anisotropy = 4;
+        this.textureCache = this.textureCache || {};
+        this.textureCache.asphalt = tex;
         const mat = new THREE.MeshStandardMaterial({
           map: tex,
           roughness: 0.92,
           metalness: 0.05,
           color: 0xcccccc
         });
-        // optional potholes overlay as second attempt
         loader.load('/textures/potholes.jpg', (pot) => {
           pot.wrapS = pot.wrapT = THREE.RepeatWrapping;
           pot.repeat.set(3, 20);
+          this.textureCache.potholes = pot;
           mat.roughnessMap = pot;
           mat.needsUpdate = true;
         }, undefined, () => {});
@@ -571,17 +648,17 @@ export class Renderer3D {
     const bw = 1.6 + Math.random() * 1.2;
     const bh = 2.2 + Math.random() * 2.5;
     const bd = 1.5 + Math.random() * 1.2;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), this.mat(color, { roughness: 0.9 }));
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), this._wallMat(color));
     mesh.position.set(x, bh / 2, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     this.buildings.add(mesh);
-    // roof slab
     const roof = new THREE.Mesh(
       new THREE.BoxGeometry(bw + 0.2, 0.15, bd + 0.2),
       this.mat(0x44403c, { roughness: 0.95 })
     );
     roof.position.set(x, bh + 0.08, z);
     this.buildings.add(roof);
-    // door
     const door = new THREE.Mesh(
       new THREE.BoxGeometry(0.35, 0.7, 0.08),
       this.mat(0x292524, { roughness: 0.8 })
@@ -592,17 +669,16 @@ export class Renderer3D {
 
   addShop(x, z, side, color) {
     const bw = 2.0, bh = 2.4, bd = 1.6;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), this.mat(color || 0xb45309, { roughness: 0.85 }));
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), this._wallMat(color || 0xb45309));
     mesh.position.set(x, bh / 2, z);
+    mesh.castShadow = true;
     this.buildings.add(mesh);
-    // awning
     const awning = new THREE.Mesh(
       new THREE.BoxGeometry(bw + 0.3, 0.08, 0.7),
-      this.mat(0xdc2626, { roughness: 0.7 })
+      this._marketMat(0xdc2626)
     );
     awning.position.set(x - side * 0.3, bh * 0.75, z);
     this.buildings.add(awning);
-    // sign board
     const sign = new THREE.Mesh(
       new THREE.BoxGeometry(bw * 0.8, 0.35, 0.08),
       this.mat(0xfbbf24, { roughness: 0.5, emissive: 0xb45309, emissiveIntensity: 0.15 })
@@ -642,7 +718,8 @@ export class Renderer3D {
   }
 
   addMarketStall(x, z, side) {
-    // posts
+    // Prefer market.glb
+    if (this._placeGlb('market', x, z, { rotY: side > 0 ? Math.PI : 0, scale: 1 })) return;
     for (const dx of [-0.7, 0.7]) {
       const post = new THREE.Mesh(
         new THREE.BoxGeometry(0.1, 1.6, 0.1),
@@ -651,29 +728,18 @@ export class Renderer3D {
       post.position.set(x + dx, 0.8, z);
       this.buildings.add(post);
     }
-    // canopy
     const canopy = new THREE.Mesh(
       new THREE.BoxGeometry(1.8, 0.08, 1.4),
-      this.mat(0xeab308, { roughness: 0.7 })
+      this._marketMat(0xeab308)
     );
     canopy.position.set(x, 1.65, z);
     this.buildings.add(canopy);
-    // table
     const table = new THREE.Mesh(
       new THREE.BoxGeometry(1.5, 0.12, 1.0),
       this.mat(0xa16207, { roughness: 0.85 })
     );
     table.position.set(x, 0.7, z);
     this.buildings.add(table);
-    // goods
-    for (let i = 0; i < 3; i++) {
-      const g = new THREE.Mesh(
-        new THREE.BoxGeometry(0.25, 0.25, 0.25),
-        this.mat([0x22c55e, 0xef4444, 0x3b82f6][i], { roughness: 0.6 })
-      );
-      g.position.set(x - 0.4 + i * 0.4, 0.95, z);
-      this.buildings.add(g);
-    }
   }
 
   addPetrol(x, z, side) {
@@ -709,21 +775,20 @@ export class Renderer3D {
   }
 
   addBusStop(x, z, side) {
-    // shelter roof
+    if (this._placeGlb('bustop', x, z, { rotY: side > 0 ? Math.PI : 0, scale: 1 })) return;
+    if (this._placeGlb('bustation', x, z, { rotY: side > 0 ? Math.PI : 0, scale: 0.85 })) return;
     const roof = new THREE.Mesh(
       new THREE.BoxGeometry(2.0, 0.08, 1.2),
       this.mat(0x334155, { roughness: 0.7 })
     );
     roof.position.set(x, 2.0, z);
     this.buildings.add(roof);
-    // back panel
     const back = new THREE.Mesh(
       new THREE.BoxGeometry(2.0, 1.4, 0.08),
       this.mat(0x475569, { roughness: 0.8 })
     );
     back.position.set(x, 1.2, z - side * 0.5);
     this.buildings.add(back);
-    // bench
     const bench = new THREE.Mesh(
       new THREE.BoxGeometry(1.6, 0.12, 0.4),
       this.mat(0x78716c, { roughness: 0.85 })
@@ -765,15 +830,17 @@ export class Renderer3D {
   }
 
   addPedestrian(x, z) {
+    // Prefer pedestrian.glb / passenger.glb
+    const key = Math.random() < 0.5 && this.models?.has?.('passenger') ? 'passenger' : 'pedestrian';
+    if (this._placeGlb(key, x, z, { rotY: Math.random() * Math.PI * 2, scale: 1 })) return;
     const shirtColors = [0x3b82f6, 0xec4899, 0x22c55e, 0xeab308, 0xa855f7, 0xf8fafc, 0xf97316];
     const shirt = shirtColors[Math.floor(Math.random() * shirtColors.length)];
-    const s = 1.4; // larger so people are visible from chase cam
-    // body
+    const s = 1.0;
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.32 * s, 0.55 * s, 0.22 * s),
+      new THREE.BoxGeometry(0.28 * s, 0.5 * s, 0.18 * s),
       this.mat(shirt, { roughness: 0.8 })
     );
-    body.position.set(x, 0.95 * s, z);
+    body.position.set(x, 0.85 * s, z);
     this.buildings.add(body);
     // head
     const head = new THREE.Mesh(
