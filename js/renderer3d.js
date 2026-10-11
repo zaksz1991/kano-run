@@ -479,30 +479,27 @@ export class Renderer3D {
       'house', 'shop', 'market', 'busstop', 'house', 'mosque'
     ];
 
+    // Dense Kano roadside — markets, mosques, shops packed tight
     for (const side of [-1, 1]) {
-      for (let i = 0; i < types.length; i++) {
-        const z = i * 6.5 + (side > 0 ? 2 : 0);
-        // Outside 3-lane highway asphalt
-        const xBase = side * (10.5 + (i % 3) * 0.5);
-        const kind = types[i];
+      for (let i = 0; i < types.length * 2; i++) {
+        const z = i * 4.0 + (side > 0 ? 1.2 : 0);
+        const xBase = side * (10.2 + (i % 4) * 0.4);
+        const kind = types[i % types.length];
         if (kind === 'mosque') this.addMosque(xBase, z, side);
         else if (kind === 'market') this.addMarketStall(xBase, z, side);
         else if (kind === 'petrol') this.addPetrol(xBase, z, side);
         else if (kind === 'busstop') this.addBusStop(xBase, z, side);
         else if (kind === 'shop') this.addShop(xBase, z, side, colors[i % colors.length]);
         else this.addHouse(xBase, z, side, colors[i % colors.length]);
-
-        // Street lights between buildings
-        if (i % 3 === 0) this.addStreetLight(side * 5.2, z + 1.5);
-        // Billboards occasionally
-        if (i % 5 === 1) this.addBillboard(side * 5.4, z + 3);
+        if (i % 2 === 0) this.addStreetLight(side * 5.0, z + 1.2);
+        if (i % 4 === 1) this.addBillboard(side * 5.2, z + 2.5);
       }
     }
 
-    // More visible pedestrians on shoulders (denser)
-    for (let i = 0; i < 40; i++) {
+    // Triple pedestrian density on shoulders
+    for (let i = 0; i < 90; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      this.addPedestrian(side * (4.5 + (i % 4) * 0.25), i * 3.8 + 1.5);
+      this.addPedestrian(side * (4.4 + (i % 5) * 0.22), i * 2.4 + 1.0);
     }
 
     // Kano-style city gates / welcome arches spanning the road

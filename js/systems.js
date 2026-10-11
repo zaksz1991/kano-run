@@ -1,16 +1,11 @@
 /**
- * Kano Run — Gameplay systems (structure over graphics)
- * Road network · Destinations · Missions · Collision tiers · Traffic AI
- * Radio · Levels · KAROTA · Passenger economy · World events
+ * Kano Run — Kano-specific world & gameplay systems
  * Game Developer: Hassan Zakariya
  */
-
 import { CONFIG } from './config.js';
-import { Audio } from './audio.js';
 
-/** 1. ROAD NETWORK — segment types player drives through */
 export const ROAD_TYPES = {
-  straight: { id: 'straight', name: 'Straight', difficulty: 1, traffic: 1 },
+  straight: { id: 'straight', name: 'Straight road', difficulty: 1, traffic: 1 },
   curve_l: { id: 'curve_l', name: 'Left bend', difficulty: 1.1, traffic: 1, bias: -0.15 },
   curve_r: { id: 'curve_r', name: 'Right bend', difficulty: 1.1, traffic: 1, bias: 0.15 },
   junction: { id: 'junction', name: 'T-Junction', difficulty: 1.25, traffic: 1.3, choice: true },
@@ -18,41 +13,128 @@ export const ROAD_TYPES = {
   flyover: { id: 'flyover', name: 'Flyover', difficulty: 1.2, traffic: 0.9 },
   market: { id: 'market', name: 'Market road', difficulty: 1.4, traffic: 1.6, slow: true },
   residential: { id: 'residential', name: 'Residential', difficulty: 0.95, traffic: 0.8 },
-  highway: { id: 'highway', name: 'Highway', difficulty: 1.05, traffic: 1.2 }
+  highway: { id: 'highway', name: 'Highway', difficulty: 1.05, traffic: 1.2 },
+  industrial: { id: 'industrial', name: 'Industrial road', difficulty: 1.2, traffic: 1.3 }
 };
 
-/**
- * Long-distance world biomes — visual + gameplay shift every few km
- */
-export const WORLD_BIOMES = [
-  { id: 'city_morning', minKm: 0, name: 'Kano City Morning', sky: 0x6ec5f0, fog: 0x8ec8e8, fogNear: 18, fogFar: 72, sun: 1.3, hem: 0.55, buildingTint: null, traffic: 1, msg: '🏙️ Entering city corridor' },
-  { id: 'market_belt', minKm: 3, name: 'Market Belt', sky: 0xf59e0b, fog: 0xd97706, fogNear: 14, fogFar: 55, sun: 1.1, hem: 0.45, buildingTint: 0x44403c, traffic: 1.4, msg: '🛒 Market belt — slow & careful' },
-  { id: 'industrial', minKm: 7, name: 'Industrial Zone', sky: 0x64748b, fog: 0x475569, fogNear: 12, fogFar: 50, sun: 0.85, hem: 0.35, buildingTint: 0x334155, traffic: 1.25, msg: '🏭 Industrial area — trucks ahead' },
-  { id: 'residential', minKm: 12, name: 'Residential Quarters', sky: 0x7dd3fc, fog: 0xa5f3fc, fogNear: 16, fogFar: 65, sun: 1.15, hem: 0.5, buildingTint: 0x3f3a32, traffic: 0.85, msg: '🏘️ Residential streets' },
-  { id: 'highway_out', minKm: 18, name: 'Outer Highway', sky: 0x38bdf8, fog: 0x0ea5e9, fogNear: 22, fogFar: 90, sun: 1.4, hem: 0.6, buildingTint: 0x292524, traffic: 1.1, msg: '🛣️ Outer highway — open road' },
-  { id: 'dusk_city', minKm: 25, name: 'Dusk Return', sky: 0x7c3aed, fog: 0x4c1d95, fogNear: 14, fogFar: 58, sun: 0.5, hem: 0.28, buildingTint: 0x1e1b4b, traffic: 1.2, msg: '🌆 Dusk over Kano' },
-  { id: 'night_run', minKm: 32, name: 'Night Run', sky: 0x020617, fog: 0x020617, fogNear: 10, fogFar: 48, sun: 0.2, hem: 0.12, buildingTint: 0x0f172a, traffic: 0.9, msg: '🌙 Night run — lights on' }
+/** Real Kano district progression */
+export const KANO_DISTRICTS = [
+  { id: 'sabongari', name: 'Sabon Gari', minKm: 0,
+    sky: 0x6ec5f0, fog: 0x8ec8e8, fogNear: 16, fogFar: 65, sun: 1.25, hem: 0.55,
+    density: 1.8, market: true, traffic: 1.5, karota: 1.3,
+    msg: '📍 Sabon Gari — commercial chaos', landmarks: ['Lagos Street', 'Singer Market', 'Beirut Road'] },
+  { id: 'farmcentre', name: 'Farm Centre', minKm: 3,
+    sky: 0x7dd3fc, fog: 0xa5d8ef, fogNear: 17, fogFar: 70, sun: 1.2, hem: 0.5,
+    density: 1.4, traffic: 1.2, karota: 1.1,
+    msg: '📍 Farm Centre', landmarks: ['Farm Centre Junction', 'Murtala Way'] },
+  { id: 'zooroad', name: 'Zoo Road', minKm: 6,
+    sky: 0x38bdf8, fog: 0x7dd3fc, fogNear: 18, fogFar: 75, sun: 1.3, hem: 0.55,
+    density: 1.3, traffic: 1.35, karota: 1.2,
+    msg: '📍 Zoo Road — long busy artery', landmarks: ['Zoo Road Flyover'] },
+  { id: 'tarauni', name: 'Tarauni', minKm: 9,
+    sky: 0x67e8f9, fog: 0xa5f3fc, fogNear: 16, fogFar: 68, sun: 1.15, hem: 0.5,
+    density: 1.5, residential: true, traffic: 1.1, karota: 1.0,
+    msg: '📍 Tarauni — dense residential', landmarks: ['Tarauni Market', 'Kawaji'] },
+  { id: 'hotoro', name: 'Hotoro', minKm: 12,
+    sky: 0x0ea5e9, fog: 0x38bdf8, fogNear: 17, fogFar: 72, sun: 1.2, hem: 0.5,
+    density: 1.4, traffic: 1.25, karota: 1.15,
+    msg: '📍 Hotoro', landmarks: ['Hotoro NNPC', 'Hotoro GRA'] },
+  { id: 'naibawa', name: 'Naibawa', minKm: 15,
+    sky: 0xf59e0b, fog: 0xd97706, fogNear: 14, fogFar: 58, sun: 1.1, hem: 0.45,
+    density: 1.7, market: true, traffic: 1.45, karota: 1.35,
+    msg: '📍 Naibawa Market area', landmarks: ['Naibawa Market'] },
+  { id: 'yankaba', name: 'Yankaba', minKm: 18,
+    sky: 0x7dd3fc, fog: 0xbae6fd, fogNear: 16, fogFar: 68, sun: 1.15, hem: 0.5,
+    density: 1.35, market: true, traffic: 1.2, karota: 1.1,
+    msg: '📍 Yankaba', landmarks: ['Yankaba Market'] },
+  { id: 'kofarmata', name: 'Kofar Mata', minKm: 21,
+    sky: 0x93c5fd, fog: 0xbfdbfe, fogNear: 15, fogFar: 62, sun: 1.1, hem: 0.48,
+    density: 1.5, traffic: 1.2, karota: 1.2,
+    msg: '📍 Kofar Mata — eastern gate', landmarks: ['Kofar Mata Gate'] },
+  { id: 'kurmi', name: 'Kurmi Market', minKm: 24,
+    sky: 0xfbbf24, fog: 0xd97706, fogNear: 12, fogFar: 50, sun: 1.05, hem: 0.42,
+    density: 2.2, market: true, traffic: 1.7, karota: 1.5, slow: true,
+    msg: '📍 Kurmi Market — ancient market chaos', landmarks: ['Kurmi Market'] },
+  { id: 'dangi', name: 'Dangi Roundabout', minKm: 28,
+    sky: 0x38bdf8, fog: 0x0ea5e9, fogNear: 16, fogFar: 70, sun: 1.2, hem: 0.5,
+    density: 1.3, traffic: 1.4, karota: 1.3, junction: true,
+    msg: '📍 Dangi Roundabout', landmarks: ['Dangi Roundabout'] },
+  { id: 'kabuga', name: 'Kabuga', minKm: 32,
+    sky: 0x7dd3fc, fog: 0xa5f3fc, fogNear: 17, fogFar: 72, sun: 1.2, hem: 0.52,
+    density: 1.4, residential: true, traffic: 1.15, karota: 1.0,
+    msg: '📍 Kabuga — student traffic', landmarks: ['Kabuga', 'BUK Road'] },
+  { id: 'gwale', name: 'Gwale', minKm: 36,
+    sky: 0x67e8f9, fog: 0xa5f3fc, fogNear: 16, fogFar: 68, sun: 1.15, hem: 0.5,
+    density: 1.45, residential: true, traffic: 1.1, karota: 1.05,
+    msg: '📍 Gwale', landmarks: ['Gwale'] },
+  { id: 'sharada', name: 'Sharada Industrial', minKm: 40,
+    sky: 0x64748b, fog: 0x475569, fogNear: 13, fogFar: 55, sun: 0.9, hem: 0.35,
+    density: 1.2, industrial: true, traffic: 1.4, karota: 1.15,
+    msg: '📍 Sharada Industrial', landmarks: ['Sharada', 'Challawa'] },
+  { id: 'kumbotso', name: 'Kumbotso', minKm: 45,
+    sky: 0x94a3b8, fog: 0x64748b, fogNear: 15, fogFar: 65, sun: 1.0, hem: 0.4,
+    density: 1.25, industrial: true, traffic: 1.3, karota: 1.1,
+    msg: '📍 Kumbotso', landmarks: ['Kumbotso'] },
+  { id: 'airport', name: 'Airport Road', minKm: 50,
+    sky: 0x38bdf8, fog: 0x0ea5e9, fogNear: 20, fogFar: 90, sun: 1.35, hem: 0.58,
+    density: 1.0, traffic: 1.15, karota: 0.9, highway: true,
+    msg: '📍 Airport Road', landmarks: ['Airport Road'] },
+  { id: 'nassarawa', name: 'Nassarawa GRA', minKm: 55,
+    sky: 0x7dd3fc, fog: 0xbae6fd, fogNear: 18, fogFar: 80, sun: 1.25, hem: 0.55,
+    density: 1.1, traffic: 1.0, karota: 0.85,
+    msg: '📍 Nassarawa GRA', landmarks: ['Nassarawa GRA'] },
+  { id: 'emir', name: "Emir Palace District", minKm: 60,
+    sky: 0xfcd34d, fog: 0xf59e0b, fogNear: 14, fogFar: 60, sun: 1.15, hem: 0.48,
+    density: 1.6, market: true, traffic: 1.3, karota: 1.4,
+    msg: "📍 Emir's Palace District", landmarks: ["Emir's Palace", 'Dala Hill'] }
 ];
 
-export function biomeForDistance(distKm) {
-  let cur = WORLD_BIOMES[0];
-  for (const b of WORLD_BIOMES) {
-    if (distKm >= b.minKm) cur = b;
+export const WORLD_BIOMES = KANO_DISTRICTS;
+
+export function districtForDistance(distKm) {
+  let cur = KANO_DISTRICTS[0];
+  for (const d of KANO_DISTRICTS) {
+    if (distKm >= d.minKm) cur = d;
   }
   return cur;
 }
 
-/** Kano destinations — Phase 10 passenger requests */
-export const DISTRICTS = [
-  'Sabon Gari', 'Kofar Mata', 'Fagge', 'Farm Centre', 'Hotoro', 'Zoo Road',
-  'Naibawa', 'Tarauni', 'Dala', 'Kantin Kwari', 'Kofar Wambai', 'Kurmi',
-  'Kabuga', 'Panshekara', 'Kumbotso', 'Gwale', 'Sharada', 'Bompai',
-  'Yankaba', "Emir's Palace", 'Kofar Nassarawa', 'Brigade', 'Gidan Murtala',
-  'Murtala Muhammad Way', 'Ibrahim Taiwo Road', 'Aminu Kano Way',
-  'Court Road', 'Gandu', 'Rijiyar Zaki', 'Kawo', 'Ungogo', 'Challawa'
+export function biomeForDistance(distKm) {
+  return districtForDistance(distKm);
+}
+
+export const DISTRICTS = KANO_DISTRICTS.map((d) => d.name).concat([
+  'Kantin Kwari', 'Kofar Wambai', 'Panshekara', 'Bompai', 'Kawo', 'Ungogo', 'Challawa', 'Wapa'
+]);
+
+export const PAX_CLASSES = {
+  student: { id: 'student', name: 'Student', fareMult: 0.75, freq: 0.22, color: '#38bdf8' },
+  trader: { id: 'trader', name: 'Trader', fareMult: 1.0, freq: 0.28, color: '#fbbf24' },
+  worker: { id: 'worker', name: 'Worker', fareMult: 0.9, freq: 0.24, color: '#4ade80' },
+  vip: { id: 'vip', name: 'VIP', fareMult: 2.2, freq: 0.08, color: '#a855f7' },
+  tourist: { id: 'tourist', name: 'Tourist', fareMult: 1.5, freq: 0.1, color: '#f472b6' },
+  hajiya: { id: 'hajiya', name: 'Hajiya', fareMult: 1.1, freq: 0.08, color: '#e879f9' }
+};
+
+export const LEVEL_BANDS = [
+  { min: 1, max: 5, area: 'Inner Kano', traffic: 0.9, karota: 0.85, event: 0.8 },
+  { min: 6, max: 12, area: 'City Corridors', traffic: 1.05, karota: 1.0, event: 1.0 },
+  { min: 13, max: 20, area: 'Market & Gates', traffic: 1.25, karota: 1.3, event: 1.15 },
+  { min: 21, max: 30, area: 'Outer Districts', traffic: 1.35, karota: 1.25, event: 1.2 },
+  { min: 31, max: 99, area: 'Cross-Kano Master', traffic: 1.45, karota: 1.35, event: 1.3 }
 ];
 
-/** Hausa honorifics — avoid repeating only "Aboki" */
+export const WORLD_EVENTS = [
+  { id: 'rain', name: 'Rainstorm', duration: 400, grip: 0.72, msg: '🌧️ Rain over Kano — roads slippery' },
+  { id: 'market_jam', name: 'Market congestion', duration: 350, speedCap: 3.2, msg: '🛒 Market jam — Sabon Gari style' },
+  { id: 'fuel_scarce', name: 'Fuel shortage', duration: 500, fuelDrain: 1.6, msg: '⛽ Fuel queue at NNPC' },
+  { id: 'convoy', name: 'Political convoy', duration: 280, speedCap: 2.5, msg: '🚔 Convoy — yield' },
+  { id: 'diversion', name: 'Road diversion', duration: 300, msg: '🚧 KAROTA diversion' },
+  { id: 'accident', name: 'Accident scene', duration: 250, speedCap: 2.8, msg: '⚠️ Accident — slow down' },
+  { id: 'jumaah', name: "Juma'ah traffic", duration: 400, traffic: 1.6, msg: "🕌 Juma'ah — mosque traffic" },
+  { id: 'harmattan', name: 'Harmattan dust', duration: 450, grip: 0.9, msg: '🏜️ Harmattan haze' }
+];
+
 export const HONORIFICS = [
   'Oga', 'Mai Gida', 'Mallam', 'Yallabai', 'Dan uwa', 'Aboki',
   'Driver', 'Baba', 'Mama', 'Hajiya', 'Ustaz', 'Dan gari'
@@ -66,37 +148,8 @@ export function pickHonorific(genderHint) {
   return HONORIFICS[Math.floor(Math.random() * HONORIFICS.length)];
 }
 
-/** 9. Passenger classes */
-export const PAX_CLASSES = {
-  student: { id: 'student', name: 'Student', fareMult: 0.7, freq: 0.25, color: '#38bdf8' },
-  trader: { id: 'trader', name: 'Trader', fareMult: 1.0, freq: 0.3, color: '#fbbf24' },
-  worker: { id: 'worker', name: 'Worker', fareMult: 0.9, freq: 0.25, color: '#4ade80' },
-  vip: { id: 'vip', name: 'VIP', fareMult: 2.2, freq: 0.08, color: '#a855f7' },
-  tourist: { id: 'tourist', name: 'Tourist', fareMult: 1.5, freq: 0.12, color: '#f472b6' }
-};
-
-/** 7. Level bands */
-export const LEVEL_BANDS = [
-  { min: 1, max: 5, area: 'Beginner Area', traffic: 0.85, karota: 0.7, event: 0.8 },
-  { min: 6, max: 10, area: 'City Area', traffic: 1.0, karota: 1.0, event: 1.0 },
-  { min: 11, max: 15, area: 'Market Area', traffic: 1.25, karota: 1.3, event: 1.15 },
-  { min: 16, max: 20, area: 'Advanced Routes', traffic: 1.4, karota: 1.4, event: 1.25 },
-  { min: 21, max: 99, area: 'VIP Services', traffic: 1.5, karota: 1.2, event: 1.35 }
-];
-
-/** 10. World events */
-export const WORLD_EVENTS = [
-  { id: 'rain', name: 'Rainstorm', duration: 400, grip: 0.72, msg: '🌧️ Rainstorm — roads slippery' },
-  { id: 'market_jam', name: 'Market congestion', duration: 350, speedCap: 3.2, msg: '🛒 Market congestion — slow traffic' },
-  { id: 'fuel_scarce', name: 'Fuel shortage', duration: 500, fuelDrain: 1.6, msg: '⛽ Fuel shortage — conserve fuel' },
-  { id: 'convoy', name: 'Political convoy', duration: 280, speedCap: 2.5, msg: '🚔 Convoy — yield and wait' },
-  { id: 'diversion', name: 'Road diversion', duration: 300, msg: '🚧 Road diversion — follow detour' },
-  { id: 'accident', name: 'Accident scene', duration: 250, speedCap: 2.8, msg: '⚠️ Accident ahead — slow down' },
-  { id: 'festival', name: 'Festival traffic', duration: 450, traffic: 1.8, msg: '🎉 Festival traffic — crowded streets' }
-];
-
 export function pickPaxClass(level = 1) {
-  const vipOk = level >= 20;
+  const vipOk = level >= 8;
   const entries = Object.values(PAX_CLASSES).filter((c) => c.id !== 'vip' || vipOk);
   const total = entries.reduce((s, c) => s + c.freq, 0);
   let r = Math.random() * total;
@@ -107,7 +160,10 @@ export function pickPaxClass(level = 1) {
   return PAX_CLASSES.worker;
 }
 
-export function pickDestination() {
+export function pickDestination(district) {
+  if (district?.landmarks?.length && Math.random() < 0.45) {
+    return district.landmarks[Math.floor(Math.random() * district.landmarks.length)];
+  }
   const list = CONFIG.DESTINATIONS || DISTRICTS;
   return list[Math.floor(Math.random() * list.length)];
 }
@@ -116,69 +172,52 @@ export function getLevelBand(level) {
   return LEVEL_BANDS.find((b) => level >= b.min && level <= b.max) || LEVEL_BANDS[0];
 }
 
-export function nextRoadSegment(prevId, level) {
-  const band = getLevelBand(level);
-  const pool = ['straight', 'straight', 'curve_l', 'curve_r'];
-  if (level >= 3) pool.push('junction', 'residential');
-  if (level >= 6) pool.push('market', 'highway');
-  if (level >= 11) pool.push('roundabout', 'flyover', 'market');
-  if (level >= 16) pool.push('junction', 'roundabout', 'highway');
-  // avoid repeating same type too often
-  let id = pool[Math.floor(Math.random() * pool.length)];
-  if (id === prevId && Math.random() < 0.6) {
-    id = pool[Math.floor(Math.random() * pool.length)];
-  }
-  return { ...ROAD_TYPES[id], district: pickDestination() };
+export function nextRoadSegment(prevId, level, district) {
+  let pool = Object.keys(ROAD_TYPES);
+  if (district?.market) pool = ['market', 'junction', 'straight', 'curve_l', 'curve_r', 'market'];
+  else if (district?.industrial) pool = ['industrial', 'straight', 'highway', 'junction'];
+  else if (district?.residential) pool = ['residential', 'straight', 'curve_l', 'curve_r', 'junction'];
+  else if (district?.highway) pool = ['highway', 'straight', 'flyover'];
+  else if (district?.junction) pool = ['roundabout', 'junction', 'straight'];
+  const id = pool[Math.floor(Math.random() * pool.length)];
+  const t = ROAD_TYPES[id] || ROAD_TYPES.straight;
+  return {
+    ...t,
+    district: district?.name || pickDestination(),
+    length: 1.2 + Math.random() * 1.8
+  };
 }
 
 export function generateRunMissions() {
-  const templates = [
-    { id: 'pax', text: 'Carry {n} passengers', key: 'totalPax', n: 12 + Math.floor(Math.random() * 12), reward: 500 },
-    { id: 'earn', text: 'Earn ₦{n}', key: 'score', n: 3000 + Math.floor(Math.random() * 4000), reward: 400 },
-    { id: 'km', text: 'Drive {n} km', key: 'dist', n: 6 + Math.floor(Math.random() * 8), reward: 350 },
-    { id: 'districts', text: 'Visit {n} districts', key: 'districts', n: 3 + Math.floor(Math.random() * 3), reward: 450 },
-    { id: 'nokarota', text: 'Avoid KAROTA fines this run', key: 'karotaFines', n: 0, invert: true, reward: 600 },
-    { id: 'drop', text: 'Complete {n} drop-offs', key: 'dropCount', n: 8 + Math.floor(Math.random() * 8), reward: 400 }
+  return [
+    { key: 'dropCount', n: 10, text: 'Drop 10 passengers', reward: 400, done: false, progress: 0 },
+    { key: 'dist', n: 8, text: 'Drive 8 km across Kano', reward: 500, done: false, progress: 0 },
+    { key: 'totalPax', n: 15, text: 'Carry 15 passengers', reward: 350, done: false, progress: 0 },
+    { key: 'districts', n: 4, text: 'Visit 4 districts', reward: 450, done: false, progress: 0 }
   ];
-  const shuffled = templates.sort(() => Math.random() - 0.5).slice(0, 3);
-  return shuffled.map((t) => ({
-    ...t,
-    text: t.text.replace('{n}', String(t.n)),
-    progress: 0,
-    done: false
-  }));
 }
 
-/** 4. Collision severity from relative speed */
 export function collisionTier(speed) {
-  if (speed < 2.5) return { tier: 'low', shake: 6, dmg: 4, speedMul: 0.92, steerPenalty: 0, msg: 'Bump — minor scrape' };
-  if (speed < 5) return { tier: 'medium', shake: 12, dmg: 12, speedMul: 0.75, steerPenalty: 40, msg: 'Impact — body dent, slower handling' };
-  if (speed < 7.5) return { tier: 'high', shake: 18, dmg: 25, speedMul: 0.55, steerPenalty: 80, msg: 'Heavy crash — smoke risk' };
-  return { tier: 'critical', shake: 24, dmg: 40, speedMul: 0.35, steerPenalty: 120, msg: 'Critical hit — engine struggling' };
+  if (speed < 2.5) return { tier: 'low', dmg: 8, shake: 3, msg: 'Bump' };
+  if (speed < 4.5) return { tier: 'medium', dmg: 18, shake: 5, msg: 'Hit!' };
+  if (speed < 7) return { tier: 'high', dmg: 32, shake: 7, msg: 'Hard crash!' };
+  return { tier: 'critical', dmg: 48, shake: 9, msg: 'Severe impact!' };
 }
 
-/** 6. Radio dynamic lines */
-export function radioAnnouncement(ctx) {
-  const lines = [];
-  if (ctx.weather === 'rain') lines.push('Weather: rain across Kano. Drive slow.');
-  if (ctx.roadType === 'market') lines.push('Market road congestion reported.');
-  if (ctx.karotaSoon) lines.push('KAROTA checkpoint ahead. Papers ready.');
-  if (ctx.mission) lines.push('Mission update: ' + ctx.mission);
-  if (ctx.event) lines.push(ctx.event);
-  if (ctx.district) lines.push('Approaching ' + ctx.district + '.');
-  lines.push(
-    'Sannu. Traffic update for ' + (ctx.district || 'Kano') + '.',
-    'Adaidaita tip: three at the back, two in front.',
-    'Fuel stations busy near Farm Centre.'
-  );
+export function radioAnnouncement(ctx = {}) {
+  const lines = [
+    ctx.district ? `Traffic update: busy around ${ctx.district}` : 'Traffic update across Kano metro',
+    ctx.karotaSoon ? 'KAROTA checkpoint reported ahead — papers ready' : 'Roads open, drive carefully',
+    ctx.mission ? `Driver tip: ${ctx.mission}` : 'Watch for passengers at stop pads',
+    ctx.event || 'Arewa weather — harmattan haze possible this week',
+    'Freedom Radio — stay safe on Zoo Road and Hotoro'
+  ];
   return lines[Math.floor(Math.random() * lines.length)];
 }
 
-/** 8. KAROTA fine calculator */
-export function karotaFine(game) {
-  let base = 200 + Math.floor(Math.random() * 300);
-  if (game.paxOnBoard > game.capacity) base += 400;
-  if (game.wantedLevel > 0) base += game.wantedLevel * 150;
-  if (game.condition < 40) base += 100;
+export function karotaFine(overload, wanted) {
+  let base = 200 + Math.floor(Math.random() * 250);
+  if (overload) base += 150;
+  if (wanted > 0) base += wanted * 80;
   return base;
 }

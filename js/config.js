@@ -110,12 +110,13 @@ export const CONFIG = {
     sani: { id: 'sani', name: 'Sani', title: 'Speed Demon', ability: 'aggressive', desc: 'Higher top speed', unlocked: true, bonuses: { scoreMult: 1.08, speed: 0.35, invFrames: 6 } }
   },
   KEKES: {
-    starter: { id: 'starter', name: 'Street Classic', color: 0xfbbf24, speed: 0, capacity: 5, unlocked: true },
-    ruffgold: { id: 'ruffgold', name: 'RuffNeck Gold', color: 0xeab308, speed: 0.1, capacity: 5, unlocked: true },
-    sky: { id: 'sky', name: 'Sky Runner', color: 0x38bdf8, speed: 0.15, capacity: 5, unlocked: true },
-    heavy: { id: 'heavy', name: 'Load Master', color: 0x22c55e, speed: -0.05, capacity: 5, unlocked: true },
-    night: { id: 'night', name: 'Night Shadow', color: 0x1e293b, speed: 0.2, capacity: 5, unlocked: true },
-    royal: { id: 'royal', name: 'Royal Purple', color: 0xa855f7, speed: 0.12, capacity: 5, unlocked: true }
+    starter: { id: 'starter', name: 'Street Classic', color: 0xfbbf24, speed: 0, capacity: 5, unlocked: true, role: 'Everyday Adaidaita Sahu', accel: 1, grip: 1, fuelUse: 1 },
+    ruffgold: { id: 'ruffgold', name: 'RuffNeck Gold', color: 0xeab308, speed: 0.12, capacity: 5, unlocked: true, role: 'Top driver ride', accel: 1.1, grip: 1.05, fuelUse: 1.05 },
+    market: { id: 'market', name: 'Market Runner', color: 0xf97316, speed: -0.05, capacity: 5, unlocked: true, role: 'Kurmi / Sabon Gari loads', accel: 0.9, grip: 1.1, fuelUse: 0.95 },
+    kabuga: { id: 'kabuga', name: 'Kabuga Express', color: 0x38bdf8, speed: 0.18, capacity: 5, unlocked: true, role: 'Student corridor speed', accel: 1.15, grip: 0.95, fuelUse: 1.1 },
+    airport: { id: 'airport', name: 'Airport Shuttle', color: 0x22c55e, speed: 0.1, capacity: 5, unlocked: true, role: 'Airport Road long haul', accel: 1.05, grip: 1.08, fuelUse: 0.9 },
+    night: { id: 'night', name: 'Night Rider', color: 0x1e293b, speed: 0.22, capacity: 5, unlocked: true, role: 'Night runs', accel: 1.12, grip: 1.0, fuelUse: 1.08 },
+    vip: { id: 'vip', name: 'VIP Transport', color: 0xa855f7, speed: 0.08, capacity: 4, unlocked: true, role: 'VIP fares', accel: 1.0, grip: 1.12, fuelUse: 1.0, fareMult: 1.35 }
   },
   PAINTS: {
     classic: { id: 'classic', name: 'Classic Yellow', color: 0xfbbf24 },

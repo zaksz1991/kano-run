@@ -1232,10 +1232,12 @@ export class Game {
     }
     if (this.pickupCooldown > 0) this.pickupCooldown--;
 
-    // roadOff drives environment scroll
+    // roadOff + distance in km (slower, more “real” Kano travel feel)
     this.roadOff = (this.roadOff + this.speed * 6.5) % 10000;
-    this.dist += this.speed * 0.006;
-    this.segmentDist += this.speed * 0.006;
+    const kmPerFrame = this.speed * 0.0032;
+    this.dist += kmPerFrame;
+    this.meters = (this.meters || 0) + kmPerFrame * 1000;
+    this.segmentDist += kmPerFrame;
     this.score += Math.floor(this.speed * 0.08 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
     Audio.updateEngine(this.speed);
     if (this.combo > this.bestCombo) this.bestCombo = this.combo;
@@ -1298,18 +1300,27 @@ export class Game {
     this.ui.setLevel?.(this.level);
     this.ui.setOnboardDest?.(this.onboard);
 
-    // Long-distance world biome changes
-    const biome = biomeForDistance(this.dist);
-    if (biome && biome.id !== this.currentBiomeId) {
-      this.currentBiomeId = biome.id;
-      this.ui.showMissionToast(biome.msg || ('📍 ' + biome.name));
-      try { this.renderer3d?.applyWorldBiome?.(biome); } catch (e) {}
+    // Kano district progression (Sabon Gari → Emir Palace District)
+    const district = biomeForDistance(this.dist);
+    if (district && district.id !== this.currentBiomeId) {
+      this.currentBiomeId = district.id;
+      this.currentDistrict = district;
+      if (Array.isArray(this.visitedDistricts) && !this.visitedDistricts.includes(district.name)) {
+        this.visitedDistricts.push(district.name);
+      }
+      this.ui.showMissionToast(district.msg || ('📍 ' + district.name));
+      this.ui.setRouteLabel?.(district.name);
+      try { this.renderer3d?.applyWorldBiome?.(district); } catch (e) {}
       Audio.success();
+      if (district.landmarks?.length) {
+        const tip = district.landmarks[Math.floor(Math.random() * district.landmarks.length)];
+        setTimeout(() => { try { this.ui.showMissionToast('📌 ' + tip); } catch (e) {} }, 1200);
+      }
     }
 
-    // Landmarks along the route
+    // Landmarks along selected route
     const marks = route.landmarks || [];
-    if (marks.length && this.dist > (this.landmarkIndex + 1) * 3.5 && this.landmarkIndex < marks.length) {
+    if (marks.length && this.dist > (this.landmarkIndex + 1) * 4 && this.landmarkIndex < marks.length) {
       const name = marks[this.landmarkIndex++];
       this.ui.showMissionToast('📍 ' + name);
       Audio.success();
@@ -1331,10 +1342,12 @@ export class Game {
       }
     }
 
-    // KAROTA — more likely on junction/market segments; fines + wanted
+    // KAROTA — denser in market / junction / gate districts
     const bandK = getLevelBand(this.level || 1);
-    const karotaChance = 0.4 * (bandK.karota || 1) * (this.roadSegment?.id === 'market' || this.roadSegment?.id === 'junction' ? 1.5 : 1);
-    if (this.frame % 360 === 0 && this.dist > 0.8 && this.karotaTimer <= 0 && Math.random() < karotaChance) {
+    const distK = this.currentDistrict?.karota || 1;
+    const karotaChance = 0.55 * (bandK.karota || 1) * distK *
+      (this.roadSegment?.id === 'market' || this.roadSegment?.id === 'junction' || this.currentDistrict?.market ? 1.6 : 1);
+    if (this.frame % 280 === 0 && this.dist > 0.6 && this.karotaTimer <= 0 && Math.random() < karotaChance) {
       this.startKarotaCheckpoint();
       return;
     }
@@ -1438,7 +1451,7 @@ export class Game {
       const sizes = ['normal', 'normal', 'normal', 'tall', 'fat', 'big'];
       const isPark = true; // marked stop pad = legal park
       const paxClass = pickPaxClass(this.level || 1);
-      const dest = pickDestination();
+      const dest = pickDestination(this.currentDistrict);
       this.paxZones.push({
         lane: Math.floor(Math.random() * 3),
         y: -90,
