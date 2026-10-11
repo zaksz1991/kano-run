@@ -16,7 +16,7 @@ const game = new Game(canvas);
 const ui = new UI(game);
 game.ui = ui;
 
-const controls = new Controls(game, { lanes: 3, laneLerp: 0.22, swipeMinPx: 28 });
+const controls = new Controls(game, { lanes: 3, laneLambda: 7, laneLerp: 0.18, swipeMinPx: 28 });
 game.controls = controls;
 controls.bind();
 

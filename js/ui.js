@@ -322,8 +322,8 @@ export class UI {
     if (this.livesEl) this.livesEl.textContent = game.continuesLeft;
     const speedo = document.getElementById('speedo');
     if (speedo) {
-      // map internal speed to ~km/h feel
-      speedo.textContent = Math.round((game.speed || 0) * 12);
+      // cruise ~40 km/h, gas ~60
+      speedo.textContent = Math.round((game.speed || 0) * 14);
     }
     this.drawMinimap(game);
   }

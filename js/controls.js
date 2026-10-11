@@ -6,14 +6,18 @@ export class Controls {
   constructor(game, opts = {}) {
     this.game = game;
     this.laneCount = opts.lanes || 3;
-    this.laneLerp = opts.laneLerp ?? 0.2;
+    // Higher = snappier lane change (exp lambda, not raw lerp)
+    this.laneLambda = opts.laneLambda ?? 7;
+    this.laneLerp = opts.laneLerp ?? 0.18; // fallback
     this.swipeMinPx = opts.swipeMinPx ?? 28;
     this.targetLane = 1;
     this.smoothLane = 1;
+    this.laneVel = 0; // spring velocity for smooth steering
     this._touchStartX = 0;
     this._touchStartY = 0;
     this._swiping = false;
     this._bound = false;
+    this._lastT = 0;
   }
 
   bind() {
@@ -109,21 +113,42 @@ export class Controls {
     this.targetLane = Math.max(0, Math.min(this.laneCount - 1, Math.round(n)));
     if (this.game) {
       this.game.playerLane = this.targetLane;
-      this.game.bounce = Math.max(this.game.bounce || 0, 8);
+      // Soft bounce on lane change only
+      this.game.bounce = Math.max(this.game.bounce || 0, 5);
     }
   }
 
   reset(lane = 1) {
     this.targetLane = lane;
     this.smoothLane = lane;
+    this.laneVel = 0;
     if (this.game) this.game.playerLane = lane;
   }
 
+  /** Smooth steering — spring + exp, frame-rate independent */
   update() {
-    this.smoothLane += (this.targetLane - this.smoothLane) * this.laneLerp;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const rawDt = this._lastT ? (now - this._lastT) / 1000 : 1 / 60;
+    this._lastT = now;
+    const dt = Math.min(0.05, Math.max(0.008, rawDt));
+
+    const target = this.targetLane;
+    // Spring-damper toward target lane (smooth, no snap)
+    const stiff = 18;
+    const damp = 11;
+    this.laneVel += (stiff * (target - this.smoothLane) - damp * this.laneVel) * dt;
+    this.smoothLane += this.laneVel * dt;
+
+    // Snap settle when very close
+    if (Math.abs(this.smoothLane - target) < 0.002 && Math.abs(this.laneVel) < 0.01) {
+      this.smoothLane = target;
+      this.laneVel = 0;
+    }
+
     if (this.game) {
       this.game.smoothLane = this.smoothLane;
       this.game.playerLane = this.targetLane;
+      this.game.steerBlend = this.smoothLane - 1; // -1..+1 for lean
     }
   }
 

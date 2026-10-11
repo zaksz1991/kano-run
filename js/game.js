@@ -307,8 +307,8 @@ export class Game {
     if (this.renderer3d?.applyPaint) this.renderer3d.applyPaint(this.selectedPaint);
     if (this.renderer3d) this.renderer3d.introPhase = 0;
 
-    this.throttle = 0.7;
-    this.speed = 3.5;
+    this.throttle = 0.5;
+    this.speed = 2.2;
     this.braking = false;
     this.state = STATE.PLAY;
     try {
@@ -1201,22 +1201,20 @@ export class Game {
     const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
     const bonuses = this.getBonuses();
 
-    // ——— MOVEMENT (bulletproof) ———
-    // Never leave throttle at 0 while driving
-    if (typeof this.throttle !== 'number' || this.throttle < 0.2) this.throttle = 0.6;
+    // ——— MOVEMENT — calmer city pace ———
+    if (typeof this.throttle !== 'number' || this.throttle < 0.15) this.throttle = 0.5;
     this.braking = !!this.braking;
 
     const loadFactor = 1 - Math.min(0.2, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.2);
-    const top = (6.0 + (bonuses.speed || 0) * 2) * loadFactor;
-    let targetSpeed = this.braking ? 0 : (2.5 + this.throttle * (top - 2.5));
-    if (!this.braking && targetSpeed < 2.5) targetSpeed = 2.5;
-    if (this.trafficJamTimer > 0 && !this.braking) targetSpeed = Math.max(1.5, targetSpeed * 0.55);
+    // Cruise ~35–50 km/h feel; gas up to ~70
+    const top = (4.2 + (bonuses.speed || 0) * 1.5) * loadFactor;
+    let targetSpeed = this.braking ? 0 : (1.8 + this.throttle * (top - 1.8));
+    if (!this.braking && targetSpeed < 1.8) targetSpeed = 1.8;
+    if (this.trafficJamTimer > 0 && !this.braking) targetSpeed = Math.max(1.2, targetSpeed * 0.5);
 
-    // Smooth toward target
-    this.speed += (targetSpeed - this.speed) * (this.braking ? 0.25 : 0.12);
-    if (this.braking) this.speed *= 0.85;
-    // Absolute floor while not braking — fixes "0 km/h stuck"
-    if (!this.braking) this.speed = Math.max(2.5, this.speed);
+    this.speed += (targetSpeed - this.speed) * (this.braking ? 0.22 : 0.1);
+    if (this.braking) this.speed *= 0.82;
+    if (!this.braking) this.speed = Math.max(1.8, this.speed);
     // Fuel
     if (this.speed > 0.25) {
       this.fuel = Math.max(0, this.fuel - 0.008 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
@@ -1228,8 +1226,8 @@ export class Game {
       this.ui.showMissionToast('Low fuel — find petrol');
       Audio.voiceLowFuel();
     }
-    if (!Number.isFinite(this.speed)) this.speed = 2.5;
-    this.speed = Math.max(this.braking ? 0 : 2.5, Math.min(this.speed, 10));
+    if (!Number.isFinite(this.speed)) this.speed = 1.8;
+    this.speed = Math.max(this.braking ? 0 : 1.8, Math.min(this.speed, 7));
 
     // Condition warnings
     if (this.condition < 25 && this.frame % 120 === 0) {
@@ -1246,10 +1244,10 @@ export class Game {
     }
     if (this.pickupCooldown > 0) this.pickupCooldown--;
 
-    // Travel progress (renderer advances world from speed)
-    const move = Math.max(this.speed, this.braking ? 0 : 2.5);
-    this.roadOff = (this.roadOff + move * 2.2) % 10000;
-    const kmPerFrame = move * 0.0018;
+    // Travel progress — moderate
+    const move = Math.max(this.speed, this.braking ? 0 : 1.8);
+    this.roadOff = (this.roadOff + move * 1.6) % 10000;
+    const kmPerFrame = move * 0.0015;
     this.dist += kmPerFrame;
     this.meters = (this.meters || 0) + kmPerFrame * 1000;
     this.segmentDist += kmPerFrame;

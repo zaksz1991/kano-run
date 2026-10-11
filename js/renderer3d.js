@@ -1498,23 +1498,20 @@ export class Renderer3D {
       this.rain.geometry.attributes.position.needsUpdate = true;
     }
 
-    // ——— KEKE DRIVES THROUGH WORLD (player advances; world recycled behind) ———
-    // Travel distance in world units — keke moves forward, not “world sliding at you”
-    this.travelZ = (this.travelZ || 0) + spd * 0.11;
+    // Travel — slower so camera can keep up cleanly
+    this.travelZ = (this.travelZ || 0) + spd * 0.065;
     const travel = this.travelZ;
 
     if (this.roadMesh?.material?.map) {
-      this.roadMesh.material.map.offset.y = -(travel * 0.08) % 1;
+      this.roadMesh.material.map.offset.y = -(travel * 0.05) % 1;
       this.roadMesh.material.map.needsUpdate = true;
     }
     if (this.laneMarks) {
-      this.laneMarks.position.z = -(travel * 0.35) % 3.5;
+      this.laneMarks.position.z = -(travel * 0.28) % 3.5;
     }
-    // Buildings stay in world space relative to travel — recycle behind camera
     if (this.buildings) {
       this.buildings.children.forEach((ch) => {
         if (ch.userData.baseZ == null) ch.userData.baseZ = ch.position.z;
-        // Object world Z fixed; we show relative to travel (player going into scene)
         let z = ch.userData.baseZ - (travel % 180);
         while (z < -20) z += 180;
         while (z > 160) z -= 180;
@@ -1522,23 +1519,32 @@ export class Renderer3D {
       });
     }
     if (this.horizon) {
-      this.horizon.position.z = -(travel * 0.08) % 24;
+      this.horizon.position.z = -(travel * 0.06) % 24;
     }
 
-    // Player keke — moves with travel (slight forward feel) + lane change
+    // Player keke — smooth lateral move (exp) + lean from steering
     if (this.player) {
       const lane = (typeof g.smoothLane === 'number') ? g.smoothLane : (g.playerLane ?? 1);
       const tx = this.laneToX(lane);
-      this.player.position.x += (tx - this.player.position.x) * 0.35;
-      // Fixed on screen but travelZ drives environment = driving into Kano
+      // Exp lateral smooth (matches controls spring, no hard slide)
+      const nowP = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const dtP = this._playerLastT ? Math.min(0.05, (nowP - this._playerLastT) / 1000) : 1 / 60;
+      this._playerLastT = nowP;
+      const aX = 1 - Math.exp(-10 * dtP);
+      this.player.position.x += (tx - this.player.position.x) * aX;
       this.player.position.z = PLAYER_Z;
+
       const dx = tx - this.player.position.x;
-      this.player.rotation.y = 0;
-      this.player.rotation.z = THREE.MathUtils.clamp(-dx * 0.04, -0.08, 0.08);
-      this.player.rotation.x = THREE.MathUtils.clamp(-spd * 0.008, -0.06, 0);
+      const steer = typeof g.steerBlend === 'number' ? g.steerBlend : (lane - 1);
+      // Smooth lean into turn
+      const leanZ = THREE.MathUtils.clamp(-steer * 0.1 - dx * 0.03, -0.12, 0.12);
+      const leanY = THREE.MathUtils.clamp(steer * 0.06, -0.1, 0.1);
+      this.player.rotation.z += (leanZ - this.player.rotation.z) * aX;
+      this.player.rotation.y += (leanY - this.player.rotation.y) * aX;
+      this.player.rotation.x = THREE.MathUtils.clamp(-spd * 0.006, -0.05, 0);
       let by = 0;
-      if (g.bounce > 0) by = Math.sin(g.bounce * 0.8) * 0.06;
-      by += Math.sin((g.frame || 0) * 0.3) * Math.min(0.04, spd * 0.005);
+      if (g.bounce > 0) by = Math.sin(g.bounce * 0.8) * 0.05;
+      by += Math.sin((g.frame || 0) * 0.28) * Math.min(0.03, spd * 0.004);
       this.player.position.y = by;
       if (this.anim) {
         this.anim.tick(16);
@@ -1564,60 +1570,99 @@ export class Renderer3D {
     if (this.anim && this.buildings) this.anim.animatePedestrians(this.buildings, travel);
     if (this.models) this.models.update(0.016);
 
-    // Multi-camera: chase | driver | passenger | road
+      // ——— Camera: dt-based exp lerp + spring ———
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const rawDt = this._camLastT ? (now - this._camLastT) / 1000 : 1 / 60;
+    this._camLastT = now;
+    const dt = Math.min(0.05, Math.max(0.008, rawDt)); // clamp 20–125 fps
+
+    // Frame-rate independent exponential smooth: a = 1 - e^(-λ dt)
+    const expAlpha = (lambda) => 1 - Math.exp(-lambda * dt);
+
+    // Damped spring toward target (position only — soft arm feel)
+    const springTo = (pos, vel, target, stiffness, damping) => {
+      // vel' = stiffness * (target - pos) - damping * vel
+      vel.x += (stiffness * (target.x - pos.x) - damping * vel.x) * dt;
+      vel.y += (stiffness * (target.y - pos.y) - damping * vel.y) * dt;
+      vel.z += (stiffness * (target.z - pos.z) - damping * vel.z) * dt;
+      pos.x += vel.x * dt;
+      pos.y += vel.y * dt;
+      pos.z += vel.z * dt;
+    };
+
     let sx = 0, sy = 0;
     if (g.shake > 0) {
-      // Soft camera shake (was too aggressive)
-      const mag = Math.min(3, g.shakeMag || 2) * 0.012;
-      sx = (Math.random() - 0.5) * mag;
-      sy = (Math.random() - 0.5) * mag * 0.7;
+      // Decaying offset (not pure random each frame)
+      if (!this._shakeOff) this._shakeOff = new THREE.Vector2();
+      const mag = Math.min(2, g.shakeMag || 1.5) * 0.01;
+      this._shakeOff.x += ((Math.random() - 0.5) * mag - this._shakeOff.x) * 0.4;
+      this._shakeOff.y += ((Math.random() - 0.5) * mag * 0.5 - this._shakeOff.y) * 0.4;
+      sx = this._shakeOff.x;
+      sy = this._shakeOff.y;
+    } else if (this._shakeOff) {
+      this._shakeOff.x *= 0.85;
+      this._shakeOff.y *= 0.85;
+      sx = this._shakeOff.x;
+      sy = this._shakeOff.y;
     }
+
     const px = this.player ? this.player.position.x : 0;
-    const bob = Math.sin((g.frame || 0) * 0.18) * Math.min(0.07, (spd || 0) * 0.012);
+    const bob = Math.sin((g.frame || 0) * 0.12) * Math.min(0.035, (spd || 0) * 0.007);
     let mode = this.cameraMode || g.cameraMode || 'chase';
     if (g.cabinCam && mode === 'chase') mode = 'driver';
 
     let targetPos, targetLook, targetFov;
+    let posStiff = 14;
+    let posDamp = 9;
+    let lookLambda = 5;
+    let fovLambda = 4;
+
     if (mode === 'driver') {
-      // Driver seat — eyes forward over handlebar
-      targetFov = 66 + Math.min(5, Math.max(0, spd - 3));
-      targetPos = new THREE.Vector3(px + sx * 0.4, 1.42 + sy * 0.25 + bob * 0.5, PLAYER_Z + 0.45);
-      targetLook = new THREE.Vector3(px * 0.12 + sx * 0.2, 1.05, PLAYER_Z + 16);
+      targetFov = 58;
+      targetPos = new THREE.Vector3(px + sx * 0.25, 1.35 + sy * 0.15 + bob * 0.3, PLAYER_Z + 0.5);
+      targetLook = new THREE.Vector3(px * 0.1, 1.0, PLAYER_Z + 14);
+      posStiff = 22; posDamp = 14; lookLambda = 10; fovLambda = 8;
       if (this.player) this.player.visible = false;
     } else if (mode === 'passenger') {
-      // Back seat passenger looking forward-left
-      targetFov = 60 + Math.min(4, Math.max(0, spd - 3));
-      targetPos = new THREE.Vector3(px + 0.35 + sx * 0.3, 1.28 + bob * 0.4, PLAYER_Z - 0.35);
-      targetLook = new THREE.Vector3(px * 0.2 - 0.3, 0.95, PLAYER_Z + 12);
+      targetFov = 55;
+      targetPos = new THREE.Vector3(px + 0.3 + sx * 0.15, 1.25 + bob * 0.25, PLAYER_Z - 0.3);
+      targetLook = new THREE.Vector3(px * 0.15, 0.9, PLAYER_Z + 12);
+      posStiff = 16; posDamp = 11; lookLambda = 7; fovLambda = 6;
       if (this.player) this.player.visible = true;
     } else if (mode === 'road') {
-      // Low hood / road rush view
-      targetFov = 72 + Math.min(6, Math.max(0, spd - 2));
-      targetPos = new THREE.Vector3(px + sx * 0.5, 0.85 + sy * 0.2 + bob * 0.3, PLAYER_Z + 1.1);
-      targetLook = new THREE.Vector3(px * 0.1, 0.4, PLAYER_Z + 18);
+      targetFov = 62;
+      targetPos = new THREE.Vector3(px + sx * 0.2, 0.95 + bob * 0.15, PLAYER_Z + 0.9);
+      targetLook = new THREE.Vector3(px * 0.08, 0.5, PLAYER_Z + 16);
+      posStiff = 18; posDamp = 12; lookLambda = 8; fovLambda = 6;
       if (this.player) this.player.visible = false;
     } else {
-      // Cinematic chase — lower + closer = strong 3D perspective
-      targetFov = 56 + Math.min(8, Math.max(0, spd - 3) * 1.2);
-      targetPos = new THREE.Vector3(px * 0.55 + sx, 3.6 + sy + bob, -6.2);
-      targetLook = new THREE.Vector3(px * 0.35, 0.5, 18);
+      // Chase: soft arm behind keke
+      targetFov = 52 + Math.min(2.5, Math.max(0, spd - 2) * 0.35);
+      targetPos = new THREE.Vector3(px * 0.4 + sx, 4.2 + sy + bob, -8.5);
+      // Look slightly ahead of road based on speed
+      targetLook = new THREE.Vector3(px * 0.25, 0.8, PLAYER_Z + 10 + Math.min(4, spd * 0.4));
+      posStiff = 12; posDamp = 8; lookLambda = 5; fovLambda = 4;
       if (this.player) this.player.visible = true;
     }
 
-    // Smooth camera (professional lerp)
     if (!this.camPos) this.camPos = targetPos.clone();
     if (!this.camLook) this.camLook = targetLook.clone();
-    this.camPos.lerp(targetPos, 0.12);
-    this.camLook.lerp(targetLook, 0.1);
+    if (!this.camVel) this.camVel = new THREE.Vector3();
+
+    // Position: spring-damper (frame independent)
+    springTo(this.camPos, this.camVel, targetPos, posStiff, posDamp);
+
+    // Look-at point: exp lerp (slightly softer than body)
+    const aLook = expAlpha(lookLambda);
+    this.camLook.lerp(targetLook, aLook);
+
+    // FOV: exp lerp
+    const aFov = expAlpha(fovLambda);
+    this.camera.fov += (targetFov - this.camera.fov) * aFov;
+
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
-    this.camera.fov += (targetFov - this.camera.fov) * 0.08;
     this.camera.updateProjectionMatrix();
-
-    // Scroll road texture for motion
-    if (this.roadMesh && this.roadMesh.material && this.roadMesh.material.map) {
-      this.roadMesh.material.map.offset.y = -((g.roadOff || 0) * 0.02) % 1;
-    }
 
     const py = g.playerY || 500;
     // Hide all pool meshes first
