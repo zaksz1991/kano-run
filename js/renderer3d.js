@@ -1351,32 +1351,27 @@ export class Renderer3D {
       this.rain.geometry.attributes.position.needsUpdate = true;
     }
 
-    // ——— WORLD SCROLL (environment must move toward camera) ———
+    // ——— WORLD SCROLL (strong) ———
     const scroll = (g.roadOff || 0);
-    const scrollSpeed = Math.max(0.02, (spd || 0) * 0.015);
-    // Road texture flies under the keke
     if (this.roadMesh?.material?.map) {
-      this.roadMesh.material.map.offset.y = -(scroll * 0.08) % 1;
+      this.roadMesh.material.map.offset.y = -(scroll * 0.12) % 1;
       this.roadMesh.material.map.needsUpdate = true;
     }
-    // Lane paint dashes
     if (this.laneMarks) {
-      this.laneMarks.position.z = -(scroll * 0.55) % 3.5;
+      this.laneMarks.position.z = -(scroll * 0.9) % 3.5;
     }
-    // Buildings / roadside — strong motion + recycle far objects
     if (this.buildings) {
       this.buildings.position.z = 0;
       this.buildings.children.forEach((ch) => {
         if (ch.userData.baseZ == null) ch.userData.baseZ = ch.position.z;
-        let z = ch.userData.baseZ - (scroll * 0.85) % 160;
-        // wrap into visible range ahead of player
-        while (z < -20) z += 160;
-        while (z > 140) z -= 160;
+        let z = ch.userData.baseZ - (scroll * 1.35) % 180;
+        while (z < -25) z += 180;
+        while (z > 155) z -= 180;
         ch.position.z = z;
       });
     }
     if (this.horizon) {
-      this.horizon.position.z = -(scroll * 0.12) % 20;
+      this.horizon.position.z = -(scroll * 0.25) % 24;
     }
 
     // Player keke — slide sideways into lane, ALWAYS face forward (straight)
@@ -1423,8 +1418,10 @@ export class Renderer3D {
     // Multi-camera: chase | driver | passenger | road
     let sx = 0, sy = 0;
     if (g.shake > 0) {
-      sx = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.035;
-      sy = (Math.random() - 0.5) * (g.shakeMag || 4) * 0.025;
+      // Soft camera shake (was too aggressive)
+      const mag = Math.min(3, g.shakeMag || 2) * 0.012;
+      sx = (Math.random() - 0.5) * mag;
+      sy = (Math.random() - 0.5) * mag * 0.7;
     }
     const px = this.player ? this.player.position.x : 0;
     const bob = Math.sin((g.frame || 0) * 0.18) * Math.min(0.07, (spd || 0) * 0.012);

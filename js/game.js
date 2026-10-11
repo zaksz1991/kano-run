@@ -332,14 +332,41 @@ export class Game {
   togglePause() {
     if (this.state === STATE.PLAY) {
       this.state = STATE.PAUSE;
-      try { Audio.stopEngine(); } catch (e) {}
-      this.ui.showMissionToast('Paused · MAIN MENU available');
+      this.speed = 0;
+      this.throttle = 0;
+      try { Audio.stopEngine(); Audio.stopSample?.(Audio._radioEl); } catch (e) {}
+      this.ui.showMissionToast('Paused');
       this.ui.setPauseUI(true);
     } else if (this.state === STATE.PAUSE) {
       this.state = STATE.PLAY;
       try { Audio.startEngine(); } catch (e) {}
       this.ui.setPauseUI(false);
       this.ui.showMissionToast('Resumed');
+    } else if (this.state === STATE.INTRO) {
+      // allow skip intro via pause
+      this.finishIntro();
+    }
+  }
+
+  /** Radio ON / OFF toggle */
+  toggleRadio() {
+    this.radioOn = !this.radioOn;
+    if (this.radioOn) {
+      const list = CONFIG.RADIO || [{ name: 'Radio Kano' }];
+      const st = list[this.radioIndex || 0];
+      try {
+        Audio.ensure();
+        Audio.radioTune(st.name);
+      } catch (e) {}
+      this.ui.setRadio?.(st.name + ' · ON');
+      this.ui.showMissionToast('📻 Radio ON — ' + st.name);
+    } else {
+      try {
+        Audio.stopRadioBed();
+        Audio.stopSample?.(Audio._radioEl);
+      } catch (e) {}
+      this.ui.setRadio?.('Radio OFF');
+      this.ui.showMissionToast('📻 Radio OFF');
     }
   }
 
@@ -467,13 +494,18 @@ export class Game {
   }
 
   cycleRadio() {
+    // Tap radio: if off → turn on; if on → next station
+    if (this.radioOn === false) {
+      this.radioOn = true;
+    }
     const list = CONFIG.RADIO || [
       { name: 'Freedom Radio' }, { name: 'Arewa Radio' }, { name: 'Rahama Radio' },
       { name: 'Radio Kano' }, { name: 'Cool FM' }, { name: 'Express Radio' }
     ];
     this.radioIndex = ((this.radioIndex || 0) + 1) % list.length;
     const st = list[this.radioIndex];
-    this.ui.setRadio?.(st.name);
+    this.radioOn = true;
+    this.ui.setRadio?.(st.name + ' · ON');
     try {
       Audio.ensure();
       Audio.radioTune(st.name);
@@ -631,7 +663,8 @@ export class Game {
   // ——— 4. COLLISION TIERS ———
   applyCollisionImpact() {
     const tier = collisionTier(this.speed);
-    this.triggerShake(tier.shake, Math.min(12, tier.shake / 2));
+    // Milder camera shake
+    this.triggerShake(Math.min(6, tier.shake * 0.45), Math.min(5, tier.shake / 3));
     this.applyDamage('body', tier.dmg * 0.6);
     this.applyDamage('engine', tier.dmg * 0.25);
     if (tier.tier === 'high' || tier.tier === 'critical') {
@@ -904,8 +937,8 @@ export class Game {
 
   tryDropOff() {
     if (this.paxOnBoard <= 0 || this.onboard.length === 0) return;
-    if (this.speed > 2.2) {
-      this.ui.showMissionToast('Akwai! Almost stop to drop');
+    if (this.speed > 1.4) {
+      this.ui.showMissionToast('Akwai — brake nearly stop to drop');
       return;
     }
     const p = this.onboard.shift();
@@ -1198,8 +1231,8 @@ export class Game {
     }
     if (this.pickupCooldown > 0) this.pickupCooldown--;
 
-    // roadOff drives environment scroll (large modulus so world keeps flowing)
-    this.roadOff = (this.roadOff + this.speed * 4.5) % 10000;
+    // roadOff drives environment scroll
+    this.roadOff = (this.roadOff + this.speed * 6.5) % 10000;
     this.dist += this.speed * 0.006;
     this.segmentDist += this.speed * 0.006;
     this.score += Math.floor(this.speed * 0.08 * this.getComboMultiplier() * (bonuses.scoreMult || 1));
@@ -1253,8 +1286,8 @@ export class Game {
     else if (w === 'harmattan') this.weatherGrip = 0.94;
     else this.weatherGrip = 1;
 
-    // Level from distance
-    const newLevel = 1 + Math.floor(this.dist / 2.5);
+    // Level from distance — slower progression (every ~8 km)
+    const newLevel = 1 + Math.floor(this.dist / 8);
     if (newLevel > this.level) {
       this.level = newLevel;
       this.ui.showMissionToast('📶 Level ' + this.level);
@@ -1352,9 +1385,11 @@ export class Game {
       let lane = Math.floor(Math.random() * 3);
       if (lane === this.playerLane && Math.random() < 0.5) lane = (lane + 1) % 3;
       if (this.laneClear(lane, -80, 150)) {
+        // Traffic only — never spawn people as road obstacles
         let types = ['car', 'keke', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota', 'robber'];
         if (chase) types = ['police', 'karota', 'car', 'police', 'keke'];
         const type = types[Math.floor(Math.random() * types.length)];
+        if (type === 'pedestrian' || type === 'passenger') continue;
         const roadMode = (CONFIG.ROAD_MODES && CONFIG.ROAD_MODES[this.selectedRoadMode]) || { oppositeChance: 0.35 };
         const opposite = roadMode.oppositeChance > 0 && Math.random() < roadMode.oppositeChance;
         this.obs.push({
@@ -1515,12 +1550,12 @@ export class Game {
       }
     }
 
-    // Pick up — must be SLOW; park rules in market/junction
+    // Pick up — nearly stop (real park), clear destination, less spam negotiate
     for (const p of this.paxZones) {
       if (p.taken) continue;
-      if (Math.round(p.lane) === this.playerLane && Math.abs(p.y - this.playerY) < 52) {
-        if (this.speed > 2.4) {
-          if (this.frame % 40 === 0) this.ui.showMissionToast('Almost stop to load — like real park');
+      if (Math.round(p.lane) === this.playerLane && Math.abs(p.y - this.playerY) < 48) {
+        if (this.speed > 1.35) {
+          if (this.frame % 50 === 0) this.ui.showMissionToast('Brake to stop · then load');
           continue;
         }
         if (this.pickupCooldown > 0) continue;
@@ -1545,11 +1580,14 @@ export class Game {
           continue;
         }
         p.taken = true;
-        if (!p.aishat && Math.random() < 0.32) {
+        // Rare negotiation only — most board at normal fare
+        if (!p.aishat && !p.vip && Math.random() < 0.15) {
           this.startNegotiation(p);
           return;
         }
-        p.agreedFare = p.vip ? 300 + Math.floor(Math.random()*100) : p.aishat ? 400 + Math.floor(Math.random()*150) : 100 + Math.floor(Math.random() * 80);
+        const dest = p.dest || this.randomDest();
+        p.dest = dest;
+        p.agreedFare = p.vip ? 280 + Math.floor(Math.random() * 80) : p.aishat ? 450 + Math.floor(Math.random() * 100) : 130 + Math.floor(Math.random() * 50);
         this.boardWaiting(p);
       }
     }

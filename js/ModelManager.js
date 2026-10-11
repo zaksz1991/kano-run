@@ -25,11 +25,12 @@ const MODEL_MAP = {
   bustation: 'models/bustation.glb'
 };
 
+// Keke larger than people — people must stay human-scale
 const TARGET_HEIGHT = {
-  keke: 1.35, car: 1.2, taxi: 1.2, bus: 2.0, truck: 1.8,
-  motorcycle: 1.0, police: 1.3, karota: 1.55, pedestrian: 1.05,
-  passenger: 1.05, robber: 1.2, bicycle: 0.9, market: 2.2,
-  bustop: 2.0, bustation: 3.0
+  keke: 1.9, car: 1.35, taxi: 1.35, bus: 2.2, truck: 2.0,
+  motorcycle: 1.15, police: 1.45, karota: 1.5, pedestrian: 0.88,
+  passenger: 0.88, robber: 1.15, bicycle: 0.85, market: 2.0,
+  bustop: 1.8, bustation: 2.6
 };
 
 export class ModelManager {

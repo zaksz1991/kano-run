@@ -103,18 +103,7 @@ export class UI {
     // Release gas → cruise (not full stop). Only BRAKE stops.
     holdCtrl(gas, () => this.game.setThrottle(1), () => this.game.setThrottle(0.45));
     holdCtrl(brake, () => this.game.setBrake(true), () => this.game.setBrake(false));
-    if (pauseBtn) {
-      pauseBtn.onclick = () => this.game.togglePause();
-      // Long-press pause → main menu
-      let holdT = null;
-      pauseBtn.addEventListener('contextmenu', (e) => e.preventDefault());
-      const startHold = () => { holdT = setTimeout(() => this.goMainMenu(), 650); };
-      const endHold = () => clearTimeout(holdT);
-      pauseBtn.addEventListener('touchstart', startHold, { passive: true });
-      pauseBtn.addEventListener('touchend', endHold);
-      pauseBtn.addEventListener('mousedown', startHold);
-      pauseBtn.addEventListener('mouseup', endHold);
-    }
+    // Pause handled once in Controls module (avoids broken double-bind)
     const camBtn = document.getElementById('cam-btn');
     if (camBtn) camBtn.onclick = () => this.game.toggleCabin();
 

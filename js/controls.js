@@ -36,9 +36,32 @@ export class Controls {
     this._press(gas, () => this.game.setThrottle?.(1), () => this.game.setThrottle?.(0.5));
     this._press(brake, () => this.game.setBrake?.(true), () => this.game.setBrake?.(false));
     if (horn) horn.addEventListener('click', (e) => { e.preventDefault(); this.game.horn?.(); });
-    if (pauseBtn) pauseBtn.addEventListener('click', (e) => { e.preventDefault(); this.game.togglePause?.(); });
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.game.togglePause?.();
+      });
+    }
     if (camBtn) camBtn.addEventListener('click', (e) => { e.preventDefault(); this.game.toggleCabin?.(); });
-    if (radioBtn) radioBtn.addEventListener('click', (e) => { e.preventDefault(); this.game.cycleRadio?.(); });
+    if (radioBtn) {
+      let radioHold = null;
+      let radioLong = false;
+      radioBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        radioLong = false;
+        radioHold = setTimeout(() => {
+          radioLong = true;
+          if (this.game.radioOn !== false) this.game.toggleRadio?.();
+        }, 450);
+      });
+      radioBtn.addEventListener('pointerup', (e) => {
+        e.preventDefault();
+        clearTimeout(radioHold);
+        if (!radioLong) this.game.cycleRadio?.();
+      });
+      radioBtn.addEventListener('pointercancel', () => clearTimeout(radioHold));
+    }
 
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
