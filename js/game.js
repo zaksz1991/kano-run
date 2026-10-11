@@ -260,6 +260,22 @@ export class Game {
     this.inv = 0;
     this.bounce = 0;
     this.obs = [];
+    // Seed traffic so the road is never empty at start
+    for (let i = 0; i < 8; i++) {
+      const types = ['car', 'keke', 'taxi', 'motorcycle', 'bus', 'truck', 'keke', 'car'];
+      const type = types[i % types.length];
+      this.obs.push({
+        type,
+        lane: i % 3,
+        y: -40 - i * 70,
+        w: type === 'motorcycle' ? 36 : type === 'bus' || type === 'truck' ? 56 : 50,
+        h: type === 'motorcycle' ? 50 : 70,
+        speedOff: -0.5 + Math.random() * 0.4,
+        opposite: false,
+        robber: false,
+        laneCooldown: 30
+      });
+    }
     this.paxZones = [];
     this.dropZones = [];
     this.coins = [];
@@ -653,11 +669,18 @@ export class Game {
         }
       }
     }
-    // show first incomplete as active
+    // show first incomplete as active (safe numbers only)
     const next = this.runMissions.find((m) => !m.done);
     if (next) {
-      this.activeMission = { text: next.text + ' (' + Math.floor(next.progress) + '/' + next.n + ')', progress: next.progress };
-      this.ui.setMission?.(this.activeMission.text);
+      const prog = Math.floor(Number(next.progress) || 0);
+      const need = Number(next.n) || 1;
+      this.activeMission = {
+        text: next.text,
+        progress: prog,
+        target: need,
+        type: next.key === 'dropCount' ? 'drop' : next.key === 'dist' ? 'dist' : next.key === 'totalPax' ? 'pax' : 'score'
+      };
+      this.ui.setMission?.(next.text + ' (' + prog + '/' + need + ')');
     }
   }
 
@@ -1415,31 +1438,37 @@ export class Game {
     this.playerX += (this.targetX - this.playerX) * 0.25;
     this.playerY = this.canvas.clientHeight - 195;
 
-    // Spawn traffic (denser during police chase)
+    // Dense Kano traffic — keep several vehicles on screen
     const chase = this.policeChase > 0;
     const peak = this.isPeakHour();
-    const spawnEvery = chase ? 28 : peak ? 36 : 55;
-    const spawnChance = chase ? 0.9 : peak ? 0.85 : 0.55;
-    if (this.frame % spawnEvery === 0 && Math.random() < spawnChance && this.trafficJamTimer <= 0) {
-      let lane = Math.floor(Math.random() * 3);
-      if (lane === this.playerLane && Math.random() < 0.5) lane = (lane + 1) % 3;
-      if (this.laneClear(lane, -80, 150)) {
-        // Traffic only — never people (types list has no pedestrian/passenger)
-        let types = ['car', 'keke', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota', 'robber'];
+    const dens = this.currentDistrict?.traffic || 1;
+    const spawnEvery = chase ? 14 : peak ? 18 : Math.max(12, Math.floor(22 / dens));
+    const spawnChance = chase ? 0.95 : peak ? 0.9 : 0.75;
+    const maxObs = 14;
+    if (this.obs.length < maxObs && this.frame % spawnEvery === 0 && Math.random() < spawnChance && this.trafficJamTimer <= 0) {
+      // Spawn 1–2 vehicles per tick when sparse
+      const batch = this.obs.length < 5 ? 2 : 1;
+      for (let b = 0; b < batch && this.obs.length < maxObs; b++) {
+        let lane = Math.floor(Math.random() * 3);
+        if (lane === this.playerLane && Math.random() < 0.4) lane = (lane + 1) % 3;
+        if (!this.laneClear(lane, -80 - b * 40, 120)) continue;
+        let types = ['car', 'keke', 'keke', 'taxi', 'motorcycle', 'motorcycle', 'bus', 'truck', 'police', 'karota', 'robber'];
         if (chase) types = ['police', 'karota', 'car', 'police', 'keke'];
+        if (this.currentDistrict?.market) types.push('keke', 'motorcycle', 'taxi');
+        if (this.currentDistrict?.industrial) types.push('truck', 'truck', 'bus');
         const type = types[Math.floor(Math.random() * types.length)];
         const roadMode = (CONFIG.ROAD_MODES && CONFIG.ROAD_MODES[this.selectedRoadMode]) || { oppositeChance: 0.35 };
         const opposite = roadMode.oppositeChance > 0 && Math.random() < roadMode.oppositeChance;
         this.obs.push({
           type,
           lane: opposite ? 0 : lane,
-          y: -80,
+          y: -80 - b * 50 - Math.random() * 30,
           w: type === 'motorcycle' ? 36 : type === 'bus' || type === 'truck' ? 56 : 50,
           h: type === 'motorcycle' ? 50 : 70,
           speedOff: opposite ? 0.9 + Math.random() * 0.6 : -0.9 + Math.random() * 0.5,
           opposite: !!opposite,
           robber: type === 'robber',
-          laneCooldown: 50 + Math.floor(Math.random() * 80)
+          laneCooldown: 40 + Math.floor(Math.random() * 60)
         });
       }
     }
@@ -1701,14 +1730,15 @@ export class Game {
 
     if (this.activeMission) {
       const m = this.activeMission;
-      if (m.type === 'drop') m.progress = this.dropCount;
-      if (m.type === 'dist') m.progress = this.dist;
-      if (m.type === 'score') m.progress = this.score;
-      if (m.type === 'pax') m.progress = this.totalPax;
+      if (m.type === 'drop') m.progress = this.dropCount || 0;
+      if (m.type === 'dist') m.progress = this.dist || 0;
+      if (m.type === 'score') m.progress = this.score || 0;
+      if (m.type === 'pax') m.progress = this.totalPax || 0;
       if (m.type === 'nearmiss') m.progress = this.nearMissCount || 0;
-      this.ui.setMission(
-        m.text + ' (' + Math.min(m.target, Math.floor(m.progress)) + '/' + m.target + ')'
-      );
+      const prog = Math.floor(Number(m.progress) || 0);
+      const need = Number(m.target) || Number(m.n) || 10;
+      const label = String(m.text || 'Mission').replace(/\s*\(\d+\/\d+\)\s*$/, '');
+      this.ui.setMission(label + ' (' + prog + '/' + need + ')');
     }
 
     this.ui.updateHUD(this);
