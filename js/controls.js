@@ -156,16 +156,17 @@ export class Controls {
   }
 
   /**
-   * FIXED for reported invert: LEFT button was sending vehicle right.
-   * Camera faces +Z; +X is screen-right. Lane positions use LANE_X in renderer.
-   * Empirically on live build, decreasing index moved the keke right — so we invert here.
+   * Phase 10 — correct screen mapping
+   * LANE_X = [-3.6, 0, 3.6]: index 0 is LEFT of screen, index 2 is RIGHT.
+   * LEFT button / swipe left / ArrowLeft → decrease lane index.
+   * RIGHT button / swipe right / ArrowRight → increase lane index.
    */
   steerLeft() {
-    this.setTargetLane(this.targetLane + 1);
+    this.setTargetLane(this.targetLane - 1);
   }
 
   steerRight() {
-    this.setTargetLane(this.targetLane - 1);
+    this.setTargetLane(this.targetLane + 1);
   }
 
   setTargetLane(n) {

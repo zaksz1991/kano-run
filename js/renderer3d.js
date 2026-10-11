@@ -3,9 +3,12 @@ import * as THREE from '../vendor/three.module.js';
 import { AnimSystem } from './animation.js';
 import { ModelManager } from './ModelManager.js';
 
-const LANE_X = [-2.4, 0, 2.4];
-const ROAD_LEN = 120;
-const PLAYER_Z = 5.5;
+// Lane 0 = LEFT of screen, lane 2 = RIGHT (camera faces +Z, +X = right)
+// Wider road — previous 9.5-unit strip felt tiny
+const LANE_X = [-3.6, 0, 3.6];
+const ROAD_WIDTH = 14.5;
+const ROAD_LEN = 140;
+const PLAYER_Z = 6.2;
 
 export class Renderer3D {
   constructor(game) {
@@ -162,10 +165,10 @@ export class Renderer3D {
     // Stronger fog = clearer depth (near sharp, far fades)
     this.scene.fog = new THREE.Fog(0x8ec8e8, 18, 70);
 
-    // Lower, closer camera = stronger 3D perspective (not top-down flat)
-    this.camera = new THREE.PerspectiveCamera(58, w / h, 0.1, 200);
-    this.camera.position.set(0, 4.2, -5.5);
-    this.camera.lookAt(0, 0.6, 22);
+    // Wider FOV + slightly higher chase cam so the full road fills the view
+    this.camera = new THREE.PerspectiveCamera(62, w / h, 0.1, 220);
+    this.camera.position.set(0, 5.4, -7.2);
+    this.camera.lookAt(0, 0.5, 26);
 
     // Richer lighting for volume
     this.scene.add(new THREE.AmbientLight(0xb8c8e0, 0.45));
@@ -396,7 +399,7 @@ export class Renderer3D {
   }
 
   buildRoad() {
-    // Main asphalt with procedural texture
+    // Wide Kano dual carriage feel — ROAD_WIDTH ~14.5 units
     const roadTex = this.makeRoadTexture();
     const roadMat = new THREE.MeshStandardMaterial({
       map: roadTex,
@@ -404,7 +407,7 @@ export class Renderer3D {
       metalness: 0.06,
       color: 0xffffff
     });
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(9.5, ROAD_LEN), roadMat);
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_LEN), roadMat);
     road.rotation.x = -Math.PI / 2;
     road.position.set(0, 0, ROAD_LEN / 2 - 4);
     road.receiveShadow = true;
@@ -413,17 +416,18 @@ export class Renderer3D {
 
     // Center darker wear strip
     const wear = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.2, ROAD_LEN),
+      new THREE.PlaneGeometry(4.5, ROAD_LEN),
       this.mat(0x243040, { roughness: 0.96, metalness: 0.04 })
     );
     wear.rotation.x = -Math.PI / 2;
     wear.position.set(0, 0.005, ROAD_LEN / 2 - 4);
     this.scene.add(wear);
 
-    // Shoulders (dusty dirt)
-    for (const sx of [-5.7, 5.7]) {
+    // Shoulders (dusty dirt) — outside the asphalt
+    const shoulderX = ROAD_WIDTH / 2 + 1.8;
+    for (const sx of [-shoulderX, shoulderX]) {
       const sh = new THREE.Mesh(
-        new THREE.PlaneGeometry(2.4, ROAD_LEN),
+        new THREE.PlaneGeometry(3.6, ROAD_LEN),
         this.mat(0x5c5346, { roughness: 0.98 })
       );
       sh.rotation.x = -Math.PI / 2;
@@ -431,10 +435,11 @@ export class Renderer3D {
       this.scene.add(sh);
     }
 
-    // Yellow edge lines
+    // Yellow edge lines at asphalt edges
+    const edgeX = ROAD_WIDTH / 2 - 0.35;
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xeab308 });
-    for (const lx of [-4.5, 4.5]) {
-      const line = new THREE.Mesh(new THREE.PlaneGeometry(0.14, ROAD_LEN), lineMat);
+    for (const lx of [-edgeX, edgeX]) {
+      const line = new THREE.Mesh(new THREE.PlaneGeometry(0.18, ROAD_LEN), lineMat);
       line.rotation.x = -Math.PI / 2;
       line.position.set(lx, 0.02, ROAD_LEN / 2 - 4);
       this.scene.add(line);
@@ -443,19 +448,20 @@ export class Renderer3D {
     // White edge ticks
     const white = new THREE.MeshBasicMaterial({ color: 0xe2e8f0 });
     for (let z = 0; z < ROAD_LEN; z += 8) {
-      for (const lx of [-4.35, 4.35]) {
-        const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.6), white);
+      for (const lx of [-(edgeX - 0.2), edgeX - 0.2]) {
+        const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 0.7), white);
         tick.rotation.x = -Math.PI / 2;
         tick.position.set(lx, 0.022, z);
         this.scene.add(tick);
       }
     }
 
+    // Lane dashes between the 3 lanes
     this.laneMarks = new THREE.Group();
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
     for (let z = 0; z < ROAD_LEN; z += 3.2) {
-      for (const lx of [-1.2, 1.2]) {
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 1.4), dashMat);
+      for (const lx of [LANE_X[0] / 2, LANE_X[2] / 2]) {
+        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 1.5), dashMat);
         dash.rotation.x = -Math.PI / 2;
         dash.position.set(lx, 0.025, z);
         this.laneMarks.add(dash);
@@ -479,7 +485,8 @@ export class Renderer3D {
     for (const side of [-1, 1]) {
       for (let i = 0; i < types.length; i++) {
         const z = i * 6.5 + (side > 0 ? 2 : 0);
-        const xBase = side * (6.8 + (i % 3) * 0.4);
+        // Push buildings outside the wider ROAD_WIDTH asphalt
+        const xBase = side * (9.2 + (i % 3) * 0.5);
         const kind = types[i];
         if (kind === 'mosque') this.addMosque(xBase, z, side);
         else if (kind === 'market') this.addMarketStall(xBase, z, side);

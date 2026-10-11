@@ -21,11 +21,29 @@ export const ROAD_TYPES = {
   highway: { id: 'highway', name: 'Highway', difficulty: 1.05, traffic: 1.2 }
 };
 
+/** Kano destinations — Phase 10 passenger requests */
 export const DISTRICTS = [
-  'Sabon Gari', 'Kurmi', 'Farm Centre', 'Hotoro', 'Tarauni', 'Kabuga',
-  'Fagge', 'Dala', 'Naibawa', 'Zoo Road', 'Panshekara', 'Kumbotso',
-  'Gwale', 'Sharada', 'Bompai', 'Yankaba', "Emir's Palace", 'Kantin Kwari'
+  'Sabon Gari', 'Kofar Mata', 'Fagge', 'Farm Centre', 'Hotoro', 'Zoo Road',
+  'Naibawa', 'Tarauni', 'Dala', 'Kantin Kwari', 'Kofar Wambai', 'Kurmi',
+  'Kabuga', 'Panshekara', 'Kumbotso', 'Gwale', 'Sharada', 'Bompai',
+  'Yankaba', "Emir's Palace", 'Kofar Nassarawa', 'Brigade', 'Gidan Murtala',
+  'Murtala Muhammad Way', 'Ibrahim Taiwo Road', 'Aminu Kano Way',
+  'Court Road', 'Gandu', 'Rijiyar Zaki', 'Kawo', 'Ungogo', 'Challawa'
 ];
+
+/** Hausa honorifics — avoid repeating only "Aboki" */
+export const HONORIFICS = [
+  'Oga', 'Mai Gida', 'Mallam', 'Yallabai', 'Dan uwa', 'Aboki',
+  'Driver', 'Baba', 'Mama', 'Hajiya', 'Ustaz', 'Dan gari'
+];
+
+export function pickHonorific(genderHint) {
+  if (genderHint === 'f') {
+    const f = ['Mama', 'Hajiya', 'Yallabai', 'Mallama'];
+    return f[Math.floor(Math.random() * f.length)];
+  }
+  return HONORIFICS[Math.floor(Math.random() * HONORIFICS.length)];
+}
 
 /** 9. Passenger classes */
 export const PAX_CLASSES = {

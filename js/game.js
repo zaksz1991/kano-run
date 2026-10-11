@@ -15,10 +15,14 @@ import {
   karotaFine,
   pickPaxClass,
   pickDestination,
+  pickHonorific,
   getLevelBand,
   WORLD_EVENTS,
   DISTRICTS
 } from './systems.js';
+
+/** Match renderer LANE_X (wide road Phase 10) */
+const LANE_WORLD_X = [-3.6, 0, 3.6];
 
 export class Game {
   constructor(canvas) {
@@ -186,11 +190,25 @@ export class Game {
     };
   }
 
+  cycleRadio() {
+    this.radioIndex = (this.radioIndex + 1) % CONFIG.RADIO.length;
+    Storage.setRadio(this.radioIndex);
+    const st = CONFIG.RADIO[this.radioIndex];
+    this.ui.setRadio(st.name);
+    this.ui.showMissionToast('📻 ' + st.name);
+    Audio.radioTune();
+    Audio.startRadioBed();
+  }
+
   /** Begin run — always PLAY with immediate forward motion */
   start() {
-    // Skip intro always so the game never feels frozen
-    this.state = STATE.PLAY;
-    this.introT = 999;
+    // Opening sequence: walk → enter keke → engine (skip after first play)
+    let skipIntro = false;
+    try {
+      skipIntro = !!(Storage.getSeenTutorial() && Storage.get('kanoSkipIntro', false));
+    } catch (e) {}
+    this.state = skipIntro ? STATE.PLAY : STATE.INTRO;
+    this.introT = skipIntro ? 999 : 0;
     this.fuel = 100;
     this.zoneType = 'road'; // road | junction | market
     this.zoneTimer = 0;
@@ -215,8 +233,8 @@ export class Game {
     this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
-    this.speed = 2.2;
-    this.throttle = 0.35;
+    this.speed = 3.5;
+    this.throttle = 0.7;
     this.braking = false;
     this.frame = 0;
     this.roadOff = 0;
@@ -276,8 +294,8 @@ export class Game {
     if (this.renderer3d?.applyPaint) this.renderer3d.applyPaint(this.selectedPaint);
     if (this.renderer3d) this.renderer3d.introPhase = 0;
 
-    this.throttle = 0.35;
-    this.speed = 2.2;
+    this.throttle = 0.7;
+    this.speed = 3.5;
     this.state = STATE.PLAY;
     try {
       Audio.ensure();
@@ -408,6 +426,26 @@ export class Game {
     if (on && !was && this.speed > 2) Audio.brake();
   }
 
+  /** Hausa honorific for negotiation (not only Aboki) */
+  honorific(genderHint) {
+    try {
+      return pickHonorific(genderHint);
+    } catch (e) {
+      const list = ['Oga', 'Mai Gida', 'Mallam', 'Yallabai', 'Dan uwa', 'Aboki', 'Driver', 'Baba', 'Mama', 'Hajiya'];
+      return list[Math.floor(Math.random() * list.length)];
+    }
+  }
+
+  /** World X for lane index — matches renderer wide road */
+  laneX(lane) {
+    const i = Math.max(0, Math.min(2, Math.round(lane)));
+    return LANE_WORLD_X[i] ?? 0;
+  }
+
+  randomDest() {
+    return pickDestination();
+  }
+
   /** Prefer Controls module; dir < 0 = left, dir > 0 = right */
   changeLane(dir) {
     if (this.state !== STATE.PLAY && this.state !== STATE.INTRO) return;
@@ -433,25 +471,14 @@ export class Game {
       { name: 'Freedom Radio' }, { name: 'Arewa Radio' }, { name: 'Rahama Radio' },
       { name: 'Radio Kano' }, { name: 'Cool FM' }, { name: 'Express Radio' }
     ];
-    if (!Array.isArray(list) || list.length === 0) return;
-
     this.radioIndex = ((this.radioIndex || 0) + 1) % list.length;
     const st = list[this.radioIndex];
-
-    try {
-      Storage.setRadio(this.radioIndex);
-    } catch (e) {}
-
     this.ui.setRadio?.(st.name);
-    this.ui.showMissionToast('📻 ' + st.name);
-
     try {
       Audio.ensure();
       Audio.radioTune(st.name);
-      Audio.startRadioBed();
-    } catch (e) {
-      console.warn('Radio playback could not start:', e);
-    }
+    } catch (e) {}
+    this.ui.showMissionToast('📻 ' + st.name);
   }
 
   horn() {
@@ -1055,9 +1082,26 @@ export class Game {
   }
 
   // ——— Main loop ———
-  update() {
+  update(dt) {
     if (this.state === STATE.START || this.state === STATE.OVER || this.state === STATE.EVENT) {
       if (this.shake > 0) this.shake--;
+      return;
+    }
+    // Opening sequence: walk → board → start engine
+    if (this.state === STATE.INTRO) {
+      this.introT = (this.introT || 0) + 1;
+      if (this.renderer3d) {
+        this.renderer3d.introPhase = this.introT < 40 ? 0 : this.introT < 80 ? 1 : 2;
+      }
+      if (this.introT === 1) this.ui.showMissionToast('Walking to your keke…');
+      if (this.introT === 40) this.ui.showMissionToast('Getting in…');
+      if (this.introT === 80) {
+        this.ui.showMissionToast('Engine on — Sannu da aiki!');
+        try { Audio.startEngine(); } catch (e) {}
+      }
+      if (this.introT >= 110) {
+        this.finishIntro();
+      }
       return;
     }
 
@@ -1111,7 +1155,7 @@ export class Game {
     const tyreGrip = 1 - Math.min(0.25, (this.damageTyres || 0) / 100 * 0.25);
     const top = (7.2 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.5) * loadFactor * dmgFactor;
     // Base cruise so the road always moves; GAS raises speed, BRAKE stops
-    const baseCruise = this.braking ? 0 : 1.8;
+    const baseCruise = this.braking ? 0 : 3.2;
     let targetSpeed = baseCruise + Math.max(0.35, this.throttle) * (top - baseCruise);
     if (this.braking) targetSpeed = 0;
     if (this.trafficJamTimer > 0) targetSpeed *= 0.5;
@@ -1302,12 +1346,12 @@ export class Game {
     // Spawn traffic (denser during police chase)
     const chase = this.policeChase > 0;
     const peak = this.isPeakHour();
-    const spawnEvery = chase ? 40 : peak ? 50 : 70;
-    const spawnChance = chase ? 0.75 : peak ? 0.65 : 0.45;
+    const spawnEvery = chase ? 28 : peak ? 36 : 55;
+    const spawnChance = chase ? 0.9 : peak ? 0.85 : 0.55;
     if (this.frame % spawnEvery === 0 && Math.random() < spawnChance && this.trafficJamTimer <= 0) {
       let lane = Math.floor(Math.random() * 3);
       if (lane === this.playerLane && Math.random() < 0.5) lane = (lane + 1) % 3;
-      if (this.laneClear(lane, -80, 190)) {
+      if (this.laneClear(lane, -80, 150)) {
         let types = ['car', 'keke', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota', 'robber'];
         if (chase) types = ['police', 'karota', 'car', 'police', 'keke'];
         const type = types[Math.floor(Math.random() * types.length)];
