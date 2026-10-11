@@ -89,9 +89,14 @@ export class Controls {
     }
   }
 
-  // LANE_X [-4.2,0,4.2]: 0=left, 2=right — LEFT decreases lane index
-  steerLeft() { this.setTargetLane(this.targetLane - 1); }
-  steerRight() { this.setTargetLane(this.targetLane + 1); }
+  // Fixed to match on-screen LEFT/RIGHT (user: was inverted)
+  // Lane 0 = world -X = left side of road when camera is behind player
+  steerLeft() {
+    this.setTargetLane(this.targetLane + 1);
+  }
+  steerRight() {
+    this.setTargetLane(this.targetLane - 1);
+  }
 
   setTargetLane(n) {
     this.targetLane = Math.max(0, Math.min(this.laneCount - 1, Math.round(n)));
@@ -157,6 +162,7 @@ export class Controls {
     const dx = t.clientX - this._touchStartX;
     const dy = t.clientY - this._touchStartY;
     if (Math.abs(dx) < this.swipeMinPx || Math.abs(dx) < Math.abs(dy)) return;
+    // Swipe left on screen → steer left
     if (dx < 0) this.steerLeft();
     else this.steerRight();
   }

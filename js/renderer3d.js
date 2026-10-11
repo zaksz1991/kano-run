@@ -3,10 +3,10 @@ import * as THREE from 'three';
 import { AnimSystem } from './animation.js';
 import { ModelManager } from './ModelManager.js';
 
-// 3-lane TWO-WAY highway (wide enough for keke travel)
-// Lane 0 = LEFT (oncoming possible), 1 = CENTER, 2 = RIGHT
-export const LANE_X = [-4.2, 0, 4.2];
-const ROAD_WIDTH = 16;
+// 3-lane road — tighter so cars don't drive through sidewalk people
+// Lane 0 = LEFT, 1 = CENTER, 2 = RIGHT (+X = screen right)
+export const LANE_X = [-2.2, 0, 2.2];
+const ROAD_WIDTH = 8.5;
 const ROAD_LEN = 160;
 const PLAYER_Z = 7;
 
@@ -102,11 +102,13 @@ export class Renderer3D {
     this._applyRoadTexture();
 
     // 4. Rebuild roadside AFTER models loaded so market/bustop/pedestrian GLBs are used
+    this._glbPlaced = 0;
     if (this.buildings) {
       this.scene.remove(this.buildings);
       this.buildings = null;
     }
     this.buildCityscape();
+    this._printAssetReport();
     console.log('[KanoRun] Cityscape rebuilt with GLB preference');
   }
 
@@ -160,20 +162,41 @@ export class Renderer3D {
     return this.mat(fallbackColor || 0xeab308, { roughness: 0.7 });
   }
 
-  /** Place a GLB from ModelManager, or null if missing */
+  /** Place a real GLB only — never a box placeholder; feet on ground */
   _placeGlb(key, x, z, opts = {}) {
-    if (!this.models?.has?.(key)) return null;
+    if (!this.models?.has?.(key)) {
+      return null;
+    }
     try {
       const inst = this.models.getInstance(key, opts);
       if (!inst || inst.userData?.isPlaceholder) return null;
-      inst.position.set(x, opts.y || 0, z);
+      // Sit on ground (Y=0): re-align pivot if model still sunk
+      inst.position.set(x, 0, z);
+      inst.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(inst);
+      if (box.min.y < -0.02) inst.position.y -= box.min.y;
+      if (opts.y != null) inst.position.y = opts.y;
       if (opts.rotY != null) inst.rotation.y = opts.rotY;
-      if (opts.scale != null) inst.scale.multiplyScalar(opts.scale);
       this.buildings.add(inst);
+      this._glbPlaced = (this._glbPlaced || 0) + 1;
       return inst;
     } catch (e) {
+      console.warn('[KanoRun] place failed', key, e?.message);
       return null;
     }
+  }
+
+  /** Console report after integration */
+  _printAssetReport() {
+    const rep = this.models?.report?.() || { loaded: [], failed: [] };
+    const placed = this._glbPlaced || 0;
+    console.log('[KanoRun] === ASSET INTEGRATION REPORT ===');
+    console.log('  GLB loaded:', rep.loaded.join(', ') || '(none)');
+    console.log('  GLB failed:', rep.failed.join(', ') || '(none)');
+    console.log('  Environment GLB instances placed:', placed);
+    console.log('  Textures:', Object.keys(this.textureCache || {}).join(', ') || '(none)');
+    console.log('  If loaded is empty → files missing under public/models/ on Vercel');
+    window.KanoRunAssetReport = { ...rep, envPlaced: placed, textures: Object.keys(this.textureCache || {}) };
   }
 
   _applyRoadTexture() {
@@ -556,11 +579,11 @@ export class Renderer3D {
       'house', 'shop', 'market', 'busstop', 'house', 'mosque'
     ];
 
-    // Dense Kano roadside — markets, mosques, shops packed tight
+    // Roadside beyond road edge (ROAD_WIDTH/2 ≈ 4.25) so cars never clip people
     for (const side of [-1, 1]) {
       for (let i = 0; i < types.length * 2; i++) {
         const z = i * 4.0 + (side > 0 ? 1.2 : 0);
-        const xBase = side * (10.2 + (i % 4) * 0.4);
+        const xBase = side * (6.2 + (i % 4) * 0.35);
         const kind = types[i % types.length];
         if (kind === 'mosque') this.addMosque(xBase, z, side);
         else if (kind === 'market') this.addMarketStall(xBase, z, side);
@@ -568,15 +591,15 @@ export class Renderer3D {
         else if (kind === 'busstop') this.addBusStop(xBase, z, side);
         else if (kind === 'shop') this.addShop(xBase, z, side, colors[i % colors.length]);
         else this.addHouse(xBase, z, side, colors[i % colors.length]);
-        if (i % 2 === 0) this.addStreetLight(side * 5.0, z + 1.2);
-        if (i % 4 === 1) this.addBillboard(side * 5.2, z + 2.5);
+        if (i % 2 === 0) this.addStreetLight(side * 4.6, z + 1.2);
+        if (i % 4 === 1) this.addBillboard(side * 4.8, z + 2.5);
       }
     }
 
-    // Triple pedestrian density on shoulders
-    for (let i = 0; i < 90; i++) {
+    // People on sidewalk only — outside lane bounds (±2.2)
+    for (let i = 0; i < 70; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      this.addPedestrian(side * (4.4 + (i % 5) * 0.22), i * 2.4 + 1.0);
+      this.addPedestrian(side * (4.8 + (i % 4) * 0.2), i * 2.6 + 1.0);
     }
 
     // Kano-style city gates / welcome arches spanning the road

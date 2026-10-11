@@ -687,8 +687,8 @@ export class Game {
   // ——— 4. COLLISION TIERS ———
   applyCollisionImpact() {
     const tier = collisionTier(this.speed);
-    // Milder camera shake
-    this.triggerShake(Math.min(6, tier.shake * 0.45), Math.min(5, tier.shake / 3));
+    // Light shake only — no fake earthquake
+    this.triggerShake(Math.min(3, tier.shake * 0.25), Math.min(3, tier.shake / 4));
     this.applyDamage('body', tier.dmg * 0.6);
     this.applyDamage('engine', tier.dmg * 0.25);
     if (tier.tier === 'high' || tier.tier === 'critical') {
@@ -1206,15 +1206,18 @@ export class Game {
     const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
     const bonuses = this.getBonuses();
 
-    // Forward motion: always crawl unless braking (endless-runner feel + gas boost)
+    // Forward motion — always roll unless actively braking
     const loadFactor = 1 - Math.min(0.22, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.22);
     const dmgFactor = 1 - Math.min(0.4, (100 - (this.condition || 100)) / 100 * 0.45);
     const tyreGrip = 1 - Math.min(0.25, (this.damageTyres || 0) / 100 * 0.25);
-    const top = (7.2 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.5) * loadFactor * dmgFactor;
-    // Base cruise so the road always moves; GAS raises speed, BRAKE stops
-    const baseCruise = this.braking ? 0 : 3.2;
-    let targetSpeed = baseCruise + Math.max(0.35, this.throttle) * (top - baseCruise);
+    const top = (6.5 * (route.difficulty || 1) + (bonuses.speed || 0) * 2.5) * loadFactor * dmgFactor;
+    // Default throttle if unset so keke never sits at 0 km/h
+    if (this.throttle == null || this.throttle < 0.15) this.throttle = 0.55;
+    const baseCruise = this.braking ? 0 : 2.8;
+    let targetSpeed = baseCruise + Math.max(0.25, this.throttle) * (top - baseCruise);
     if (this.braking) targetSpeed = 0;
+    // Hard floor so world always scrolls in PLAY
+    if (!this.braking && targetSpeed < 2.2) targetSpeed = 2.2;
     if (this.trafficJamTimer > 0) targetSpeed *= 0.5;
     if (this.parkOnly) targetSpeed = Math.min(targetSpeed, 3.8);
     if (this.getDriver().ability === 'ruffneck' && this.getTimeOfDay() > 0.55) targetSpeed += 0.3;
