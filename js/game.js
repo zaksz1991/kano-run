@@ -684,21 +684,19 @@ export class Game {
   // ——— 4. COLLISION TIERS ———
   applyCollisionImpact() {
     const tier = collisionTier(this.speed);
-    // Light shake only — no fake earthquake
-    this.triggerShake(Math.min(3, tier.shake * 0.25), Math.min(3, tier.shake / 4));
-    this.applyDamage('body', tier.dmg * 0.6);
-    this.applyDamage('engine', tier.dmg * 0.25);
+    this.triggerShake(Math.min(3, (tier.shake || 2) * 0.3), Math.min(3, (tier.shake || 2) / 3));
+    this.applyDamage('body', (tier.dmg || 8) * 0.45);
+    this.applyDamage('engine', (tier.dmg || 8) * 0.2);
     if (tier.tier === 'high' || tier.tier === 'critical') {
-      this.applyDamage('tyres', tier.dmg * 0.2);
+      this.applyDamage('tyres', (tier.dmg || 8) * 0.15);
     }
-    this.speed *= tier.speedMul;
-    this.steerPenalty = tier.steerPenalty;
-    this.ui.showMissionToast(tier.msg);
+    // Never NaN speed
+    const mul = typeof tier.speedMul === 'number' ? tier.speedMul : 0.7;
+    this.speed = Math.max(1.2, (Number(this.speed) || 2.5) * mul);
+    this.steerPenalty = tier.steerPenalty || 0;
+    this.ui.showMissionToast(tier.msg || 'Hit!');
     Audio.crash();
     if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
-    if (tier.tier === 'critical' && this.condition < 20) {
-      this.onCrash();
-    }
   }
 
   triggerShake(frames = 12, mag = 6) {
@@ -1230,6 +1228,7 @@ export class Game {
       this.ui.showMissionToast('Low fuel — find petrol');
       Audio.voiceLowFuel();
     }
+    if (!Number.isFinite(this.speed)) this.speed = 2.5;
     this.speed = Math.max(this.braking ? 0 : 2.5, Math.min(this.speed, 10));
 
     // Condition warnings
@@ -1575,30 +1574,31 @@ export class Game {
     }
     this.coins = this.coins.filter((c) => c.y < h + 40 && !c.taken);
 
-    // Collisions
+    // Collisions — only when obstacle is near the keke (not far ahead)
     if (this.inv <= 0 && this.speed > 0.5) {
-      const pb = { x: this.playerX - 20, y: this.playerY - 32, w: 40, h: 60 };
+      const pb = { x: this.playerX - 16, y: this.playerY - 28, w: 32, h: 48 };
       for (const o of this.obs) {
+        // Ignore far traffic — must be close in screen Y
+        const dy = Math.abs(o.y - this.playerY);
+        if (dy > 55) continue;
+        if (Math.round(o.lane) !== this.playerLane) continue;
         const ox = this.laneX(Math.round(o.lane)) - o.w / 2;
-        if (this.rectHit(pb, { x: ox, y: o.y + 10, w: o.w * 0.85, h: o.h - 16 })) {
+        if (this.rectHit(pb, { x: ox, y: o.y + 12, w: o.w * 0.7, h: o.h * 0.55 })) {
           if (o.robber || o.type === 'robber') {
-            const theft = 100 + Math.floor(Math.random() * 250);
+            const theft = 80 + Math.floor(Math.random() * 180);
             this.score = Math.max(0, this.score - theft);
             this.ui.showMissionToast('Robber keke! -₦' + theft);
             Audio.alert();
             o.y = 9999;
-            if (Math.random() < 0.35) {
-              this.gameOver();
-              return;
-            }
-            this.inv = 40;
+            this.inv = 50;
+            // Robbers never auto-end the run
             continue;
           }
-          // Tiered collision: low / medium / high / critical
           this.applyCollisionImpact();
-          o.y += 50;
-          this.inv = this.speed < 2.5 ? 30 : 55;
-          if (this.condition < 15 || (this.speed > 7 && this.condition < 35)) {
+          o.y += 80; // push away so no multi-hit
+          this.inv = 45;
+          // Only end run if keke is almost destroyed
+          if (this.condition < 8) {
             this.gameOver();
             return;
           }

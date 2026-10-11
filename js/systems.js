@@ -198,10 +198,11 @@ export function generateRunMissions() {
 }
 
 export function collisionTier(speed) {
-  if (speed < 2.5) return { tier: 'low', dmg: 8, shake: 3, msg: 'Bump' };
-  if (speed < 4.5) return { tier: 'medium', dmg: 18, shake: 5, msg: 'Hit!' };
-  if (speed < 7) return { tier: 'high', dmg: 32, shake: 7, msg: 'Hard crash!' };
-  return { tier: 'critical', dmg: 48, shake: 9, msg: 'Severe impact!' };
+  const s = Number(speed) || 0;
+  if (s < 2.5) return { tier: 'low', dmg: 6, shake: 2, msg: 'Bump', speedMul: 0.85, steerPenalty: 0 };
+  if (s < 4.5) return { tier: 'medium', dmg: 12, shake: 3, msg: 'Hit!', speedMul: 0.7, steerPenalty: 8 };
+  if (s < 7) return { tier: 'high', dmg: 20, shake: 4, msg: 'Hard crash!', speedMul: 0.55, steerPenalty: 12 };
+  return { tier: 'critical', dmg: 28, shake: 5, msg: 'Severe impact!', speedMul: 0.4, steerPenalty: 16 };
 }
 
 export function radioAnnouncement(ctx = {}) {
