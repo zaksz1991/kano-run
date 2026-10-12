@@ -575,55 +575,67 @@ export class Renderer3D {
   }
 
   buildCityscape() {
-    this.buildings = new THREE.Group();
-    const colors = [0x1e293b, 0x273449, 0x334155, 0x3b4a5c, 0x1a2332, 0x445566, 0x5c4033];
+  this.buildings = new THREE.Group();
 
-    // Mixed Kano roadside: houses, shops, mosques, markets, petrol, bus stops
-    const types = [
-      'house', 'shop', 'house', 'market', 'house', 'mosque',
-      'shop', 'petrol', 'house', 'busstop', 'shop', 'house',
-      'market', 'house', 'shop', 'mosque', 'house', 'petrol',
-      'house', 'shop', 'market', 'busstop', 'house', 'mosque'
-    ];
+  const colors = [
+    0x1e293b, 0x273449, 0x334155, 0x3b4a5c,
+    0x1a2332, 0x445566, 0x5c4033
+  ];
 
-    // Roadside beyond road edge (ROAD_WIDTH/2 ≈ 4.25) so cars never clip people
-    for (const side of [-1, 1]) {
-      for (let i = 0; i < types.length * 2; i++) {
-        const z = i * 4.0 + (side > 0 ? 1.2 : 0);
-        const xBase = side * (6.2 + (i % 4) * 0.35);
-        const kind = types[i % types.length];
-        if (kind === 'mosque') this.addMosque(xBase, z, side);
-        else if (kind === 'market') this.addMarketStall(xBase, z, side);
-        else if (kind === 'petrol') this.addPetrol(xBase, z, side);
-        else if (kind === 'busstop') this.addBusStop(xBase, z, side);
-        else if (kind === 'shop') this.addShop(xBase, z, side, colors[i % colors.length]);
-        else this.addHouse(xBase, z, side, colors[i % colors.length]);
-        if (i % 2 === 0) this.addStreetLight(side * 4.6, z + 1.2);
-        if (i % 4 === 1) this.addBillboard(side * 4.8, z + 2.5);
+  const types = [
+    'house', 'shop', 'house', 'market', 'house', 'mosque',
+    'shop', 'petrol', 'house', 'busstop', 'shop', 'house',
+    'market', 'house', 'shop', 'mosque', 'house', 'petrol',
+    'house', 'shop', 'market', 'busstop', 'house', 'mosque'
+  ];
+
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < types.length * 2; i++) {
+      const z = i * 4.0 + (side > 0 ? 1.2 : 0);
+      const xBase = side * (6.2 + (i % 4) * 0.35);
+      const kind = types[i % types.length];
+
+      if (kind === 'mosque') {
+        this.addMosque(xBase, z, side);
+      } else if (kind === 'market') {
+        this.addMarketStall(xBase, z, side);
+      } else if (kind === 'petrol') {
+        this.addPetrol(xBase, z, side);
+      } else if (kind === 'busstop') {
+        this.addBusStop(xBase, z, side);
+      } else if (kind === 'shop') {
+        this.addShop(xBase, z, side, colors[i % colors.length]);
+      } else {
+        this.addHouse(xBase, z, side, colors[i % colors.length]);
+      }
+
+      if (i % 2 === 0) {
+        this.addStreetLight(side * 4.6, z + 1.2);
+      }
+
+      if (i % 4 === 1) {
+        this.addBillboard(side * 4.8, z + 2.5);
       }
     }
-
-    // People on sidewalk only — outside lane bounds (±2.2)
-    for (let i = 0; i < 70; i++) {
-      const side = i % 2 === 0 ? -1 : 1;
-      this.addPedestrian(side * (4.8 + (i % 4) * 0.2), i * 2.6 + 1.0);
-    }
-
-    // Kano-style city gates / welcome arches spanning the road
-    this.addCityGate(0, 28);
-    this.addCityGate(0, 72);
-    this.addWelcomePillar(-6.5, 45);
-    this.addWelcomePillar(6.5, 45);
-
-    this.scene.add(this.buildings);
-
-    this.sky = new THREE.Mesh(
-      new THREE.SphereGeometry(95, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x1a2744, side: THREE.BackSide })
-    );
-    this.sky.position.y = -2;
-    this.scene.add(this.sky);
   }
+
+  // Keep pedestrians outside the road and vehicle lanes.
+  for (let i = 0; i < 70; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    this.addPedestrian(
+      side * (4.8 + (i % 4) * 0.2),
+      i * 2.6 + 1.0
+    );
+  }
+
+  this.addCityGate(0, 28);
+  this.addCityGate(0, 72);
+  this.addWelcomePillar(-6.5, 45);
+  this.addWelcomePillar(6.5, 45);
+
+  // Add the environment without replacing the sky created by buildSky().
+  this.scene.add(this.buildings);
+}
 
   addCityGate(x, z) {
     const archCol = this.mat(0x7c2d12, { roughness: 0.85 });
