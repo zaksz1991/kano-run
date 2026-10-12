@@ -1,61 +1,55 @@
-/**
- * Kano Run boot — Controls + 3D
- * Game Developer: Hassan Zakariya
- */
-import { Game } from './game.js';
-import { Renderer3D } from './renderer3d.js';
-import { UI } from './ui.js';
-import { Audio } from './audio.js';
-import { Storage } from './storage.js';
-import { Controls } from './controls.js';
+import Game from "./game.js";
 
-Audio.muted = Storage.getMuted();
+let game = null;
 
-const canvas = document.getElementById('c');
-const game = new Game(canvas);
-const ui = new UI(game);
-game.ui = ui;
+function showFatalError(message) {
+  const status = document.getElementById("load-status");
+  const loading = document.getElementById("loading-screen");
 
-const controls = new Controls(game, { lanes: 3, laneLambda: 7, laneLerp: 0.18, swipeMinPx: 28 });
-game.controls = controls;
-controls.bind();
-
-let renderer;
-try {
-  renderer = new Renderer3D(game);
-  game.renderer3d = renderer;
-  console.log('Kano Run 3D active');
-} catch (err) {
-  console.error('Renderer failed', err);
-  renderer = { ready: false, draw() {}, render() {}, resize() {}, cycleCamera() { return 'chase'; } };
-  game.renderer3d = renderer;
-}
-
-function onResize() {
-  try { game.resize?.(); renderer?.resize?.(); } catch (e) {}
-}
-window.addEventListener('resize', onResize);
-onResize();
-
-let last = 0;
-function loop(ts) {
-  const dt = Math.min(32, (ts - last) || 16);
-  last = ts;
-  try {
-    controls.update();
-    game.update(dt);
-  } catch (err) {
-    console.error('update', err);
+  if (status) {
+    status.textContent = message;
   }
-  try {
-    if (renderer.draw) renderer.draw();
-    else if (renderer.render) renderer.render();
-  } catch (err) {
-    console.error('render', err);
-  }
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
 
-window.KanoRun = { game, ui, renderer, controls, mode: '3d' };
-console.log('Kano Run ready · controls bound');
+  if (loading) {
+    loading.style.display = "flex";
+  }
+
+  console.error("[Kano Run]", message);
+}
+
+async function boot() {
+  try {
+    if (!document.getElementById("c")) {
+      throw new Error('Canvas element "#c" was not found.');
+    }
+
+    game = new Game();
+
+    const loading = document.getElementById("loading-screen");
+    if (loading) {
+      loading.style.display = "none";
+    }
+
+    window.kanoRun = game;
+
+    window.addEventListener("beforeunload", () => {
+      game?.dispose();
+      game = null;
+    }, { once: true });
+
+  } catch (error) {
+    console.error("[Kano Run] Startup failed:", error);
+
+    showFatalError(
+      `Game startup failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot, { once: true });
+} else {
+  boot();
+}
