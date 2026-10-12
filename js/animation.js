@@ -3,7 +3,7 @@
  * Suspension, steering lean, wheel spin, pedestrian bob, officer gesture
  * Game Developer: Hassan Zakariya
  */
-import * as THREE from '../vendor/three.module.js';
+import * as THREE from 'three';
 
 export class AnimSystem {
   constructor() {
@@ -13,7 +13,6 @@ export class AnimSystem {
   tick(dt = 16) {
     this.t += dt * 0.001;
   }
-
   /** Apply living motion to player keke group */
   animatePlayer(player, g) {
     if (!player) return;
@@ -22,7 +21,6 @@ export class AnimSystem {
     const bounce = g.bounce > 0 ? Math.sin(g.bounce * 0.9) * 0.12 : 0;
     const susp = Math.sin(this.t * 14 + spd) * Math.min(0.05, spd * 0.008);
     const brakeDip = g.braking ? -0.04 : 0;
-
     player.position.y = bounce + susp + brakeDip;
     // Chassis lean into steer
     player.rotation.z = THREE.MathUtils.lerp(player.rotation.z || 0, -steer * 0.12, 0.15);
@@ -30,7 +28,6 @@ export class AnimSystem {
     // Pitch on accel/brake
     const pitch = g.braking ? 0.06 : (g.throttle > 0.7 ? -0.03 : 0);
     player.rotation.x = THREE.MathUtils.lerp(player.rotation.x || 0, pitch, 0.1);
-
     // Wheel spin
     const spin = spd * 0.4;
     player.traverse((ch) => {
@@ -45,7 +42,6 @@ export class AnimSystem {
     // Simple "driver" look: find first small box high up and nod
     // (procedural — real GLB would use AnimationMixer)
   }
-
   /** Bob / walk cycle for pedestrians parented under buildings group */
   animatePedestrians(group, roadOff = 0) {
     if (!group) return;
@@ -60,7 +56,6 @@ export class AnimSystem {
       i++;
     });
   }
-
   /** Officer stick wave for karota meshes */
   animateKarota(mesh) {
     if (!mesh) return;
