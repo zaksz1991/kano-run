@@ -143,12 +143,15 @@ export default class HUDSystem {
   }
 
   createElement(tag, className, parent, styles = {}) {
-    const element = document.createElement(tag);
+    const safeTag = (typeof tag === "string" && tag.trim()) ? tag.trim() : "div";
+    const element = document.createElement(safeTag);
 
     if (className) element.className = className;
 
-    Object.assign(element.style, styles);
-    parent.appendChild(element);
+    Object.assign(element.style, styles || {});
+    if (parent && typeof parent.appendChild === "function") {
+      parent.appendChild(element);
+    }
 
     return element;
   }

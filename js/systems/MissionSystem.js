@@ -118,38 +118,42 @@ export class MissionSystem {
   }
 
   bindEvents() {
-    if (!this.gameState || this.unsubscribe.length > 0) return;
+    if (this.unsubscribe.length > 0) return;
 
-    this.unsubscribe.push(
-      this.gameState.on("passengers:delivered", (payload) => {
-        this.recordProgress("deliveries", 1);
-        this.recordProgress("earnings", Number(payload?.fare) || 0);
-      }),
-    );
+    const bus = this.gameState && typeof this.gameState.on === "function"
+      ? this.gameState
+      : (this.eventBus && typeof this.eventBus.on === "function" ? this.eventBus : null);
 
-    this.unsubscribe.push(
-      this.gameState.on("traffic:near-miss", () => {
-        this.recordProgress("near_misses", 1);
-      }),
-    );
+    if (!bus) {
+      console.warn("[MissionSystem] No event bus for bindEvents — skipping");
+      return;
+    }
 
-    this.unsubscribe.push(
-      this.gameState.on("player:collision", () => {
-        this.checkNoCollisionMissions();
-      }),
-    );
+    const bind = (type, fn) => {
+      const unsub = bus.on(type, fn);
+      if (typeof unsub === "function") this.unsubscribe.push(unsub);
+    };
 
-    this.unsubscribe.push(
-      this.gameState.on("run:distance", (payload) => {
-        this.recordProgress("distance", Number(payload?.added) || 0);
-      }),
-    );
+    bind("passengers:delivered", (payload) => {
+      this.recordProgress("deliveries", 1);
+      this.recordProgress("earnings", Number(payload?.fare) || 0);
+    });
 
-    this.unsubscribe.push(
-      this.gameState.on("run:finished", (run) => {
-        this.evaluateRunEnd(run);
-      }),
-    );
+    bind("traffic:near-miss", () => {
+      this.recordProgress("near_misses", 1);
+    });
+
+    bind("player:collision", () => {
+      this.checkNoCollisionMissions();
+    });
+
+    bind("run:distance", (payload) => {
+      this.recordProgress("distance", Number(payload?.added) || 0);
+    });
+
+    bind("run:finished", (run) => {
+      this.evaluateRunEnd(run);
+    });
   }
 
   update(deltaSeconds) {

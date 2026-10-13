@@ -136,6 +136,25 @@ export default class GameState {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Event-style API used by MissionSystem and others.
+   * on(type, callback) → unsubscribe function
+   */
+  on(type, callback) {
+    if (typeof callback !== "function") {
+      throw new TypeError("GameState.on callback must be a function.");
+    }
+    const handler = (event) => {
+      if (!event || event.type !== type) return;
+      callback(event.payload, event);
+    };
+    return this.subscribe(handler);
+  }
+
+  off(_type, _callback) {
+    // Unsubscribe is returned from on(); kept for API compatibility
+  }
+
   setPhase(phase) {
     if (this.destroyed || this.phase === phase) return;
 
