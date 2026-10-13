@@ -3,19 +3,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
 import { MODEL_PATHS, MODEL_SCALES } from "../core/AssetCatalog.js";
 
-const DEFAULTS = {
-  maxVehicles: 40,
-  spawnDistance: 150,
-  despawnDistance: 65,
-  laneWidth: 3.2,
-  roadWidth: 12,
-  playerCollisionRadius: 1.1,
-  minimumSpawnGap: 16,
-  vehicleCollisionGap: 8,
-  maxSpawnAttempts: 12,
-};
+const DEFAULTS = { maxVehicles: 40, spawnDistance: 150, despawnDistance: 65, laneWidth: 3.2, roadWidth: 12, playerCollisionRadius: 1.1, minimumSpawnGap: 16, vehicleCollisionGap: 8, maxSpawnAttempts: 12 };
 
-// 🔥 TRAFFIC SPECS: Mapped to your GLB models via AssetCatalog
 const VEHICLE_SPECS = {
   car: { width: 1.8, height: 1.45, length: 4.1, maxSpeed: 23, acceleration: 2.2, weight: 1.2, color: [0xc0392b, 0x2471a3, 0xf4d03f, 0xecf0f1, 0x273746], modelPath: MODEL_PATHS.traffic.car, modelScale: MODEL_SCALES.traffic.car },
   car1: { width: 1.8, height: 1.45, length: 4.1, maxSpeed: 22, acceleration: 2.0, weight: 1.2, color: [0x2980b9, 0x8e44ad, 0x16a085], modelPath: MODEL_PATHS.traffic.car1, modelScale: MODEL_SCALES.traffic.car1 },
@@ -51,7 +40,6 @@ export default class VehicleSystem {
     this._cachedWeightEntries = Object.entries(this.spawnWeights);
     this._totalSpawnWeight = this._cachedWeightEntries.reduce((sum, [, weight]) => sum + weight, 0);
     
-    // 🔥 GLB Loader & Cache
     this._glbLoader = new GLTFLoader(); 
     this._modelCache = new Map();
     
@@ -108,7 +96,7 @@ export default class VehicleSystem {
     vehicle.changeLaneTimer = randomBetween(3, 8); vehicle.stopped = false;
 
     vehicle.group.position.set(this._laneX(lane), 0, z);
-    vehicle.group.rotation.y = Math.PI; // 🔥 FIX: Face forward (+Z)
+    vehicle.group.rotation.y = Math.PI;
 
     this.vehicles.set(vehicle.id, vehicle); this.scene.add(vehicle.group);
     this.eventBus?.emit?.("vehicle:spawned", { id: vehicle.id, type: vehicle.type, lane: vehicle.lane, z: vehicle.z, speed: vehicle.speed });
@@ -132,7 +120,7 @@ export default class VehicleSystem {
     for (const vehicle of this.vehicles.values()) {
       this._updateLaneChange(vehicle, dt); this._updateFollowing(vehicle, dt);
       if (vehicle.stopped) vehicle.speed = Math.max(0, vehicle.speed - 5 * dt);
-      vehicle.z += vehicle.speed * dt; // 🔥 FIX: Move FORWARD (+Z)
+      vehicle.z += vehicle.speed * dt;
       vehicle.group.position.x = THREE.MathUtils.damp(vehicle.group.position.x, this._laneX(vehicle.targetLane), 5, dt);
       vehicle.group.position.z = vehicle.z;
       this._avoidVehicleAhead(vehicle, dt); this._checkPlayerProximity(vehicle);
@@ -196,7 +184,7 @@ export default class VehicleSystem {
     }
   }
 
-  // 🔥 GLB LOADING & CACHING
+  // 🔥 ROBUST MODEL LOADER FOR TRAFFIC
   async _createVehicle(type) {
     const spec = VEHICLE_SPECS[type];
     const cacheKey = spec.modelPath;
@@ -210,14 +198,32 @@ export default class VehicleSystem {
     }
     
     const group = gltf.scene.clone(true);
-    if (spec.modelScale) group.scale.setScalar(spec.modelScale);
-    const color = choose(spec.color);
     
-    // Apply stylized flat shading to the cloned model
+    // 1. Auto-scale and Center
+    const box = new THREE.Box3().setFromObject(group);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    let finalScale = spec.modelScale || 1.0;
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 10 || maxDim < 0.5) {
+      const targetSize = type === 'bus' || type === 'truck' ? 4.0 : 2.5;
+      finalScale = (targetSize / maxDim) * (spec.modelScale || 1.0);
+    }
+    group.scale.setScalar(finalScale);
+
+    const scaledBox = new THREE.Box3().setFromObject(group);
+    group.position.x = -scaledBox.getCenter(new THREE.Vector3()).x;
+    group.position.y = -scaledBox.min.y;
+    group.position.z = -scaledBox.getCenter(new THREE.Vector3()).z;
+
+    // 2. Apply Materials
+    const color = choose(spec.color);
     group.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true; child.receiveShadow = true;
         if (child.material) {
+          child.material.side = THREE.DoubleSide; // Prevent invisible faces
           const material = child.material.clone();
           material.color.set(color); material.roughness = 0.85; material.metalness = 0.0; material.flatShading = true;
           child.material = material;
