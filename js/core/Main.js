@@ -1,4 +1,4 @@
-import "./core/Main.js";
+import Game from "./Game.js";
 
 class KanoRunApp {
   constructor() {
