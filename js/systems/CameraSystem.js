@@ -14,14 +14,14 @@ export default class CameraSystem {
     this.context = ctx;
 
     this.options = {
-      followDistance: 9.5,
-      followHeight: 5.2,
-      lookAhead: 10,
-      positionSmoothness: 5,
-      rotationSmoothness: 4,
-      fieldOfView: 65,
-      minimumHeight: 2.5,
-      maximumHeight: 12,
+      followDistance: 9.0,
+      followHeight: 4.0,
+      lookAhead: 12,
+      positionSmoothness: 4.5,
+      rotationSmoothness: 5,
+      fieldOfView: 58,
+      minimumHeight: 2.2,
+      maximumHeight: 10,
       collisionShakeDuration: 0.35,
       collisionShakeIntensity: 0.3,
       ...options,
@@ -140,23 +140,23 @@ export default class CameraSystem {
     switch (this.cameraMode) {
       case "close":
         return {
-          distance: 5.5,
-          height: 3.2,
-          lookAhead: 8,
+          distance: 5.2,
+          height: 2.8,
+          lookAhead: 9,
         };
 
       case "cinematic":
         return {
-          distance: 13,
-          height: 7,
-          lookAhead: 13,
+          distance: 12,
+          height: 5.5,
+          lookAhead: 14,
         };
 
       case "overhead":
         return {
-          distance: 2,
-          height: 11,
-          lookAhead: 1,
+          distance: 1.5,
+          height: 14,
+          lookAhead: 2,
         };
 
       case "chase":
@@ -194,7 +194,8 @@ export default class CameraSystem {
       .copy(targetPosition)
       .addScaledVector(forward, offsets.lookAhead);
 
-    this.lookTarget.y += 1.1;
+    // Bias look-at toward the road surface for a grounded drive feel
+    this.lookTarget.y += 0.55;
 
     return this.lookTarget;
   }

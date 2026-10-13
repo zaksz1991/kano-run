@@ -42,24 +42,24 @@ export default class LightingSystem {
         fogDensity: 0.009,
       },
       day: {
-        background: 0x87ceeb,
-        fog: 0xc7dce5,
-        ambient: 1.1,
-        hemisphere: 1.2,
-        sun: 2.2,
-        sunColor: 0xfff1d0,
-        groundColor: 0x8b806d,
-        fogDensity: 0.003,
+        background: 0x7eb6d9,
+        fog: 0xc8d5c0,
+        ambient: 0.95,
+        hemisphere: 1.05,
+        sun: 1.85,
+        sunColor: 0xffe4b5,
+        groundColor: 0x9a8560,
+        fogDensity: 0.0045,
       },
       dusk: {
-        background: 0xd58b70,
-        fog: 0xd58b70,
-        ambient: 0.55,
-        hemisphere: 0.7,
-        sun: 0.9,
-        sunColor: 0xffa36b,
-        groundColor: 0x63594e,
-        fogDensity: 0.006,
+        background: 0xd4895c,
+        fog: 0xc9a07a,
+        ambient: 0.5,
+        hemisphere: 0.65,
+        sun: 0.85,
+        sunColor: 0xff9a5a,
+        groundColor: 0x6b5344,
+        fogDensity: 0.007,
       },
       night: {
         background: 0x071426,
@@ -133,8 +133,8 @@ export default class LightingSystem {
       this.options.sunIntensity
     );
 
-    sun.position.set(-35, 55, -25);
-    sun.target.position.set(0, 0, 20);
+    sun.position.set(-30, 48, -20);
+    sun.target.position.set(0, 0, 15);
 
     sun.castShadow = this.options.enableShadows;
 
@@ -142,16 +142,17 @@ export default class LightingSystem {
       sun.shadow.mapSize.width = this.options.shadowMapSize;
       sun.shadow.mapSize.height = this.options.shadowMapSize;
 
-      sun.shadow.camera.left = -45;
-      sun.shadow.camera.right = 45;
-      sun.shadow.camera.top = 60;
-      sun.shadow.camera.bottom = -60;
+      sun.shadow.camera.left = -40;
+      sun.shadow.camera.right = 40;
+      sun.shadow.camera.top = 50;
+      sun.shadow.camera.bottom = -50;
 
-      sun.shadow.camera.near = 0.5;
-      sun.shadow.camera.far = 160;
+      sun.shadow.camera.near = 1;
+      sun.shadow.camera.far = 140;
 
-      sun.shadow.bias = -0.0002;
-      sun.shadow.normalBias = 0.025;
+      sun.shadow.bias = -0.00015;
+      sun.shadow.normalBias = 0.04;
+      sun.shadow.radius = 2;
     }
 
     this.scene.add(sun);

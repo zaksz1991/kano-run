@@ -10,8 +10,8 @@ export default class SceneManager {
     this.camera = null;
     this.renderer = null;
 
-    this.backgroundColor = options.backgroundColor ?? 0x87ceeb;
-    this.fogColor = options.fogColor ?? 0xc4d7df;
+    this.backgroundColor = options.backgroundColor ?? 0x87b8d8;
+    this.fogColor = options.fogColor ?? 0xc5d4c8;
 
     this.destroyed = false;
     this.resizeHandler = null;
@@ -31,8 +31,8 @@ export default class SceneManager {
 
     this.scene.fog = new THREE.Fog(
       this.fogColor,
-      options.fogNear ?? 45,
-      options.fogFar ?? 220
+      options.fogNear ?? 35,
+      options.fogFar ?? 160
     );
 
     this.camera = new THREE.PerspectiveCamera(
@@ -74,7 +74,12 @@ export default class SceneManager {
 
     if ("toneMapping" in this.renderer && THREE.ACESFilmicToneMapping) {
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.renderer.toneMappingExposure = 1;
+      this.renderer.toneMappingExposure = 1.15;
+    }
+
+    // Slightly sharper on mid-range mobiles without crushing blacks
+    if ("physicallyCorrectLights" in this.renderer) {
+      this.renderer.physicallyCorrectLights = true;
     }
 
     const container =
@@ -109,38 +114,17 @@ export default class SceneManager {
   createDefaultLighting() {
     const THREE = this.THREE;
 
+    // Soft hemisphere only — full sun/fill comes from LightingSystem
+    // (avoids double-bright overlapping directional lights)
     const ambient = new THREE.HemisphereLight(
-      0xe4f2ff,
-      0x74604a,
-      1.6
+      0xd8e8f5,
+      0x8a7355,
+      0.55
     );
 
     ambient.name = "kano-ambient-light";
     this.scene.add(ambient);
-
-    const sunlight = new THREE.DirectionalLight(0xfff0d5, 2.1);
-
-    sunlight.name = "kano-sunlight";
-    sunlight.position.set(-35, 55, 25);
-    sunlight.castShadow = true;
-
-    sunlight.shadow.mapSize.set(1024, 1024);
-    sunlight.shadow.camera.near = 1;
-    sunlight.shadow.camera.far = 150;
-    sunlight.shadow.camera.left = -45;
-    sunlight.shadow.camera.right = 45;
-    sunlight.shadow.camera.top = 55;
-    sunlight.shadow.camera.bottom = -55;
-
-    this.scene.add(sunlight);
-    this.scene.add(sunlight.target);
-
-    const fill = new THREE.DirectionalLight(0xb9dcff, 0.45);
-
-    fill.name = "kano-fill-light";
-    fill.position.set(30, 18, -25);
-
-    this.scene.add(fill);
+    this._defaultHemisphere = ambient;
   }
 
   getAspectRatio() {
