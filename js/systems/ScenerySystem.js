@@ -381,32 +381,59 @@ export default class ScenerySystem {
   _buildRoadside(segment) {
     const palette = this._getPalette();
     const length = this.config.segmentLength;
-    const spacing = this.config.propSpacing;
+    const spacing = Math.min(this.config.propSpacing || 8, 7);
+    const theme = this.currentTheme || "city";
 
     for (const side of [-1, 1]) {
       for (
-        let localZ = -length / 2 + 3;
+        let localZ = -length / 2 + 2;
         localZ < length / 2;
         localZ += spacing
       ) {
-        if (Math.random() > 0.78) continue;
+        if (Math.random() > 0.88) continue;
 
-        const x = side * randomBetween(9, 24);
-        const z = localZ + randomBetween(-1.5, 1.5);
+        const x = side * randomBetween(8.5, 22);
+        const z = localZ + randomBetween(-1.2, 1.2);
         const roll = Math.random();
 
-        if (roll < 0.22) {
+        // Theme-weighted Kano landmarks
+        if (theme === "market" && roll < 0.28) {
+          this._addStreetStall(segment, x, z, side);
+        } else if (theme === "market" && roll < 0.4) {
+          this._addShop(segment, x, z, side, palette);
+        } else if (roll < 0.08) {
+          this._addMosque(segment, x, z, side, palette);
+        } else if (roll < 0.14) {
+          this._addCityGate(segment, x, z, side, palette);
+        } else if (roll < 0.2) {
+          this._addPetrolStation(segment, x, z, side, palette);
+        } else if (roll < 0.38) {
+          this._addShop(segment, x, z, side, palette);
+        } else if (roll < 0.52) {
           this._addBuilding(segment, x, z, side, palette);
-        } else if (roll < 0.44) {
-          this._addTree(segment, x, z, palette);
-        } else if (roll < 0.58) {
+        } else if (roll < 0.64) {
+          this._addStreetStall(segment, x, z, side);
+        } else if (roll < 0.74) {
           this._addWall(segment, x, z, side, palette);
-        } else if (roll < 0.72) {
-          this._addStreetStall(segment, x, z, side, palette);
         } else if (roll < 0.84) {
+          this._addTree(segment, x, z, palette);
+        } else if (roll < 0.92) {
           this._addStreetLight(segment, x, z);
         } else {
           this._addRoadsideSign(segment, x, z, side);
+        }
+      }
+
+      // Always at least one landmark-ish prop per side per segment
+      if (Math.random() < 0.55) {
+        const lx = side * randomBetween(11, 18);
+        const lz = randomBetween(-length / 3, length / 3);
+        if (theme === "market") {
+          this._addStreetStall(segment, lx, lz, side);
+        } else if (Math.random() < 0.35) {
+          this._addMosque(segment, lx, lz, side, palette);
+        } else {
+          this._addShop(segment, lx, lz, side, palette);
         }
       }
     }
@@ -799,6 +826,199 @@ export default class ScenerySystem {
       reducedVisibility: isStorm || isHarmattan,
     });
   }
+
+
+  /** Small mosque with minaret — Kano identity */
+  _addMosque(segment, x, z, side, palette) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+
+    const bodyW = randomBetween(5, 8);
+    const bodyD = randomBetween(5, 7);
+    const bodyH = randomBetween(3.5, 5);
+
+    const body = this._mesh(
+      "mosque-body",
+      this._geometry("box", () => new THREE.BoxGeometry(bodyW, bodyH, bodyD)),
+      makeMaterial(choose([0xe8dcc8, 0xf5f0e6, 0xd4c4a8])),
+    );
+    body.position.y = bodyH / 2;
+    body.castShadow = true;
+    group.add(body);
+
+    const dome = this._mesh(
+      "mosque-dome",
+      this._geometry("sphere", () => new THREE.SphereGeometry(bodyW * 0.28, 10, 8)),
+      makeMaterial(choose([0xc9a227, 0xd4af37, 0xb8860b])),
+    );
+    dome.position.y = bodyH + bodyW * 0.15;
+    dome.scale.y = 0.7;
+    dome.castShadow = true;
+    group.add(dome);
+
+    const minaret = this._mesh(
+      "minaret",
+      this._geometry("cylinder", () => new THREE.CylinderGeometry(0.35, 0.45, bodyH * 1.6, 8)),
+      makeMaterial(0xe8dcc8),
+    );
+    minaret.position.set(side * (bodyW * 0.45), bodyH * 0.8, bodyD * 0.35);
+    minaret.castShadow = true;
+    group.add(minaret);
+
+    const minaretCap = this._mesh(
+      "minaret-cap",
+      this._geometry("sphere", () => new THREE.SphereGeometry(0.4, 8, 6)),
+      makeMaterial(0xc9a227),
+    );
+    minaretCap.position.set(side * (bodyW * 0.45), bodyH * 1.6, bodyD * 0.35);
+    group.add(minaretCap);
+
+    const door = this._mesh(
+      "mosque-door",
+      this._geometry("box", () => new THREE.BoxGeometry(1.2, 2.2, 0.15)),
+      makeMaterial(0x5c4033),
+    );
+    door.position.set(0, 1.1, -bodyD / 2 - 0.05);
+    group.add(door);
+
+    segment.group.add(group);
+    segment.props.push(group);
+  }
+
+  _addCityGate(segment, x, z, side, palette) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+
+    const colH = randomBetween(5, 7);
+    const colMat = makeMaterial(choose([0xc4a574, 0xd2b48c, 0xb8956c]));
+
+    for (const sx of [-1, 1]) {
+      const col = this._mesh(
+        "gate-col",
+        this._geometry("box", () => new THREE.BoxGeometry(1.2, colH, 1.2)),
+        colMat,
+      );
+      col.position.set(sx * 2.2, colH / 2, 0);
+      col.castShadow = true;
+      group.add(col);
+    }
+
+    const beam = this._mesh(
+      "gate-beam",
+      this._geometry("box", () => new THREE.BoxGeometry(5.5, 1.2, 1.4)),
+      colMat,
+    );
+    beam.position.y = colH + 0.4;
+    beam.castShadow = true;
+    group.add(beam);
+
+    const top = this._mesh(
+      "gate-top",
+      this._geometry("box", () => new THREE.BoxGeometry(6, 0.5, 1.6)),
+      makeMaterial(0xa67c52),
+    );
+    top.position.y = colH + 1.2;
+    group.add(top);
+
+    segment.group.add(group);
+    segment.props.push(group);
+  }
+
+  _addShop(segment, x, z, side, palette) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+
+    const w = randomBetween(3.5, 6);
+    const d = randomBetween(3, 5);
+    const h = randomBetween(2.8, 4.5);
+
+    const body = this._mesh(
+      "shop-body",
+      this._geometry("box", () => new THREE.BoxGeometry(w, h, d)),
+      makeMaterial(choose(palette.building)),
+    );
+    body.position.y = h / 2;
+    body.castShadow = true;
+    group.add(body);
+
+    const awning = this._mesh(
+      "shop-awning",
+      this._geometry("box", () => new THREE.BoxGeometry(w + 0.4, 0.1, 1.4)),
+      makeMaterial(choose([0xc0392b, 0x27ae60, 0xf39c12, 0x2980b9])),
+    );
+    awning.position.set(0, h * 0.65, -d / 2 - 0.5);
+    awning.rotation.x = 0.15;
+    awning.castShadow = true;
+    group.add(awning);
+
+    const front = this._mesh(
+      "shop-front",
+      this._geometry("box", () => new THREE.BoxGeometry(w * 0.7, h * 0.45, 0.1)),
+      makeMaterial(0x1a1a1a),
+    );
+    front.position.set(0, h * 0.35, -d / 2 - 0.05);
+    group.add(front);
+
+    const sign = this._mesh(
+      "shop-sign",
+      this._geometry("box", () => new THREE.BoxGeometry(w * 0.8, 0.45, 0.12)),
+      makeMaterial(choose([0xf1c40f, 0xe74c3c, 0x3498db])),
+    );
+    sign.position.set(0, h * 0.85, -d / 2 - 0.15);
+    group.add(sign);
+
+    segment.group.add(group);
+    segment.props.push(group);
+  }
+
+  _addPetrolStation(segment, x, z, side, palette) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+
+    const canopy = this._mesh(
+      "petrol-canopy",
+      this._geometry("box", () => new THREE.BoxGeometry(8, 0.2, 5)),
+      makeMaterial(0xf1c40f),
+    );
+    canopy.position.y = 4.2;
+    canopy.castShadow = true;
+    group.add(canopy);
+
+    for (const sx of [-3, 3]) {
+      for (const sz of [-1.5, 1.5]) {
+        const post = this._mesh(
+          "petrol-post",
+          this._geometry("cylinder", () => new THREE.CylinderGeometry(0.12, 0.12, 4, 6)),
+          makeMaterial(0x555555),
+        );
+        post.position.set(sx, 2, sz);
+        group.add(post);
+      }
+    }
+
+    for (const sx of [-1.5, 1.5]) {
+      const pump = this._mesh(
+        "pump",
+        this._geometry("box", () => new THREE.BoxGeometry(0.6, 1.4, 0.5)),
+        makeMaterial(0xe74c3c),
+      );
+      pump.position.set(sx, 0.7, 0);
+      pump.castShadow = true;
+      group.add(pump);
+    }
+
+    const kiosk = this._mesh(
+      "petrol-kiosk",
+      this._geometry("box", () => new THREE.BoxGeometry(2.5, 2.5, 2)),
+      makeMaterial(0xecf0f1),
+    );
+    kiosk.position.set(side * 3, 1.25, 1.5);
+    group.add(kiosk);
+
+    segment.group.add(group);
+    segment.props.push(group);
+  }
+
 
   dispose() {
     for (const dispose of this.disposers) {
