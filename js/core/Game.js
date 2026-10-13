@@ -25,11 +25,18 @@ export default class Game {
     this.sceneManager = null;
     this.systems = new Map();
 
+    // Game State
     this.isInitialized = false;
     this.isRunning = false;
     this.isPaused = false;
     this.isDestroyed = false;
+    
+    // Phase Management for Opening Sequence & Gameplay
+    this.phase = "intro"; // 'intro', 'playing', 'paused', 'gameover'
+    this.introTime = 0;
+    this.introDuration = 6.0; // Seconds for the opening sequence (walking to keke)
 
+    // Loop
     this.animationFrame = null;
     this.previousTime = 0;
     this.accumulator = 0;
@@ -139,7 +146,7 @@ export default class Game {
   }
 
   async initializeSystems() {
-    // 🔥 FIX: Player, Camera, Road, and Traffic MUST be critical so they are ready for bootstrap
+    //  CRITICAL SYSTEMS: Loaded first to ensure gameplay works
     const criticalSystems = [
       ["progression", () => import("../systems/ProgressionSystem.js")],
       ["routes", () => import("../systems/RouteSystem.js")],
@@ -150,6 +157,7 @@ export default class Game {
       ["camera", () => import("../systems/CameraSystem.js")],
       ["traffic", () => import("../systems/TrafficSystem.js")],
       ["collision", () => import("../systems/CollisionSystem.js")],
+      ["passengers", () => import("../systems/PassengerSystem.js")],
     ];
 
     const criticalPromises = criticalSystems.map(async ([name, loadModule]) => {
@@ -165,7 +173,7 @@ export default class Game {
       await system.initialize?.(this.getSystemContext());
     }
 
-    // Load remaining non-essential systems in background (non-blocking)
+    //  SECONDARY SYSTEMS: Loaded in background
     const remainingSystems = [
       ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
@@ -174,7 +182,6 @@ export default class Game {
       ["routeGeneration", () => import("../systems/RouteGenerationSystem.js")],
       ["vehicles", () => import("../systems/VehicleSystem.js")],
       ["driving", () => import("../systems/DrivingSystem.js")],
-      ["passengers", () => import("../systems/PassengerSystem.js")],
       ["economy", () => import("../systems/EconomySystem.js")],
       ["missions", () => import("../systems/MissionSystem.js")],
       ["garage", () => import("../systems/GarageSystem.js")],
@@ -200,12 +207,12 @@ export default class Game {
       }
     });
 
-    // 🔥 FIX: Now player and camera are GUARANTEED to be loaded before we bootstrap them
+    // Bootstrap player and camera
     try {
       const player = this.systems.get("playerVehicle");
       if (player) {
         player.initialize?.({ lane: 1, z: 0 });
-        player.start?.();
+        // Note: We don't call player.start() yet; that happens after the intro
       }
       const cam = this.systems.get("camera");
       if (cam && player) cam.setTarget?.(player);
@@ -226,7 +233,10 @@ export default class Game {
 
     this.isPaused = false;
     this.isRunning = true;
+    this.phase = "intro"; // Start with opening sequence
+    this.introTime = 0;
 
+    // Bind juice events
     if (this.events?.on && !this._juiceBound) {
       this._juiceBound = true;
       this.events.on("collision:near-miss", () => {
@@ -277,37 +287,55 @@ export default class Game {
   update(delta) {
     this.state.update?.(delta);
 
-    const player = this.systems.get("playerVehicle");
-    const playerZ = Number(player?.position?.z) || 0;
-    const speed = Number(player?.speed) || Number(this.state.run?.speed) || 0;
+    // 🔥 PHASE MANAGEMENT
+    if (this.phase === "intro") {
+      this.introTime += delta;
+      
+      // Update intro-specific systems (e.g., camera pan, character walking)
+      const cameraSystem = this.systems.get("camera");
+      if (cameraSystem) cameraSystem.updateIntro?.(delta, this.introTime);
 
-    try {
-      this.state.run && (this.state.run.speed = speed);
-      this.state.setSpeed?.(speed);
-    } catch (e) {}
-
-    for (const [name, system] of this.systems) {
-      if (system.enabled === false) continue;
-      if (name === "world") {
-        system.update?.(delta, speed);
-      } else if (name === "road" || name === "scenery" || name === "traffic") {
-        system.update?.(delta, playerZ);
-      } else {
-        system.update?.(delta);
+      // Transition to gameplay after intro duration
+      if (this.introTime >= this.introDuration) {
+        this.phase = "playing";
+        const player = this.systems.get("playerVehicle");
+        if (player) player.start?.(); // Start the engine/movement
+        this.events.emit("game:intro-complete");
       }
+    } 
+    else if (this.phase === "playing") {
+      const player = this.systems.get("playerVehicle");
+      const playerZ = Number(player?.position?.z) || 0;
+      const speed = Number(player?.speed) || Number(this.state.run?.speed) || 0;
+
+      try {
+        this.state.run && (this.state.run.speed = speed);
+        this.state.setSpeed?.(speed);
+      } catch (e) {}
+
+      for (const [name, system] of this.systems) {
+        if (system.enabled === false) continue;
+        if (name === "world") {
+          system.update?.(delta, speed);
+        } else if (name === "road" || name === "scenery" || name === "traffic" || name === "passengers") {
+          system.update?.(delta, playerZ);
+        } else {
+          system.update?.(delta);
+        }
+      }
+
+      this.saveManager.updateProfile?.(this.state.getProfile?.() ?? {}, { autosave: true });
+
+      try {
+        if (player && this.audio?.updateEngine) {
+          this.audio.updateEngine(player.speed || 0, player.preset?.maxSpeed || 34);
+        }
+        const ratio = Math.min(1, Math.abs(player?.speed || 0) / Math.max(1, player?.preset?.maxSpeed || 34));
+        this.sceneManager?.post?.setSpeedAberration?.(ratio);
+      } catch (e) {}
+
+      this.events.emit("game:updated", { delta });
     }
-
-    this.saveManager.updateProfile?.(this.state.getProfile?.() ?? {}, { autosave: true });
-
-    try {
-      if (player && this.audio?.updateEngine) {
-        this.audio.updateEngine(player.speed || 0, player.preset?.maxSpeed || 34);
-      }
-      const ratio = Math.min(1, Math.abs(player?.speed || 0) / Math.max(1, player?.preset?.maxSpeed || 34));
-      this.sceneManager?.post?.setSpeedAberration?.(ratio);
-    } catch (e) {}
-
-    this.events.emit("game:updated", { delta });
 
     this.sceneManager?.govern?.(delta);
   }
@@ -323,6 +351,7 @@ export default class Game {
   pause() {
     if (!this.isRunning || this.isPaused) return;
     this.isPaused = true;
+    this.phase = "paused";
     for (const system of this.systems.values()) system.pause?.();
     this.events.emit("game:paused");
   }
@@ -330,6 +359,7 @@ export default class Game {
   resume() {
     if (!this.isRunning || !this.isPaused) return;
     this.isPaused = false;
+    this.phase = "playing";
     this.previousTime = performance.now();
     for (const system of this.systems.values()) system.resume?.();
     this.events.emit("game:resumed");
@@ -361,6 +391,8 @@ export default class Game {
     if (this.isDestroyed) throw new Error("Cannot restart a destroyed game.");
     this.stop();
     this.isPaused = false;
+    this.phase = "intro";
+    this.introTime = 0;
     for (const system of this.systems.values()) await system.reset?.();
     await this.state.reset?.();
     return this.start();
