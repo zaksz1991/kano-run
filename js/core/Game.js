@@ -25,17 +25,15 @@ export default class Game {
     this.sceneManager = null;
     this.systems = new Map();
 
-    // Game State & Phase Management (For Opening Sequence & Gameplay)
     this.isInitialized = false;
     this.isRunning = false;
     this.isPaused = false;
     this.isDestroyed = false;
     
-    this.phase = "intro"; // 'intro', 'playing', 'paused', 'gameover'
+    this.phase = "intro";
     this.introTime = 0;
-    this.introDuration = 6.0; // Seconds for the opening sequence (walking to keke)
+    this.introDuration = 6.0;
 
-    // Loop
     this.animationFrame = null;
     this.previousTime = 0;
     this.accumulator = 0;
@@ -141,11 +139,12 @@ export default class Game {
       missionSystem: this.systems.get("missions") ?? null, garageSystem: this.systems.get("garage") ?? null,
       customizationSystem: this.systems.get("customization") ?? null, cameraSystem: this.systems.get("camera") ?? null,
       hudSystem: this.systems.get("hud") ?? null, introSystem: this.systems.get("intro") ?? null,
+      negotiationSystem: this.systems.get("negotiation") ?? null, checkpointSystem: this.systems.get("checkpoint") ?? null,
     };
   }
 
   async initializeSystems() {
-    // 🔥 CRITICAL SYSTEMS: Loaded first to ensure gameplay and intro work
+    // 🔥 CRITICAL SYSTEMS: Loaded first to ensure gameplay works
     const criticalSystems = [
       ["progression", () => import("../systems/ProgressionSystem.js")],
       ["routes", () => import("../systems/RouteSystem.js")],
@@ -158,6 +157,8 @@ export default class Game {
       ["collision", () => import("../systems/CollisionSystem.js")],
       ["passengers", () => import("../systems/PassengerSystem.js")],
       ["intro", () => import("../systems/IntroSystem.js")],
+      ["negotiation", () => import("../systems/NegotiationSystem.js")], // 🔥 NEW
+      ["checkpoint", () => import("../systems/CheckpointSystem.js")], // 🔥 NEW
     ];
 
     const criticalPromises = criticalSystems.map(async ([name, loadModule]) => {
@@ -173,7 +174,7 @@ export default class Game {
       await system.initialize?.(this.getSystemContext());
     }
 
-    //  SECONDARY SYSTEMS: Loaded in background (non-blocking)
+    // 🔥 SECONDARY SYSTEMS: Loaded in background
     const remainingSystems = [
       ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
@@ -212,7 +213,6 @@ export default class Game {
       const player = this.systems.get("playerVehicle");
       if (player) {
         player.initialize?.({ lane: 1, z: 0 });
-        // Note: We don't call player.start() yet; that happens after the intro
       }
       const cam = this.systems.get("camera");
       if (cam && player) cam.setTarget?.(player);
@@ -233,10 +233,9 @@ export default class Game {
 
     this.isPaused = false;
     this.isRunning = true;
-    this.phase = "intro"; // Start with opening sequence
+    this.phase = "intro";
     this.introTime = 0;
 
-    // Bind juice events
     if (this.events?.on && !this._juiceBound) {
       this._juiceBound = true;
       this.events.on("collision:near-miss", () => {
@@ -254,4 +253,169 @@ export default class Game {
     this.previousTime = performance.now();
     this.accumulator = 0;
 
-    for (const system
+    for (const system of this.systems.values()) system.start?.();
+
+    this.animationFrame = requestAnimationFrame(this.boundFrame);
+    this.events.emit("game:started", { game: this });
+    return this;
+  }
+
+  frame(timestamp) {
+    if (!this.isRunning || this.isDestroyed) return;
+
+    const elapsed = Math.min(Math.max((timestamp - this.previousTime) / 1000, 0), 0.1);
+    this.previousTime = timestamp;
+
+    if (!this.isPaused) {
+      this.accumulator += elapsed;
+      this.timeScale = this.timeScale ?? 1;
+      this.targetTimeScale = this.targetTimeScale ?? 1;
+      const blend = 1 - Math.exp(-8 * elapsed);
+      this.timeScale += (this.targetTimeScale - this.timeScale) * blend;
+
+      while (this.accumulator >= this.fixedDelta) {
+        this.update(this.fixedDelta * this.timeScale);
+        this.accumulator -= this.fixedDelta;
+      }
+      this.render(this.accumulator / this.fixedDelta);
+    }
+
+    this.animationFrame = requestAnimationFrame(this.boundFrame);
+  }
+
+  update(delta) {
+    this.state.update?.(delta);
+
+    if (this.phase === "intro") {
+      this.introTime += delta;
+      const introSystem = this.systems.get("intro");
+      if (introSystem) introSystem.update(delta);
+
+      if (this.introTime >= this.introDuration) {
+        this.phase = "playing";
+        const player = this.systems.get("playerVehicle");
+        if (player) player.start?.();
+        this.events.emit("game:intro-complete");
+      }
+    } 
+    else if (this.phase === "playing") {
+      const player = this.systems.get("playerVehicle");
+      const playerZ = Number(player?.position?.z) || 0;
+      const speed = Number(player?.speed) || Number(this.state.run?.speed) || 0;
+
+      try {
+        this.state.run && (this.state.run.speed = speed);
+        this.state.setSpeed?.(speed);
+      } catch (e) {}
+
+      for (const [name, system] of this.systems) {
+        if (system.enabled === false) continue;
+        if (name === "world") {
+          system.update?.(delta, speed);
+        } else if (name === "road" || name === "scenery" || name === "traffic" || name === "passengers" || name === "checkpoint") {
+          system.update?.(delta, playerZ, speed); // 🔥 Pass speed to checkpoint
+        } else if (name === "negotiation") {
+          system.update?.(delta); // 🔥 Update negotiation timer
+        } else {
+          system.update?.(delta);
+        }
+      }
+
+      this.saveManager.updateProfile?.(this.state.getProfile?.() ?? {}, { autosave: true });
+
+      try {
+        if (player && this.audio?.updateEngine) {
+          this.audio.updateEngine(player.speed || 0, player.preset?.maxSpeed || 34);
+        }
+        const ratio = Math.min(1, Math.abs(player?.speed || 0) / Math.max(1, player?.preset?.maxSpeed || 34));
+        this.sceneManager?.post?.setSpeedAberration?.(ratio);
+      } catch (e) {}
+
+      this.events.emit("game:updated", { delta });
+    }
+
+    this.sceneManager?.govern?.(delta);
+  }
+
+  render(interpolation = 0) {
+    for (const system of this.systems.values()) {
+      if (system.enabled === false) continue;
+      system.render?.(interpolation);
+    }
+    this.sceneManager?.render?.(interpolation);
+  }
+
+  pause() {
+    if (!this.isRunning || this.isPaused) return;
+    this.isPaused = true;
+    this.phase = "paused";
+    for (const system of this.systems.values()) system.pause?.();
+    this.events.emit("game:paused");
+  }
+
+  resume() {
+    if (!this.isRunning || !this.isPaused) return;
+    this.isPaused = false;
+    this.phase = "playing";
+    this.previousTime = performance.now();
+    for (const system of this.systems.values()) system.resume?.();
+    this.events.emit("game:resumed");
+  }
+
+  stop() {
+    if (!this.isRunning) return;
+    this.isRunning = false;
+    if (this.animationFrame !== null) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
+    for (const system of this.systems.values()) system.stop?.();
+    this.saveManager.save?.();
+    this.events.emit("game:stopped");
+  }
+
+  resize() {
+    if (this.isDestroyed) return;
+    this.sceneManager?.resize?.();
+    for (const system of this.systems.values()) {
+      system.resize?.(window.innerWidth, window.innerHeight);
+    }
+  }
+
+  getSystem(name) { return this.systems.get(name) ?? null; }
+
+  async restart() {
+    if (this.isDestroyed) throw new Error("Cannot restart a destroyed game.");
+    this.stop();
+    this.isPaused = false;
+    this.phase = "intro";
+    this.introTime = 0;
+    for (const system of this.systems.values()) await system.reset?.();
+    await this.state.reset?.();
+    return this.start();
+  }
+
+  destroy() {
+    if (this.isDestroyed) return;
+    this.stop();
+    if (typeof window !== "undefined") window.removeEventListener("resize", this.boundResize);
+
+    for (const system of [...this.systems.values()].reverse()) {
+      try { system.destroy?.(); } catch (error) { console.error("[Kano Run] System cleanup failed:", error); }
+    }
+
+    this.systems.clear();
+    this.input.destroy?.();
+    this.audio.destroy?.();
+    this.sceneManager?.destroy?.();
+    this.saveManager.destroy?.();
+    this.state.destroy?.();
+    this.services.destroy?.();
+
+    try { this.events?.safeEmit?.("game:destroyed") ?? this.events?.emit?.("game:destroyed"); } catch (e) {}
+    try { this.events?.destroy?.(); } catch (e) {}
+
+    this.isInitialized = false;
+    this.isDestroyed = true;
+  }
+}
