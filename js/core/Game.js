@@ -371,17 +371,27 @@ export default class Game {
   update(delta) {
     this.state.update?.(delta);
 
-    const speed = Number(this.state.run?.speed) || 0;
+    const player = this.systems.get("playerVehicle");
+    const playerZ = Number(player?.position?.z) || 0;
+    const speed =
+      Number(player?.speed) ||
+      Number(this.state.run?.speed) ||
+      0;
+
+    // Keep game state speed in sync for HUD
+    try {
+      this.state.run && (this.state.run.speed = speed);
+      this.state.setSpeed?.(speed);
+    } catch (e) {}
 
     for (const [name, system] of this.systems) {
       if (system.enabled === false) continue;
 
-      /*
-       * WorldSystem.update() accepts delta and speed.
-       * Other systems continue receiving delta as their first argument.
-       */
       if (name === "world") {
         system.update?.(delta, speed);
+      } else if (name === "road" || name === "scenery" || name === "traffic") {
+        // These need player Z so the world stays under the camera
+        system.update?.(delta, playerZ);
       } else {
         system.update?.(delta);
       }

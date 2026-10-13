@@ -3,8 +3,8 @@ import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
   segmentLength: 40,
-  segmentsAhead: 9,
-  segmentsBehind: 3,
+  segmentsAhead: 12,
+  segmentsBehind: 8,
   roadWidth: 12,
   laneCount: 3,
   laneWidth: 3.2,

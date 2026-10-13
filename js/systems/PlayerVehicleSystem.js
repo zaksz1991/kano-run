@@ -351,20 +351,23 @@ export default class PlayerVehicleSystem {
       this.preset.acceleration *
       (this.condition / 100);
 
-    if (this.isAccelerating && this.fuel > 0) {
-      this.speed += acceleration * dt;
-    } else if (this.isBraking) {
+    // Endless-runner auto-cruise: always roll forward unless braking
+    const cruise = 14;
+
+    if (this.isBraking) {
       this.speed -= this.config.braking * dt;
+    } else if (this.isAccelerating && this.fuel > 0) {
+      this.speed += acceleration * dt;
+    } else if (this.fuel > 0) {
+      // Ease toward cruise so the keke is never stuck at 0
+      this.speed = damp(this.speed, cruise, 1.2, dt);
     } else {
       this.speed = damp(this.speed, 0, 0.12, dt);
     }
 
-    if (this.isBraking && this.speed < 0) {
-      this.speed = Math.max(
-        -this.config.reverseSpeed,
-        this.speed,
-      );
-    } else if (!this.isBraking) {
+    if (!this.isBraking) {
+      this.speed = Math.max(0, this.speed);
+    } else {
       this.speed = Math.max(0, this.speed);
     }
 
@@ -375,7 +378,7 @@ export default class PlayerVehicleSystem {
 
     this.speed = clamp(
       this.speed,
-      -this.config.reverseSpeed,
+      0,
       maxSpeed * clamp(grip, 0.45, 1),
     );
 
@@ -497,37 +500,38 @@ export default class PlayerVehicleSystem {
   _updateCamera(dt) {
     if (!this.camera) return;
 
+    // Chase cam: behind & above, always keep road in lower FOV
     const targetPosition = new THREE.Vector3(
-      this.position.x * 0.45,
-      5.5,
-      this.position.z - 8.5,
+      this.position.x * 0.35,
+      4.2,
+      this.position.z - 9.5,
     );
 
     this.camera.position.x = damp(
       this.camera.position.x,
       targetPosition.x,
-      3.5,
+      4,
       dt,
     );
 
     this.camera.position.y = damp(
       this.camera.position.y,
       targetPosition.y,
-      2.5,
+      3,
       dt,
     );
 
     this.camera.position.z = damp(
       this.camera.position.z,
       targetPosition.z,
-      3.5,
+      4,
       dt,
     );
 
     this.camera.lookAt(
-      this.position.x * 0.3,
-      0.8,
-      this.position.z + 7,
+      this.position.x * 0.25,
+      0.4,
+      this.position.z + 12,
     );
   }
 
