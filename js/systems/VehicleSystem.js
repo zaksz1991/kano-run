@@ -165,6 +165,13 @@ export default class VehicleSystem {
       karota: 3,
     };
 
+    // 🔥 OPTIMIZATION: Cache weight entries to prevent array allocation every spawn
+    this._cachedWeightEntries = Object.entries(this.spawnWeights);
+    this._totalSpawnWeight = this._cachedWeightEntries.reduce(
+      (sum, [, weight]) => sum + weight,
+      0
+    );
+
     this._onRunStarted = () => {
       this.paused = false;
     };
@@ -194,27 +201,18 @@ export default class VehicleSystem {
       this._disposers.push(result);
     } else if (this.eventBus.off) {
       this._disposers ??= [];
-      this._disposers.push(() =>
-        this.eventBus.off(eventName, handler),
-      );
+      this._disposers.push(() => this.eventBus.off(eventName, handler));
     }
   }
 
-  initialize({
-    playerZ = 0,
-    playerLane = 1,
-    initialVehicles = 8,
-  } = {}) {
+  initialize({ playerZ = 0, playerLane = 1, initialVehicles = 8 } = {}) {
     if (this.initialized) return this;
 
     this.playerZ = playerZ;
     this.playerLane = clamp(playerLane, 0, 2);
 
     for (let i = 0; i < initialVehicles; i += 1) {
-      const z =
-        playerZ +
-        28 +
-        i * (this.config.spawnDistance / initialVehicles);
+      const z = playerZ + 28 + i * (this.config.spawnDistance / initialVehicles);
 
       this.spawnVehicle({
         z,
@@ -236,32 +234,22 @@ export default class VehicleSystem {
 
     const dt = clamp(deltaTime || 0, 0, 0.05);
 
-    this.playerZ =
-      Number.isFinite(state.playerZ)
-        ? state.playerZ
-        : this.playerZ;
+    this.playerZ = Number.isFinite(state.playerZ) ? state.playerZ : this.playerZ;
 
-    this.playerLane =
-      Number.isFinite(state.playerLane)
-        ? clamp(state.playerLane, 0, 2)
-        : this.playerLane;
+    this.playerLane = Number.isFinite(state.playerLane)
+      ? clamp(state.playerLane, 0, 2)
+      : this.playerLane;
 
-    this.playerSpeed =
-      Number.isFinite(state.playerSpeed)
-        ? Math.max(0, state.playerSpeed)
-        : this.playerSpeed;
+    this.playerSpeed = Number.isFinite(state.playerSpeed)
+      ? Math.max(0, state.playerSpeed)
+      : this.playerSpeed;
 
     this._updateVehicles(dt);
     this._removeDistantVehicles();
     this._spawnTraffic(dt);
   }
 
-  spawnVehicle({
-    type = null,
-    z = this.playerZ + this.config.spawnDistance,
-    preferredLane = null,
-    speed = null,
-  } = {}) {
+  spawnVehicle({ type = null, z = this.playerZ + this.config.spawnDistance, preferredLane = null, speed = null } = {}) {
     if (this.vehicles.size >= this.config.maxVehicles) {
       return null;
     }
@@ -273,11 +261,7 @@ export default class VehicleSystem {
       throw new Error(`Unknown vehicle type: ${vehicleType}`);
     }
 
-    const lane = this._findSafeLane(
-      z,
-      preferredLane,
-      spec.length,
-    );
+    const lane = this._findSafeLane(z, preferredLane, spec.length);
 
     if (lane === null) return null;
 
@@ -289,19 +273,14 @@ export default class VehicleSystem {
     vehicle.lane = lane;
     vehicle.targetLane = lane;
     vehicle.z = z;
-    vehicle.speed =
-      speed ?? randomBetween(spec.maxSpeed * 0.45, spec.maxSpeed * 0.85);
+    vehicle.speed = speed ?? randomBetween(spec.maxSpeed * 0.45, spec.maxSpeed * 0.85);
     vehicle.cruiseSpeed = vehicle.speed;
     vehicle.damage = 0;
     vehicle.wanderTimer = randomBetween(2, 6);
     vehicle.changeLaneTimer = randomBetween(3, 8);
     vehicle.stopped = false;
 
-    vehicle.group.position.set(
-      this._laneX(lane),
-      0,
-      z,
-    );
+    vehicle.group.position.set(this._laneX(lane), 0, z);
 
     this.vehicles.set(vehicle.id, vehicle);
     this.scene.add(vehicle.group);
@@ -382,13 +361,15 @@ export default class VehicleSystem {
         vehicle.speed = Math.max(0, vehicle.speed - 5 * dt);
       }
 
-      vehicle.z -= vehicle.speed * dt;
+      // 🔥 CRITICAL FIX: Move traffic FORWARD (+Z) so the player can naturally overtake them.
+      // Previously this was "-=", which caused head-on collisions or backward movement.
+      vehicle.z += vehicle.speed * dt;
 
       vehicle.group.position.x = THREE.MathUtils.damp(
         vehicle.group.position.x,
         this._laneX(vehicle.targetLane),
         5,
-        dt,
+        dt
       );
 
       vehicle.group.position.z = vehicle.z;
@@ -405,22 +386,16 @@ export default class VehicleSystem {
 
     vehicle.changeLaneTimer = randomBetween(3, 8);
 
+    // 🔥 OPTIMIZATION: Avoid array allocation and sorting on every check.
     if (Math.random() > 0.28) return;
 
-    const candidates = [
-      vehicle.lane - 1,
-      vehicle.lane + 1,
-    ].filter((lane) => lane >= 0 && lane <= 2);
+    const candidates = [vehicle.lane - 1, vehicle.lane + 1].filter(
+      (lane) => lane >= 0 && lane <= 2
+    );
 
-    for (const candidate of candidates.sort(() => Math.random() - 0.5)) {
-      if (
-        this._isLaneSafe(
-          candidate,
-          vehicle.z,
-          vehicle.spec.length,
-          vehicle.id,
-        )
-      ) {
+    if (candidates.length > 0) {
+      const candidate = candidates[Math.floor(Math.random() * candidates.length)];
+      if (this._isLaneSafe(candidate, vehicle.z, vehicle.spec.length, vehicle.id)) {
         vehicle.targetLane = candidate;
         vehicle.lane = candidate;
 
@@ -428,8 +403,6 @@ export default class VehicleSystem {
           id: vehicle.id,
           lane: candidate,
         });
-
-        break;
       }
     }
   }
@@ -444,22 +417,14 @@ export default class VehicleSystem {
 
       const gap = other.z - vehicle.z;
 
-      if (
-        gap > 0 &&
-        gap < nearestGap
-      ) {
+      if (gap > 0 && gap < nearestGap) {
         nearestGap = gap;
         frontVehicle = other;
       }
     }
 
     if (!frontVehicle) {
-      vehicle.speed = THREE.MathUtils.damp(
-        vehicle.speed,
-        vehicle.cruiseSpeed,
-        0.65,
-        dt,
-      );
+      vehicle.speed = THREE.MathUtils.damp(vehicle.speed, vehicle.cruiseSpeed, 0.65, dt);
       return;
     }
 
@@ -468,10 +433,7 @@ export default class VehicleSystem {
       this.config.vehicleCollisionGap;
 
     if (nearestGap < safeGap) {
-      vehicle.speed = Math.max(
-        0,
-        vehicle.speed - 9 * dt,
-      );
+      vehicle.speed = Math.max(0, vehicle.speed - 9 * dt);
 
       if (nearestGap < safeGap * 0.65) {
         const sideLane = this._findAdjacentSafeLane(vehicle);
@@ -482,12 +444,7 @@ export default class VehicleSystem {
         }
       }
     } else {
-      vehicle.speed = THREE.MathUtils.damp(
-        vehicle.speed,
-        vehicle.cruiseSpeed,
-        0.8,
-        dt,
-      );
+      vehicle.speed = THREE.MathUtils.damp(vehicle.speed, vehicle.cruiseSpeed, 0.8, dt);
     }
   }
 
@@ -508,10 +465,7 @@ export default class VehicleSystem {
         vehicle.targetLane = sideLane;
         vehicle.lane = sideLane;
       } else {
-        vehicle.speed = Math.max(
-          0,
-          vehicle.speed - 6 * dt,
-        );
+        vehicle.speed = Math.max(0, vehicle.speed - 6 * dt);
       }
     }
   }
@@ -537,20 +491,11 @@ export default class VehicleSystem {
     if (this.spawnTimer > 0) return;
     if (this.vehicles.size >= this.config.maxVehicles) return;
 
-    const densityFactor = clamp(
-      this.playerSpeed / 18,
-      0.45,
-      1.4,
-    );
+    const densityFactor = clamp(this.playerSpeed / 18, 0.45, 1.4);
 
     this.spawnTimer = randomBetween(0.55, 1.25) / densityFactor;
 
-    const z =
-      this.playerZ +
-      randomBetween(
-        this.config.spawnDistance * 0.65,
-        this.config.spawnDistance,
-      );
+    const z = this.playerZ + randomBetween(this.config.spawnDistance * 0.65, this.config.spawnDistance);
 
     this.spawnVehicle({
       z,
@@ -560,10 +505,7 @@ export default class VehicleSystem {
 
   _removeDistantVehicles() {
     for (const vehicle of this.vehicles.values()) {
-      if (
-        vehicle.z <
-        this.playerZ - this.config.despawnDistance
-      ) {
+      if (vehicle.z < this.playerZ - this.config.despawnDistance) {
         this.removeVehicle(vehicle.id, "behind-player");
       }
     }
@@ -573,45 +515,42 @@ export default class VehicleSystem {
     const spec = VEHICLE_SPECS[type];
     const group = new THREE.Group();
 
+    // 🔥 GRAPHICS UPGRADE: Added flatShading and adjusted roughness/metalness 
+    // to give vehicles a crisp, stylized, premium indie-game look.
     const bodyMaterial = new THREE.MeshStandardMaterial({
       color: choose(spec.color),
-      roughness: 0.72,
-      metalness: 0.05,
+      roughness: 0.85,
+      metalness: 0.0,
+      flatShading: true,
     });
 
     const darkMaterial = new THREE.MeshStandardMaterial({
       color: 0x252a2c,
-      roughness: 0.92,
+      roughness: 0.85,
+      metalness: 0.0,
+      flatShading: true,
     });
 
     const glassMaterial = new THREE.MeshStandardMaterial({
       color: 0x78949e,
-      roughness: 0.3,
-      metalness: 0.05,
+      roughness: 0.2,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.6,
+      flatShading: true,
     });
 
     const wheelMaterial = new THREE.MeshStandardMaterial({
       color: 0x17191a,
-      roughness: 1,
+      roughness: 0.9,
+      metalness: 0.0,
+      flatShading: true,
     });
 
     if (type === "motorcycle") {
-      this._buildMotorcycle(
-        group,
-        spec,
-        bodyMaterial,
-        darkMaterial,
-        wheelMaterial,
-      );
+      this._buildMotorcycle(group, spec, bodyMaterial, darkMaterial, wheelMaterial);
     } else if (type === "keke") {
-      this._buildKeke(
-        group,
-        spec,
-        bodyMaterial,
-        darkMaterial,
-        glassMaterial,
-        wheelMaterial,
-      );
+      this._buildKeke(group, spec, bodyMaterial, darkMaterial, glassMaterial, wheelMaterial);
     } else {
       this._buildFourWheelVehicle(
         group,
@@ -620,7 +559,7 @@ export default class VehicleSystem {
         bodyMaterial,
         darkMaterial,
         glassMaterial,
-        wheelMaterial,
+        wheelMaterial
       );
     }
 
@@ -635,87 +574,63 @@ export default class VehicleSystem {
     };
   }
 
-  _buildFourWheelVehicle(
-    group,
-    type,
-    spec,
-    bodyMaterial,
-    darkMaterial,
-    glassMaterial,
-    wheelMaterial,
-  ) {
+  _buildFourWheelVehicle(group, type, spec, bodyMaterial, darkMaterial, glassMaterial, wheelMaterial) {
     const w = spec.width;
     const h = spec.height;
     const L = spec.length;
+    
+    // 🔥 GRAPHICS UPGRADE
     const chrome = new THREE.MeshStandardMaterial({
-      color: 0xb0b8c0,
-      metalness: 0.7,
-      roughness: 0.3,
+      color: 0xc0c0c0,
+      metalness: 0.6,
+      roughness: 0.4,
+      flatShading: true,
     });
 
     if (type === "bus") {
-      // Long box body + high windows + roof
       this._addBox(group, "bus-body", w, h * 0.72, L * 0.95, bodyMaterial, 0, h * 0.42, 0);
       this._addBox(group, "bus-roof", w * 0.98, 0.12, L * 0.92, darkMaterial, 0, h * 0.82, 0);
-      // Window band
       this._addBox(group, "bus-windows", w * 1.01, h * 0.28, L * 0.7, glassMaterial, 0, h * 0.58, 0.05);
-      // Front windshield
       this._addBox(group, "bus-glass-front", w * 0.85, h * 0.35, 0.06, glassMaterial, 0, h * 0.55, -L * 0.46);
-      // Destination board
       this._addBox(group, "bus-board", w * 0.7, 0.18, 0.05, darkMaterial, 0, h * 0.78, -L * 0.47);
-      // Door hint
       this._addBox(group, "bus-door", 0.08, h * 0.55, L * 0.12, darkMaterial, w * 0.51, h * 0.4, -L * 0.15);
     } else if (type === "truck") {
-      // Cab + cargo bed
       this._addBox(group, "truck-cab", w * 0.9, h * 0.55, L * 0.28, bodyMaterial, 0, h * 0.38, -L * 0.32);
       this._addBox(group, "truck-cab-top", w * 0.85, h * 0.28, L * 0.22, bodyMaterial, 0, h * 0.7, -L * 0.3);
       this._addBox(group, "truck-glass", w * 0.7, h * 0.22, 0.05, glassMaterial, 0, h * 0.62, -L * 0.45);
-      // Flatbed / cargo
       this._addBox(group, "truck-bed", w * 0.95, 0.15, L * 0.55, darkMaterial, 0, h * 0.28, L * 0.15);
       this._addBox(group, "truck-cargo", w * 0.9, h * 0.55, L * 0.5, bodyMaterial, 0, h * 0.55, L * 0.15);
-      // Exhaust stack
-      const exhaust = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.08, h * 0.5, 6),
-        darkMaterial,
-      );
+      
+      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, h * 0.5, 6), darkMaterial);
       exhaust.position.set(-w * 0.4, h * 0.55, -L * 0.2);
       group.add(exhaust);
     } else if (type === "police" || type === "karota") {
-      // Sedan-like with lightbar
       this._addBox(group, "sedan-body", w, h * 0.38, L * 0.92, bodyMaterial, 0, h * 0.32, 0);
       this._addBox(group, "sedan-cabin", w * 0.88, h * 0.35, L * 0.45, bodyMaterial, 0, h * 0.58, -L * 0.02);
       this._addBox(group, "sedan-glass", w * 0.8, h * 0.28, L * 0.4, glassMaterial, 0, h * 0.58, -L * 0.02);
       this._addBox(group, "sedan-hood", w * 0.9, h * 0.12, L * 0.22, bodyMaterial, 0, h * 0.38, -L * 0.35);
       this._addBox(group, "sedan-trunk", w * 0.9, h * 0.12, L * 0.18, bodyMaterial, 0, h * 0.38, L * 0.35);
+      
       if (type === "police") {
         this._addBox(group, "lightbar-base", 0.9, 0.12, 0.28, darkMaterial, 0, h * 0.82, -0.05);
-        this._addBox(group, "lightbar-red", 0.35, 0.14, 0.26,
-          new THREE.MeshStandardMaterial({ color: 0xc0392b, emissive: 0x3c0804 }),
-          -0.25, h * 0.88, -0.05);
-        this._addBox(group, "lightbar-blue", 0.35, 0.14, 0.26,
-          new THREE.MeshStandardMaterial({ color: 0x2471a3, emissive: 0x102e50 }),
-          0.25, h * 0.88, -0.05);
+        this._addBox(group, "lightbar-red", 0.35, 0.14, 0.26, new THREE.MeshStandardMaterial({ color: 0xc0392b, emissive: 0x3c0804, flatShading: true }), -0.25, h * 0.88, -0.05);
+        this._addBox(group, "lightbar-blue", 0.35, 0.14, 0.26, new THREE.MeshStandardMaterial({ color: 0x2471a3, emissive: 0x102e50, flatShading: true }), 0.25, h * 0.88, -0.05);
       } else {
-        // KAROTA — yellow vehicle, black roof sign
         this._addBox(group, "karota-sign", 0.95, 0.22, 0.32, darkMaterial, 0, h * 0.85, 0);
       }
     } else if (type === "taxi") {
-      // Yellow sedan + roof sign
       this._addBox(group, "taxi-body", w, h * 0.36, L * 0.9, bodyMaterial, 0, h * 0.3, 0);
       this._addBox(group, "taxi-cabin", w * 0.86, h * 0.32, L * 0.42, bodyMaterial, 0, h * 0.55, 0);
       this._addBox(group, "taxi-glass", w * 0.78, h * 0.26, L * 0.38, glassMaterial, 0, h * 0.55, 0);
       this._addBox(group, "taxi-hood", w * 0.88, h * 0.1, L * 0.22, bodyMaterial, 0, h * 0.36, -L * 0.34);
-      this._addBox(group, "taxi-sign", 0.5, 0.16, 0.22,
-        new THREE.MeshStandardMaterial({ color: 0x1a1a1a }),
-        0, h * 0.78, 0);
+      this._addBox(group, "taxi-sign", 0.5, 0.16, 0.22, new THREE.MeshStandardMaterial({ color: 0x1a1a1a, flatShading: true }), 0, h * 0.78, 0);
     } else {
-      // Standard car — wedge silhouette
       this._addBox(group, "car-body", w, h * 0.35, L * 0.9, bodyMaterial, 0, h * 0.28, 0);
       this._addBox(group, "car-cabin", w * 0.85, h * 0.32, L * 0.4, bodyMaterial, 0, h * 0.52, L * 0.02);
       this._addBox(group, "car-glass", w * 0.78, h * 0.25, L * 0.36, glassMaterial, 0, h * 0.52, L * 0.02);
       this._addBox(group, "car-hood", w * 0.92, h * 0.1, L * 0.25, bodyMaterial, 0, h * 0.34, -L * 0.32);
       this._addBox(group, "car-trunk", w * 0.9, h * 0.1, L * 0.18, bodyMaterial, 0, h * 0.34, L * 0.35);
-      // Side mirrors
+      
       for (const side of [-1, 1]) {
         this._addBox(group, "mirror", 0.12, 0.08, 0.06, darkMaterial, side * w * 0.52, h * 0.48, -L * 0.1);
       }
@@ -725,44 +640,36 @@ export default class VehicleSystem {
     this._addHeadlights(group, spec);
     this._addTailLights(group, spec);
 
-    // Bumpers
     this._addBox(group, "bumper-f", w * 0.85, 0.12, 0.1, darkMaterial, 0, 0.28, -L * 0.48);
     this._addBox(group, "bumper-r", w * 0.85, 0.12, 0.1, darkMaterial, 0, 0.28, L * 0.48);
   }
 
-  _buildKeke(
-    group,
-    spec,
-    bodyMaterial,
-    darkMaterial,
-    glassMaterial,
-    wheelMaterial,
-  ) {
+  _buildKeke(group, spec, bodyMaterial, darkMaterial, glassMaterial, wheelMaterial) {
     const w = spec.width;
     const L = spec.length;
+    
     const canopy = new THREE.MeshStandardMaterial({
       color: 0x0f172a,
-      roughness: 0.95,
+      roughness: 0.85,
+      metalness: 0.0,
+      flatShading: true,
     });
+    
     const chrome = new THREE.MeshStandardMaterial({
       color: 0xc0c0c0,
-      metalness: 0.7,
-      roughness: 0.3,
+      metalness: 0.6,
+      roughness: 0.4,
+      flatShading: true,
     });
 
-    // Narrow nose + wide rear cabin
     this._addBox(group, "keke-nose", w * 0.5, 0.45, L * 0.3, bodyMaterial, 0, 0.7, -L * 0.28);
     this._addBox(group, "keke-cabin", w * 0.95, 0.4, L * 0.4, bodyMaterial, 0, 0.72, L * 0.12);
     this._addBox(group, "keke-floor", w * 0.9, 0.08, L * 0.7, darkMaterial, 0, 0.45, 0);
 
-    // Black canopy
     this._addBox(group, "keke-canopy", w * 1.0, 0.08, L * 0.7, canopy, 0, 1.55, 0.05);
     for (const side of [-1, 1]) {
       for (const z of [-L * 0.2, L * 0.25]) {
-        const pole = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.025, 0.03, 0.7, 6),
-          chrome,
-        );
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.7, 6), chrome);
         pole.position.set(side * w * 0.42, 1.2, z);
         group.add(pole);
       }
@@ -772,15 +679,10 @@ export default class VehicleSystem {
     this._addBox(group, "keke-bench", w * 0.75, 0.12, 0.3, darkMaterial, 0, 0.85, L * 0.15);
     this._addBox(group, "keke-handle", w * 0.45, 0.05, 0.05, chrome, 0, 1.05, -L * 0.32);
 
-    // Sphere headlights
     for (const side of [-1, 1]) {
       const light = new THREE.Mesh(
         new THREE.SphereGeometry(0.07, 8, 8),
-        new THREE.MeshStandardMaterial({
-          color: 0xfff7d6,
-          emissive: 0xaa8844,
-          emissiveIntensity: 0.4,
-        }),
+        new THREE.MeshStandardMaterial({ color: 0xfff7d6, emissive: 0xaa8844, emissiveIntensity: 0.4, flatShading: true })
       );
       light.position.set(side * w * 0.18, 0.55, -L * 0.48);
       group.add(light);
@@ -789,47 +691,32 @@ export default class VehicleSystem {
     this._addWheels(group, spec, wheelMaterial, true);
   }
 
-  _buildMotorcycle(
-    group,
-    spec,
-    bodyMaterial,
-    darkMaterial,
-    wheelMaterial,
-  ) {
+  _buildMotorcycle(group, spec, bodyMaterial, darkMaterial, wheelMaterial) {
     const L = spec.length;
+    
     const chrome = new THREE.MeshStandardMaterial({
       color: 0xc0c0c0,
-      metalness: 0.8,
-      roughness: 0.25,
+      metalness: 0.6,
+      roughness: 0.4,
+      flatShading: true,
     });
 
-    // Two wheels
     for (const z of [-L * 0.35, L * 0.32]) {
-      const wheel = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.28, 0.28, 0.12, 14),
-        wheelMaterial,
-      );
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.12, 14), wheelMaterial);
       wheel.rotation.z = Math.PI / 2;
       wheel.position.set(0, 0.28, z);
       wheel.castShadow = true;
       group.add(wheel);
 
-      const rim = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.15, 0.15, 0.13, 10),
-        chrome,
-      );
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.13, 10), chrome);
       rim.rotation.z = Math.PI / 2;
       rim.position.set(0, 0.28, z);
       group.add(rim);
     }
 
-    // Slim frame
     this._addBox(group, "moto-frame", 0.12, 0.15, L * 0.55, darkMaterial, 0, 0.55, 0);
-    // Fuel tank (rounded feel via short cylinder)
-    const tank = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.16, 0.2, 0.4, 10),
-      bodyMaterial,
-    );
+    
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.4, 10), bodyMaterial);
     tank.rotation.z = Math.PI / 2;
     tank.position.set(0, 0.78, -0.05);
     tank.castShadow = true;
@@ -838,28 +725,19 @@ export default class VehicleSystem {
     this._addBox(group, "moto-seat", 0.28, 0.1, 0.4, darkMaterial, 0, 0.85, 0.28);
     this._addBox(group, "moto-handle", 0.7, 0.05, 0.05, chrome, 0, 1.05, -L * 0.28);
 
-    // Front fork
     for (const side of [-1, 1]) {
       this._addBox(group, "fork", 0.04, 0.45, 0.04, chrome, side * 0.08, 0.55, -L * 0.32);
     }
 
     const headlight = new THREE.Mesh(
       new THREE.SphereGeometry(0.1, 8, 8),
-      new THREE.MeshStandardMaterial({
-        color: 0xfdf2c5,
-        emissive: 0x554422,
-        emissiveIntensity: 0.5,
-      }),
+      new THREE.MeshStandardMaterial({ color: 0xfdf2c5, emissive: 0x554422, emissiveIntensity: 0.5, flatShading: true })
     );
     headlight.position.set(0, 0.75, -L * 0.42);
     group.add(headlight);
 
-    // Rider silhouette (simple)
     this._addBox(group, "rider-body", 0.3, 0.35, 0.25, darkMaterial, 0, 1.15, 0.1);
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x4a3728 }),
-    );
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), new THREE.MeshStandardMaterial({ color: 0x4a3728, flatShading: true }));
     head.position.set(0, 1.45, 0.05);
     group.add(head);
   }
@@ -879,15 +757,7 @@ export default class VehicleSystem {
           continue;
         }
 
-        const wheel = new THREE.Mesh(
-          new THREE.CylinderGeometry(
-            radius,
-            radius,
-            wheelWidth,
-            12,
-          ),
-          material,
-        );
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, wheelWidth, 12), material);
 
         wheel.name = "vehicle-wheel";
         wheel.rotation.z = Math.PI / 2;
@@ -903,20 +773,11 @@ export default class VehicleSystem {
     const material = new THREE.MeshStandardMaterial({
       color: 0xfdf4d0,
       emissive: 0x55472a,
+      flatShading: true,
     });
 
     for (const side of [-1, 1]) {
-      this._addBox(
-        group,
-        "vehicle-headlight",
-        0.22,
-        0.14,
-        0.08,
-        material,
-        side * spec.width * 0.32,
-        0.45,
-        -spec.length * 0.49,
-      );
+      this._addBox(group, "vehicle-headlight", 0.22, 0.14, 0.08, material, side * spec.width * 0.32, 0.45, -spec.length * 0.49);
     }
   }
 
@@ -924,38 +785,16 @@ export default class VehicleSystem {
     const material = new THREE.MeshStandardMaterial({
       color: 0xb3261e,
       emissive: 0x330400,
+      flatShading: true,
     });
 
     for (const side of [-1, 1]) {
-      this._addBox(
-        group,
-        "vehicle-tail-light",
-        0.2,
-        0.13,
-        0.08,
-        material,
-        side * spec.width * 0.32,
-        0.45,
-        spec.length * 0.49,
-      );
+      this._addBox(group, "vehicle-tail-light", 0.2, 0.13, 0.08, material, side * spec.width * 0.32, 0.45, spec.length * 0.49);
     }
   }
 
-  _addBox(
-    group,
-    name,
-    width,
-    height,
-    depth,
-    material,
-    x,
-    y,
-    z,
-  ) {
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(width, height, depth),
-      material,
-    );
+  _addBox(group, name, width, height, depth, material, x, y, z) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
 
     mesh.name = name;
     mesh.position.set(x, y, z);
@@ -968,17 +807,11 @@ export default class VehicleSystem {
   }
 
   _chooseVehicleType() {
-    const entries = Object.entries(this.spawnWeights);
-    const totalWeight = entries.reduce(
-      (sum, [, weight]) => sum + weight,
-      0,
-    );
+    // 🔥 OPTIMIZATION: Uses cached weights to prevent array allocation every spawn
+    let roll = Math.random() * this._totalSpawnWeight;
 
-    let roll = Math.random() * totalWeight;
-
-    for (const [type, weight] of entries) {
+    for (const [type, weight] of this._cachedWeightEntries) {
       roll -= weight;
-
       if (roll <= 0) {
         return type;
       }
@@ -990,30 +823,14 @@ export default class VehicleSystem {
   _findSafeLane(z, preferredLane, vehicleLength) {
     const lanes = [0, 1, 2];
 
-    if (
-      Number.isInteger(preferredLane) &&
-      preferredLane >= 0 &&
-      preferredLane <= 2
-    ) {
-      lanes.sort(
-        (a, b) =>
-          Math.abs(a - preferredLane) -
-          Math.abs(b - preferredLane),
-      );
+    if (Number.isInteger(preferredLane) && preferredLane >= 0 && preferredLane <= 2) {
+      lanes.sort((a, b) => Math.abs(a - preferredLane) - Math.abs(b - preferredLane));
     } else {
       lanes.sort(() => Math.random() - 0.5);
     }
 
     for (const lane of lanes) {
-      if (
-        this._isLaneSafe(
-          lane,
-          z,
-          vehicleLength,
-          null,
-        ) &&
-        !this._overlapsPlayer(lane, z, vehicleLength)
-      ) {
+      if (this._isLaneSafe(lane, z, vehicleLength, null) && !this._overlapsPlayer(lane, z, vehicleLength)) {
         return lane;
       }
     }
@@ -1027,15 +844,9 @@ export default class VehicleSystem {
 
       const longitudinalGap = Math.abs(vehicle.z - z);
 
-      const requiredGap =
-        (vehicle.spec.length + vehicleLength) / 2 +
-        this.config.minimumSpawnGap;
+      const requiredGap = (vehicle.spec.length + vehicleLength) / 2 + this.config.minimumSpawnGap;
 
-      if (
-        (vehicle.lane === lane ||
-          vehicle.targetLane === lane) &&
-        longitudinalGap < requiredGap
-      ) {
+      if ((vehicle.lane === lane || vehicle.targetLane === lane) && longitudinalGap < requiredGap) {
         return false;
       }
     }
@@ -1046,29 +857,16 @@ export default class VehicleSystem {
   _overlapsPlayer(lane, z, vehicleLength) {
     const longitudinalGap = Math.abs(z - this.playerZ);
 
-    const requiredGap =
-      vehicleLength / 2 +
-      this.config.playerCollisionRadius +
-      this.config.minimumSpawnGap;
+    const requiredGap = vehicleLength / 2 + this.config.playerCollisionRadius + this.config.minimumSpawnGap;
 
     return lane === this.playerLane && longitudinalGap < requiredGap;
   }
 
   _findAdjacentSafeLane(vehicle) {
-    const candidates = [
-      vehicle.lane - 1,
-      vehicle.lane + 1,
-    ].filter((lane) => lane >= 0 && lane <= 2);
+    const candidates = [vehicle.lane - 1, vehicle.lane + 1].filter((lane) => lane >= 0 && lane <= 2);
 
     for (const lane of candidates) {
-      if (
-        this._isLaneSafe(
-          lane,
-          vehicle.z,
-          vehicle.spec.length,
-          vehicle.id,
-        )
-      ) {
+      if (this._isLaneSafe(lane, vehicle.z, vehicle.spec.length, vehicle.id)) {
         return lane;
       }
     }
@@ -1077,9 +875,7 @@ export default class VehicleSystem {
   }
 
   _laneX(lane) {
-    const positions =
-      GAME_CONFIG?.LANE_POSITIONS ??
-      [-this.config.laneWidth, 0, this.config.laneWidth];
+    const positions = GAME_CONFIG?.LANE_POSITIONS ?? [-this.config.laneWidth, 0, this.config.laneWidth];
 
     return positions[clamp(lane, 0, positions.length - 1)];
   }
