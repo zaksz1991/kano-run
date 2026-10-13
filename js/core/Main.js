@@ -26,7 +26,7 @@ class KanoRunApp {
 
     console.log("[Kano Run] App initializing...");
 
-    //  Use the existing HTML elements instead of creating new ones
+    //  Use the existing HTML elements from index.html
     this.loadingScreen = document.getElementById("loading-screen");
     this.startButton = document.getElementById("start-btn");
     this.loadingProgress = document.getElementById("loading-progress");
