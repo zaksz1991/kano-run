@@ -1,15 +1,23 @@
 export default class TouchControlsSystem {
-  constructor(inputManager, options = {}) {
-    this.inputManager = inputManager;
+  constructor(inputManagerOrContext = {}, options = {}) {
+    // Game passes system context; support both styles
+    const ctx =
+      inputManagerOrContext && inputManagerOrContext.input
+        ? inputManagerOrContext
+        : { input: inputManagerOrContext };
+
+    this.inputManager = ctx.input ?? ctx.inputManager ?? null;
+    this.context = ctx;
 
     this.options = {
       rootId: "game-ui",
       buttonSize: 64,
-      opacity: 0.72,
+      opacity: 0.78,
       enableSteering: true,
       enablePedals: true,
       enableHorn: true,
       enablePause: true,
+      alwaysShow: true,
       ...options,
     };
 
@@ -400,12 +408,17 @@ export default class TouchControlsSystem {
   handleResize() {
     if (!this.container || this.disposed) return;
 
+    // Show on mobile always; on desktop when alwaysShow (helps testing + tablets)
     const isTouchDevice =
       window.matchMedia("(pointer: coarse)").matches ||
-      navigator.maxTouchPoints > 0;
+      navigator.maxTouchPoints > 0 ||
+      window.innerWidth < 900;
 
-    this.container.style.display =
-      this.visible && isTouchDevice ? "block" : "none";
+    const show =
+      this.visible &&
+      (this.options.alwaysShow || isTouchDevice);
+
+    this.container.style.display = show ? "block" : "none";
   }
 
   setEnabled(enabled) {

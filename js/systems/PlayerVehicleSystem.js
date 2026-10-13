@@ -568,50 +568,49 @@ export default class PlayerVehicleSystem {
 
   _createVehicle(preset) {
     const group = new THREE.Group();
+    group.name = "player-keke";
+
+    // Classic Kano NAPEP yellow-green if unset
+    const paint = this.paintColor ?? preset.color ?? 0xfbbf24;
 
     const bodyMaterial = new THREE.MeshStandardMaterial({
-      color: this.paintColor ?? preset.color,
-      roughness: 0.72,
-      metalness: 0.05,
+      color: paint,
+      roughness: 0.55,
+      metalness: 0.08,
     });
 
     const darkMaterial = new THREE.MeshStandardMaterial({
-      color: 0x252525,
+      color: 0x1e293b,
+      roughness: 0.9,
+    });
+
+    const canopyMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
       roughness: 0.95,
+      metalness: 0.02,
     });
 
     const glassMaterial = new THREE.MeshStandardMaterial({
-      color: 0x78949e,
-      roughness: 0.28,
-      metalness: 0.05,
+      color: 0x93c5fd,
+      roughness: 0.25,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.55,
     });
 
     const wheels = [];
 
-    const body = this._box(
+    // Always build tricycle silhouette (Adaidaita Sahu)
+    this._buildThreeWheeler(
       group,
-      "player-body",
-      preset.width,
-      0.6,
-      preset.length,
+      preset,
       bodyMaterial,
-      0,
-      0.8,
-      0,
+      darkMaterial,
+      glassMaterial,
+      wheels,
+      canopyMaterial,
     );
 
-    body.castShadow = true;
-
-    if (preset.wheels === 3) {
-      this._buildThreeWheeler(
-        group,
-        preset,
-        bodyMaterial,
-        darkMaterial,
-        glassMaterial,
-        wheels,
-      );
-    }
 
     if (this.vehicleType === "police") {
       this._box(
@@ -673,118 +672,114 @@ export default class PlayerVehicleSystem {
     darkMaterial,
     glassMaterial,
     wheels,
+    canopyMaterial = null,
   ) {
-    const wheelRadius = 0.31;
+    const canopyMat = canopyMaterial || darkMaterial;
+    const w = Math.min(preset.width || 1.55, 1.7);
+    const len = Math.min(preset.length || 2.6, 2.8);
+    const wheelRadius = 0.28;
     const wheelMaterial = new THREE.MeshStandardMaterial({
-      color: 0x151515,
+      color: 0x111111,
       roughness: 1,
     });
 
+    // --- Chassis (lower frame) ---
+    this._box(group, "keke-chassis", w * 0.85, 0.18, len * 0.9, darkMaterial, 0, 0.42, 0.05);
+
+    // --- Front nose / driver cabin (narrower) ---
+    this._box(group, "keke-nose", w * 0.55, 0.55, len * 0.32, bodyMaterial, 0, 0.78, -len * 0.28);
+
+    // Windshield
+    this._box(group, "keke-glass", w * 0.48, 0.42, 0.04, glassMaterial, 0, 1.15, -len * 0.42);
+
+    // Handlebar bar
+    this._box(group, "keke-handle", w * 0.5, 0.06, 0.06, darkMaterial, 0, 1.05, -len * 0.38);
+
+    // --- Passenger cabin (rear, wider) ---
+    this._box(group, "keke-cabin", w * 0.95, 0.5, len * 0.42, bodyMaterial, 0, 0.85, len * 0.12);
+
+    // Side panels
+    for (const side of [-1, 1]) {
+      this._box(group, "keke-side", 0.06, 0.55, len * 0.4, bodyMaterial, side * w * 0.48, 0.95, len * 0.1);
+    }
+
+    // Black fabric canopy (signature NAPEP look)
+    this._box(group, "keke-canopy", w * 1.02, 0.08, len * 0.72, canopyMat, 0, 1.55, 0.0);
+
+    // Canopy poles
+    for (const side of [-1, 1]) {
+      for (const z of [-len * 0.22, len * 0.28]) {
+        this._box(group, "keke-pole", 0.05, 0.7, 0.05, darkMaterial, side * w * 0.45, 1.2, z);
+      }
+    }
+
+    // Rear bench
+    this._box(group, "keke-bench", w * 0.8, 0.12, 0.35, darkMaterial, 0, 0.95, len * 0.22);
+
+    // Front bumper
+    this._box(group, "keke-bumper", w * 0.5, 0.12, 0.12, darkMaterial, 0, 0.4, -len * 0.48);
+
+    // Headlights
+    for (const side of [-1, 1]) {
+      this._box(
+        group,
+        "keke-light",
+        0.16,
+        0.12,
+        0.08,
+        new THREE.MeshStandardMaterial({ color: 0xfff7d6, emissive: 0xaa8844, emissiveIntensity: 0.4 }),
+        side * w * 0.2,
+        0.55,
+        -len * 0.5,
+      );
+    }
+
+    // Rear lights
+    for (const side of [-1, 1]) {
+      this._box(
+        group,
+        "keke-tail",
+        0.12,
+        0.1,
+        0.06,
+        new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x661111, emissiveIntensity: 0.3 }),
+        side * w * 0.35,
+        0.55,
+        len * 0.42,
+      );
+    }
+
+    // Wheels: 1 front + 2 rear
     const wheelPositions = [
-      [0, wheelRadius, -preset.length * 0.37],
-      [-preset.width * 0.43, wheelRadius, preset.length * 0.32],
-      [preset.width * 0.43, wheelRadius, preset.length * 0.32],
+      [0, wheelRadius, -len * 0.42],
+      [-w * 0.48, wheelRadius, len * 0.28],
+      [w * 0.48, wheelRadius, len * 0.28],
     ];
 
     for (const [x, y, z] of wheelPositions) {
       const wheel = new THREE.Mesh(
-        new THREE.CylinderGeometry(
-          wheelRadius,
-          wheelRadius,
-          0.14,
-          12,
-        ),
+        new THREE.CylinderGeometry(wheelRadius, wheelRadius, 0.16, 14),
         wheelMaterial,
       );
-
       wheel.rotation.z = Math.PI / 2;
       wheel.position.set(x, y, z);
       wheel.castShadow = true;
-
       group.add(wheel);
       wheels.push(wheel);
     }
 
+    // Yellow number-plate style front strip
     this._box(
       group,
-      "player-roof",
-      preset.width * 0.95,
+      "keke-plate",
+      0.35,
       0.12,
-      preset.length * 0.68,
-      bodyMaterial,
-      0,
-      1.85,
       0.02,
-    );
-
-    for (const side of [-1, 1]) {
-      for (const z of [-0.58, 0.58]) {
-        this._box(
-          group,
-          "player-roof-support",
-          0.07,
-          0.9,
-          0.07,
-          darkMaterial,
-          side * preset.width * 0.43,
-          1.35,
-          z,
-        );
-      }
-    }
-
-    this._box(
-      group,
-      "player-front-screen",
-      preset.width * 0.7,
-      0.48,
-      0.035,
-      glassMaterial,
+      new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.6 }),
       0,
-      1.45,
-      -preset.length * 0.31,
+      0.35,
+      -len * 0.5,
     );
-
-    this._box(
-      group,
-      "player-seat",
-      preset.width * 0.72,
-      0.15,
-      0.4,
-      darkMaterial,
-      0,
-      1.04,
-      0.18,
-    );
-
-    this._box(
-      group,
-      "player-front-bumper",
-      preset.width * 0.85,
-      0.15,
-      0.15,
-      darkMaterial,
-      0,
-      0.45,
-      -preset.length * 0.48,
-    );
-
-    for (const side of [-1, 1]) {
-      this._box(
-        group,
-        "player-headlight",
-        0.2,
-        0.14,
-        0.06,
-        new THREE.MeshStandardMaterial({
-          color: 0xfff0c2,
-          emissive: 0x554422,
-        }),
-        side * preset.width * 0.3,
-        0.58,
-        -preset.length * 0.49,
-      );
-    }
   }
 
   _box(
