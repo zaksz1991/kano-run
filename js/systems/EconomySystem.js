@@ -1,509 +1,130 @@
-import GAME_CONFIG from "../core/config.js";
+import { GAME_CONFIG } from "../core/config.js";
 
-const DEFAULT_ECONOMY = Object.freeze({
-  startingMoney: 1500,
-  minimumFare: 100,
-  baseFare: 250,
-  farePerMeter: 0.08,
-  passengerTipChance: 0.2,
-  maximumTipMultiplier: 0.5,
-  fuelPricePerUnit: 8,
-  repairBaseCost: 250,
-  repairCostPerDamage: 12,
-  hornCost: 0,
-  nearMissBonus: 25,
-  cleanTripBonus: 150,
-});
+const DEFAULTS = {
+  baseFare: 200,
+  farePerKm: 150,
+  negotiationMultiplier: 1.2, // Bonus for good negotiation
+  fuelPricePerLiter: 120, // Naira
+  repairCostPerCondition: 50, // Naira
+  karotaFineBase: 1500,
+  karotaFinePerSpeed: 100, // Extra fine for every unit over the limit
+  dailyExpenses: 500, // Deducted at the start of a new day/run
+};
 
 export default class EconomySystem {
-  constructor({ gameState, eventBus, saveManager, settings = {} }) {
-    if (!gameState) {
-      throw new Error("EconomySystem requires gameState.");
-    }
+  constructor({
+    gameState = null,
+    eventBus = null,
+    saveManager = null,
+    config = {},
+  } = {}) {
+    if (!gameState) throw new Error("EconomySystem requires gameState.");
 
     this.gameState = gameState;
-    this.eventBus = eventBus ?? null;
-    this.saveManager = saveManager ?? null;
+    this.eventBus = eventBus;
+    this.saveManager = saveManager;
+    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.economy ?? {}), ...config };
 
-    this.settings = {
-      ...DEFAULT_ECONOMY,
-      ...settings,
-    };
-
-    this.destroyed = false;
-    this.listeners = [];
-    this.transactionSequence = 0;
-
-    this.ensureWallet();
-    this.bindEvents();
+    this._disposers = [];
+    this._bindEvents();
   }
 
-  ensureWallet() {
-    const profile = this.gameState.profile;
-
-    if (!Number.isFinite(Number(profile.money))) {
-      profile.money = this.settings.startingMoney;
-    }
-
-    profile.money = Math.max(0, Math.floor(Number(profile.money)));
-
-    if (!profile.economy || typeof profile.economy !== "object") {
-      profile.economy = {
-        totalEarned: 0,
-        totalSpent: 0,
-        totalFares: 0,
-        totalTips: 0,
-        totalFuelCost: 0,
-        totalRepairCost: 0,
-        transactions: [],
-      };
-    }
-
-    const economy = profile.economy;
-
-    for (const key of [
-      "totalEarned",
-      "totalSpent",
-      "totalFares",
-      "totalTips",
-      "totalFuelCost",
-      "totalRepairCost",
-    ]) {
-      economy[key] = Math.max(0, Number(economy[key]) || 0);
-    }
-
-    if (!Array.isArray(economy.transactions)) {
-      economy.transactions = [];
-    }
-
-    return economy;
-  }
-
-  bindEvents() {
-    this.listen(this.eventBus, "passengers:delivered", (payload) => {
-      this.handlePassengerDelivery(payload);
+  _bindEvents() {
+    // Listen for passenger drop-offs to award fares
+    this._subscribe("passenger:dropped", (payload) => {
+      const distance = payload.distance || 1; // in km
+      const negotiationBonus = payload.negotiationSuccess ? this.config.negotiationMultiplier : 1.0;
+      const fare = this.calculateFare(distance, negotiationBonus);
+      
+      this.addMoney(fare, "passenger_fare");
+      this.eventBus?.emit?.("economy:fare-earned", { amount: fare, reason: "passenger_fare" });
     });
 
-    this.listen(this.eventBus, "traffic:near-miss", () => {
-      this.awardNearMissBonus();
+    // Listen for KAROTA fines
+    this._subscribe("checkpoint:fined", (payload) => {
+      const speedOverLimit = payload.speedOverLimit || 0;
+      const fine = this.calculateFine(speedOverLimit);
+      
+      this.deductMoney(fine, "karota_fine");
+      this.eventBus?.emit?.("economy:fine-paid", { amount: fine, reason: "karota_fine" });
     });
 
-    this.listen(this.eventBus, "run:finished", (payload) => {
-      this.awardTripBonus(payload);
+    // Listen for refueling
+    this._subscribe("vehicle:refueled", (payload) => {
+      const liters = payload.liters || 10;
+      const cost = Math.ceil(liters * this.config.fuelPricePerLiter);
+      
+      this.deductMoney(cost, "fuel_purchase");
+      this.eventBus?.emit?.("economy:fuel-paid", { amount: cost, liters });
+    });
+
+    // Listen for repairs
+    this._subscribe("vehicle:repaired", (payload) => {
+      const conditionRestored = payload.conditionRestored || 20;
+      const cost = Math.ceil(conditionRestored * this.config.repairCostPerCondition);
+      
+      this.deductMoney(cost, "vehicle_repair");
+      this.eventBus?.emit?.("economy:repair-paid", { amount: cost, condition: conditionRestored });
+    });
+
+    // Listen for run start to deduct daily expenses
+    this._subscribe("game:started", () => {
+      this.deductMoney(this.config.dailyExpenses, "daily_expenses");
     });
   }
 
-  listen(source, eventName, callback) {
-    if (!source || typeof source.on !== "function") return;
+  calculateFare(distanceKm, multiplier = 1.0) {
+    const base = this.config.baseFare;
+    const distanceFare = distanceKm * this.config.farePerKm;
+    return Math.floor((base + distanceFare) * multiplier);
+  }
 
-    const unsubscribe = source.on(eventName, callback);
+  calculateFine(speedOverLimit) {
+    const base = this.config.karotaFineBase;
+    const penalty = speedOverLimit * this.config.karotaFinePerSpeed;
+    return Math.floor(base + penalty);
+  }
 
-    if (typeof unsubscribe === "function") {
-      this.listeners.push(unsubscribe);
-    } else if (typeof source.off === "function") {
-      this.listeners.push(() => source.off(eventName, callback));
+  addMoney(amount, reason = "unspecified") {
+    if (amount <= 0) return false;
+    const success = this.gameState.addMoney?.(amount, reason);
+    if (success) {
+      this.eventBus?.emit?.("economy:balance-changed", { 
+        balance: this.getBalance(), 
+        change: amount 
+      });
     }
+    return success;
+  }
+
+  deductMoney(amount, reason = "unspecified") {
+    if (amount <= 0) return false;
+    const success = this.gameState.spendMoney?.(amount, reason);
+    if (success) {
+      this.eventBus?.emit?.("economy:balance-changed", { 
+        balance: this.getBalance(), 
+        change: -amount 
+      });
+    }
+    return success;
   }
 
   getBalance() {
-    return Math.max(0, Math.floor(Number(this.gameState.profile.money) || 0));
+    return this.gameState.profile?.money ?? this.gameState.profile?.wallet ?? 0;
   }
 
-  getStatistics() {
-    const economy = this.gameState.profile.economy;
-
-    return {
-      balance: this.getBalance(),
-      totalEarned: economy.totalEarned,
-      totalSpent: economy.totalSpent,
-      totalFares: economy.totalFares,
-      totalTips: economy.totalTips,
-      totalFuelCost: economy.totalFuelCost,
-      totalRepairCost: economy.totalRepairCost,
-      transactionCount: economy.transactions.length,
-    };
+  canAfford(amount) {
+    return this.getBalance() >= amount;
   }
 
-  calculateFare({
-    distance = 0,
-    baseFare = this.settings.baseFare,
-    demandMultiplier = 1,
-    weatherMultiplier = 1,
-    timeMultiplier = 1,
-  } = {}) {
-    const safeDistance = Math.max(0, Number(distance) || 0);
-    const safeBaseFare = Math.max(0, Number(baseFare) || 0);
-
-    const multipliers = [
-      demandMultiplier,
-      weatherMultiplier,
-      timeMultiplier,
-    ].map((value) => {
-      const number = Number(value);
-      return Number.isFinite(number) ? Math.min(3, Math.max(0.5, number)) : 1;
-    });
-
-    const distanceFare = safeDistance * this.settings.farePerMeter;
-
-    const fare = Math.round(
-      Math.max(
-        this.settings.minimumFare,
-        (safeBaseFare + distanceFare) *
-          multipliers.reduce((total, value) => total * value, 1)
-      )
-    );
-
-    return fare;
+  _subscribe(event, handler) {
+    if (!this.eventBus?.on) return;
+    const unsub = this.eventBus.on(event, handler);
+    if (typeof unsub === "function") this._disposers.push(unsub);
   }
 
-  handlePassengerDelivery(payload = {}) {
-    if (payload.economyProcessed === true) return;
-
-    const fare = Math.max(
-      0,
-      Math.floor(Number(payload.fare ?? payload.amount) || 0)
-    );
-
-    if (fare <= 0) return;
-
-    this.credit(fare, "passenger_fare", {
-      passengerId: payload.passengerId ?? null,
-      reason: "Passenger delivery",
-    });
-
-    const tip = this.calculateTip(fare);
-
-    if (tip > 0) {
-      this.credit(tip, "passenger_tip", {
-        passengerId: payload.passengerId ?? null,
-        reason: "Passenger tip",
-      });
-    }
-
-    this.emit("economy:fare-settled", {
-      fare,
-      tip,
-      total: fare + tip,
-      balance: this.getBalance(),
-    });
-  }
-
-  calculateTip(fare) {
-    if (Math.random() >= this.settings.passengerTipChance) {
-      return 0;
-    }
-
-    const maximum =
-      Math.max(0, fare) * this.settings.maximumTipMultiplier;
-
-    if (maximum <= 0) return 0;
-
-    return Math.floor(Math.random() * maximum) + 1;
-  }
-
-  credit(amount, category = "income", metadata = {}) {
-    const value = Math.floor(Number(amount));
-
-    if (!Number.isFinite(value) || value <= 0) {
-      return {
-        success: false,
-        balance: this.getBalance(),
-        reason: "invalid_amount",
-      };
-    }
-
-    this.gameState.profile.money = this.getBalance() + value;
-
-    const economy = this.gameState.profile.economy;
-    economy.totalEarned += value;
-
-    if (category === "passenger_fare") {
-      economy.totalFares += value;
-    }
-
-    if (category === "passenger_tip") {
-      economy.totalTips += value;
-    }
-
-    const transaction = this.recordTransaction({
-      type: "credit",
-      category,
-      amount: value,
-      metadata,
-    });
-
-    this.persist();
-
-    this.emit("economy:credited", {
-      ...transaction,
-      balance: this.getBalance(),
-    });
-
-    return {
-      success: true,
-      amount: value,
-      balance: this.getBalance(),
-      transaction,
-    };
-  }
-
-  debit(amount, category = "purchase", metadata = {}) {
-    const value = Math.floor(Number(amount));
-
-    if (!Number.isFinite(value) || value <= 0) {
-      return {
-        success: false,
-        balance: this.getBalance(),
-        reason: "invalid_amount",
-      };
-    }
-
-    const balance = this.getBalance();
-
-    if (balance < value) {
-      this.emit("economy:insufficient-funds", {
-        requested: value,
-        balance,
-        category,
-      });
-
-      return {
-        success: false,
-        balance,
-        reason: "insufficient_funds",
-      };
-    }
-
-    this.gameState.profile.money = balance - value;
-
-    const economy = this.gameState.profile.economy;
-    economy.totalSpent += value;
-
-    if (category === "fuel") {
-      economy.totalFuelCost += value;
-    }
-
-    if (category === "repair") {
-      economy.totalRepairCost += value;
-    }
-
-    const transaction = this.recordTransaction({
-      type: "debit",
-      category,
-      amount: value,
-      metadata,
-    });
-
-    this.persist();
-
-    this.emit("economy:debited", {
-      ...transaction,
-      balance: this.getBalance(),
-    });
-
-    return {
-      success: true,
-      amount: value,
-      balance: this.getBalance(),
-      transaction,
-    };
-  }
-
-  purchase(item, price, metadata = {}) {
-    if (!item || typeof item !== "string") {
-      return {
-        success: false,
-        reason: "invalid_item",
-        balance: this.getBalance(),
-      };
-    }
-
-    return this.debit(price, "purchase", {
-      item,
-      ...metadata,
-    });
-  }
-
-  buyFuel(units, currentFuel, maximumFuel = 100) {
-    const availableCapacity = Math.max(
-      0,
-      Number(maximumFuel) - Number(currentFuel)
-    );
-
-    const requestedUnits = Math.min(
-      availableCapacity,
-      Math.max(0, Number(units) || 0)
-    );
-
-    if (requestedUnits <= 0) {
-      return {
-        success: false,
-        reason: "fuel_tank_full",
-        balance: this.getBalance(),
-      };
-    }
-
-    const cost = Math.ceil(
-      requestedUnits * this.settings.fuelPricePerUnit
-    );
-
-    const payment = this.debit(cost, "fuel", {
-      units: requestedUnits,
-    });
-
-    if (!payment.success) return payment;
-
-    return {
-      ...payment,
-      unitsPurchased: requestedUnits,
-      fuelAfterPurchase: Math.min(
-        maximumFuel,
-        Number(currentFuel) + requestedUnits
-      ),
-    };
-  }
-
-  calculateRepairCost(damagePercent) {
-    const damage = Math.min(100, Math.max(0, Number(damagePercent) || 0));
-
-    if (damage <= 0) return 0;
-
-    return Math.ceil(
-      this.settings.repairBaseCost +
-        damage * this.settings.repairCostPerDamage
-    );
-  }
-
-  repairVehicle(damagePercent) {
-    const damage = Math.min(100, Math.max(0, Number(damagePercent) || 0));
-
-    if (damage <= 0) {
-      return {
-        success: false,
-        reason: "vehicle_already_repaired",
-        balance: this.getBalance(),
-      };
-    }
-
-    const cost = this.calculateRepairCost(damage);
-    const payment = this.debit(cost, "repair", { damage });
-
-    if (!payment.success) return payment;
-
-    this.emit("economy:vehicle-repaired", {
-      damageRestored: damage,
-      cost,
-      balance: this.getBalance(),
-    });
-
-    return {
-      ...payment,
-      damageRestored: damage,
-    };
-  }
-
-  awardNearMissBonus() {
-    const bonus = Math.max(
-      0,
-      Math.floor(Number(this.settings.nearMissBonus) || 0)
-    );
-
-    if (bonus <= 0) return null;
-
-    return this.credit(bonus, "near_miss_bonus", {
-      reason: "Near miss",
-    });
-  }
-
-  awardTripBonus(payload = {}) {
-    if (payload.cancelled === true) return null;
-
-    if (payload.clean === false || payload.collisions > 0) {
-      return null;
-    }
-
-    const bonus = Math.max(
-      0,
-      Math.floor(Number(this.settings.cleanTripBonus) || 0)
-    );
-
-    if (bonus <= 0) return null;
-
-    return this.credit(bonus, "clean_trip_bonus", {
-      reason: "Clean trip",
-    });
-  }
-
-  recordTransaction({ type, category, amount, metadata = {} }) {
-    const transaction = {
-      id: `KRE-${Date.now()}-${++this.transactionSequence}`,
-      type,
-      category,
-      amount,
-      timestamp: new Date().toISOString(),
-      metadata,
-    };
-
-    const transactions = this.gameState.profile.economy.transactions;
-
-    transactions.push(transaction);
-
-    if (transactions.length > 100) {
-      transactions.splice(0, transactions.length - 100);
-    }
-
-    return transaction;
-  }
-
-  persist() {
-    if (
-      this.saveManager &&
-      typeof this.saveManager.saveProfile === "function"
-    ) {
-      this.saveManager.saveProfile(this.gameState.profile);
-    }
-
-    this.emit("economy:updated", this.getStatistics());
-  }
-
-  emit(eventName, payload) {
-    if (this.eventBus && typeof this.eventBus.emit === "function") {
-      this.eventBus.emit(eventName, payload);
-    }
-
-    if (this.gameState && typeof this.gameState.emit === "function") {
-      this.gameState.emit(eventName, payload);
-    }
-  }
-
-  reset() {
-    this.gameState.profile.money = this.settings.startingMoney;
-    this.gameState.profile.economy = {
-      totalEarned: 0,
-      totalSpent: 0,
-      totalFares: 0,
-      totalTips: 0,
-      totalFuelCost: 0,
-      totalRepairCost: 0,
-      transactions: [],
-    };
-
-    this.persist();
-  }
-
-  destroy() {
-    if (this.destroyed) return;
-
-    this.destroyed = true;
-
-    for (const unsubscribe of this.listeners) {
-      try {
-        unsubscribe();
-      } catch {
-        // Listener may already have been removed.
-      }
-    }
-
-    this.listeners.length = 0;
+  dispose() {
+    for (const unsub of this._disposers) unsub();
+    this._disposers = [];
   }
 }
