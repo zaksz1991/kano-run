@@ -139,13 +139,17 @@ export default class Game {
   }
 
   async initializeSystems() {
-    // 🔥 OPTIMIZATION: Load critical systems in parallel for faster startup
+    // 🔥 FIX: Player, Camera, Road, and Traffic MUST be critical so they are ready for bootstrap
     const criticalSystems = [
       ["progression", () => import("../systems/ProgressionSystem.js")],
       ["routes", () => import("../systems/RouteSystem.js")],
       ["world", () => import("../systems/WorldSystem.js")],
       ["road", () => import("../systems/RoadSystem.js")],
       ["scenery", () => import("../systems/ScenerySystem.js")],
+      ["playerVehicle", () => import("../systems/PlayerVehicleSystem.js")],
+      ["camera", () => import("../systems/CameraSystem.js")],
+      ["traffic", () => import("../systems/TrafficSystem.js")],
+      ["collision", () => import("../systems/CollisionSystem.js")],
     ];
 
     const criticalPromises = criticalSystems.map(async ([name, loadModule]) => {
@@ -161,7 +165,7 @@ export default class Game {
       await system.initialize?.(this.getSystemContext());
     }
 
-    // Load remaining systems in background (non-blocking)
+    // Load remaining non-essential systems in background (non-blocking)
     const remainingSystems = [
       ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
@@ -169,17 +173,13 @@ export default class Game {
       ["weather", () => import("../systems/WeatherSystem.js")],
       ["routeGeneration", () => import("../systems/RouteGenerationSystem.js")],
       ["vehicles", () => import("../systems/VehicleSystem.js")],
-      ["playerVehicle", () => import("../systems/PlayerVehicleSystem.js")],
       ["driving", () => import("../systems/DrivingSystem.js")],
-      ["traffic", () => import("../systems/TrafficSystem.js")],
-      ["collision", () => import("../systems/CollisionSystem.js")],
       ["passengers", () => import("../systems/PassengerSystem.js")],
       ["economy", () => import("../systems/EconomySystem.js")],
       ["missions", () => import("../systems/MissionSystem.js")],
       ["garage", () => import("../systems/GarageSystem.js")],
       ["customization", () => import("../systems/CustomizationSystem.js")],
       ["particles", () => import("../systems/ParticleSystem.js")],
-      ["camera", () => import("../systems/CameraSystem.js")],
       ["minimap", () => import("../systems/MinimapSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
       ["touchControls", () => import("../systems/TouchControlsSystem.js")],
@@ -200,7 +200,7 @@ export default class Game {
       }
     });
 
-    // Bootstrap player immediately
+    // 🔥 FIX: Now player and camera are GUARANTEED to be loaded before we bootstrap them
     try {
       const player = this.systems.get("playerVehicle");
       if (player) {
@@ -309,7 +309,6 @@ export default class Game {
 
     this.events.emit("game:updated", { delta });
 
-    // 🔥 Call the adaptive quality governor every frame
     this.sceneManager?.govern?.(delta);
   }
 
@@ -318,7 +317,6 @@ export default class Game {
       if (system.enabled === false) continue;
       system.render?.(interpolation);
     }
-    // 🔥 Pass interpolation to SceneManager for PostProcessing
     this.sceneManager?.render?.(interpolation);
   }
 
