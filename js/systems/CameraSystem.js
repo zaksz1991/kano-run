@@ -1,12 +1,17 @@
 import * as THREE from "three";
 
 export default class CameraSystem {
-  constructor(camera, options = {}) {
+  constructor(cameraOrContext = {}, options = {}) {
+    const ctx = cameraOrContext && (cameraOrContext.camera || cameraOrContext.scene)
+      ? cameraOrContext
+      : { camera: cameraOrContext };
+    const camera = ctx.camera;
     if (!camera) {
       throw new Error("CameraSystem requires a THREE.Camera instance.");
     }
 
     this.camera = camera;
+    this.context = ctx;
 
     this.options = {
       followDistance: 9.5,

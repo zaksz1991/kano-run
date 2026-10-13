@@ -1,12 +1,18 @@
 import * as THREE from "three";
 
 export default class LightingSystem {
-  constructor(scene, options = {}) {
-    if (!scene) {
+  constructor(sceneOrContext = {}, options = {}) {
+    // Game passes a system context object: { scene, camera, THREE, ... }
+    const ctx = sceneOrContext && sceneOrContext.scene
+      ? sceneOrContext
+      : { scene: sceneOrContext };
+    const scene = ctx.scene;
+    if (!scene || typeof scene.add !== "function") {
       throw new Error("LightingSystem requires a THREE.Scene instance.");
     }
 
     this.scene = scene;
+    this.context = ctx;
 
     this.options = {
       ambientIntensity: 1.1,
@@ -14,6 +20,7 @@ export default class LightingSystem {
       hemisphereIntensity: 1.2,
       enableShadows: true,
       shadowMapSize: 2048,
+      ...(ctx.config?.lighting || {}),
       ...options,
     };
 
