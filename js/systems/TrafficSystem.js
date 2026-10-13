@@ -10,16 +10,17 @@ export const TRAFFIC_TYPES = Object.freeze({
   KAROTA: "karota", ROBBER: "robber",
 });
 
+// 🔥 OPTIMIZATION: Reduced speeds so the player's Keke (max 25-34) overtakes traffic
 const VEHICLE_SPECS = Object.freeze({
-  keke: { width: 1.25, length: 2.2, speedMin: 8, speedMax: 18, weight: 0.8, score: 30, colors: ["#e7b923", "#168b50", "#f4f0df"] },
-  car: { width: 1.8, length: 4.1, speedMin: 12, speedMax: 28, weight: 1.2, score: 20, colors: ["#d8dce2", "#2466b3", "#c13d35", "#222831"] },
-  taxi: { width: 1.8, length: 4.1, speedMin: 10, speedMax: 24, weight: 1.2, score: 25, colors: ["#f2c230", "#e8b925"] },
-  bus: { width: 2.25, length: 7.2, speedMin: 8, speedMax: 18, weight: 2.5, score: 40, colors: ["#f0a51c", "#2671a9", "#28804e"] },
-  motorcycle: { width: 0.75, length: 1.9, speedMin: 15, speedMax: 32, weight: 0.5, score: 35, colors: ["#242424", "#d93b35", "#f4f4f4"] },
-  truck: { width: 2.4, length: 6.5, speedMin: 6, speedMax: 16, weight: 3, score: 50, colors: ["#d4d5d6", "#b84b32", "#337c56"] },
-  police: { width: 1.9, length: 4.3, speedMin: 14, speedMax: 26, weight: 1.4, score: 45, colors: ["#e9edf1", "#233a5b"] },
-  karota: { width: 1.9, length: 4.3, speedMin: 10, speedMax: 22, weight: 1.4, score: 45, colors: ["#f2a323", "#252525"] },
-  robber: { width: 1.8, length: 4, speedMin: 16, speedMax: 30, weight: 1.1, score: 60, colors: ["#202020", "#4c293a"] },
+  keke: { width: 1.25, length: 2.2, speedMin: 6, speedMax: 12, weight: 0.8, score: 30, colors: ["#e7b923", "#168b50", "#f4f0df"] },
+  car: { width: 1.8, length: 4.1, speedMin: 8, speedMax: 16, weight: 1.2, score: 20, colors: ["#d8dce2", "#2466b3", "#c13d35", "#222831"] },
+  taxi: { width: 1.8, length: 4.1, speedMin: 7, speedMax: 14, weight: 1.2, score: 25, colors: ["#f2c230", "#e8b925"] },
+  bus: { width: 2.25, length: 7.2, speedMin: 5, speedMax: 11, weight: 2.5, score: 40, colors: ["#f0a51c", "#2671a9", "#28804e"] },
+  motorcycle: { width: 0.75, length: 1.9, speedMin: 10, speedMax: 18, weight: 0.5, score: 35, colors: ["#242424", "#d93b35", "#f4f4f4"] },
+  truck: { width: 2.4, length: 6.5, speedMin: 4, speedMax: 10, weight: 3, score: 50, colors: ["#d4d5d6", "#b84b32", "#337c56"] },
+  police: { width: 1.9, length: 4.3, speedMin: 9, speedMax: 17, weight: 1.4, score: 45, colors: ["#e9edf1", "#233a5b"] },
+  karota: { width: 1.9, length: 4.3, speedMin: 7, speedMax: 14, weight: 1.4, score: 45, colors: ["#f2a323", "#252525"] },
+  robber: { width: 1.8, length: 4, speedMin: 11, speedMax: 20, weight: 1.1, score: 60, colors: ["#202020", "#4c293a"] },
 });
 
 const DEFAULT_TRAFFIC_WEIGHTS = {
@@ -33,7 +34,7 @@ export class TrafficSystem {
     this.eventBus = options.eventBus ?? null;
 
     this.lanes = options.lanes ?? [-3.2, 0, 3.2];
-    this.spawnDistance = options.spawnDistance ?? 120; // Increased slightly for better reaction time
+    this.spawnDistance = options.spawnDistance ?? 120;
     this.despawnDistance = options.despawnDistance ?? -30;
     this.minimumGap = options.minimumGap ?? 14;
     this.maximumSpawnAttempts = options.maximumSpawnAttempts ?? 12;
@@ -104,7 +105,7 @@ export class TrafficSystem {
 
     for (const vehicle of this.vehicles.values()) {
       // 🔥 FIX: Always move traffic FORWARD (+Z) at their own speed.
-      // The player will naturally overtake slower traffic, and faster traffic will pull away.
+      // The player will naturally overtake slower traffic.
       vehicle.z += vehicle.speed * dt;
       vehicle.previousZ = vehicle.z;
 
@@ -299,7 +300,8 @@ export class TrafficSystem {
   removeDistantVehicles(player = {}) {
     const playerZ = Number(player.z) || Number(player.position?.z) || 0;
     for (const [id, vehicle] of this.vehicles) {
-      if (vehicle.z < playerZ + this.despawnDistance) { // 🔥 FIX: Correct despawn logic
+      // 🔥 FIX: Correct despawn logic (only remove when BEHIND the player)
+      if (vehicle.z < playerZ + this.despawnDistance) {
         this.vehicles.delete(id);
         this.statistics.despawned += 1;
         this.emit("traffic:vehicle-despawned", { id, type: vehicle.type });

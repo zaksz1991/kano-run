@@ -4,18 +4,204 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0f172a" />
   <title>Kano Run — Adaidaita Sahu</title>
   <link rel="stylesheet" href="/css/styles.css" />
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1628; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    html, body { 
+      height: 100%; 
+      overflow: hidden; 
+      background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+      color: #f1f5f9;
+    }
+
     #game-container { position: fixed; inset: 0; }
     #c { width: 100%; height: 100%; display: block; }
+
+    /* Loading / Start Screen */
+    #loading-screen {
+      position: fixed;
+      z-index: 1000;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      padding: 32px;
+      background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+      text-align: center;
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+
+    #loading-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .logo-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo {
+      width: 100px;
+      height: 100px;
+      background: linear-gradient(135deg, #00b4d8 0%, #0077b6 100%);
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 42px;
+      font-weight: 900;
+      color: white;
+      box-shadow: 0 20px 60px rgba(0, 180, 216, 0.4);
+      animation: pulse 2.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 20px 60px rgba(0, 180, 216, 0.4); }
+      50% { transform: scale(1.05); box-shadow: 0 25px 70px rgba(0, 180, 216, 0.6); }
+    }
+
+    .game-title {
+      font-size: clamp(40px, 8vw, 64px);
+      font-weight: 900;
+      letter-spacing: -2px;
+      background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 18px;
+      font-weight: 700;
+      color: #00b4d8;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+
+    .tagline {
+      font-size: 16px;
+      color: #94a3b8;
+      max-width: 400px;
+      line-height: 1.6;
+    }
+
+    .start-button {
+      padding: 18px 64px;
+      font-size: 18px;
+      font-weight: 800;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #00b4d8 0%, #0077b6 100%);
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 10px 30px rgba(0, 180, 216, 0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .start-button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 15px 40px rgba(0, 180, 216, 0.5);
+    }
+
+    .start-button:active {
+      transform: translateY(-1px);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 16px;
+      font-size: 14px;
+      color: #64748b;
+    }
+
+    .control-key {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .loading-bar {
+      width: 280px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .loading-progress {
+      height: 100%;
+      background: linear-gradient(90deg, #00b4d8 0%, #0077b6 100%);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .loading-progress.active {
+      animation: loading 2s ease-in-out infinite;
+    }
+
+    @keyframes loading {
+      0% { width: 0%; margin-left: 0; }
+      50% { width: 60%; margin-left: 20%; }
+      100% { width: 0%; margin-left: 100%; }
+    }
+
+    .developer {
+      position: absolute;
+      bottom: 32px;
+      font-size: 13px;
+      color: #475569;
+      letter-spacing: 2px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
   </style>
 </head>
 <body>
+  <div id="loading-screen">
+    <div class="logo-container">
+      <div class="logo">RN</div>
+      <h1 class="game-title">KANO RUN</h1>
+      <p class="subtitle">Adaidaita Sahu</p>
+    </div>
+
+    <p class="tagline">Drive through Kano. Pick up passengers. Earn fares. Build your reputation.</p>
+
+    <button class="start-button" id="start-btn">START DRIVING</button>
+
+    <div class="controls">
+      <span class="control-key">W / ↑ Accelerate</span>
+      <span class="control-key">S / ↓ Brake</span>
+      <span class="control-key">A / D Steer</span>
+    </div>
+
+    <div class="loading-bar">
+      <div class="loading-progress" id="loading-progress"></div>
+    </div>
+
+    <div class="developer">Hassan Zakariya (Ruffneck Entertainment)</div>
+  </div>
+
   <div id="game-container">
     <canvas id="c"></canvas>
   </div>
+
   <script type="module" src="/js/core/Main.js"></script>
 </body>
 </html>
