@@ -70,6 +70,7 @@ export default class Game {
       await this.initializeSystems();
 
       this.input.initialize?.();
+      this.input.enable?.();
       this.saveManager.loadProfile?.();
 
       window.addEventListener("resize", this.boundResize);

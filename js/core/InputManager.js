@@ -222,6 +222,29 @@ export class InputManager {
     );
   }
 
+
+  /** Touch / UI hold API used by TouchControlsSystem */
+  setButton(action, pressed, pointerId = "ui") {
+    if (pressed) {
+      this.bindPointer(action, pointerId);
+    } else {
+      this.releasePointer(pointerId);
+      // also clear any ui-specific pointer for this action
+      const state = this.actions.get(action);
+      if (state) {
+        for (const id of [...state.pointers]) {
+          if (String(id).startsWith("ui")) {
+            this.releasePointer(id);
+          }
+        }
+      }
+    }
+  }
+
+  setInput(action, pressed) {
+    this.setButton(action, pressed, `ui-${action}`);
+  }
+
   bindPointer(action, pointerId) {
     this.assertActive();
 

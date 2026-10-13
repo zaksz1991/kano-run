@@ -117,18 +117,22 @@ function damp(current, target, smoothing, dt) {
 }
 
 export default class PlayerVehicleSystem {
-  constructor({
-    scene,
-    camera = null,
-    inputManager = null,
-    gameState = null,
-    drivingSystem = null,
-    collisionSystem = null,
-    weatherSystem = null,
-    roadSystem = null,
-    eventBus = null,
-    config = {},
-  } = {}) {
+  constructor(ctx = {}) {
+    // Support full Game context: { scene, camera, input, gameState, ... }
+    const {
+      scene,
+      camera = null,
+      inputManager = null,
+      input = null,
+      gameState = null,
+      drivingSystem = null,
+      collisionSystem = null,
+      weatherSystem = null,
+      roadSystem = null,
+      eventBus = null,
+      config = {},
+    } = ctx;
+
     if (!scene) {
       throw new Error(
         "PlayerVehicleSystem requires a Three.js scene.",
@@ -137,7 +141,8 @@ export default class PlayerVehicleSystem {
 
     this.scene = scene;
     this.camera = camera;
-    this.inputManager = inputManager;
+    // Game context uses `input`, not `inputManager`
+    this.inputManager = inputManager || input || null;
     this.gameState = gameState;
     this.drivingSystem = drivingSystem;
     this.collisionSystem = collisionSystem;

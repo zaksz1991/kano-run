@@ -355,7 +355,7 @@ export default class TouchControlsSystem {
     if (!this.inputManager) return;
 
     if (typeof this.inputManager.setButton === "function") {
-      this.inputManager.setButton(action, pressed);
+      this.inputManager.setButton(action, pressed, `ui-${action}`);
       return;
     }
 
