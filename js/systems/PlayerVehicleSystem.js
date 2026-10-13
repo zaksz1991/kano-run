@@ -508,15 +508,35 @@ export default class PlayerVehicleSystem {
 
     const paint = this.paintColor ?? preset.color ?? 0xfbbf24;
 
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: paint, roughness: 0.55, metalness: 0.08 });
-    const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
-    const canopyMaterial = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.95, metalness: 0.02 });
+    // 🔥 STYLIZED GRAPHICS UPDATE: flatShading: true + adjusted roughness/metalness
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: paint,
+      roughness: 0.85,
+      metalness: 0.0,
+      flatShading: true,
+    });
+
+    const darkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.85,
+      metalness: 0.0,
+      flatShading: true,
+    });
+
+    const canopyMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.85,
+      metalness: 0.0,
+      flatShading: true,
+    });
+
     const glassMaterial = new THREE.MeshStandardMaterial({
       color: 0x93c5fd,
-      roughness: 0.25,
+      roughness: 0.2,
       metalness: 0.1,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.6,
+      flatShading: true,
     });
 
     const wheels = [];
@@ -524,8 +544,8 @@ export default class PlayerVehicleSystem {
     this._buildThreeWheeler(group, preset, bodyMaterial, darkMaterial, glassMaterial, wheels, canopyMaterial);
 
     if (this.vehicleType === "police") {
-      this._box(group, "police-lightbar", 0.8, 0.14, 0.24, new THREE.MeshStandardMaterial({ color: 0x2471a3, emissive: 0x102e50 }), 0, 1.85, -0.1);
-      this._box(group, "police-lightbar-red", 0.32, 0.14, 0.24, new THREE.MeshStandardMaterial({ color: 0xc0392b, emissive: 0x3c0804 }), -0.24, 1.85, -0.1);
+      this._box(group, "police-lightbar", 0.8, 0.14, 0.24, new THREE.MeshStandardMaterial({ color: 0x2471a3, emissive: 0x102e50, flatShading: true }), 0, 1.85, -0.1);
+      this._box(group, "police-lightbar-red", 0.32, 0.14, 0.24, new THREE.MeshStandardMaterial({ color: 0xc0392b, emissive: 0x3c0804, flatShading: true }), -0.24, 1.85, -0.1);
     }
 
     if (this.vehicleType === "karota") {
@@ -545,10 +565,34 @@ export default class PlayerVehicleSystem {
     const len = Math.min(preset.length || 2.45, 2.7);
     const style = preset.style || "standard";
 
-    const chrome = new THREE.MeshStandardMaterial({ color: 0xc0c0c0, metalness: 0.85, roughness: 0.25 });
-    const rubber = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.95, metalness: 0.05 });
-    const seatMat = new THREE.MeshStandardMaterial({ color: style === "luxury" ? 0x1e3a5f : 0x2a2a2a, roughness: 0.8 });
-    const yellowPlate = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.55, metalness: 0.1 });
+    // 🔥 STYLIZED GRAPHICS UPDATE
+    const chrome = new THREE.MeshStandardMaterial({
+      color: 0xc0c0c0,
+      metalness: 0.6,
+      roughness: 0.4,
+      flatShading: true,
+    });
+    
+    const rubber = new THREE.MeshStandardMaterial({
+      color: 0x111111,
+      roughness: 0.9,
+      metalness: 0.0,
+      flatShading: true,
+    });
+    
+    const seatMat = new THREE.MeshStandardMaterial({
+      color: style === "luxury" ? 0x1e3a5f : 0x2a2a2a,
+      roughness: 0.85,
+      metalness: 0.0,
+      flatShading: true,
+    });
+    
+    const yellowPlate = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      roughness: 0.8,
+      metalness: 0.1,
+      flatShading: true,
+    });
 
     this._box(group, "frame-main", w * 0.55, 0.12, len * 0.88, darkMaterial, 0, 0.38, 0.05);
     this._box(group, "frame-cross", w * 0.9, 0.08, 0.12, darkMaterial, 0, 0.36, len * 0.22);
@@ -612,7 +656,7 @@ export default class PlayerVehicleSystem {
     for (const side of [-1, 1]) {
       const light = new THREE.Mesh(
         new THREE.SphereGeometry(0.08, 8, 8),
-        new THREE.MeshStandardMaterial({ color: 0xfff7d6, emissive: 0xccaa44, emissiveIntensity: 0.55 })
+        new THREE.MeshStandardMaterial({ color: 0xfff7d6, emissive: 0xccaa44, emissiveIntensity: 0.55, flatShading: true })
       );
       light.position.set(side * w * 0.18, 0.58, noseZ - len * 0.16);
       light.name = "headlight";
@@ -622,7 +666,7 @@ export default class PlayerVehicleSystem {
     this._box(group, "plate", 0.32, 0.11, 0.02, yellowPlate, 0, 0.36, noseZ - len * 0.16);
 
     for (const side of [-1, 1]) {
-      this._box(group, "tail-light", 0.1, 0.08, 0.05, new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x881111, emissiveIntensity: 0.35 }), side * w * 0.38, 0.65, cabinZ + len * 0.2);
+      this._box(group, "tail-light", 0.1, 0.08, 0.05, new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x881111, emissiveIntensity: 0.35, flatShading: true }), side * w * 0.38, 0.65, cabinZ + len * 0.2);
     }
 
     const wheelR = 0.3;
