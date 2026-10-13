@@ -644,135 +644,90 @@ export default class VehicleSystem {
     glassMaterial,
     wheelMaterial,
   ) {
-    const isLarge = type === "bus" || type === "truck";
-    const bodyLength = spec.length * (isLarge ? 0.88 : 0.76);
-    const bodyHeight = isLarge ? spec.height * 0.58 : spec.height * 0.48;
+    const w = spec.width;
+    const h = spec.height;
+    const L = spec.length;
+    const chrome = new THREE.MeshStandardMaterial({
+      color: 0xb0b8c0,
+      metalness: 0.7,
+      roughness: 0.3,
+    });
 
-    this._addBox(
-      group,
-      "vehicle-body",
-      spec.width,
-      bodyHeight,
-      bodyLength,
-      bodyMaterial,
-      0,
-      bodyHeight * 0.65,
-      0,
-    );
-
-    const cabinLength = isLarge
-      ? spec.length * 0.36
-      : spec.length * 0.42;
-
-    const cabinWidth = spec.width * 0.83;
-
-    this._addBox(
-      group,
-      "vehicle-cabin",
-      cabinWidth,
-      spec.height * 0.4,
-      cabinLength,
-      isLarge ? bodyMaterial : glassMaterial,
-      0,
-      bodyHeight + spec.height * 0.2,
-      -spec.length * 0.04,
-    );
-
-    if (isLarge) {
-      this._addBox(
-        group,
-        "vehicle-cargo",
-        spec.width * 0.94,
-        spec.height * 0.42,
-        spec.length * 0.45,
-        type === "truck" ? darkMaterial : bodyMaterial,
-        0,
-        spec.height * 0.66,
-        spec.length * 0.23,
+    if (type === "bus") {
+      // Long box body + high windows + roof
+      this._addBox(group, "bus-body", w, h * 0.72, L * 0.95, bodyMaterial, 0, h * 0.42, 0);
+      this._addBox(group, "bus-roof", w * 0.98, 0.12, L * 0.92, darkMaterial, 0, h * 0.82, 0);
+      // Window band
+      this._addBox(group, "bus-windows", w * 1.01, h * 0.28, L * 0.7, glassMaterial, 0, h * 0.58, 0.05);
+      // Front windshield
+      this._addBox(group, "bus-glass-front", w * 0.85, h * 0.35, 0.06, glassMaterial, 0, h * 0.55, -L * 0.46);
+      // Destination board
+      this._addBox(group, "bus-board", w * 0.7, 0.18, 0.05, darkMaterial, 0, h * 0.78, -L * 0.47);
+      // Door hint
+      this._addBox(group, "bus-door", 0.08, h * 0.55, L * 0.12, darkMaterial, w * 0.51, h * 0.4, -L * 0.15);
+    } else if (type === "truck") {
+      // Cab + cargo bed
+      this._addBox(group, "truck-cab", w * 0.9, h * 0.55, L * 0.28, bodyMaterial, 0, h * 0.38, -L * 0.32);
+      this._addBox(group, "truck-cab-top", w * 0.85, h * 0.28, L * 0.22, bodyMaterial, 0, h * 0.7, -L * 0.3);
+      this._addBox(group, "truck-glass", w * 0.7, h * 0.22, 0.05, glassMaterial, 0, h * 0.62, -L * 0.45);
+      // Flatbed / cargo
+      this._addBox(group, "truck-bed", w * 0.95, 0.15, L * 0.55, darkMaterial, 0, h * 0.28, L * 0.15);
+      this._addBox(group, "truck-cargo", w * 0.9, h * 0.55, L * 0.5, bodyMaterial, 0, h * 0.55, L * 0.15);
+      // Exhaust stack
+      const exhaust = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.08, h * 0.5, 6),
+        darkMaterial,
       );
+      exhaust.position.set(-w * 0.4, h * 0.55, -L * 0.2);
+      group.add(exhaust);
+    } else if (type === "police" || type === "karota") {
+      // Sedan-like with lightbar
+      this._addBox(group, "sedan-body", w, h * 0.38, L * 0.92, bodyMaterial, 0, h * 0.32, 0);
+      this._addBox(group, "sedan-cabin", w * 0.88, h * 0.35, L * 0.45, bodyMaterial, 0, h * 0.58, -L * 0.02);
+      this._addBox(group, "sedan-glass", w * 0.8, h * 0.28, L * 0.4, glassMaterial, 0, h * 0.58, -L * 0.02);
+      this._addBox(group, "sedan-hood", w * 0.9, h * 0.12, L * 0.22, bodyMaterial, 0, h * 0.38, -L * 0.35);
+      this._addBox(group, "sedan-trunk", w * 0.9, h * 0.12, L * 0.18, bodyMaterial, 0, h * 0.38, L * 0.35);
+      if (type === "police") {
+        this._addBox(group, "lightbar-base", 0.9, 0.12, 0.28, darkMaterial, 0, h * 0.82, -0.05);
+        this._addBox(group, "lightbar-red", 0.35, 0.14, 0.26,
+          new THREE.MeshStandardMaterial({ color: 0xc0392b, emissive: 0x3c0804 }),
+          -0.25, h * 0.88, -0.05);
+        this._addBox(group, "lightbar-blue", 0.35, 0.14, 0.26,
+          new THREE.MeshStandardMaterial({ color: 0x2471a3, emissive: 0x102e50 }),
+          0.25, h * 0.88, -0.05);
+      } else {
+        // KAROTA — yellow vehicle, black roof sign
+        this._addBox(group, "karota-sign", 0.95, 0.22, 0.32, darkMaterial, 0, h * 0.85, 0);
+      }
+    } else if (type === "taxi") {
+      // Yellow sedan + roof sign
+      this._addBox(group, "taxi-body", w, h * 0.36, L * 0.9, bodyMaterial, 0, h * 0.3, 0);
+      this._addBox(group, "taxi-cabin", w * 0.86, h * 0.32, L * 0.42, bodyMaterial, 0, h * 0.55, 0);
+      this._addBox(group, "taxi-glass", w * 0.78, h * 0.26, L * 0.38, glassMaterial, 0, h * 0.55, 0);
+      this._addBox(group, "taxi-hood", w * 0.88, h * 0.1, L * 0.22, bodyMaterial, 0, h * 0.36, -L * 0.34);
+      this._addBox(group, "taxi-sign", 0.5, 0.16, 0.22,
+        new THREE.MeshStandardMaterial({ color: 0x1a1a1a }),
+        0, h * 0.78, 0);
+    } else {
+      // Standard car — wedge silhouette
+      this._addBox(group, "car-body", w, h * 0.35, L * 0.9, bodyMaterial, 0, h * 0.28, 0);
+      this._addBox(group, "car-cabin", w * 0.85, h * 0.32, L * 0.4, bodyMaterial, 0, h * 0.52, L * 0.02);
+      this._addBox(group, "car-glass", w * 0.78, h * 0.25, L * 0.36, glassMaterial, 0, h * 0.52, L * 0.02);
+      this._addBox(group, "car-hood", w * 0.92, h * 0.1, L * 0.25, bodyMaterial, 0, h * 0.34, -L * 0.32);
+      this._addBox(group, "car-trunk", w * 0.9, h * 0.1, L * 0.18, bodyMaterial, 0, h * 0.34, L * 0.35);
+      // Side mirrors
+      for (const side of [-1, 1]) {
+        this._addBox(group, "mirror", 0.12, 0.08, 0.06, darkMaterial, side * w * 0.52, h * 0.48, -L * 0.1);
+      }
     }
 
-    this._addBox(
-      group,
-      "front-bumper",
-      spec.width * 0.94,
-      0.16,
-      0.18,
-      darkMaterial,
-      0,
-      0.25,
-      -spec.length * 0.46,
-    );
-
-    this._addBox(
-      group,
-      "rear-bumper",
-      spec.width * 0.94,
-      0.16,
-      0.18,
-      darkMaterial,
-      0,
-      0.25,
-      spec.length * 0.46,
-    );
-
+    this._addWheels(group, spec, wheelMaterial, false);
     this._addHeadlights(group, spec);
     this._addTailLights(group, spec);
-    this._addWheels(group, spec, wheelMaterial);
 
-    if (type === "taxi") {
-      this._addBox(
-        group,
-        "taxi-sign",
-        0.55,
-        0.16,
-        0.24,
-        new THREE.MeshStandardMaterial({ color: 0xf4d03f }),
-        0,
-        spec.height * 0.88,
-        0,
-      );
-    }
-
-    if (type === "police") {
-      this._addBox(
-        group,
-        "police-lightbar",
-        0.8,
-        0.12,
-        0.24,
-        new THREE.MeshStandardMaterial({ color: 0xc0392b }),
-        0,
-        spec.height * 0.87,
-        0,
-      );
-
-      this._addBox(
-        group,
-        "police-lightbar-blue",
-        0.35,
-        0.12,
-        0.24,
-        new THREE.MeshStandardMaterial({ color: 0x2471a3 }),
-        0.25,
-        spec.height * 0.87,
-        0,
-      );
-    }
-
-    if (type === "karota") {
-      this._addBox(
-        group,
-        "karota-roof-sign",
-        0.9,
-        0.2,
-        0.3,
-        new THREE.MeshStandardMaterial({ color: 0x17202a }),
-        0,
-        spec.height * 0.88,
-        0,
-      );
-    }
+    // Bumpers
+    this._addBox(group, "bumper-f", w * 0.85, 0.12, 0.1, darkMaterial, 0, 0.28, -L * 0.48);
+    this._addBox(group, "bumper-r", w * 0.85, 0.12, 0.1, darkMaterial, 0, 0.28, L * 0.48);
   }
 
   _buildKeke(
@@ -783,81 +738,55 @@ export default class VehicleSystem {
     glassMaterial,
     wheelMaterial,
   ) {
-    this._addBox(
-      group,
-      "keke-lower-body",
-      spec.width,
-      0.55,
-      spec.length * 0.9,
-      bodyMaterial,
-      0,
-      0.72,
-      0,
-    );
+    const w = spec.width;
+    const L = spec.length;
+    const canopy = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.95,
+    });
+    const chrome = new THREE.MeshStandardMaterial({
+      color: 0xc0c0c0,
+      metalness: 0.7,
+      roughness: 0.3,
+    });
 
-    this._addBox(
-      group,
-      "keke-roof",
-      spec.width * 0.9,
-      0.12,
-      spec.length * 0.67,
-      bodyMaterial,
-      0,
-      1.65,
-      0.03,
-    );
+    // Narrow nose + wide rear cabin
+    this._addBox(group, "keke-nose", w * 0.5, 0.45, L * 0.3, bodyMaterial, 0, 0.7, -L * 0.28);
+    this._addBox(group, "keke-cabin", w * 0.95, 0.4, L * 0.4, bodyMaterial, 0, 0.72, L * 0.12);
+    this._addBox(group, "keke-floor", w * 0.9, 0.08, L * 0.7, darkMaterial, 0, 0.45, 0);
 
-    for (const x of [-spec.width * 0.42, spec.width * 0.42]) {
-      for (const z of [-0.6, 0.55]) {
-        const post = new THREE.Mesh(
-          new THREE.BoxGeometry(0.07, 0.85, 0.07),
-          darkMaterial,
+    // Black canopy
+    this._addBox(group, "keke-canopy", w * 1.0, 0.08, L * 0.7, canopy, 0, 1.55, 0.05);
+    for (const side of [-1, 1]) {
+      for (const z of [-L * 0.2, L * 0.25]) {
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.025, 0.03, 0.7, 6),
+          chrome,
         );
-
-        post.position.set(x, 1.2, z);
-        group.add(post);
+        pole.position.set(side * w * 0.42, 1.2, z);
+        group.add(pole);
       }
     }
 
-    this._addBox(
-      group,
-      "keke-front-screen",
-      spec.width * 0.7,
-      0.46,
-      0.035,
-      glassMaterial,
-      0,
-      1.15,
-      -spec.length * 0.32,
-    );
+    this._addBox(group, "keke-glass", w * 0.4, 0.35, 0.04, glassMaterial, 0, 1.1, -L * 0.4);
+    this._addBox(group, "keke-bench", w * 0.75, 0.12, 0.3, darkMaterial, 0, 0.85, L * 0.15);
+    this._addBox(group, "keke-handle", w * 0.45, 0.05, 0.05, chrome, 0, 1.05, -L * 0.32);
 
-    this._addBox(
-      group,
-      "keke-seat",
-      spec.width * 0.72,
-      0.16,
-      0.4,
-      darkMaterial,
-      0,
-      0.9,
-      0.1,
-    );
-
-    this._addBox(
-      group,
-      "keke-front-wheel-cover",
-      spec.width * 0.38,
-      0.3,
-      0.1,
-      bodyMaterial,
-      0,
-      0.45,
-      -spec.length * 0.38,
-    );
+    // Sphere headlights
+    for (const side of [-1, 1]) {
+      const light = new THREE.Mesh(
+        new THREE.SphereGeometry(0.07, 8, 8),
+        new THREE.MeshStandardMaterial({
+          color: 0xfff7d6,
+          emissive: 0xaa8844,
+          emissiveIntensity: 0.4,
+        }),
+      );
+      light.position.set(side * w * 0.18, 0.55, -L * 0.48);
+      group.add(light);
+    }
 
     this._addWheels(group, spec, wheelMaterial, true);
-    this._addHeadlights(group, spec);
-    this._addTailLights(group, spec);
   }
 
   _buildMotorcycle(
@@ -867,75 +796,72 @@ export default class VehicleSystem {
     darkMaterial,
     wheelMaterial,
   ) {
-    for (const z of [-spec.length * 0.34, spec.length * 0.34]) {
+    const L = spec.length;
+    const chrome = new THREE.MeshStandardMaterial({
+      color: 0xc0c0c0,
+      metalness: 0.8,
+      roughness: 0.25,
+    });
+
+    // Two wheels
+    for (const z of [-L * 0.35, L * 0.32]) {
       const wheel = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.31, 0.31, 0.14, 12),
+        new THREE.CylinderGeometry(0.28, 0.28, 0.12, 14),
         wheelMaterial,
       );
-
       wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(0, 0.31, z);
+      wheel.position.set(0, 0.28, z);
+      wheel.castShadow = true;
       group.add(wheel);
+
+      const rim = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15, 0.15, 0.13, 10),
+        chrome,
+      );
+      rim.rotation.z = Math.PI / 2;
+      rim.position.set(0, 0.28, z);
+      group.add(rim);
     }
 
-    this._addBox(
-      group,
-      "motorcycle-frame",
-      0.28,
-      0.35,
-      0.95,
-      darkMaterial,
-      0,
-      0.65,
-      0,
-    );
-
-    this._addBox(
-      group,
-      "motorcycle-fuel-tank",
-      0.38,
-      0.32,
-      0.42,
+    // Slim frame
+    this._addBox(group, "moto-frame", 0.12, 0.15, L * 0.55, darkMaterial, 0, 0.55, 0);
+    // Fuel tank (rounded feel via short cylinder)
+    const tank = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.2, 0.4, 10),
       bodyMaterial,
-      0,
-      0.85,
-      -0.1,
     );
+    tank.rotation.z = Math.PI / 2;
+    tank.position.set(0, 0.78, -0.05);
+    tank.castShadow = true;
+    group.add(tank);
 
-    this._addBox(
-      group,
-      "motorcycle-seat",
-      0.3,
-      0.12,
-      0.48,
-      darkMaterial,
-      0,
-      0.94,
-      0.35,
-    );
+    this._addBox(group, "moto-seat", 0.28, 0.1, 0.4, darkMaterial, 0, 0.85, 0.28);
+    this._addBox(group, "moto-handle", 0.7, 0.05, 0.05, chrome, 0, 1.05, -L * 0.28);
 
-    this._addBox(
-      group,
-      "motorcycle-handlebar",
-      0.78,
-      0.08,
-      0.1,
-      darkMaterial,
-      0,
-      1.02,
-      -0.52,
-    );
+    // Front fork
+    for (const side of [-1, 1]) {
+      this._addBox(group, "fork", 0.04, 0.45, 0.04, chrome, side * 0.08, 0.55, -L * 0.32);
+    }
 
     const headlight = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12, 8, 8),
+      new THREE.SphereGeometry(0.1, 8, 8),
       new THREE.MeshStandardMaterial({
         color: 0xfdf2c5,
-        emissive: 0x403820,
+        emissive: 0x554422,
+        emissiveIntensity: 0.5,
       }),
     );
-
-    headlight.position.set(0, 0.8, -spec.length * 0.42);
+    headlight.position.set(0, 0.75, -L * 0.42);
     group.add(headlight);
+
+    // Rider silhouette (simple)
+    this._addBox(group, "rider-body", 0.3, 0.35, 0.25, darkMaterial, 0, 1.15, 0.1);
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x4a3728 }),
+    );
+    head.position.set(0, 1.45, 0.05);
+    group.add(head);
   }
 
   _addWheels(group, spec, material, threeWheeler = false) {
