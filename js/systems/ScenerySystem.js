@@ -1,49 +1,25 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
+import { MODEL_PATHS, MODEL_SCALES } from "../core/AssetCatalog.js";
 
 const DEFAULTS = {
   segmentLength: 40,
   segmentsAhead: 6,
   segmentsBehind: 2,
   recycleDistance: 20,
-  buildingDensity: 0.85, // Chance of a building appearing per slot
-  propDensity: 0.4,
+  buildingDensity: 0.85,
+  propDensity: 0.6, // Increased to show off new models
 };
 
-// Kano-specific color palettes
 const PALETTES = {
-  city: {
-    ground: 0xc2b280, // Sandy beige
-    road: 0x333333,
-    building: [0xe3d5b8, 0xd4c4a8, 0xc9b896, 0xa89f91], // Sandy concrete
-    accent: [0x8b4513, 0x556b2f, 0x4682b4], // Terracotta, olive, steel blue
-    roof: 0x8b7355,
-  },
-  market: {
-    ground: 0xbcaaa4,
-    road: 0x333333,
-    building: [0xffe0b2, 0xffccbc, 0xf8bbd0], // Warm, faded colors
-    accent: [0xd32f2f, 0x1976d2, 0x388e3c], // Bright shop awnings
-    roof: 0x5d4037,
-  },
-  residential: {
-    ground: 0xd7ccc8,
-    road: 0x333333,
-    building: [0xefebd9, 0xe0e0e0, 0xd7ccc8], // Light compounds
-    accent: [0x795548, 0x607d8b],
-    roof: 0x8d6e63,
-  },
+  city: { ground: 0xc2b280, road: 0x333333, building: [0xe3d5b8, 0xd4c4a8], accent: [0x8b4513, 0x556b2f] },
+  market: { ground: 0xbcaaa4, road: 0x333333, building: [0xffe0b2, 0xffccbc], accent: [0xd32f2f, 0x1976d2] },
+  residential: { ground: 0xd7ccc8, road: 0x333333, building: [0xefebd9, 0xe0e0e0], accent: [0x795548, 0x607d8b] },
 };
 
 export default class ScenerySystem {
-  constructor({
-    scene,
-    worldSystem = null,
-    routeSystem = null,
-    weatherSystem = null,
-    config = {},
-    eventBus = null,
-  } = {}) {
+  constructor({ scene, worldSystem = null, routeSystem = null, weatherSystem = null, config = {}, eventBus = null } = {}) {
     if (!scene) throw new Error("ScenerySystem requires a Three.js scene.");
     
     this.scene = scene;
@@ -55,12 +31,15 @@ export default class ScenerySystem {
     
     this.segments = [];
     this.sharedMaterials = new Map();
-    this.sharedGeometries = new Map();
     this.disposers = [];
     this.playerZ = 0;
     this.initialized = false;
     this.currentDistrict = "Kano City Centre";
     this.currentTheme = "city";
+
+    // 🔥 GLB Loader & Cache for Environment
+    this._glbLoader = new GLTFLoader();
+    this._modelCache = new Map();
 
     this._handleRouteChanged = (payload) => {
       const district = payload?.district ?? payload?.name ?? payload?.route?.district;
@@ -129,22 +108,12 @@ export default class ScenerySystem {
     this.eventBus?.emit?.("scenery:districtChanged", { district: this.currentDistrict, theme: this.currentTheme });
   }
 
-  _detectDistrict() {
-    // In a full implementation, this would query the RouteSystem for the current district name
-    // based on playerZ. For now, we keep the current theme.
-  }
+  _detectDistrict() {}
 
   _createSegment(z, index) {
     const group = new THREE.Group();
     group.position.z = z;
-    const segment = {
-      id: `scenery-${index}-${Math.round(z)}`,
-      group,
-      z,
-      elapsed: 0,
-      theme: this.currentTheme,
-      props: [],
-    };
+    const segment = { id: `scenery-${index}-${Math.round(z)}`, group, z, elapsed: 0, theme: this.currentTheme, props: [] };
     this.scene.add(group);
     this._buildGround(segment);
     this._buildRoadside(segment);
@@ -165,7 +134,6 @@ export default class ScenerySystem {
 
   _refreshSegmentTheme(segment) {
     segment.theme = this.currentTheme;
-    // Re-build buildings to apply new palette
     this._clearSegmentBuildings(segment);
     this._buildBuildings(segment);
   }
@@ -183,7 +151,6 @@ export default class ScenerySystem {
   }
 
   _buildRoadside(segment) {
-    // Sandy shoulders
     const palette = this._getPalette();
     const shoulderGeo = this._geometry("shoulder", () => new THREE.PlaneGeometry(40, this.config.segmentLength));
     const shoulderMat = this._material("shoulder", palette.ground, { roughness: 1, metalness: 0 });
@@ -204,127 +171,54 @@ export default class ScenerySystem {
   }
 
   _buildBuildings(segment) {
-    const palette = this._getPalette();
     const segLen = this.config.segmentLength;
-    const slots = 4; // 2 on left, 2 on right
+    const slots = 4; 
     const slotWidth = segLen / slots;
 
     for (let i = 0; i < slots; i++) {
       const zOffset = -segLen / 2 + i * slotWidth + slotWidth / 2;
       
-      // Left side
       if (Math.random() < this.config.buildingDensity) {
         const x = -18 - Math.random() * 5;
         const type = this._pickBuildingType();
-        const building = this._createBuilding(type, palette);
-        building.position.set(x, 0, zOffset);
-        building.rotation.y = Math.random() * 0.2 - 0.1; // Slight variation
-        segment.group.add(building);
-        segment.props.push({ type: "building", mesh: building });
+        this._createGLBBuilding(segment, type, x, zOffset, Math.random() * 0.2 - 0.1);
       }
 
-      // Right side
       if (Math.random() < this.config.buildingDensity) {
         const x = 18 + Math.random() * 5;
         const type = this._pickBuildingType();
-        const building = this._createBuilding(type, palette);
-        building.position.set(x, 0, zOffset);
-        building.rotation.y = Math.PI + (Math.random() * 0.2 - 0.1);
-        segment.group.add(building);
-        segment.props.push({ type: "building", mesh: building });
+        this._createGLBBuilding(segment, type, x, zOffset, Math.PI + (Math.random() * 0.2 - 0.1));
       }
     }
   }
 
   _pickBuildingType() {
     const r = Math.random();
-    if (this.currentTheme === "market") return r < 0.6 ? "shop" : "stall";
-    if (this.currentTheme === "city") return r < 0.4 ? "highrise" : r < 0.8 ? "compound" : "mosque";
-    return r < 0.7 ? "compound" : "house";
+    if (this.currentTheme === "market") return r < 0.7 ? "market" : "abstract";
+    if (this.currentTheme === "city") return r < 0.4 ? "abstract" : r < 0.8 ? "market" : "bustop";
+    return r < 0.6 ? "abstract" : "bustop";
   }
 
-  _createBuilding(type, palette) {
-    const group = new THREE.Group();
-    const color = palette.building[Math.floor(Math.random() * palette.building.length)];
-    const accent = palette.accent[Math.floor(Math.random() * palette.accent.length)];
-
-    if (type === "compound") {
-      // Wall
-      const wallGeo = this._geometry("wall", () => new THREE.BoxGeometry(8, 2.5, 8));
-      const wallMat = this._material("wall", color);
-      const wall = new THREE.Mesh(wallGeo, wallMat);
-      wall.position.y = 1.25;
-      wall.castShadow = true; wall.receiveShadow = true;
-      group.add(wall);
-      
-      // House inside
-      const houseGeo = this._geometry("house", () => new THREE.BoxGeometry(4, 3, 4));
-      const houseMat = this._material("house", 0xffffff);
-      const house = new THREE.Mesh(houseGeo, houseMat);
-      house.position.set(0, 1.5, 0);
-      house.castShadow = true;
-      group.add(house);
-    } 
-    else if (type === "shop") {
-      const shopGeo = this._geometry("shop", () => new THREE.BoxGeometry(6, 3.5, 5));
-      const shopMat = this._material("shop", color);
-      const shop = new THREE.Mesh(shopGeo, shopMat);
-      shop.position.y = 1.75;
-      shop.castShadow = true; shop.receiveShadow = true;
-      group.add(shop);
-
-      // Awning
-      const awningGeo = this._geometry("awning", () => new THREE.BoxGeometry(6.2, 0.2, 2));
-      const awningMat = this._material("awning", accent);
-      const awning = new THREE.Mesh(awningGeo, awningMat);
-      awning.position.set(0, 3, -3.5);
-      awning.castShadow = true;
-      group.add(awning);
-    }
-    else if (type === "mosque") {
-      const baseGeo = this._geometry("mosque_base", () => new THREE.BoxGeometry(10, 4, 10));
-      const baseMat = this._material("mosque_base", 0xf5f5dc); // Beige
-      const base = new THREE.Mesh(baseGeo, baseMat);
-      base.position.y = 2;
-      base.castShadow = true; base.receiveShadow = true;
-      group.add(base);
-
-      // Minaret
-      const minaretGeo = this._geometry("minaret", () => new THREE.CylinderGeometry(0.8, 1, 8, 8));
-      const minaretMat = this._material("minaret", 0xe0e0e0);
-      const minaret = new THREE.Mesh(minaretGeo, minaretMat);
-      minaret.position.set(6, 4, 6);
-      minaret.castShadow = true;
-      group.add(minaret);
-
-      // Dome
-      const domeGeo = this._geometry("dome", () => new THREE.SphereGeometry(2.5, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2));
-      const domeMat = this._material("dome", 0x4caf50); // Green dome
-      const dome = new THREE.Mesh(domeGeo, domeMat);
-      dome.position.set(0, 4, 0);
-      dome.castShadow = true;
-      group.add(dome);
-    }
-    else if (type === "highrise") {
-      const height = 8 + Math.random() * 12;
-      const buildGeo = this._geometry("highrise", () => new THREE.BoxGeometry(7, height, 7));
-      const buildMat = this._material("highrise", color);
-      const build = new THREE.Mesh(buildGeo, buildMat);
-      build.position.y = height / 2;
-      build.castShadow = true; build.receiveShadow = true;
-      group.add(build);
-    }
-    else { // house / stall
-      const h = 2.5 + Math.random() * 1.5;
-      const buildGeo = this._geometry("generic", () => new THREE.BoxGeometry(5, h, 5));
-      const buildMat = this._material("generic", color);
-      const build = new THREE.Mesh(buildGeo, buildMat);
-      build.position.y = h / 2;
-      build.castShadow = true; build.receiveShadow = true;
-      group.add(build);
+  async _createGLBBuilding(segment, type, x, z, rotY) {
+    const modelPath = MODEL_PATHS.environment[type] || MODEL_PATHS.environment.abstract;
+    const scale = MODEL_SCALES.environment[type] || 1.0;
+    
+    let group;
+    try {
+      group = await this._loadCachedModel(modelPath, scale);
+    } catch (e) {
+      // Fallback box if model fails
+      group = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x888888, flatShading: true });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(5, 4, 5), mat);
+      mesh.position.y = 2;
+      group.add(mesh);
     }
 
-    return group;
+    group.position.set(x, 0, z);
+    group.rotation.y = rotY;
+    segment.group.add(group);
+    segment.props.push({ type: "building", mesh: group });
   }
 
   _buildProps(segment) {
@@ -334,94 +228,82 @@ export default class ScenerySystem {
     const x = side * (12 + Math.random() * 4);
     const z = (Math.random() - 0.5) * this.config.segmentLength;
     
-    const propType = Math.random() > 0.5 ? "pole" : "tree";
-    let prop;
+    // Randomly choose between a pedestrian or a bus stop
+    const propType = Math.random() > 0.5 ? "pedestrian" : "bustop";
+    const modelPath = MODEL_PATHS.characters[propType] || MODEL_PATHS.environment.bustop;
+    const scale = propType === "pedestrian" ? MODEL_SCALES.characters.pedestrian : MODEL_SCALES.environment.bustop;
 
-    if (propType === "pole") {
-      const poleGeo = this._geometry("pole", () => new THREE.CylinderGeometry(0.15, 0.15, 6, 6));
-      const poleMat = this._material("pole", 0x5d4037); // Wood color
-      prop = new THREE.Mesh(poleGeo, poleMat);
-      prop.position.y = 3;
-      prop.castShadow = true;
-    } else {
-      // Stylized tree (common in Kano)
-      const trunkGeo = this._geometry("trunk", () => new THREE.CylinderGeometry(0.2, 0.3, 2, 6));
-      const trunkMat = this._material("trunk", 0x795548);
-      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = 1;
-      trunk.castShadow = true;
-      
-      const leavesGeo = this._geometry("leaves", () => new THREE.SphereGeometry(1.5, 8, 6));
-      const leavesMat = this._material("leaves", 0x558b2f);
-      const leaves = new THREE.Mesh(leavesGeo, leavesMat);
-      leaves.position.y = 3;
-      leaves.castShadow = true;
-      
-      prop = new THREE.Group();
-      prop.add(trunk);
-      prop.add(leaves);
-    }
+    this._loadCachedModel(modelPath, scale).then(group => {
+      group.position.set(x, 0, z);
+      group.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+      segment.group.add(group);
+      segment.props.push({ type: "prop", mesh: group });
+    }).catch(() => {
+      // Fallback
+      const fallback = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.8, 8), new THREE.MeshStandardMaterial({color: 0x555555}));
+      fallback.position.set(x, 0.9, z);
+      segment.group.add(fallback);
+      segment.props.push({ type: "prop", mesh: fallback });
+    });
+  }
 
-    prop.position.x = x;
-    prop.position.z = z;
-    segment.group.add(prop);
-    segment.props.push({ type: "prop", mesh: prop });
+  _loadCachedModel(path, scale) {
+    return new Promise((resolve, reject) => {
+      if (this._modelCache.has(path)) {
+        const cloned = this._modelCache.get(path).scene.clone(true);
+        cloned.scale.setScalar(scale);
+        cloned.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+        resolve(cloned);
+      } else {
+        this._glbLoader.load(path, (gltf) => {
+          this._modelCache.set(path, gltf);
+          const cloned = gltf.scene.clone(true);
+          cloned.scale.setScalar(scale);
+          cloned.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+          resolve(cloned);
+        }, undefined, reject);
+      }
+    });
   }
 
   _clearSegmentProps(segment) {
-    for (const prop of segment.props) {
-      segment.group.remove(prop.mesh);
-      // Note: We don't dispose shared geos/mats here, just remove from scene
-    }
+    for (const prop of segment.props) segment.group.remove(prop.mesh);
     segment.props = [];
   }
 
   _clearSegmentBuildings(segment) {
-    // Specific cleanup for buildings if theme changes
     segment.props = segment.props.filter(p => {
-      if (p.type === "building") {
-        segment.group.remove(p.mesh);
-        return false;
-      }
+      if (p.type === "building") { segment.group.remove(p.mesh); return false; }
       return true;
     });
   }
 
-  _getPalette() {
-    return PALETTES[this.currentTheme] ?? PALETTES.residential;
-  }
+  _getPalette() { return PALETTES[this.currentTheme] ?? PALETTES.residential; }
 
   _geometry(key, factory) {
+    if (!this.sharedGeometries) this.sharedGeometries = new Map();
     if (!this.sharedGeometries.has(key)) this.sharedGeometries.set(key, factory());
     return this.sharedGeometries.get(key);
   }
 
   _material(key, color, options = {}) {
+    if (!this.sharedMaterials) this.sharedMaterials = new Map();
     const matKey = `${key}-${color}`;
     if (!this.sharedMaterials.has(matKey)) {
       this.sharedMaterials.set(matKey, new THREE.MeshStandardMaterial({
-        color,
-        roughness: options.roughness ?? 0.85,
-        metalness: options.metalness ?? 0.0,
-        flatShading: true, // Stylized look
+        color, roughness: options.roughness ?? 0.85, metalness: options.metalness ?? 0.0, flatShading: true,
       }));
     }
     return this.sharedMaterials.get(matKey);
   }
 
   dispose() {
-    for (const dispose of this.disposers) {
-      try { dispose(); } catch {}
-    }
+    for (const dispose of this.disposers) { try { dispose(); } catch {} }
     this.disposers.length = 0;
-    for (const segment of this.segments) {
-      this.scene.remove(segment.group);
-    }
+    for (const segment of this.segments) this.scene.remove(segment.group);
     this.segments.length = 0;
-    for (const geometry of this.sharedGeometries.values()) geometry.dispose();
-    for (const material of this.sharedMaterials.values()) material.dispose();
-    this.sharedGeometries.clear();
-    this.sharedMaterials.clear();
+    if (this.sharedGeometries) for (const geometry of this.sharedGeometries.values()) geometry.dispose();
+    if (this.sharedMaterials) for (const material of this.sharedMaterials.values()) material.dispose();
     this.initialized = false;
   }
 }
