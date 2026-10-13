@@ -1,437 +1,284 @@
-import GAME_CONFIG from "../core/config.js";
+import * as THREE from "three";
+import { GAME_CONFIG } from "../core/config.js";
 
-const clamp = (value, min, max) =>
-  Math.min(max, Math.max(min, value));
+const DEFAULTS = {
+  maxWaiting: 5,
+  spawnInterval: 18, // Seconds between spawns
+  pickupRadius: 7,
+  pickupSpeedThreshold: 12, // Must be below this speed to pick up
+  dropoffRadius: 9,
+  minTripDistance: 150,
+  maxTripDistance: 400,
+  baseFare: 300,
+  farePerUnit: 2.5,
+};
 
-const randomBetween = (min, max) =>
-  min + Math.random() * (max - min);
+// Authentic Kano Destinations & Dialogue
+const DESTINATIONS = [
+  "Sabon Gari", "Kofar Mata", "Fagge", "Farm Centre", 
+  "Hotoro", "Zoo Road", "Naibawa", "Tarauni", 
+  "Dala", "Kantin Kwari", "Bompai", "Sharada"
+];
 
-const randomItem = (items) =>
-  items[Math.floor(Math.random() * items.length)];
+const GREETINGS = [
+  "Sannu!", "Oga!", "Mallam!", "Yallabai!", 
+  "Aboki!", "Baba!", "Mama!", "Hajiya!", "Driver!"
+];
 
-const KANO_DISTRICTS = Object.freeze([
-  { id: "fagge", name: "Fagge", fareMultiplier: 1.0 },
-  { id: "sabongari", name: "Sabon Gari", fareMultiplier: 1.1 },
-  { id: "nassarawa", name: "Nassarawa", fareMultiplier: 1.15 },
-  { id: "kano-city", name: "Kano City", fareMultiplier: 1.0 },
-  { id: "gwale", name: "Gwale", fareMultiplier: 1.05 },
-  { id: "kumbotso", name: "Kumbotso", fareMultiplier: 1.25 },
-  { id: "tarauni", name: "Tarauni", fareMultiplier: 1.15 },
-  { id: "ungogo", name: "Ungogo", fareMultiplier: 1.2 },
-  { id: "dawakin-kudu", name: "Dawakin Kudu", fareMultiplier: 1.35 },
-  { id: "danbatta", name: "Dambatta", fareMultiplier: 1.5 },
-]);
+const CONFIRMATIONS = [
+  "Akwai!", "To!", "Oya!", "Fast fast!", "Let's go!"
+];
 
-const PASSENGER_NAMES = Object.freeze([
-  "Amina",
-  "Musa",
-  "Fatima",
-  "Ibrahim",
-  "Zainab",
-  "Abdullahi",
-  "Hadiza",
-  "Usman",
-  "Maryam",
-  "Sani",
-  "Khadija",
-  "Bashir",
-  "Hauwa",
-  "Yusuf",
-  "Bilal",
-]);
+const PASSENGER_TYPES = [
+  { name: "Mallam", color: 0xf8f9fa, height: 1.8, width: 0.6 }, // White robe
+  { name: "Youth", color: 0x3b82f6, height: 1.7, width: 0.5 }, // Jeans/Shirt
+  { name: "Market Woman", color: 0xec4899, height: 1.6, width: 0.7 }, // Wrapper
+  { name: "Student", color: 0x10b981, height: 1.65, width: 0.5 }, // Green/Uniform
+];
 
-export class PassengerSystem {
-  constructor(options = {}) {
-    this.config = options.config ?? GAME_CONFIG;
-    this.eventBus = options.eventBus ?? null;
-    this.gameState = options.gameState ?? null;
+export default class PassengerSystem {
+  constructor({
+    scene,
+    eventBus = null,
+    config = {},
+    gameState = null,
+  } = {}) {
+    if (!scene) throw new Error("PassengerSystem requires a scene.");
 
-    this.settings = {
-      baseFare: this.config.economy?.baseFare ?? 250,
-      passengerXP: this.config.economy?.passengerXP ?? 20,
-      pickupRadius: 5,
-      deliveryRadius: 6,
-      spawnInterval: 18,
-      maximumWaitingPassengers: 5,
-      maximumPassengerWait: 120,
-      farePerDistance: 12,
-      ...options.settings,
-    };
+    this.scene = scene;
+    this.eventBus = eventBus;
+    this.gameState = gameState;
+    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.passengers ?? {}), ...config };
 
-    this.passengers = new Map();
-    this.nextPassengerId = 1;
-    this.elapsed = 0;
+    this.passengers = new Map(); // Active roadside passengers
+    this.currentPassenger = null; // Passenger currently in the keke
+    this.pool = []; // Object pool for performance
     this.spawnTimer = 0;
-    this.active = false;
-    this.statistics = this.createStatistics();
+    this.tripDistance = 0;
+    this.dropoffZone = null;
+    this.enabled = false;
+    this.playerZ = 0;
+
+    this._disposers = [];
   }
 
-  createStatistics() {
-    return {
-      spawned: 0,
-      boarded: 0,
-      delivered: 0,
-      abandoned: 0,
-      totalFares: 0,
-    };
+  initialize() {
+    this.enabled = true;
+    this._subscribe("game:started", () => { this.enabled = true; this.reset(); });
+    this._subscribe("game:stopped", () => { this.enabled = false; this.clearAll(); });
+    this._subscribe("game:over", () => { this.enabled = false; this.clearAll(); });
+    
+    // Initial spawn
+    for (let i = 0; i < 3; i++) {
+      this._spawnPassenger(this.playerZ + 50 + i * 40);
+    }
   }
 
-  start() {
-    this.active = true;
-    this.spawnTimer = 1;
+  update(deltaTime, playerZ = 0, playerSpeed = 0, playerLane = 1) {
+    if (!this.enabled) return;
 
-    this.emit("passengers:system-started", {
-      waiting: this.getWaitingPassengers().length,
-    });
-  }
+    this.playerZ = playerZ;
+    this.spawnTimer -= deltaTime;
 
-  stop() {
-    this.active = false;
-    this.emit("passengers:system-stopped");
-  }
-
-  update(deltaSeconds, player = {}) {
-    if (!this.active) return;
-
-    const dt = clamp(Number(deltaSeconds) || 0, 0, 0.05);
-    this.elapsed += dt;
-
-    this.updateWaitingPassengers(dt);
-
-    this.spawnTimer -= dt;
-
-    if (
-      this.spawnTimer <= 0 &&
-      this.getWaitingPassengers().length <
-        this.settings.maximumWaitingPassengers
-    ) {
-      this.spawnPassenger(player);
-
-      this.spawnTimer = randomBetween(
-        this.settings.spawnInterval * 0.7,
-        this.settings.spawnInterval * 1.3,
-      );
+    // 1. Manage Roadside Passengers
+    if (this.spawnTimer <= 0 && this.passengers.size < this.config.maxWaiting) {
+      this._spawnPassenger(playerZ + this.config.spawnInterval * 10); // Spawn ahead
+      this.spawnTimer = this.config.spawnInterval * (0.8 + Math.random() * 0.4);
     }
 
-    this.checkPickup(player);
-    this.checkDelivery(player);
-  }
-
-  spawnPassenger(player = {}) {
-    const waiting = this.getWaitingPassengers();
-
-    if (waiting.length >= this.settings.maximumWaitingPassengers) {
-      return null;
-    }
-
-    const playerZ = Number(player.z) || 0;
-    const playerLane = clamp(
-      Math.round(Number(player.lane) || 0),
-      0,
-      2,
-    );
-
-    const pickupZ = playerZ + randomBetween(18, 55);
-    const pickupLane = Math.floor(Math.random() * 3);
-
-    const origin = randomItem(KANO_DISTRICTS);
-
-    let destination = randomItem(KANO_DISTRICTS);
-
-    while (destination.id === origin.id) {
-      destination = randomItem(KANO_DISTRICTS);
-    }
-
-    const passenger = {
-      id: this.nextPassengerId++,
-      name: randomItem(PASSENGER_NAMES),
-      origin: { ...origin },
-      destination: { ...destination },
-
-      lane: pickupLane,
-      x: this.getLaneX(pickupLane),
-      z: pickupZ,
-
-      spawnedAt: this.elapsed,
-      waitTime: 0,
-
-      status: "waiting",
-      fare: this.calculateFare(origin, destination),
-      distance: Math.abs(pickupZ - playerZ),
-
-      boardedAt: null,
-      deliveredAt: null,
-    };
-
-    this.passengers.set(passenger.id, passenger);
-    this.statistics.spawned += 1;
-
-    this.emit("passengers:spawned", { ...passenger });
-
-    return passenger;
-  }
-
-  calculateFare(origin, destination) {
-    const distanceMultiplier =
-      Math.abs(
-        KANO_DISTRICTS.findIndex(
-          (district) => district.id === origin.id,
-        ) -
-          KANO_DISTRICTS.findIndex(
-            (district) => district.id === destination.id,
-          ),
-      ) + 1;
-
-    const districtMultiplier =
-      (origin.fareMultiplier + destination.fareMultiplier) / 2;
-
-    return Math.max(
-      this.settings.baseFare,
-      Math.round(
-        this.settings.baseFare *
-          distanceMultiplier *
-          districtMultiplier,
-      ),
-    );
-  }
-
-  checkPickup(player) {
-    if (!player || !this.gameState?.run) return;
-
-    const run = this.gameState.run;
-
-    const capacity = Math.max(
-      0,
-      Number(run.passengerCapacity) || 0,
-    );
-
-    const onboard = Math.max(
-      0,
-      Number(run.passengers) || 0,
-    );
-
-    if (onboard >= capacity) return;
-
-    const playerX = Number(player.x ?? player.lanePosition) || 0;
-    const playerZ = Number(player.z) || 0;
-    const playerSpeed = Number(player.speed) || 0;
-
-    for (const passenger of this.passengers.values()) {
-      if (passenger.status !== "waiting") continue;
-
-      const distanceX = Math.abs(passenger.x - playerX);
-      const distanceZ = Math.abs(passenger.z - playerZ);
-
-      if (
-        distanceX > this.settings.pickupRadius ||
-        distanceZ > this.settings.pickupRadius
-      ) {
+    // 2. Update Existing Passengers (Animation & Culling)
+    for (const [id, p] of this.passengers) {
+      // Cull if too far behind
+      if (p.z < playerZ - 20) {
+        this._returnToPool(p);
         continue;
       }
 
-      if (playerSpeed > 8) {
-        this.emit("passengers:pickup-too-fast", {
-          passengerId: passenger.id,
-          speed: playerSpeed,
-        });
-
-        continue;
+      // Simple "Waving" animation if waiting
+      if (p.state === "WAITING") {
+        p.mesh.rotation.z = Math.sin(Date.now() * 0.005 + id) * 0.2;
+        
+        // Check for Pickup Interaction
+        const dist = Math.sqrt(Math.pow(p.x - 0, 2) + Math.pow(p.z - playerZ, 2)); // Simplified distance
+        // Note: In a real lane system, check lane alignment. Here we check Z proximity.
+        if (dist < this.config.pickupRadius && playerSpeed < this.config.pickupSpeedThreshold) {
+          this._boardPassenger(p);
+        }
       }
-
-      this.boardPassenger(passenger.id);
-      break;
-    }
-  }
-
-  boardPassenger(passengerId) {
-    const passenger = this.passengers.get(passengerId);
-
-    if (!passenger || passenger.status !== "waiting") {
-      return false;
     }
 
-    const boarded = this.gameState?.boardPassengers(1) ?? 0;
-
-    if (boarded <= 0) {
-      this.emit("passengers:vehicle-full", {
-        passengerId,
+    // 3. Manage Current Passenger (In Keke)
+    if (this.currentPassenger) {
+      this.tripDistance += playerSpeed * deltaTime;
+      
+      // Update HUD with destination info
+      this.eventBus?.emit?.("passenger:trip-update", {
+        destination: this.currentPassenger.destination,
+        progress: Math.min(1, this.tripDistance / this.currentPassenger.tripLength),
       });
 
-      return false;
-    }
+      // Check for Dropoff
+      if (this.tripDistance >= this.currentPassenger.tripLength) {
+        if (!this.currentPassenger.shouted) {
+          this.currentPassenger.shouted = true;
+          this.eventBus?.emit?.("passenger:shout", { 
+            text: "Akwai! Akwai!", 
+            type: "urgent" 
+          });
+          // Visual cue: Passenger leans forward
+          if (this.currentPassenger.mesh) {
+            this.currentPassenger.mesh.rotation.x = -0.3;
+          }
+        }
 
-    passenger.status = "onboard";
-    passenger.boardedAt = this.elapsed;
-
-    this.statistics.boarded += 1;
-
-    this.emit("passengers:boarded", {
-      passenger: { ...passenger },
-      onboard: this.gameState.run.passengers,
-      capacity: this.gameState.run.passengerCapacity,
-    });
-
-    this.emit("missions:passenger-boarded", {
-      passengerId,
-      destination: passenger.destination.name,
-    });
-
-    return true;
-  }
-
-  checkDelivery(player) {
-    if (!player || !this.gameState?.run) return;
-
-    const playerX = Number(player.x ?? player.lanePosition) || 0;
-    const playerZ = Number(player.z) || 0;
-    const playerSpeed = Number(player.speed) || 0;
-
-    if (playerSpeed > 8) return;
-
-    for (const passenger of this.passengers.values()) {
-      if (passenger.status !== "onboard") continue;
-
-      const distanceX = Math.abs(passenger.x - playerX);
-      const distanceZ = Math.abs(passenger.z - playerZ);
-
-      if (
-        distanceX > this.settings.deliveryRadius ||
-        distanceZ > this.settings.deliveryRadius
-      ) {
-        continue;
-      }
-
-      this.deliverPassenger(passenger.id);
-      break;
-    }
-  }
-
-  deliverPassenger(passengerId) {
-    const passenger = this.passengers.get(passengerId);
-
-    if (!passenger || passenger.status !== "onboard") {
-      return false;
-    }
-
-    passenger.status = "delivered";
-    passenger.deliveredAt = this.elapsed;
-
-    const waitingTime = passenger.boardedAt === null
-      ? 0
-      : this.elapsed - passenger.boardedAt;
-
-    const punctualityBonus =
-      waitingTime < 45 ? Math.round(passenger.fare * 0.2) : 0;
-
-    const fare = passenger.fare + punctualityBonus;
-
-    // Each delivery pays only for this passenger.
-    const run = this.gameState?.run;
-
-    if (run) {
-      run.passengers = Math.max(0, run.passengers - 1);
-      run.deliveries += 1;
-    }
-
-    this.gameState?.addMoney(fare);
-    this.gameState?.addXP(this.settings.passengerXP);
-    this.gameState?.addScore(Math.round(fare / 10));
-
-    if (this.gameState?.profile) {
-      this.gameState.profile.totalPassengers += 1;
-    }
-
-    this.statistics.delivered += 1;
-    this.statistics.totalFares += fare;
-
-    this.emit("passengers:delivered", {
-      passenger: { ...passenger },
-      fare,
-      punctualityBonus,
-      waitingTime,
-      totalDelivered: this.statistics.delivered,
-    });
-
-    this.emit("missions:passenger-delivered", {
-      passengerId,
-      fare,
-      destination: passenger.destination.name,
-    });
-
-    return true;
-  }
-
-  updateWaitingPassengers(dt) {
-    for (const passenger of this.passengers.values()) {
-      if (passenger.status !== "waiting") continue;
-
-      passenger.waitTime += dt;
-
-      if (passenger.waitTime >= this.settings.maximumPassengerWait) {
-        passenger.status = "abandoned";
-        this.statistics.abandoned += 1;
-
-        this.emit("passengers:abandoned", {
-          passengerId: passenger.id,
-          name: passenger.name,
-        });
+        // Player must stop/slow down to drop off
+        if (playerSpeed < 5) {
+          this._dropoffPassenger();
+        }
       }
     }
   }
 
-  getWaitingPassengers() {
-    return [...this.passengers.values()].filter(
-      (passenger) => passenger.status === "waiting",
-    );
+  _spawnPassenger(z) {
+    const type = PASSENGER_TYPES[Math.floor(Math.random() * PASSENGER_TYPES.length)];
+    const side = Math.random() > 0.5 ? 1 : -1; // Left or Right side of road
+    const x = side * (6 + Math.random() * 2); // Offset from road center
+
+    const p = this._getFromPool();
+    p.id = Math.random().toString(36).substr(2, 9);
+    p.z = z;
+    p.x = x;
+    p.state = "WAITING";
+    p.type = type;
+    p.greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+
+    // Build Visuals (Low Poly Stylized)
+    const group = new THREE.Group();
+    
+    // Body
+    const bodyGeo = new THREE.CylinderGeometry(type.width * 0.4, type.width * 0.5, type.height * 0.6, 8);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: type.color, flatShading: true, roughness: 0.8 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = type.height * 0.3;
+    body.castShadow = true;
+    group.add(body);
+
+    // Head
+    const headGeo = new THREE.SphereGeometry(type.width * 0.45, 8, 6);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0x8d5524, flatShading: true }); // Skin tone
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.y = type.height * 0.6 + type.width * 0.4;
+    head.castShadow = true;
+    group.add(head);
+
+    // Position in world
+    group.position.set(x, 0, z);
+    // Face the road
+    group.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+
+    this.scene.add(group);
+    p.mesh = group;
+    p.body = body;
+
+    this.passengers.set(p.id, p);
+
+    // Emit event for Audio/UI
+    this.eventBus?.emit?.("passenger:spotted", { 
+      text: p.greeting, 
+      x: x, 
+      z: z 
+    });
   }
 
-  getOnboardPassengers() {
-    return [...this.passengers.values()].filter(
-      (passenger) => passenger.status === "onboard",
-    );
+  _boardPassenger(p) {
+    this.passengers.delete(p.id);
+    this.scene.remove(p.mesh);
+    
+    this.currentPassenger = p;
+    this.currentPassenger.state = "RIDING";
+    this.currentPassenger.destination = DESTINATIONS[Math.floor(Math.random() * DESTINATIONS.length)];
+    this.currentPassenger.tripLength = this.config.minTripDistance + Math.random() * (this.config.maxTripDistance - this.config.minTripDistance);
+    this.currentPassenger.shouted = false;
+    this.tripDistance = 0;
+
+    // Clear other waiting passengers nearby (they saw you get taken)
+    for (const [id, other] of this.passengers) {
+      if (Math.abs(other.z - p.z) < 20) {
+        this._returnToPool(other);
+      }
+    }
+
+    this.eventBus?.emit?.("passenger:boarded", {
+      text: CONFIRMATIONS[Math.floor(Math.random() * CONFIRMATIONS.length)],
+      destination: this.currentPassenger.destination,
+    });
   }
 
-  getLaneX(lane) {
-    const lanes = [-3.2, 0, 3.2];
+  _dropoffPassenger() {
+    if (!this.currentPassenger) return;
 
-    return lanes[
-      clamp(Math.round(lane), 0, lanes.length - 1)
-    ];
+    const p = this.currentPassenger;
+    const fare = Math.floor(this.config.baseFare + (this.tripDistance * this.config.farePerUnit));
+    
+    // Reward Player
+    this.gameState?.addMoney?.(fare, "passenger_fare");
+    this.gameState?.addScore?.(fare);
+    this.gameState?.addXP?.(50, "delivery");
+
+    this.eventBus?.emit?.("passenger:dropped", {
+      text: "Na gode! (Thank you!)",
+      fare: fare,
+    });
+
+    this.currentPassenger = null;
+    this.tripDistance = 0;
+    
+    // Spawn a new one ahead immediately to keep flow
+    this._spawnPassenger(this.playerZ + 100);
   }
 
-  getSnapshot() {
-    return {
-      active: this.active,
-      waiting: this.getWaitingPassengers().map((passenger) => ({
-        ...passenger,
-      })),
-      onboard: this.getOnboardPassengers().map((passenger) => ({
-        ...passenger,
-      })),
-      statistics: { ...this.statistics },
-    };
+  _getFromPool() {
+    return this.pool.pop() || {};
   }
 
-  emit(eventName, payload) {
-    this.eventBus?.emit(eventName, payload);
-    this.gameState?.emit(eventName, payload);
+  _returnToPool(p) {
+    if (p.mesh) {
+      this.scene.remove(p.mesh);
+      // Dispose geometries/materials if not pooling them deeply
+      p.mesh.traverse(child => {
+        if (child.isMesh) {
+          child.geometry.dispose();
+          child.material.dispose();
+        }
+      });
+    }
+    this.passengers.delete(p.id);
+    this.pool.push(p);
+  }
+
+  clearAll() {
+    for (const p of this.passengers.values()) this._returnToPool(p);
+    if (this.currentPassenger) {
+      this.currentPassenger = null;
+      this.tripDistance = 0;
+    }
   }
 
   reset() {
-    this.passengers.clear();
-    this.nextPassengerId = 1;
-    this.elapsed = 0;
+    this.clearAll();
     this.spawnTimer = 0;
-    this.statistics = this.createStatistics();
+    this.enabled = true;
   }
 
-  destroy() {
-    this.stop();
-    this.reset();
+  _subscribe(event, handler) {
+    if (!this.eventBus?.on) return;
+    const unsub = this.eventBus.on(event, handler);
+    if (typeof unsub === "function") this._disposers.push(unsub);
+  }
 
-    this.eventBus = null;
-    this.gameState = null;
+  dispose() {
+    this.clearAll();
+    for (const unsub of this._disposers) unsub();
+    this._disposers = [];
   }
 }
-
-export default PassengerSystem;
