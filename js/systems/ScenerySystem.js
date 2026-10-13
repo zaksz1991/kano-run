@@ -3,96 +3,37 @@ import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
   segmentLength: 40,
-  segmentsAhead: 8,
-  segmentsBehind: 3,
-  roadWidth: 12,
-  sidewalkWidth: 3,
-  propSpacing: 8,
-  maxPropsPerSegment: 18,
-  recycleDistance: 90,
+  segmentsAhead: 6,
+  segmentsBehind: 2,
+  recycleDistance: 20,
+  buildingDensity: 0.85, // Chance of a building appearing per slot
+  propDensity: 0.4,
 };
 
+// Kano-specific color palettes
 const PALETTES = {
   city: {
-    ground: 0x9b927c,
-    building: [0xc9b89a, 0xd9c9ad, 0xb7a78f, 0xeadcc5],
-    roof: [0x756b5e, 0x8d7664, 0x5d5a54],
-    vegetation: [0x54764b, 0x6b874d, 0x829457],
-  },
-  residential: {
-    ground: 0xb1a18a,
-    building: [0xd9c7a8, 0xe5d6bb, 0xc2b095, 0xc7c1a9],
-    roof: [0x8a5948, 0x9b7358, 0x6e6255],
-    vegetation: [0x477044, 0x66874c, 0x829957],
+    ground: 0xc2b280, // Sandy beige
+    road: 0x333333,
+    building: [0xe3d5b8, 0xd4c4a8, 0xc9b896, 0xa89f91], // Sandy concrete
+    accent: [0x8b4513, 0x556b2f, 0x4682b4], // Terracotta, olive, steel blue
+    roof: 0x8b7355,
   },
   market: {
-    ground: 0xa58e6c,
-    building: [0xd5b88c, 0xcaa47b, 0xe0c69c, 0xb89c76],
-    roof: [0x7c4939, 0x9c573e, 0x5f5547],
-    vegetation: [0x4d7544, 0x72864b, 0x8d9657],
+    ground: 0xbcaaa4,
+    road: 0x333333,
+    building: [0xffe0b2, 0xffccbc, 0xf8bbd0], // Warm, faded colors
+    accent: [0xd32f2f, 0x1976d2, 0x388e3c], // Bright shop awnings
+    roof: 0x5d4037,
   },
-  industrial: {
-    ground: 0x8c897e,
-    building: [0xa5a39a, 0xb8b4a8, 0x8d958f, 0xc1b8a5],
-    roof: [0x565d5b, 0x696e69, 0x7a7061],
-    vegetation: [0x53694b, 0x64744c, 0x79824e],
-  },
-  outskirts: {
-    ground: 0xb4a178,
-    building: [0xd8c7a2, 0xe3d5b7, 0xcbb68d, 0xbca984],
-    roof: [0x936e4d, 0x7f654b, 0x756653],
-    vegetation: [0x637b3d, 0x7f9144, 0x9b9a4e],
+  residential: {
+    ground: 0xd7ccc8,
+    road: 0x333333,
+    building: [0xefebd9, 0xe0e0e0, 0xd7ccc8], // Light compounds
+    accent: [0x795548, 0x607d8b],
+    roof: 0x8d6e63,
   },
 };
-
-const DISTRICT_THEMES = {
-  "Kano City Centre": "city",
-  "Sabon Gari": "market",
-  "Kurmi Market": "market",
-  "Kofar Mata": "market",
-  "Fagge": "residential",
-  "Nassarawa": "residential",
-  "Tarauni": "residential",
-  "Hotoro": "residential",
-  "Kumbotso": "outskirts",
-  "Ungogo": "outskirts",
-  "Dala": "residential",
-  "Gwale": "residential",
-  "Bompai": "industrial",
-  "Sharada": "industrial",
-  "Zaria Road": "outskirts",
-  "Airport Road": "outskirts",
-};
-
-function randomBetween(min, max) {
-  return min + Math.random() * (max - min);
-}
-
-function choose(items) {
-  return items[Math.floor(Math.random() * items.length)];
-}
-
-function disposeObject(object) {
-  object.traverse((child) => {
-    if (!child.isMesh) return;
-
-    child.geometry?.dispose();
-
-    if (Array.isArray(child.material)) {
-      child.material.forEach((material) => material.dispose());
-    } else {
-      child.material?.dispose();
-    }
-  });
-}
-
-function makeMaterial(color, roughness = 0.92) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness,
-    metalness: 0.02,
-  });
-}
 
 export default class ScenerySystem {
   constructor({
@@ -103,126 +44,75 @@ export default class ScenerySystem {
     config = {},
     eventBus = null,
   } = {}) {
-    if (!scene) {
-      throw new Error("ScenerySystem requires a Three.js scene.");
-    }
-
+    if (!scene) throw new Error("ScenerySystem requires a Three.js scene.");
+    
     this.scene = scene;
     this.worldSystem = worldSystem;
     this.routeSystem = routeSystem;
     this.weatherSystem = weatherSystem;
     this.eventBus = eventBus;
-
-    this.config = {
-      ...DEFAULTS,
-      ...(GAME_CONFIG?.world ?? {}),
-      ...config,
-    };
-
+    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.world ?? {}), ...config };
+    
     this.segments = [];
     this.sharedMaterials = new Map();
     this.sharedGeometries = new Map();
     this.disposers = [];
-
     this.playerZ = 0;
     this.initialized = false;
     this.currentDistrict = "Kano City Centre";
     this.currentTheme = "city";
 
     this._handleRouteChanged = (payload) => {
-      const district =
-        payload?.district ??
-        payload?.name ??
-        payload?.route?.district ??
-        payload?.route?.name;
-
-      if (district) {
-        this.setDistrict(district);
-      }
+      const district = payload?.district ?? payload?.name ?? payload?.route?.district;
+      if (district) this.setDistrict(district);
     };
 
     this._subscribe("route:changed", this._handleRouteChanged);
     this._subscribe("routeChanged", this._handleRouteChanged);
-    this._subscribe("district:changed", this._handleRouteChanged);
   }
 
   _subscribe(eventName, handler) {
     if (!this.eventBus?.on) return;
-
     const result = this.eventBus.on(eventName, handler);
-
-    if (typeof result === "function") {
-      this.disposers.push(result);
-    } else if (this.eventBus.off) {
-      this.disposers.push(() =>
-        this.eventBus.off(eventName, handler),
-      );
-    }
+    if (typeof result === "function") this.disposers.push(result);
+    else if (this.eventBus.off) this.disposers.push(() => this.eventBus.off(eventName, handler));
   }
 
-  initialize({
-    playerZ = 0,
-    district = null,
-  } = {}) {
+  initialize({ playerZ = 0, district = null } = {}) {
     if (this.initialized) return this;
-
     this.playerZ = playerZ;
+    if (district) this.setDistrict(district);
+    else this._detectDistrict();
 
-    if (district) {
-      this.setDistrict(district);
-    } else {
-      this._detectDistrict();
-    }
-
-    const totalSegments =
-      this.config.segmentsAhead +
-      this.config.segmentsBehind +
-      1;
-
-    const firstZ =
-      playerZ -
-      this.config.segmentsBehind * this.config.segmentLength;
-
-    for (let i = 0; i < totalSegments; i += 1) {
-      const segment = this._createSegment(
-        firstZ + i * this.config.segmentLength,
-        i,
-      );
-
+    const totalSegments = this.config.segmentsAhead + this.config.segmentsBehind + 1;
+    const firstZ = playerZ - this.config.segmentsBehind * this.config.segmentLength;
+    
+    for (let i = 0; i < totalSegments; i++) {
+      const segment = this._createSegment(firstZ + i * this.config.segmentLength, i);
       this.segments.push(segment);
     }
-
     this.initialized = true;
     return this;
   }
 
   update(deltaTime, playerZ = this.playerZ) {
     if (!this.initialized) return;
-
     const dt = Math.max(0, Math.min(deltaTime || 0, 0.1));
     this.playerZ = playerZ;
-
     this._detectDistrict();
 
     const segmentLength = this.config.segmentLength;
-    const targetAhead =
-      playerZ +
-      this.config.segmentsAhead * segmentLength;
-
-    const targetBehind =
-      playerZ -
-      this.config.segmentsBehind * segmentLength;
+    const targetAhead = playerZ + this.config.segmentsAhead * segmentLength;
+    const targetBehind = playerZ - this.config.segmentsBehind * segmentLength;
 
     for (const segment of this.segments) {
       if (segment.z < targetBehind - this.config.recycleDistance) {
         this._moveSegment(segment, targetAhead + segmentLength);
         continue;
       }
-
       if (segment.z > targetAhead + this.config.recycleDistance) {
         this._moveSegment(segment, targetBehind - segmentLength);
       }
-
       segment.group.position.z = segment.z;
       segment.elapsed += dt;
     }
@@ -230,73 +120,23 @@ export default class ScenerySystem {
 
   setDistrict(district) {
     this.currentDistrict = String(district);
-    this.currentTheme =
-      DISTRICT_THEMES[this.currentDistrict] ?? "residential";
+    const key = district.toLowerCase();
+    if (key.includes("sabon") || key.includes("kurmi") || key.includes("market")) this.currentTheme = "market";
+    else if (key.includes("city") || key.includes("centre")) this.currentTheme = "city";
+    else this.currentTheme = "residential";
 
-    for (const segment of this.segments) {
-      this._refreshSegmentTheme(segment);
-    }
-
-    this.eventBus?.emit?.("scenery:districtChanged", {
-      district: this.currentDistrict,
-      theme: this.currentTheme,
-    });
-  }
-
-  getDistrict() {
-    return this.currentDistrict;
-  }
-
-  getTheme() {
-    return this.currentTheme;
-  }
-
-  getSnapshot() {
-    return {
-      initialized: this.initialized,
-      district: this.currentDistrict,
-      theme: this.currentTheme,
-      segmentCount: this.segments.length,
-      playerZ: this.playerZ,
-    };
+    for (const segment of this.segments) this._refreshSegmentTheme(segment);
+    this.eventBus?.emit?.("scenery:districtChanged", { district: this.currentDistrict, theme: this.currentTheme });
   }
 
   _detectDistrict() {
-    const route = this.routeSystem;
-
-    if (!route) return;
-
-    let district = null;
-
-    if (typeof route.getCurrentDistrict === "function") {
-      district = route.getCurrentDistrict();
-    } else if (typeof route.getSnapshot === "function") {
-      const snapshot = route.getSnapshot();
-
-      district =
-        snapshot?.district ??
-        snapshot?.currentDistrict ??
-        snapshot?.route?.district;
-    } else {
-      district =
-        route.currentDistrict ??
-        route.selectedDistrict ??
-        route.activeRoute?.district;
-    }
-
-    if (district && district !== this.currentDistrict) {
-      this.setDistrict(
-        typeof district === "string"
-          ? district
-          : district.name ?? district.title ?? "Kano City Centre",
-      );
-    }
+    // In a full implementation, this would query the RouteSystem for the current district name
+    // based on playerZ. For now, we keep the current theme.
   }
 
   _createSegment(z, index) {
     const group = new THREE.Group();
     group.position.z = z;
-
     const segment = {
       id: `scenery-${index}-${Math.round(z)}`,
       group,
@@ -305,14 +145,11 @@ export default class ScenerySystem {
       theme: this.currentTheme,
       props: [],
     };
-
     this.scene.add(group);
-
     this._buildGround(segment);
     this._buildRoadside(segment);
-    this._buildRoadFurniture(segment);
-    this._refreshSegmentTheme(segment);
-
+    this._buildBuildings(segment);
+    this._buildProps(segment);
     return segment;
   }
 
@@ -320,733 +157,269 @@ export default class ScenerySystem {
     segment.z = newZ;
     segment.group.position.z = newZ;
     segment.elapsed = 0;
-
     this._clearSegmentProps(segment);
     this._buildRoadside(segment);
-    this._buildRoadFurniture(segment);
-    this._refreshSegmentTheme(segment);
-  }
-
-  /**
-   * Ground ONLY — RoadSystem owns asphalt, shoulders, sidewalks, markings.
-   * Scenery places sand/dirt below the road (y < 0) to avoid z-fighting.
-   */
-  _buildGround(segment) {
-    const length = this.config.segmentLength;
-    const groundWidth = 180;
-    const palette = this._getPalette?.() || { ground: 0xb4a178 };
-    const groundColor = palette.ground ?? 0xb4a178;
-
-    // Full terrain under everything (below RoadSystem surface)
-    const ground = this._mesh(
-      "terrain",
-      new THREE.PlaneGeometry(groundWidth, length),
-      makeMaterial(groundColor, 0.98),
-    );
-
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(0, -0.15, 0);
-    ground.receiveShadow = true;
-    segment.group.add(ground);
-
-    // Outer dirt strips only (outside road corridor) — no overlap with RoadSystem
-    const halfRoad = this.config.roadWidth / 2 + 2.5;
-    const outerWidth = (groundWidth / 2) - halfRoad;
-
-    if (outerWidth > 4) {
-      for (const side of [-1, 1]) {
-        const strip = this._mesh(
-          "outer-ground",
-          new THREE.PlaneGeometry(outerWidth, length),
-          makeMaterial(groundColor, 0.97),
-        );
-        strip.rotation.x = -Math.PI / 2;
-        strip.position.set(
-          side * (halfRoad + outerWidth / 2),
-          -0.12,
-          0,
-        );
-        strip.receiveShadow = true;
-        segment.group.add(strip);
-      }
-    }
-
-    // Intentionally NO road / shoulder / sidewalk / lane markings here.
-  }
-
-  _buildLaneMarkings(_segment) {
-    // Deprecated — RoadSystem owns lane markings. Kept as no-op for safety.
-  }
-
-  _buildRoadside(segment) {
-    const palette = this._getPalette();
-    const length = this.config.segmentLength;
-    const spacing = Math.min(this.config.propSpacing || 8, 7);
-    const theme = this.currentTheme || "city";
-
-    for (const side of [-1, 1]) {
-      for (
-        let localZ = -length / 2 + 2;
-        localZ < length / 2;
-        localZ += spacing
-      ) {
-        if (Math.random() > 0.88) continue;
-
-        const x = side * randomBetween(8.5, 22);
-        const z = localZ + randomBetween(-1.2, 1.2);
-        const roll = Math.random();
-
-        // Theme-weighted Kano landmarks
-        if (theme === "market" && roll < 0.28) {
-          this._addStreetStall(segment, x, z, side);
-        } else if (theme === "market" && roll < 0.4) {
-          this._addShop(segment, x, z, side, palette);
-        } else if (roll < 0.08) {
-          this._addMosque(segment, x, z, side, palette);
-        } else if (roll < 0.14) {
-          this._addCityGate(segment, x, z, side, palette);
-        } else if (roll < 0.2) {
-          this._addPetrolStation(segment, x, z, side, palette);
-        } else if (roll < 0.38) {
-          this._addShop(segment, x, z, side, palette);
-        } else if (roll < 0.52) {
-          this._addBuilding(segment, x, z, side, palette);
-        } else if (roll < 0.64) {
-          this._addStreetStall(segment, x, z, side);
-        } else if (roll < 0.74) {
-          this._addWall(segment, x, z, side, palette);
-        } else if (roll < 0.84) {
-          this._addTree(segment, x, z, palette);
-        } else if (roll < 0.92) {
-          this._addStreetLight(segment, x, z);
-        } else {
-          this._addRoadsideSign(segment, x, z, side);
-        }
-      }
-
-      // Always at least one landmark-ish prop per side per segment
-      if (Math.random() < 0.55) {
-        const lx = side * randomBetween(11, 18);
-        const lz = randomBetween(-length / 3, length / 3);
-        if (theme === "market") {
-          this._addStreetStall(segment, lx, lz, side);
-        } else if (Math.random() < 0.35) {
-          this._addMosque(segment, lx, lz, side, palette);
-        } else {
-          this._addShop(segment, lx, lz, side, palette);
-        }
-      }
-    }
-  }
-
-  _buildRoadFurniture(segment) {
-    const length = this.config.segmentLength;
-
-    for (const side of [-1, 1]) {
-      const curbX =
-        side *
-        (this.config.roadWidth / 2 +
-          this.config.sidewalkWidth +
-          0.35);
-
-      for (
-        let z = -length / 2 + 4;
-        z < length / 2;
-        z += 12
-      ) {
-        const post = this._mesh(
-          "bollard",
-          this._geometry("cylinder", () =>
-            new THREE.CylinderGeometry(0.09, 0.12, 0.8, 8),
-          ),
-          makeMaterial(0xd6c6a8),
-        );
-
-        post.position.set(curbX, 0.4, z);
-        segment.group.add(post);
-      }
-    }
-  }
-
-  _addBuilding(segment, x, z, side, palette) {
-    const width = randomBetween(4, 9);
-    const depth = randomBetween(4, 9);
-    const height = randomBetween(3.2, 10);
-
-    const building = new THREE.Group();
-    building.position.set(x, 0, z);
-
-    const body = this._mesh(
-      "building-body",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(width, height, depth),
-      ),
-      makeMaterial(choose(palette.building)),
-    );
-
-    body.position.y = height / 2;
-    body.castShadow = true;
-    body.receiveShadow = true;
-
-    building.add(body);
-
-    const roofHeight = randomBetween(0.18, 0.5);
-
-    const roof = this._mesh(
-      "building-roof",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(width + 0.3, roofHeight, depth + 0.3),
-      ),
-      makeMaterial(choose(palette.roof)),
-    );
-
-    roof.position.y = height + roofHeight / 2;
-    roof.castShadow = true;
-
-    building.add(roof);
-
-    this._addWindows(building, width, height, depth, side);
-
-    if (this.currentTheme === "market" && Math.random() > 0.5) {
-      this._addBuildingSign(building, width, height, depth, side);
-    }
-
-    segment.group.add(building);
-    segment.props.push(building);
-  }
-
-  _addWindows(building, width, height, depth, side) {
-    const rows = Math.min(4, Math.floor(height / 2));
-    const columns = Math.max(1, Math.floor(width / 2.5));
-
-    const windowMaterial = makeMaterial(0x7e999b, 0.48);
-    const windowWidth = 0.55;
-    const windowHeight = 0.7;
-
-    const frontZ = -side * (depth / 2 + 0.015);
-
-    for (let row = 0; row < rows; row += 1) {
-      for (let col = 0; col < columns; col += 1) {
-        const windowMesh = this._mesh(
-          "window",
-          this._geometry("box", () =>
-            new THREE.BoxGeometry(
-              windowWidth,
-              windowHeight,
-              0.045,
-            ),
-          ),
-          windowMaterial,
-        );
-
-        const availableWidth = Math.max(0.5, width - 1);
-        const spacing = availableWidth / columns;
-
-        windowMesh.position.set(
-          -width / 2 + spacing * (col + 0.5),
-          1.1 + row * 1.65,
-          frontZ,
-        );
-
-        building.add(windowMesh);
-      }
-    }
-  }
-
-  _addBuildingSign(building, width, height, depth, side) {
-    const sign = this._mesh(
-      "shop-sign",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(
-          Math.min(width * 0.85, 5),
-          0.5,
-          0.12,
-        ),
-      ),
-      makeMaterial(choose([0x9e4433, 0x35634d, 0x8e713c])),
-    );
-
-    sign.position.set(
-      0,
-      Math.min(height - 0.4, 2.6),
-      -side * (depth / 2 + 0.09),
-    );
-
-    building.add(sign);
-  }
-
-  _addTree(segment, x, z, palette) {
-    const tree = new THREE.Group();
-    tree.position.set(x, 0, z);
-
-    const trunkHeight = randomBetween(1.5, 2.6);
-    const canopyRadius = randomBetween(1.1, 2.1);
-
-    const trunk = this._mesh(
-      "tree-trunk",
-      this._geometry("cylinder", () =>
-        new THREE.CylinderGeometry(0.15, 0.24, trunkHeight, 7),
-      ),
-      makeMaterial(0x725137),
-    );
-
-    trunk.position.y = trunkHeight / 2;
-    trunk.castShadow = true;
-
-    tree.add(trunk);
-
-    const canopy = this._mesh(
-      "tree-canopy",
-      this._geometry("sphere", () =>
-        new THREE.IcosahedronGeometry(canopyRadius, 1),
-      ),
-      makeMaterial(choose(palette.vegetation)),
-    );
-
-    canopy.position.y = trunkHeight + canopyRadius * 0.55;
-    canopy.scale.y = 0.85;
-    canopy.castShadow = true;
-
-    tree.add(canopy);
-
-    segment.group.add(tree);
-    segment.props.push(tree);
-  }
-
-  _addWall(segment, x, z, side, palette) {
-    const wall = this._mesh(
-      "compound-wall",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(
-          randomBetween(5, 10),
-          randomBetween(1.2, 2.2),
-          0.4,
-        ),
-      ),
-      makeMaterial(choose(palette.building)),
-    );
-
-    wall.position.set(x, 0.85, z);
-    wall.rotation.y = side * randomBetween(-0.08, 0.08);
-    wall.castShadow = true;
-
-    segment.group.add(wall);
-    segment.props.push(wall);
-  }
-
-  _addStreetStall(segment, x, z, side) {
-    const stall = new THREE.Group();
-    stall.position.set(x, 0, z);
-
-    const width = randomBetween(1.6, 2.6);
-    const height = randomBetween(1.5, 2);
-
-    const counter = this._mesh(
-      "stall-counter",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(width, 0.8, 1.1),
-      ),
-      makeMaterial(0x8c6340),
-    );
-
-    counter.position.y = 0.4;
-    counter.castShadow = true;
-
-    stall.add(counter);
-
-    const canopy = this._mesh(
-      "stall-canopy",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(width + 0.4, 0.12, 1.5),
-      ),
-      makeMaterial(choose([0xa94c38, 0x3e6d50, 0xd0a13b])),
-    );
-
-    canopy.position.y = height;
-    canopy.castShadow = true;
-
-    stall.add(canopy);
-
-    for (const postX of [-width / 2, width / 2]) {
-      const post = this._mesh(
-        "stall-post",
-        this._geometry("cylinder", () =>
-          new THREE.CylinderGeometry(0.045, 0.045, height, 6),
-        ),
-        makeMaterial(0x594633),
-      );
-
-      post.position.set(postX, height / 2, 0);
-      stall.add(post);
-    }
-
-    segment.group.add(stall);
-    segment.props.push(stall);
-  }
-
-  _addStreetLight(segment, x, z) {
-    const light = new THREE.Group();
-    light.position.set(x, 0, z);
-
-    const pole = this._mesh(
-      "street-light-pole",
-      this._geometry("cylinder", () =>
-        new THREE.CylinderGeometry(0.07, 0.1, 5.5, 8),
-      ),
-      makeMaterial(0x626766, 0.75),
-    );
-
-    pole.position.y = 2.75;
-    pole.castShadow = true;
-
-    light.add(pole);
-
-    const arm = this._mesh(
-      "street-light-arm",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(1.1, 0.09, 0.09),
-      ),
-      makeMaterial(0x626766, 0.75),
-    );
-
-    arm.position.set(-0.45, 5.25, 0);
-    light.add(arm);
-
-    const lamp = this._mesh(
-      "street-light-lamp",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(0.4, 0.16, 0.28),
-      ),
-      makeMaterial(0xe4d9b2, 0.5),
-    );
-
-    lamp.position.set(-0.95, 5.2, 0);
-    light.add(lamp);
-
-    segment.group.add(light);
-    segment.props.push(light);
-  }
-
-  _addRoadsideSign(segment, x, z, side) {
-    const sign = new THREE.Group();
-    sign.position.set(x, 0, z);
-
-    const post = this._mesh(
-      "sign-post",
-      this._geometry("cylinder", () =>
-        new THREE.CylinderGeometry(0.07, 0.07, 2, 6),
-      ),
-      makeMaterial(0x66635b),
-    );
-
-    post.position.y = 1;
-    sign.add(post);
-
-    const board = this._mesh(
-      "sign-board",
-      this._geometry("box", () =>
-        new THREE.BoxGeometry(1.5, 0.85, 0.12),
-      ),
-      makeMaterial(choose([0x35624d, 0x245d76, 0x9b4935])),
-    );
-
-    board.position.set(0, 2, 0);
-    board.rotation.y = side * 0.08;
-    sign.add(board);
-
-    segment.group.add(sign);
-    segment.props.push(sign);
+    this._buildBuildings(segment);
+    this._buildProps(segment);
   }
 
   _refreshSegmentTheme(segment) {
     segment.theme = this.currentTheme;
+    // Re-build buildings to apply new palette
+    this._clearSegmentBuildings(segment);
+    this._buildBuildings(segment);
+  }
 
+  _buildGround(segment) {
     const palette = this._getPalette();
+    const geo = this._geometry("ground", () => new THREE.PlaneGeometry(200, this.config.segmentLength));
+    const mat = this._material("ground", palette.ground);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = -0.1;
+    mesh.receiveShadow = true;
+    segment.group.add(mesh);
+    segment.props.push({ type: "ground", mesh });
+  }
 
-    for (const child of segment.group.children) {
-      if (child.name === "ground") {
-        child.material = this._material(
-          `ground-${this.currentTheme}`,
-          palette.ground,
-        );
+  _buildRoadside(segment) {
+    // Sandy shoulders
+    const palette = this._getPalette();
+    const shoulderGeo = this._geometry("shoulder", () => new THREE.PlaneGeometry(40, this.config.segmentLength));
+    const shoulderMat = this._material("shoulder", palette.ground, { roughness: 1, metalness: 0 });
+    
+    const leftShoulder = new THREE.Mesh(shoulderGeo, shoulderMat);
+    leftShoulder.rotation.x = -Math.PI / 2;
+    leftShoulder.position.set(-26, -0.05, 0);
+    leftShoulder.receiveShadow = true;
+    segment.group.add(leftShoulder);
+
+    const rightShoulder = new THREE.Mesh(shoulderGeo, shoulderMat);
+    rightShoulder.rotation.x = -Math.PI / 2;
+    rightShoulder.position.set(26, -0.05, 0);
+    rightShoulder.receiveShadow = true;
+    segment.group.add(rightShoulder);
+
+    segment.props.push({ type: "shoulder", mesh: leftShoulder }, { type: "shoulder", mesh: rightShoulder });
+  }
+
+  _buildBuildings(segment) {
+    const palette = this._getPalette();
+    const segLen = this.config.segmentLength;
+    const slots = 4; // 2 on left, 2 on right
+    const slotWidth = segLen / slots;
+
+    for (let i = 0; i < slots; i++) {
+      const zOffset = -segLen / 2 + i * slotWidth + slotWidth / 2;
+      
+      // Left side
+      if (Math.random() < this.config.buildingDensity) {
+        const x = -18 - Math.random() * 5;
+        const type = this._pickBuildingType();
+        const building = this._createBuilding(type, palette);
+        building.position.set(x, 0, zOffset);
+        building.rotation.y = Math.random() * 0.2 - 0.1; // Slight variation
+        segment.group.add(building);
+        segment.props.push({ type: "building", mesh: building });
+      }
+
+      // Right side
+      if (Math.random() < this.config.buildingDensity) {
+        const x = 18 + Math.random() * 5;
+        const type = this._pickBuildingType();
+        const building = this._createBuilding(type, palette);
+        building.position.set(x, 0, zOffset);
+        building.rotation.y = Math.PI + (Math.random() * 0.2 - 0.1);
+        segment.group.add(building);
+        segment.props.push({ type: "building", mesh: building });
       }
     }
+  }
+
+  _pickBuildingType() {
+    const r = Math.random();
+    if (this.currentTheme === "market") return r < 0.6 ? "shop" : "stall";
+    if (this.currentTheme === "city") return r < 0.4 ? "highrise" : r < 0.8 ? "compound" : "mosque";
+    return r < 0.7 ? "compound" : "house";
+  }
+
+  _createBuilding(type, palette) {
+    const group = new THREE.Group();
+    const color = palette.building[Math.floor(Math.random() * palette.building.length)];
+    const accent = palette.accent[Math.floor(Math.random() * palette.accent.length)];
+
+    if (type === "compound") {
+      // Wall
+      const wallGeo = this._geometry("wall", () => new THREE.BoxGeometry(8, 2.5, 8));
+      const wallMat = this._material("wall", color);
+      const wall = new THREE.Mesh(wallGeo, wallMat);
+      wall.position.y = 1.25;
+      wall.castShadow = true; wall.receiveShadow = true;
+      group.add(wall);
+      
+      // House inside
+      const houseGeo = this._geometry("house", () => new THREE.BoxGeometry(4, 3, 4));
+      const houseMat = this._material("house", 0xffffff);
+      const house = new THREE.Mesh(houseGeo, houseMat);
+      house.position.set(0, 1.5, 0);
+      house.castShadow = true;
+      group.add(house);
+    } 
+    else if (type === "shop") {
+      const shopGeo = this._geometry("shop", () => new THREE.BoxGeometry(6, 3.5, 5));
+      const shopMat = this._material("shop", color);
+      const shop = new THREE.Mesh(shopGeo, shopMat);
+      shop.position.y = 1.75;
+      shop.castShadow = true; shop.receiveShadow = true;
+      group.add(shop);
+
+      // Awning
+      const awningGeo = this._geometry("awning", () => new THREE.BoxGeometry(6.2, 0.2, 2));
+      const awningMat = this._material("awning", accent);
+      const awning = new THREE.Mesh(awningGeo, awningMat);
+      awning.position.set(0, 3, -3.5);
+      awning.castShadow = true;
+      group.add(awning);
+    }
+    else if (type === "mosque") {
+      const baseGeo = this._geometry("mosque_base", () => new THREE.BoxGeometry(10, 4, 10));
+      const baseMat = this._material("mosque_base", 0xf5f5dc); // Beige
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = 2;
+      base.castShadow = true; base.receiveShadow = true;
+      group.add(base);
+
+      // Minaret
+      const minaretGeo = this._geometry("minaret", () => new THREE.CylinderGeometry(0.8, 1, 8, 8));
+      const minaretMat = this._material("minaret", 0xe0e0e0);
+      const minaret = new THREE.Mesh(minaretGeo, minaretMat);
+      minaret.position.set(6, 4, 6);
+      minaret.castShadow = true;
+      group.add(minaret);
+
+      // Dome
+      const domeGeo = this._geometry("dome", () => new THREE.SphereGeometry(2.5, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2));
+      const domeMat = this._material("dome", 0x4caf50); // Green dome
+      const dome = new THREE.Mesh(domeGeo, domeMat);
+      dome.position.set(0, 4, 0);
+      dome.castShadow = true;
+      group.add(dome);
+    }
+    else if (type === "highrise") {
+      const height = 8 + Math.random() * 12;
+      const buildGeo = this._geometry("highrise", () => new THREE.BoxGeometry(7, height, 7));
+      const buildMat = this._material("highrise", color);
+      const build = new THREE.Mesh(buildGeo, buildMat);
+      build.position.y = height / 2;
+      build.castShadow = true; build.receiveShadow = true;
+      group.add(build);
+    }
+    else { // house / stall
+      const h = 2.5 + Math.random() * 1.5;
+      const buildGeo = this._geometry("generic", () => new THREE.BoxGeometry(5, h, 5));
+      const buildMat = this._material("generic", color);
+      const build = new THREE.Mesh(buildGeo, buildMat);
+      build.position.y = h / 2;
+      build.castShadow = true; build.receiveShadow = true;
+      group.add(build);
+    }
+
+    return group;
+  }
+
+  _buildProps(segment) {
+    if (Math.random() > this.config.propDensity) return;
+    
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const x = side * (12 + Math.random() * 4);
+    const z = (Math.random() - 0.5) * this.config.segmentLength;
+    
+    const propType = Math.random() > 0.5 ? "pole" : "tree";
+    let prop;
+
+    if (propType === "pole") {
+      const poleGeo = this._geometry("pole", () => new THREE.CylinderGeometry(0.15, 0.15, 6, 6));
+      const poleMat = this._material("pole", 0x5d4037); // Wood color
+      prop = new THREE.Mesh(poleGeo, poleMat);
+      prop.position.y = 3;
+      prop.castShadow = true;
+    } else {
+      // Stylized tree (common in Kano)
+      const trunkGeo = this._geometry("trunk", () => new THREE.CylinderGeometry(0.2, 0.3, 2, 6));
+      const trunkMat = this._material("trunk", 0x795548);
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 1;
+      trunk.castShadow = true;
+      
+      const leavesGeo = this._geometry("leaves", () => new THREE.SphereGeometry(1.5, 8, 6));
+      const leavesMat = this._material("leaves", 0x558b2f);
+      const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+      leaves.position.y = 3;
+      leaves.castShadow = true;
+      
+      prop = new THREE.Group();
+      prop.add(trunk);
+      prop.add(leaves);
+    }
+
+    prop.position.x = x;
+    prop.position.z = z;
+    segment.group.add(prop);
+    segment.props.push({ type: "prop", mesh: prop });
+  }
+
+  _clearSegmentProps(segment) {
+    for (const prop of segment.props) {
+      segment.group.remove(prop.mesh);
+      // Note: We don't dispose shared geos/mats here, just remove from scene
+    }
+    segment.props = [];
+  }
+
+  _clearSegmentBuildings(segment) {
+    // Specific cleanup for buildings if theme changes
+    segment.props = segment.props.filter(p => {
+      if (p.type === "building") {
+        segment.group.remove(p.mesh);
+        return false;
+      }
+      return true;
+    });
   }
 
   _getPalette() {
     return PALETTES[this.currentTheme] ?? PALETTES.residential;
   }
 
-  _clearSegmentProps(segment) {
-    for (const prop of segment.props) {
-      segment.group.remove(prop);
-      disposeObject(prop);
-    }
-
-    segment.props.length = 0;
-  }
-
-  _mesh(name, geometry, material) {
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = name;
-    return mesh;
-  }
-
   _geometry(key, factory) {
-    if (!this.sharedGeometries.has(key)) {
-      this.sharedGeometries.set(key, factory());
-    }
-
+    if (!this.sharedGeometries.has(key)) this.sharedGeometries.set(key, factory());
     return this.sharedGeometries.get(key);
   }
 
-  _material(key, color) {
-    if (!this.sharedMaterials.has(key)) {
-      this.sharedMaterials.set(key, makeMaterial(color));
+  _material(key, color, options = {}) {
+    const matKey = `${key}-${color}`;
+    if (!this.sharedMaterials.has(matKey)) {
+      this.sharedMaterials.set(matKey, new THREE.MeshStandardMaterial({
+        color,
+        roughness: options.roughness ?? 0.85,
+        metalness: options.metalness ?? 0.0,
+        flatShading: true, // Stylized look
+      }));
     }
-
-    return this.sharedMaterials.get(key);
+    return this.sharedMaterials.get(matKey);
   }
-
-  setWeather(weather) {
-    const name =
-      typeof weather === "string"
-        ? weather
-        : weather?.type ?? weather?.weather ?? "clear";
-
-    const isStorm = name === "storm" || name === "rain";
-    const isHarmattan = name === "harmattan";
-
-    for (const material of this.sharedMaterials.values()) {
-      material.needsUpdate = true;
-    }
-
-    this.eventBus?.emit?.("scenery:weatherChanged", {
-      weather: name,
-      reducedVisibility: isStorm || isHarmattan,
-    });
-  }
-
-
-  /** Small mosque with minaret — Kano identity */
-  _addMosque(segment, x, z, side, palette) {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-
-    const bodyW = randomBetween(5, 8);
-    const bodyD = randomBetween(5, 7);
-    const bodyH = randomBetween(3.5, 5);
-
-    const body = this._mesh(
-      "mosque-body",
-      this._geometry("box", () => new THREE.BoxGeometry(bodyW, bodyH, bodyD)),
-      makeMaterial(choose([0xe8dcc8, 0xf5f0e6, 0xd4c4a8])),
-    );
-    body.position.y = bodyH / 2;
-    body.castShadow = true;
-    group.add(body);
-
-    const dome = this._mesh(
-      "mosque-dome",
-      this._geometry("sphere", () => new THREE.SphereGeometry(bodyW * 0.28, 10, 8)),
-      makeMaterial(choose([0xc9a227, 0xd4af37, 0xb8860b])),
-    );
-    dome.position.y = bodyH + bodyW * 0.15;
-    dome.scale.y = 0.7;
-    dome.castShadow = true;
-    group.add(dome);
-
-    const minaret = this._mesh(
-      "minaret",
-      this._geometry("cylinder", () => new THREE.CylinderGeometry(0.35, 0.45, bodyH * 1.6, 8)),
-      makeMaterial(0xe8dcc8),
-    );
-    minaret.position.set(side * (bodyW * 0.45), bodyH * 0.8, bodyD * 0.35);
-    minaret.castShadow = true;
-    group.add(minaret);
-
-    const minaretCap = this._mesh(
-      "minaret-cap",
-      this._geometry("sphere", () => new THREE.SphereGeometry(0.4, 8, 6)),
-      makeMaterial(0xc9a227),
-    );
-    minaretCap.position.set(side * (bodyW * 0.45), bodyH * 1.6, bodyD * 0.35);
-    group.add(minaretCap);
-
-    const door = this._mesh(
-      "mosque-door",
-      this._geometry("box", () => new THREE.BoxGeometry(1.2, 2.2, 0.15)),
-      makeMaterial(0x5c4033),
-    );
-    door.position.set(0, 1.1, -bodyD / 2 - 0.05);
-    group.add(door);
-
-    segment.group.add(group);
-    segment.props.push(group);
-  }
-
-  _addCityGate(segment, x, z, side, palette) {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-
-    const colH = randomBetween(5, 7);
-    const colMat = makeMaterial(choose([0xc4a574, 0xd2b48c, 0xb8956c]));
-
-    for (const sx of [-1, 1]) {
-      const col = this._mesh(
-        "gate-col",
-        this._geometry("box", () => new THREE.BoxGeometry(1.2, colH, 1.2)),
-        colMat,
-      );
-      col.position.set(sx * 2.2, colH / 2, 0);
-      col.castShadow = true;
-      group.add(col);
-    }
-
-    const beam = this._mesh(
-      "gate-beam",
-      this._geometry("box", () => new THREE.BoxGeometry(5.5, 1.2, 1.4)),
-      colMat,
-    );
-    beam.position.y = colH + 0.4;
-    beam.castShadow = true;
-    group.add(beam);
-
-    const top = this._mesh(
-      "gate-top",
-      this._geometry("box", () => new THREE.BoxGeometry(6, 0.5, 1.6)),
-      makeMaterial(0xa67c52),
-    );
-    top.position.y = colH + 1.2;
-    group.add(top);
-
-    segment.group.add(group);
-    segment.props.push(group);
-  }
-
-  _addShop(segment, x, z, side, palette) {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-
-    const w = randomBetween(3.5, 6);
-    const d = randomBetween(3, 5);
-    const h = randomBetween(2.8, 4.5);
-
-    const body = this._mesh(
-      "shop-body",
-      this._geometry("box", () => new THREE.BoxGeometry(w, h, d)),
-      makeMaterial(choose(palette.building)),
-    );
-    body.position.y = h / 2;
-    body.castShadow = true;
-    group.add(body);
-
-    const awning = this._mesh(
-      "shop-awning",
-      this._geometry("box", () => new THREE.BoxGeometry(w + 0.4, 0.1, 1.4)),
-      makeMaterial(choose([0xc0392b, 0x27ae60, 0xf39c12, 0x2980b9])),
-    );
-    awning.position.set(0, h * 0.65, -d / 2 - 0.5);
-    awning.rotation.x = 0.15;
-    awning.castShadow = true;
-    group.add(awning);
-
-    const front = this._mesh(
-      "shop-front",
-      this._geometry("box", () => new THREE.BoxGeometry(w * 0.7, h * 0.45, 0.1)),
-      makeMaterial(0x1a1a1a),
-    );
-    front.position.set(0, h * 0.35, -d / 2 - 0.05);
-    group.add(front);
-
-    const sign = this._mesh(
-      "shop-sign",
-      this._geometry("box", () => new THREE.BoxGeometry(w * 0.8, 0.45, 0.12)),
-      makeMaterial(choose([0xf1c40f, 0xe74c3c, 0x3498db])),
-    );
-    sign.position.set(0, h * 0.85, -d / 2 - 0.15);
-    group.add(sign);
-
-    segment.group.add(group);
-    segment.props.push(group);
-  }
-
-  _addPetrolStation(segment, x, z, side, palette) {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-
-    const canopy = this._mesh(
-      "petrol-canopy",
-      this._geometry("box", () => new THREE.BoxGeometry(8, 0.2, 5)),
-      makeMaterial(0xf1c40f),
-    );
-    canopy.position.y = 4.2;
-    canopy.castShadow = true;
-    group.add(canopy);
-
-    for (const sx of [-3, 3]) {
-      for (const sz of [-1.5, 1.5]) {
-        const post = this._mesh(
-          "petrol-post",
-          this._geometry("cylinder", () => new THREE.CylinderGeometry(0.12, 0.12, 4, 6)),
-          makeMaterial(0x555555),
-        );
-        post.position.set(sx, 2, sz);
-        group.add(post);
-      }
-    }
-
-    for (const sx of [-1.5, 1.5]) {
-      const pump = this._mesh(
-        "pump",
-        this._geometry("box", () => new THREE.BoxGeometry(0.6, 1.4, 0.5)),
-        makeMaterial(0xe74c3c),
-      );
-      pump.position.set(sx, 0.7, 0);
-      pump.castShadow = true;
-      group.add(pump);
-    }
-
-    const kiosk = this._mesh(
-      "petrol-kiosk",
-      this._geometry("box", () => new THREE.BoxGeometry(2.5, 2.5, 2)),
-      makeMaterial(0xecf0f1),
-    );
-    kiosk.position.set(side * 3, 1.25, 1.5);
-    group.add(kiosk);
-
-    segment.group.add(group);
-    segment.props.push(group);
-  }
-
 
   dispose() {
     for (const dispose of this.disposers) {
-      try {
-        dispose();
-      } catch {
-        // Continue releasing remaining resources.
-      }
+      try { dispose(); } catch {}
     }
-
     this.disposers.length = 0;
-
     for (const segment of this.segments) {
-      this._clearSegmentProps(segment);
       this.scene.remove(segment.group);
-      disposeObject(segment.group);
     }
-
     this.segments.length = 0;
-
-    for (const geometry of this.sharedGeometries.values()) {
-      geometry.dispose();
-    }
-
-    for (const material of this.sharedMaterials.values()) {
-      material.dispose();
-    }
-
+    for (const geometry of this.sharedGeometries.values()) geometry.dispose();
+    for (const material of this.sharedMaterials.values()) material.dispose();
     this.sharedGeometries.clear();
     this.sharedMaterials.clear();
     this.initialized = false;
