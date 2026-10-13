@@ -3,16 +3,25 @@ export default class AudioManager {
     this.context = null;
     this.masterGain = null;
     this.engineGain = null;
-    this.engineFilter = null;
-    this.oscillators = [];
+    this.radioGain = null;
+    this.sfxGain = null;
     
     this.isInitialized = false;
     this.isMuted = false;
     this.volume = 1.0;
     
-    this.currentRadioStation = 0;
-    this.radioInterval = null;
-    this.radioOscillators = [];
+    // Audio Buffers (Loaded MP3s)
+    this.buffers = {};
+    this.isLoading = false;
+    
+    // Active Nodes
+    this.engineSource = null;
+    this.radioSource = null;
+    this.currentRadioTrack = null;
+    
+    // Engine specific
+    this._engineSpeed = 0;
+    this._engineMaxSpeed = 34;
     
     this._boundUnlock = this._unlockAudio.bind(this);
   }
@@ -29,17 +38,21 @@ export default class AudioManager {
       this.masterGain.gain.value = this.volume;
       this.masterGain.connect(this.context.destination);
       
-      // Engine Audio Graph
+      // Sub-mixers
       this.engineGain = this.context.createGain();
       this.engineGain.gain.value = 0;
-      
-      this.engineFilter = this.context.createBiquadFilter();
-      this.engineFilter.type = 'lowpass';
-      this.engineFilter.frequency.value = 200;
-      this.engineFilter.Q.value = 5;
-      
-      this.engineGain.connect(this.engineFilter);
-      this.engineFilter.connect(this.masterGain);
+      this.engineGain.connect(this.masterGain);
+
+      this.radioGain = this.context.createGain();
+      this.radioGain.gain.value = 0;
+      this.radioGain.connect(this.masterGain);
+
+      this.sfxGain = this.context.createGain();
+      this.sfxGain.gain.value = 1.0;
+      this.sfxGain.connect(this.masterGain);
+
+      // Load all assets
+      await this._loadAssets();
       
       this.isInitialized = true;
       
@@ -47,184 +60,150 @@ export default class AudioManager {
       document.addEventListener('click', this._boundUnlock, { once: true });
       document.addEventListener('touchstart', this._boundUnlock, { once: true });
       
-      console.log("[AudioManager] Initialized");
+      console.log("[AudioManager] Initialized with real assets.");
     } catch (e) {
-      console.warn("[AudioManager] Web Audio API not supported", e);
+      console.warn("[AudioManager] Web Audio API failed:", e);
     }
+  }
+
+  async _loadAssets() {
+    this.isLoading = true;
+    const assets = [
+      'engine', 'horn', 'whistle', 'collision', 'pickup', 'coin',
+      'radio-kano', 'arewa', 'cool', 'freedom', 'rahama', 'ruffneck', 'wazobia'
+    ];
+    
+    const promises = assets.map(name => this._loadBuffer(`/assets/audio/${name}.mp3`, name));
+    await Promise.all(promises);
+    this.isLoading = false;
+  }
+
+  _loadBuffer(url, name) {
+    return fetch(url)
+      .then(response => response.arrayBuffer())
+      .then(arrayBuffer => this.context.decodeAudioData(arrayBuffer))
+      .then(audioBuffer => {
+        this.buffers[name] = audioBuffer;
+        console.log(`[AudioManager] Loaded ${name}`);
+      })
+      .catch(e => console.warn(`[AudioManager] Failed to load ${name}:`, e));
   }
 
   _unlockAudio() {
     if (this.context && this.context.state === 'suspended') {
       this.context.resume().then(() => {
         console.log("[AudioManager] Audio context resumed");
+        // Auto-start engine if game is running
+        if (this._engineSpeed > 0) this._startEngineNode();
       });
     }
   }
 
-  // 🔥 Dynamic Engine Sound
+  // 🔥 DYNAMIC ENGINE SOUND
   updateEngine(speed = 0, maxSpeed = 34) {
-    if (!this.isInitialized || this.isMuted) return;
+    if (!this.isInitialized || this.isMuted || !this.buffers['engine']) return;
 
+    this._engineSpeed = speed;
+    this._engineMaxSpeed = maxSpeed;
     const rpm = Math.min(speed / maxSpeed, 1);
-    const now = this.context.currentTime;
 
-    // Base frequency + RPM multiplier
-    const baseFreq = 60 + (rpm * 180);
-    
-    // If we don't have engine oscillators running, start them
-    if (this.oscillators.length === 0) {
-      this._startEngine(baseFreq);
+    // Start engine node if not running
+    if (!this.engineSource && speed > 0.5) {
+      this._startEngineNode();
+    } 
+    // Stop engine node if stopped
+    else if (this.engineSource && speed <= 0.5) {
+      this._stopEngineNode();
     }
 
-    // Update frequency and filter based on speed
-    this.oscillators.forEach((osc, index) => {
-      const detune = index === 0 ? 0 : -15; // Detune for "roughness"
-      osc.frequency.setTargetAtTime(baseFreq + detune, now, 0.1);
-    });
-
-    // Open the filter as speed increases (makes it sound louder/brighter)
-    this.engineFilter.frequency.setTargetAtTime(200 + (rpm * 2000), now, 0.1);
-    
-    // Volume based on throttle
-    const targetVol = speed > 0 ? 0.15 : 0.05;
-    this.engineGain.gain.setTargetAtTime(targetVol, now, 0.1);
+    if (this.engineSource) {
+      const now = this.context.currentTime;
+      // Pitch shift based on speed (0.8x to 2.5x speed)
+      const playbackRate = 0.8 + (rpm * 1.7); 
+      this.engineSource.playbackRate.setTargetAtTime(playbackRate, now, 0.1);
+      
+      // Volume based on throttle
+      const targetVol = speed > 0 ? 0.3 + (rpm * 0.4) : 0;
+      this.engineGain.gain.setTargetAtTime(targetVol, now, 0.1);
+    }
   }
 
-  _startEngine(freq) {
-    const now = this.context.currentTime;
+  _startEngineNode() {
+    if (this.engineSource) return;
+    const source = this.context.createBufferSource();
+    source.buffer = this.buffers['engine'];
+    source.loop = true;
+    source.playbackRate.value = 0.8; // Idle speed
     
-    // Main oscillator (Sawtooth for engine buzz)
-    const osc1 = this.context.createOscillator();
-    osc1.type = 'sawtooth';
-    osc1.frequency.value = freq;
-    
-    // Sub oscillator (Square for depth)
-    const osc2 = this.context.createOscillator();
-    osc2.type = 'square';
-    osc2.frequency.value = freq / 2;
-    osc2.detune.value = -15;
-    
-    osc1.connect(this.engineGain);
-    osc2.connect(this.engineGain);
-    
-    osc1.start(now);
-    osc2.start(now);
-    
-    this.oscillators = [osc1, osc2];
+    source.connect(this.engineGain);
+    source.start(0);
+    this.engineSource = source;
   }
 
-  stopEngine() {
-    if (!this.isInitialized) return;
-    const now = this.context.currentTime;
-    
-    this.engineGain.gain.setTargetAtTime(0, now, 0.5);
-    
-    this.oscillators.forEach(osc => {
-      try { osc.stop(now + 0.5); } catch(e) {}
-    });
-    this.oscillators = [];
+  _stopEngineNode() {
+    if (this.engineSource) {
+      try {
+        this.engineSource.stop();
+        this.engineSource.disconnect();
+      } catch(e) {}
+      this.engineSource = null;
+    }
+    this.engineGain.gain.setTargetAtTime(0, this.context.currentTime, 0.1);
   }
 
-  // 📻 Procedural Radio System
+  // 📻 RADIO SYSTEM
   startRadio(district = "city") {
     if (!this.isInitialized || this.isMuted) return;
     this.stopRadio();
 
-    const now = this.context.currentTime;
-    const radioGain = this.context.createGain();
-    radioGain.gain.value = 0.05; // Quiet background music
-    radioGain.connect(this.masterGain);
+    // Map district to a radio station file
+    let trackName = 'radio-kano'; // Default
+    const d = district.toLowerCase();
+    if (d.includes('sabon') || d.includes('market')) trackName = 'arewa';
+    else if (d.includes('industrial')) trackName = 'cool';
+    else if (d.includes('outskirt')) trackName = 'freedom';
+    else if (d.includes('city')) trackName = 'wazobia';
 
-    // Different "vibes" based on district
-    let freq, type, interval;
-    if (district.includes("market") || district.includes("sabon")) {
-      freq = 110; type = 'square'; interval = 250; // High energy
-    } else if (district.includes("industrial")) {
-      freq = 55; type = 'sawtooth'; interval = 400; // Heavy
-    } else {
-      freq = 82; type = 'sine'; interval = 500; // Smooth city cruise
+    if (this.buffers[trackName]) {
+      const source = this.context.createBufferSource();
+      source.buffer = this.buffers[trackName];
+      source.loop = true;
+      source.connect(this.radioGain);
+      source.start(0);
+      this.radioSource = source;
+      this.currentRadioTrack = trackName;
+      
+      this.radioGain.gain.setTargetAtTime(0.4, this.context.currentTime, 0.5); // Fade in
     }
-
-    // Simple sequencer
-    this.radioInterval = setInterval(() => {
-      const osc = this.context.createOscillator();
-      const env = this.context.createGain();
-      
-      osc.type = type;
-      // Randomize melody slightly
-      const note = freq * (1 + Math.random() * 0.5);
-      osc.frequency.setValueAtTime(note, this.context.currentTime);
-      
-      env.gain.setValueAtTime(0.1, this.context.currentTime);
-      env.gain.exponentialRampToValueAtTime(0.001, this.context.currentTime + 0.3);
-      
-      osc.connect(env);
-      env.connect(radioGain);
-      
-      osc.start();
-      osc.stop(this.context.currentTime + 0.3);
-    }, interval);
   }
 
   stopRadio() {
-    if (this.radioInterval) {
-      clearInterval(this.radioInterval);
-      this.radioInterval = null;
+    if (this.radioSource) {
+      try {
+        this.radioSource.stop();
+        this.radioSource.disconnect();
+      } catch(e) {}
+      this.radioSource = null;
     }
+    this.radioGain.gain.setTargetAtTime(0, this.context.currentTime, 0.1);
+    this.currentRadioTrack = null;
   }
 
-  // 🔊 Sound Effects (SFX)
+  // 🔊 SOUND EFFECTS (SFX)
   playSFX(type) {
     if (!this.isInitialized || this.isMuted) return;
-    const now = this.context.currentTime;
-    const osc = this.context.createOscillator();
-    const gain = this.context.createGain();
     
-    osc.connect(gain);
-    gain.connect(this.masterGain);
+    let bufferName = type;
+    if (type === 'horn') bufferName = 'horn';
+    if (type === 'whistle') bufferName = 'whistle';
+    if (type === 'collision') bufferName = 'collision'; // You might need to add a crash.mp3 later
+    if (type === 'pickup' || type === 'coin') bufferName = 'coin';
 
-    switch (type) {
-      case 'horn':
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(300, now);
-        osc.frequency.exponentialRampToValueAtTime(100, now + 0.3);
-        gain.gain.setValueAtTime(0.3, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-        osc.start(now);
-        osc.stop(now + 0.3);
-        break;
-        
-      case 'coin':
-      case 'pickup':
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(800, now);
-        osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-        osc.start(now);
-        osc.stop(now + 0.1);
-        break;
-        
-      case 'collision':
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(100, now);
-        osc.frequency.exponentialRampToValueAtTime(10, now + 0.2);
-        gain.gain.setValueAtTime(0.5, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-        osc.start(now);
-        osc.stop(now + 0.2);
-        break;
-        
-      case 'akwai': // Drop off sound
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(400, now);
-        osc.frequency.linearRampToValueAtTime(600, now + 0.1);
-        osc.frequency.linearRampToValueAtTime(400, now + 0.2);
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.linearRampToValueAtTime(0, now + 0.3);
-        osc.start(now);
-        osc.stop(now + 0.3);
-        break;
+    if (this.buffers[bufferName]) {
+      const source = this.context.createBufferSource();
+      source.buffer = this.buffers[bufferName];
+      source.connect(this.sfxGain);
+      source.start(0);
     }
   }
 
@@ -243,7 +222,7 @@ export default class AudioManager {
   }
 
   destroy() {
-    this.stopEngine();
+    this._stopEngineNode();
     this.stopRadio();
     if (this.context) {
       this.context.close();

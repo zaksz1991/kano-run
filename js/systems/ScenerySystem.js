@@ -1,7 +1,5 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
-import { MODEL_PATHS, MODEL_SCALES } from "../core/AssetCatalog.js";
 
 const DEFAULTS = {
   segmentLength: 40,
@@ -9,13 +7,7 @@ const DEFAULTS = {
   segmentsBehind: 2,
   recycleDistance: 20,
   buildingDensity: 0.85,
-  propDensity: 0.6, // Increased to show off new models
-};
-
-const PALETTES = {
-  city: { ground: 0xc2b280, road: 0x333333, building: [0xe3d5b8, 0xd4c4a8], accent: [0x8b4513, 0x556b2f] },
-  market: { ground: 0xbcaaa4, road: 0x333333, building: [0xffe0b2, 0xffccbc], accent: [0xd32f2f, 0x1976d2] },
-  residential: { ground: 0xd7ccc8, road: 0x333333, building: [0xefebd9, 0xe0e0e0], accent: [0x795548, 0x607d8b] },
+  propDensity: 0.6,
 };
 
 export default class ScenerySystem {
@@ -31,15 +23,17 @@ export default class ScenerySystem {
     
     this.segments = [];
     this.sharedMaterials = new Map();
+    this.sharedGeometries = new Map();
     this.disposers = [];
     this.playerZ = 0;
     this.initialized = false;
     this.currentDistrict = "Kano City Centre";
     this.currentTheme = "city";
 
-    // 🔥 GLB Loader & Cache for Environment
-    this._glbLoader = new GLTFLoader();
-    this._modelCache = new Map();
+    // 🔥 TEXTURE LOADER
+    this.textureLoader = new THREE.TextureLoader();
+    this.textures = {};
+    this._loadTextures();
 
     this._handleRouteChanged = (payload) => {
       const district = payload?.district ?? payload?.name ?? payload?.route?.district;
@@ -48,6 +42,21 @@ export default class ScenerySystem {
 
     this._subscribe("route:changed", this._handleRouteChanged);
     this._subscribe("routeChanged", this._handleRouteChanged);
+  }
+
+  _loadTextures() {
+    const loadTex = (name, path) => {
+      const tex = this.textureLoader.load(path);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.textures[name] = tex;
+    };
+
+    loadTex('asphalt', '/assets/textures/asphalt.jpg');
+    loadTex('wall', '/assets/textures/building-wall.jpg');
+    loadTex('market', '/assets/textures/market-stall.jpg');
+    loadTex('ground', '/assets/textures/asphalt-1.jpg'); // Reusing asphalt for ground/dust
   }
 
   _subscribe(eventName, handler) {
@@ -139,9 +148,16 @@ export default class ScenerySystem {
   }
 
   _buildGround(segment) {
-    const palette = this._getPalette();
+    // Use texture if loaded, else fallback color
+    const mat = this._material("ground", 0xc2b280, { map: this.textures['ground'] });
     const geo = this._geometry("ground", () => new THREE.PlaneGeometry(200, this.config.segmentLength));
-    const mat = this._material("ground", palette.ground);
+    
+    // Repeat texture
+    if (mat.map) {
+      mat.map.repeat.set(20, 2);
+      mat.map.needsUpdate = true;
+    }
+
     const mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.y = -0.1;
@@ -151,17 +167,21 @@ export default class ScenerySystem {
   }
 
   _buildRoadside(segment) {
-    const palette = this._getPalette();
-    const shoulderGeo = this._geometry("shoulder", () => new THREE.PlaneGeometry(40, this.config.segmentLength));
-    const shoulderMat = this._material("shoulder", palette.ground, { roughness: 1, metalness: 0 });
+    const mat = this._material("shoulder", 0xbcaaa4, { map: this.textures['asphalt'] });
+    if (mat.map) {
+      mat.map.repeat.set(4, 1);
+      mat.map.needsUpdate = true;
+    }
     
-    const leftShoulder = new THREE.Mesh(shoulderGeo, shoulderMat);
+    const shoulderGeo = this._geometry("shoulder", () => new THREE.PlaneGeometry(40, this.config.segmentLength));
+    
+    const leftShoulder = new THREE.Mesh(shoulderGeo, mat);
     leftShoulder.rotation.x = -Math.PI / 2;
     leftShoulder.position.set(-26, -0.05, 0);
     leftShoulder.receiveShadow = true;
     segment.group.add(leftShoulder);
 
-    const rightShoulder = new THREE.Mesh(shoulderGeo, shoulderMat);
+    const rightShoulder = new THREE.Mesh(shoulderGeo, mat);
     rightShoulder.rotation.x = -Math.PI / 2;
     rightShoulder.position.set(26, -0.05, 0);
     rightShoulder.receiveShadow = true;
@@ -181,39 +201,55 @@ export default class ScenerySystem {
       if (Math.random() < this.config.buildingDensity) {
         const x = -18 - Math.random() * 5;
         const type = this._pickBuildingType();
-        this._createGLBBuilding(segment, type, x, zOffset, Math.random() * 0.2 - 0.1);
+        this._createBuilding(segment, type, x, zOffset, Math.random() * 0.2 - 0.1);
       }
 
       if (Math.random() < this.config.buildingDensity) {
         const x = 18 + Math.random() * 5;
         const type = this._pickBuildingType();
-        this._createGLBBuilding(segment, type, x, zOffset, Math.PI + (Math.random() * 0.2 - 0.1));
+        this._createBuilding(segment, type, x, zOffset, Math.PI + (Math.random() * 0.2 - 0.1));
       }
     }
   }
 
   _pickBuildingType() {
     const r = Math.random();
-    if (this.currentTheme === "market") return r < 0.7 ? "market" : "abstract";
-    if (this.currentTheme === "city") return r < 0.4 ? "abstract" : r < 0.8 ? "market" : "bustop";
-    return r < 0.6 ? "abstract" : "bustop";
+    if (this.currentTheme === "market") return r < 0.7 ? "market" : "compound";
+    if (this.currentTheme === "city") return r < 0.4 ? "highrise" : r < 0.8 ? "compound" : "mosque";
+    return r < 0.6 ? "compound" : "house";
   }
 
-  async _createGLBBuilding(segment, type, x, z, rotY) {
-    const modelPath = MODEL_PATHS.environment[type] || MODEL_PATHS.environment.abstract;
-    const scale = MODEL_SCALES.environment[type] || 1.0;
+  _createBuilding(segment, type, x, z, rotY) {
+    const group = new THREE.Group();
     
-    let group;
-    try {
-      group = await this._loadCachedModel(modelPath, scale);
-    } catch (e) {
-      // Fallback box if model fails
-      group = new THREE.Group();
-      const mat = new THREE.MeshStandardMaterial({ color: 0x888888, flatShading: true });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(5, 4, 5), mat);
-      mesh.position.y = 2;
-      group.add(mesh);
+    // Select texture based on type
+    let tex = this.textures['wall'];
+    if (type === 'market') tex = this.textures['market'];
+    
+    const mat = this._material(`building-${type}`, 0xe3d5b8, { map: tex });
+    if (mat.map) {
+      mat.map.repeat.set(2, 2);
+      mat.map.needsUpdate = true;
     }
+
+    let h = 4, w = 6, d = 6;
+    if (type === 'highrise') { h = 12; w = 8; d = 8; }
+    if (type === 'market') { h = 3; w = 8; d = 5; }
+
+    const geo = this._geometry(`building-${type}`, () => new THREE.BoxGeometry(w, h, d));
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = h / 2;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+
+    // Add a roof
+    const roofMat = this._material("roof", 0x8b4513);
+    const roofGeo = this._geometry("roof", () => new THREE.BoxGeometry(w + 0.5, 0.5, d + 0.5));
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.y = h + 0.25;
+    roof.castShadow = true;
+    group.add(roof);
 
     group.position.set(x, 0, z);
     group.rotation.y = rotY;
@@ -228,42 +264,37 @@ export default class ScenerySystem {
     const x = side * (12 + Math.random() * 4);
     const z = (Math.random() - 0.5) * this.config.segmentLength;
     
-    // Randomly choose between a pedestrian or a bus stop
-    const propType = Math.random() > 0.5 ? "pedestrian" : "bustop";
-    const modelPath = MODEL_PATHS.characters[propType] || MODEL_PATHS.environment.bustop;
-    const scale = propType === "pedestrian" ? MODEL_SCALES.characters.pedestrian : MODEL_SCALES.environment.bustop;
+    const propType = Math.random() > 0.5 ? "pole" : "tree";
+    let prop;
 
-    this._loadCachedModel(modelPath, scale).then(group => {
-      group.position.set(x, 0, z);
-      group.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
-      segment.group.add(group);
-      segment.props.push({ type: "prop", mesh: group });
-    }).catch(() => {
-      // Fallback
-      const fallback = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.8, 8), new THREE.MeshStandardMaterial({color: 0x555555}));
-      fallback.position.set(x, 0.9, z);
-      segment.group.add(fallback);
-      segment.props.push({ type: "prop", mesh: fallback });
-    });
-  }
+    if (propType === "pole") {
+      const poleGeo = this._geometry("pole", () => new THREE.CylinderGeometry(0.15, 0.15, 6, 6));
+      const poleMat = this._material("pole", 0x5d4037);
+      prop = new THREE.Mesh(poleGeo, poleMat);
+      prop.position.y = 3;
+      prop.castShadow = true;
+    } else {
+      const trunkGeo = this._geometry("trunk", () => new THREE.CylinderGeometry(0.2, 0.3, 2, 6));
+      const trunkMat = this._material("trunk", 0x795548);
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 1;
+      trunk.castShadow = true;
+      
+      const leavesGeo = this._geometry("leaves", () => new THREE.SphereGeometry(1.5, 8, 6));
+      const leavesMat = this._material("leaves", 0x558b2f);
+      const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+      leaves.position.y = 3;
+      leaves.castShadow = true;
+      
+      prop = new THREE.Group();
+      prop.add(trunk);
+      prop.add(leaves);
+    }
 
-  _loadCachedModel(path, scale) {
-    return new Promise((resolve, reject) => {
-      if (this._modelCache.has(path)) {
-        const cloned = this._modelCache.get(path).scene.clone(true);
-        cloned.scale.setScalar(scale);
-        cloned.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-        resolve(cloned);
-      } else {
-        this._glbLoader.load(path, (gltf) => {
-          this._modelCache.set(path, gltf);
-          const cloned = gltf.scene.clone(true);
-          cloned.scale.setScalar(scale);
-          cloned.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-          resolve(cloned);
-        }, undefined, reject);
-      }
-    });
+    prop.position.x = x;
+    prop.position.z = z;
+    segment.group.add(prop);
+    segment.props.push({ type: "prop", mesh: prop });
   }
 
   _clearSegmentProps(segment) {
@@ -278,8 +309,6 @@ export default class ScenerySystem {
     });
   }
 
-  _getPalette() { return PALETTES[this.currentTheme] ?? PALETTES.residential; }
-
   _geometry(key, factory) {
     if (!this.sharedGeometries) this.sharedGeometries = new Map();
     if (!this.sharedGeometries.has(key)) this.sharedGeometries.set(key, factory());
@@ -291,7 +320,11 @@ export default class ScenerySystem {
     const matKey = `${key}-${color}`;
     if (!this.sharedMaterials.has(matKey)) {
       this.sharedMaterials.set(matKey, new THREE.MeshStandardMaterial({
-        color, roughness: options.roughness ?? 0.85, metalness: options.metalness ?? 0.0, flatShading: true,
+        color,
+        roughness: options.roughness ?? 0.85,
+        metalness: options.metalness ?? 0.0,
+        flatShading: true,
+        map: options.map || null // 🔥 Apply texture here
       }));
     }
     return this.sharedMaterials.get(matKey);
