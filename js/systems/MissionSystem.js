@@ -1,567 +1,385 @@
-import GAME_CONFIG from "../core/config.js";
+import { GAME_CONFIG } from "../core/config.js";
 
-const clamp = (value, min, max) =>
-  Math.min(max, Math.max(min, value));
+const DEFAULTS = {
+  maxActiveMissions: 3,
+  dailyResetInterval: 86400000, // 24 hours in ms
+  baseXPReward: 100,
+  baseMoneyReward: 500,
+};
 
-const randomItem = (items) =>
-  items[Math.floor(Math.random() * items.length)];
-
-
-const DAILY_QUESTS = [
-  {
-    id: "daily-fare",
-    title: "Daily Hustle",
-    description: "Earn ₦5,000 in a single run.",
-    type: "earnings",
-    target: 5000,
-    reward: 1000,
-    xp: 80,
-    difficulty: 1,
-    daily: true,
-  },
-  {
-    id: "daily-near-miss",
-    title: "Close Calls",
-    description: "Get 10 near-misses in one run.",
-    type: "near_misses",
-    target: 10,
-    reward: 500,
-    xp: 60,
-    difficulty: 1,
-    daily: true,
-  },
-  {
-    id: "daily-clean",
-    title: "Clean Run",
-    description: "Drive 3km without crashing.",
-    type: "distance",
-    target: 3000,
-    reward: 2000,
-    xp: 100,
-    difficulty: 2,
-    daily: true,
-  },
-];
-
+// Mission templates with Kano-specific flavor
 const MISSION_TEMPLATES = [
   {
-    id: "passenger-rush",
-    title: "Passenger Rush",
-    description: "Deliver passengers to their destinations.",
-    type: "deliveries",
+    id: "deliver_passengers",
+    type: "delivery",
+    description: "Deliver {count} passengers to their destinations",
     target: 5,
-    reward: 1500,
-    xp: 100,
-    difficulty: 1,
+    xpReward: 150,
+    moneyReward: 750,
+    icon: "passenger",
   },
   {
-    id: "safe-driver",
-    title: "Safe Driver",
-    description: "Complete a journey without crashing.",
-    type: "no_collisions",
-    target: 1,
-    reward: 1200,
-    xp: 80,
-    difficulty: 1,
-  },
-  {
-    id: "near-miss-master",
-    title: "Near-Miss Master",
-    description: "Perform close traffic evasions.",
-    type: "near_misses",
-    target: 10,
-    reward: 1000,
-    xp: 90,
-    difficulty: 2,
-  },
-  {
-    id: "distance-runner",
-    title: "Distance Runner",
-    description: "Drive the required distance.",
-    type: "distance",
-    target: 2500,
-    reward: 1800,
-    xp: 120,
-    difficulty: 2,
-  },
-  {
-    id: "fare-collector",
-    title: "Fare Collector",
-    description: "Earn money from passenger fares.",
-    type: "earnings",
+    id: "earn_fares",
+    type: "economy",
+    description: "Earn ₦{amount} in fares",
     target: 3000,
-    reward: 1000,
-    xp: 75,
-    difficulty: 2,
+    xpReward: 200,
+    moneyReward: 1000,
+    icon: "money",
   },
   {
-    id: "traffic-survivor",
-    title: "Traffic Survivor",
-    description: "Finish a run with vehicle condition above 60%.",
-    type: "condition",
-    target: 60,
-    reward: 1600,
-    xp: 110,
-    difficulty: 3,
+    id: "avoid_collisions",
+    type: "driving",
+    description: "Complete {count} trips without collisions",
+    target: 3,
+    xpReward: 250,
+    moneyReward: 1200,
+    icon: "shield",
   },
   {
-    id: "kano-express",
-    title: "Kano Express",
-    description: "Complete a run within the target time.",
-    type: "time",
-    target: 180,
-    reward: 2000,
-    xp: 150,
-    difficulty: 3,
+    id: "near_misses",
+    type: "driving",
+    description: "Perform {count} near-misses",
+    target: 10,
+    xpReward: 100,
+    moneyReward: 500,
+    icon: "zap",
+  },
+  {
+    id: "distance_traveled",
+    type: "driving",
+    description: "Drive {distance}km in total",
+    target: 15,
+    xpReward: 180,
+    moneyReward: 900,
+    icon: "route",
+  },
+  {
+    id: "visit_districts",
+    type: "exploration",
+    description: "Visit {count} different districts",
+    target: 4,
+    xpReward: 300,
+    moneyReward: 1500,
+    icon: "map",
+  },
+  {
+    id: "karota_checkpoints",
+    type: "special",
+    description: "Pass {count} KAROTA checkpoints without fines",
+    target: 5,
+    xpReward: 200,
+    moneyReward: 1000,
+    icon: "badge",
+  },
+  {
+    id: "night_driving",
+    type: "special",
+    description: "Complete {count} trips during night time",
+    target: 2,
+    xpReward: 250,
+    moneyReward: 1250,
+    icon: "moon",
   },
 ];
 
-export class MissionSystem {
-  constructor(options = {}) {
-    this.config = options.config ?? GAME_CONFIG;
-    this.eventBus = options.eventBus ?? null;
-    this.gameState = options.gameState ?? null;
+export default class MissionSystem {
+  constructor({
+    eventBus = null,
+    gameState = null,
+    saveManager = null,
+    config = {},
+  } = {}) {
+    if (!gameState) throw new Error("MissionSystem requires gameState.");
 
-    this.settings = {
-      maximumActiveMissions: 3,
-      refreshInterval: 300,
-      ...options.settings,
-    };
+    this.eventBus = eventBus;
+    this.gameState = gameState;
+    this.saveManager = saveManager;
+    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.missions ?? {}), ...config };
 
-    this.missions = new Map();
-    this.completedMissionIds = new Set();
-    this.failedMissionIds = new Set();
+    this.activeMissions = [];
+    this.completedMissions = [];
+    this.missionHistory = [];
+    this.lastDailyReset = 0;
+    this.enabled = false;
 
-    this.elapsed = 0;
-    this.nextRefreshAt = this.settings.refreshInterval;
-    this.nextMissionId = 1;
-    this.active = false;
-
-    this.unsubscribe = [];
+    this._disposers = [];
+    this._bindEvents();
   }
 
-  start() {
-    if (this.active) return;
+  _bindEvents() {
+    this._subscribe("game:started", () => {
+      this.enabled = true;
+      this._checkDailyReset();
+      if (this.activeMissions.length === 0) {
+        this.generateDailyMissions();
+      }
+    });
 
-    this.active = true;
-    this.elapsed = 0;
+    this._subscribe("game:stopped", () => {
+      this.enabled = false;
+    });
 
-    this.bindEvents();
-    this.ensureDailyMissions();
-    this.ensureMissions();
+    this._subscribe("passenger:delivered", (payload) => {
+      this._updateMissions("deliver_passengers", 1);
+      this._updateMissions("earn_fares", payload.fare || 0);
+    });
 
-    this.emit("missions:system-started", {
-      activeMissions: this.getActiveMissions().length,
+    this._subscribe("traffic:near-miss", () => {
+      this._updateMissions("near_misses", 1);
+    });
+
+    this._subscribe("run:finished", (payload) => {
+      if (payload.reason === "completed") {
+        this._updateMissions("avoid_collisions", 1);
+      }
+      this._updateMissions("distance_traveled", (payload.distance || 0) / 1000);
+    });
+
+    this._subscribe("scenery:districtChanged", (payload) => {
+      this._trackDistrictVisit(payload.district);
+    });
+
+    this._subscribe("checkpoint:cleared", () => {
+      this._updateMissions("karota_checkpoints", 1);
+    });
+
+    this._subscribe("time:period-changed", (payload) => {
+      if (payload.period === "night") {
+        this._updateMissions("night_driving", 1);
+      }
     });
   }
 
-
-  ensureDailyMissions() {
-    const today = new Date().toISOString().slice(0, 10);
-    const last = this.gameState?.profile?.lastDailyDate || this._lastDailyDate;
-    if (last === today) {
-      const hasDaily = [...this.missions.values()].some((ms) => ms.daily);
-      if (hasDaily) return;
+  initialize() {
+    this._loadMissions();
+    this._checkDailyReset();
+    if (this.activeMissions.length === 0) {
+      this.generateDailyMissions();
     }
-    this._lastDailyDate = today;
-    if (this.gameState?.profile) this.gameState.profile.lastDailyDate = today;
-    for (const [id, mission] of this.missions) {
-      if (mission.daily) this.missions.delete(id);
-    }
-    const pool = typeof DAILY_QUESTS !== "undefined" ? [...DAILY_QUESTS] : [];
-    pool.sort(() => Math.random() - 0.5);
-    for (const template of pool.slice(0, 2)) {
-      const id = `daily-${template.id}-${today}`;
-      this.missions.set(id, {
-        ...template,
-        id,
-        progress: 0,
-        completed: false,
-        failed: false,
-        active: true,
-      });
-    }
-    this.emit("missions:daily-refreshed", { date: today });
+    this._emitUpdate();
   }
 
-  bindEvents() {
-    if (this.unsubscribe.length > 0) return;
-
-    const bus = this.gameState && typeof this.gameState.on === "function"
-      ? this.gameState
-      : (this.eventBus && typeof this.eventBus.on === "function" ? this.eventBus : null);
-
-    if (!bus) {
-      console.warn("[MissionSystem] No event bus for bindEvents — skipping");
+  generateDailyMissions() {
+    if (this.activeMissions.length >= this.config.maxActiveMissions) {
       return;
     }
 
-    const bind = (type, fn) => {
-      const unsub = bus.on(type, fn);
-      if (typeof unsub === "function") this.unsubscribe.push(unsub);
-    };
-
-    bind("passengers:delivered", (payload) => {
-      this.recordProgress("deliveries", 1);
-      this.recordProgress("earnings", Number(payload?.fare) || 0);
-    });
-
-    bind("traffic:near-miss", () => {
-      this.recordProgress("near_misses", 1);
-    });
-
-    bind("player:collision", () => {
-      this.checkNoCollisionMissions();
-    });
-
-    bind("run:distance", (payload) => {
-      this.recordProgress("distance", Number(payload?.added) || 0);
-    });
-
-    bind("run:finished", (run) => {
-      this.evaluateRunEnd(run);
-    });
-  }
-
-  update(deltaSeconds) {
-    if (!this.active) return;
-
-    const dt = clamp(Number(deltaSeconds) || 0, 0, 0.05);
-    this.elapsed += dt;
-
-    if (this.elapsed >= this.nextRefreshAt) {
-      this.refreshMissions();
-      this.nextRefreshAt =
-        this.elapsed + this.settings.refreshInterval;
-    }
-
-    this.updateTimeMissions();
-    this.updateConditionMissions();
-  }
-
-  ensureMissions() {
-    const active = this.getActiveMissions();
-    const slots =
-      this.settings.maximumActiveMissions - active.length;
-
-    if (slots <= 0) return;
-
     const available = MISSION_TEMPLATES.filter(
-      (template) =>
-        !this.completedMissionIds.has(template.id) &&
-        !this.hasActiveTemplate(template.id),
+      (t) => !this.activeMissions.find((m) => m.templateId === t.id)
     );
 
-    const shuffled = [...available].sort(
-      () => Math.random() - 0.5,
-    );
+    const shuffled = available.sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, this.config.maxActiveMissions - this.activeMissions.length);
 
-    for (const template of shuffled.slice(0, slots)) {
-      this.activateMission(template);
+    for (const template of selected) {
+      const mission = this._createMission(template);
+      this.activeMissions.push(mission);
     }
+
+    this.lastDailyReset = Date.now();
+    this._saveMissions();
+    this._emitUpdate();
+
+    this.eventBus?.emit?.("missions:generated", {
+      missions: this.activeMissions,
+    });
   }
 
-  hasActiveTemplate(templateId) {
-    return this.getActiveMissions().some(
-      (mission) => mission.templateId === templateId,
-    );
-  }
+  _createMission(template) {
+    const difficulty = this.gameState.profile?.level || 1;
+    const multiplier = 1 + (difficulty - 1) * 0.2;
 
-  activateMission(template) {
-    const mission = {
-      instanceId: `mission-${this.nextMissionId++}`,
+    return {
+      id: `mission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       templateId: template.id,
-      title: template.title,
-      description: template.description,
       type: template.type,
-      target: template.target,
+      description: template.description.replace("{count}", Math.ceil(template.target * multiplier)).replace("{amount}", Math.ceil(template.target * multiplier)).replace("{distance}", Math.ceil(template.target * multiplier)),
+      target: Math.ceil(template.target * multiplier),
       progress: 0,
-      reward: template.reward,
-      xp: template.xp,
-      difficulty: template.difficulty,
-      status: "active",
-      createdAt: this.elapsed,
-      completedAt: null,
-      claimedAt: null,
+      xpReward: Math.ceil(template.xpReward * multiplier),
+      moneyReward: Math.ceil(template.moneyReward * multiplier),
+      icon: template.icon,
+      completed: false,
+      claimed: false,
+      createdAt: Date.now(),
     };
-
-    this.missions.set(mission.instanceId, mission);
-
-    this.emit("missions:activated", { ...mission });
-
-    return mission;
   }
 
-  recordProgress(type, amount = 1) {
-    if (!Number.isFinite(amount) || amount <= 0) return;
+  _updateMissions(templateId, amount) {
+    let updated = false;
 
-    for (const mission of this.getActiveMissions()) {
-      if (mission.type !== type) continue;
+    for (const mission of this.activeMissions) {
+      if (mission.templateId === templateId && !mission.completed) {
+        mission.progress += amount;
 
-      mission.progress = Math.min(
-        mission.target,
-        mission.progress + amount,
-      );
-
-      this.emit("missions:progress", {
-        mission: { ...mission },
-        progress: mission.progress,
-        target: mission.target,
-      });
-
-      if (mission.progress >= mission.target) {
-        this.completeMission(mission.instanceId);
-      }
-    }
-  }
-
-  checkNoCollisionMissions() {
-    for (const mission of this.getActiveMissions()) {
-      if (mission.type !== "no_collisions") continue;
-
-      mission.progress = 0;
-
-      this.emit("missions:progress", {
-        mission: { ...mission },
-        progress: 0,
-        target: mission.target,
-      });
-    }
-  }
-
-  updateTimeMissions() {
-    const run = this.gameState?.run;
-
-    if (!run || this.gameState.phase !== "playing") return;
-
-    for (const mission of this.getActiveMissions()) {
-      if (mission.type !== "time") continue;
-
-      // Time missions are evaluated when a run ends.
-      if (run.elapsed > mission.target) {
-        this.emit("missions:time-warning", {
-          missionId: mission.instanceId,
-          remaining: 0,
-        });
-      }
-    }
-  }
-
-  updateConditionMissions() {
-    const run = this.gameState?.run;
-
-    if (!run || this.gameState.phase !== "playing") return;
-
-    for (const mission of this.getActiveMissions()) {
-      if (mission.type !== "condition") continue;
-
-      mission.progress = Math.max(
-        0,
-        Number(run.condition) || 0,
-      );
-    }
-  }
-
-  evaluateRunEnd(run) {
-    if (!run) return;
-
-    for (const mission of this.getActiveMissions()) {
-      if (mission.type === "no_collisions") {
-        if ((run.collisions || 0) === 0) {
-          this.completeMission(mission.instanceId);
-        } else {
-          this.failMission(mission.instanceId, "collision");
+        if (mission.progress >= mission.target) {
+          mission.progress = mission.target;
+          mission.completed = true;
+          this.eventBus?.emit?.("mission:completed", {
+            mission: this._serializeMission(mission),
+          });
         }
-      }
 
-      if (mission.type === "condition") {
-        if ((run.condition || 0) >= mission.target) {
-          this.completeMission(mission.instanceId);
-        } else {
-          this.failMission(mission.instanceId, "condition-too-low");
-        }
+        updated = true;
       }
+    }
 
-      if (mission.type === "time") {
-        if ((run.elapsed || 0) <= mission.target) {
-          this.completeMission(mission.instanceId);
-        } else {
-          this.failMission(mission.instanceId, "time-exceeded");
-        }
+    if (updated) {
+      this._saveMissions();
+      this._emitUpdate();
+    }
+  }
+
+  _trackDistrictVisit(district) {
+    if (!district) return;
+
+    const mission = this.activeMissions.find(
+      (m) => m.templateId === "visit_districts" && !m.completed
+    );
+
+    if (mission) {
+      const visited = mission.visitedDistricts || [];
+      if (!visited.includes(district)) {
+        visited.push(district);
+        mission.visitedDistricts = visited;
+        this._updateMissions("visit_districts", 1);
       }
     }
   }
 
-  completeMission(instanceId) {
-    const mission = this.missions.get(instanceId);
+  claimMission(missionId) {
+    const mission = this.activeMissions.find((m) => m.id === missionId);
 
-    if (!mission || mission.status !== "active") return false;
-
-    mission.status = "completed";
-    mission.completedAt = this.elapsed;
-
-    this.completedMissionIds.add(mission.templateId);
-
-    this.emit("missions:completed", { ...mission });
-
-    return true;
-  }
-
-  claimReward(instanceId) {
-    const mission = this.missions.get(instanceId);
-
-    if (!mission || mission.status !== "completed") {
-      return false;
+    if (!mission || !mission.completed || mission.claimed) {
+      return { success: false, reason: "Mission not available for claiming." };
     }
 
-    if (mission.claimedAt !== null) return false;
+    mission.claimed = true;
+    this.completedMissions.push(mission);
 
-    mission.claimedAt = this.elapsed;
-    mission.status = "claimed";
+    // Award rewards
+    this.gameState.addXP?.(mission.xpReward, "mission_completion");
+    this.gameState.addMoney?.(mission.moneyReward, "mission_reward");
 
-    if (this.gameState) {
-      this.gameState.profile.money += mission.reward;
-      this.gameState.profile.totalEarnings += mission.reward;
+    // Remove from active
+    this.activeMissions = this.activeMissions.filter((m) => m.id !== missionId);
 
-      this.gameState.profile.xp += mission.xp;
+    this._saveMissions();
+    this._emitUpdate();
 
-      const progression = this.config.progression ?? {};
-      const xpPerLevel = progression.xpPerLevel ?? 1000;
-      const maximumLevel = progression.maximumLevel ?? 100;
-
-      const previousLevel = this.gameState.profile.level;
-
-      this.gameState.profile.level = Math.min(
-        maximumLevel,
-        Math.floor(this.gameState.profile.xp / xpPerLevel) + 1,
-      );
-
-      this.gameState.emit("economy:money", {
-        earned: mission.reward,
-        balance: this.gameState.profile.money,
-      });
-
-      this.gameState.emit("progression:xp", {
-        awarded: mission.xp,
-        totalXP: this.gameState.profile.xp,
-        level: this.gameState.profile.level,
-      });
-
-      if (this.gameState.profile.level > previousLevel) {
-        this.gameState.emit("progression:level-up", {
-          previousLevel,
-          level: this.gameState.profile.level,
-          totalXP: this.gameState.profile.xp,
-        });
-      }
-    }
-
-    this.emit("missions:reward-claimed", {
-      mission: { ...mission },
-      reward: mission.reward,
-      xp: mission.xp,
+    this.eventBus?.emit?.("mission:claimed", {
+      mission: this._serializeMission(mission),
+      xpReward: mission.xpReward,
+      moneyReward: mission.moneyReward,
     });
 
-    this.ensureMissions();
-
-    return true;
-  }
-
-  failMission(instanceId, reason = "failed") {
-    const mission = this.missions.get(instanceId);
-
-    if (!mission || mission.status !== "active") return false;
-
-    mission.status = "failed";
-    mission.failureReason = reason;
-
-    this.failedMissionIds.add(mission.templateId);
-
-    this.emit("missions:failed", {
-      mission: { ...mission },
-      reason,
-    });
-
-    return true;
-  }
-
-  refreshMissions() {
-    const active = this.getActiveMissions();
-
-    for (const mission of active) {
-      if (mission.status === "active") {
-        this.failMission(mission.instanceId, "expired");
-      }
-    }
-
-    this.ensureMissions();
-
-    this.emit("missions:refreshed", {
-      activeMissions: this.getActiveMissions().length,
-    });
+    return {
+      success: true,
+      xpReward: mission.xpReward,
+      moneyReward: mission.moneyReward,
+    };
   }
 
   getActiveMissions() {
-    return [...this.missions.values()].filter(
-      (mission) => mission.status === "active",
-    );
+    return this.activeMissions.map((m) => this._serializeMission(m));
   }
 
-  getAvailableRewards() {
-    return [...this.missions.values()].filter(
-      (mission) => mission.status === "completed",
-    );
+  getCompletedMissions() {
+    return this.completedMissions.map((m) => this._serializeMission(m));
   }
 
-  getSnapshot() {
+  getMissionProgress() {
     return {
-      active: this.active,
-      elapsed: this.elapsed,
-      activeMissions: this.getActiveMissions().map((mission) => ({
-        ...mission,
-      })),
-      availableRewards: this.getAvailableRewards().map((mission) => ({
-        ...mission,
-      })),
-      completed: [...this.completedMissionIds],
-      failed: [...this.failedMissionIds],
+      active: this.activeMissions.length,
+      completed: this.completedMissions.length,
+      total: this.missionHistory.length,
     };
   }
 
-  emit(eventName, payload) {
-    this.eventBus?.emit(eventName, payload);
-    this.gameState?.emit(eventName, payload);
+  _checkDailyReset() {
+    const now = Date.now();
+    const timeSinceReset = now - this.lastDailyReset;
+
+    if (timeSinceReset >= this.config.dailyResetInterval) {
+      this._resetDailyMissions();
+    }
   }
 
-  stop() {
-    this.active = false;
-
-    for (const unsubscribe of this.unsubscribe) {
-      unsubscribe();
+  _resetDailyMissions() {
+    // Move uncompleted missions to history
+    for (const mission of this.activeMissions) {
+      if (!mission.completed) {
+        this.missionHistory.push({
+          ...mission,
+          failed: true,
+          completedAt: Date.now(),
+        });
+      }
     }
 
-    this.unsubscribe = [];
+    this.activeMissions = [];
+    this.lastDailyReset = Date.now();
 
-    this.emit("missions:system-stopped");
+    this._saveMissions();
+    this._emitUpdate();
+
+    this.eventBus?.emit?.("missions:reset", {
+      reason: "daily_reset",
+    });
   }
 
-  reset() {
-    this.stop();
-
-    this.missions.clear();
-    this.completedMissionIds.clear();
-    this.failedMissionIds.clear();
-
-    this.elapsed = 0;
-    this.nextRefreshAt = this.settings.refreshInterval;
-    this.nextMissionId = 1;
+  _serializeMission(mission) {
+    return {
+      id: mission.id,
+      templateId: mission.templateId,
+      type: mission.type,
+      description: mission.description,
+      target: mission.target,
+      progress: Math.min(mission.progress, mission.target),
+      xpReward: mission.xpReward,
+      moneyReward: mission.moneyReward,
+      icon: mission.icon,
+      completed: mission.completed,
+      claimed: mission.claimed,
+      progressPercent: Math.min(100, (mission.progress / mission.target) * 100),
+    };
   }
 
-  destroy() {
-    this.reset();
-    this.eventBus = null;
-    this.gameState = null;
+  _emitUpdate() {
+    this.eventBus?.emit?.("missions:updated", {
+      active: this.getActiveMissions(),
+      completed: this.getCompletedMissions(),
+      progress: this.getMissionProgress(),
+    });
+  }
+
+  _saveMissions() {
+    if (this.saveManager) {
+      this.saveManager.setValue?.("missions.active", this.activeMissions);
+      this.saveManager.setValue?.("missions.completed", this.completedMissions);
+      this.saveManager.setValue?.("missions.history", this.missionHistory);
+      this.saveManager.setValue?.("missions.lastDailyReset", this.lastDailyReset);
+    }
+  }
+
+  _loadMissions() {
+    if (this.saveManager) {
+      this.activeMissions = this.saveManager.getValue?.("missions.active") || [];
+      this.completedMissions = this.saveManager.getValue?.("missions.completed") || [];
+      this.missionHistory = this.saveManager.getValue?.("missions.history") || [];
+      this.lastDailyReset = this.saveManager.getValue?.("missions.lastDailyReset") || 0;
+    }
+  }
+
+  _subscribe(event, handler) {
+    if (!this.eventBus?.on) return;
+    const unsub = this.eventBus.on(event, handler);
+    if (typeof unsub === "function") this._disposers.push(unsub);
+  }
+
+  dispose() {
+    for (const unsub of this._disposers) unsub();
+    this._disposers = [];
   }
 }
-
-export default MissionSystem;
