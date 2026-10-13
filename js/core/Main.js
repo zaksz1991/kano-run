@@ -263,7 +263,9 @@ class KanoRunApp {
     this.hideError();
 
     try {
-      if (!this.game || this.game.isDestroyed) {
+      // Always use a fresh Game instance after a failed start
+      if (!this.game || this.game.isDestroyed || this.game.isInitialized === false) {
+        try { this.game?.destroy?.(); } catch (e) {}
         this.createGame();
       }
 

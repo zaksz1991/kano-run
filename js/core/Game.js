@@ -88,10 +88,23 @@ export default class Game {
     } catch (error) {
       console.error("[Kano Run] Initialization failed:", error);
 
+      // Soft cleanup — do NOT destroy EventBus here.
+      // Main will recreate Game on retry; hard destroy caused
+      // "EventBus has been destroyed" on TRY AGAIN.
+      try {
+        this.stop?.();
+        for (const system of [...this.systems.values()].reverse()) {
+          try { system.destroy?.(); } catch (e) {}
+        }
+        this.systems.clear();
+        try { this.sceneManager?.destroy?.(); } catch (e) {}
+        this.sceneManager = null;
+        this.isInitialized = false;
+      } catch (cleanupErr) {
+        console.warn("[Kano Run] Soft cleanup failed:", cleanupErr);
+      }
+
       this.options.onError?.(error);
-
-      this.destroy();
-
       throw error;
     }
   }
@@ -498,8 +511,8 @@ export default class Game {
     this.state.destroy?.();
     this.services.destroy?.();
 
-    this.events.emit("game:destroyed");
-    this.events.destroy?.();
+    try { this.events?.safeEmit?.("game:destroyed") ?? this.events?.emit?.("game:destroyed"); } catch (e) {}
+    try { this.events?.destroy?.(); } catch (e) {}
 
     this.isInitialized = false;
     this.isDestroyed = true;

@@ -58,7 +58,9 @@ export class EventBus {
   }
 
   emit(eventName, payload) {
-    this.assertActive();
+    if (this.destroyed) {
+      return 0;
+    }
 
     const listeners = this.events.get(eventName);
 
@@ -154,6 +156,17 @@ export class EventBus {
   assertActive() {
     if (this.destroyed) {
       throw new Error("EventBus has been destroyed.");
+    }
+  }
+
+  /** Safe emit — never throws after destroy (avoids start-retry crash) */
+  safeEmit(eventName, payload) {
+    if (this.destroyed) return 0;
+    try {
+      return this.emit(eventName, payload);
+    } catch (e) {
+      console.warn("[EventBus] safeEmit failed:", eventName, e?.message || e);
+      return 0;
     }
   }
 
