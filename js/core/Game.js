@@ -309,6 +309,23 @@ export default class Game {
     this.events.emit("systems:initialized", {
       names: [...this.systems.keys()],
     });
+
+    // Guarantee player keke exists and camera follows it
+    try {
+      const player = this.systems.get("playerVehicle");
+      if (player) {
+        player.initialize?.({ lane: 1, z: 0 });
+        player.start?.();
+      }
+      const cam = this.systems.get("camera");
+      if (cam && player) {
+        cam.setTarget?.(player);
+      }
+      const road = this.systems.get("road");
+      road?.initialize?.({ playerZ: 0 });
+    } catch (e) {
+      console.warn("[Kano Run] Player/camera bootstrap failed", e);
+    }
   }
 
   async start() {

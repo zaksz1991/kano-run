@@ -222,17 +222,32 @@ export default class PlayerVehicleSystem {
     }
   }
 
-  initialize({
-    lane = 1,
-    z = 0,
-    vehicleType = "standard",
-    paint = null,
-  } = {}) {
-    if (this.initialized) return this;
+  initialize(opts = {}) {
+    // Game passes full system context — only treat real spawn fields as valid
+    const lane = Number.isFinite(opts.lane) ? opts.lane : 1;
+    const z = Number.isFinite(opts.z) ? opts.z : 0;
+    let vehicleType = "standard";
+    if (
+      typeof opts.vehicleType === "string" &&
+      VEHICLE_PRESETS[opts.vehicleType]
+    ) {
+      vehicleType = opts.vehicleType;
+    }
+    const paint =
+      typeof opts.paint === "number" || typeof opts.paint === "string"
+        ? opts.paint
+        : null;
+
+    // Allow re-init after soft cleanup
+    if (this.initialized && this.vehicle) {
+      this.vehicle.visible = true;
+      return this;
+    }
 
     this.lane = clamp(lane, 0, 2);
     this.position.set(this._laneX(this.lane), 0, z);
     this.targetX = this.position.x;
+    this.speed = 0;
 
     this.setVehicleType(vehicleType, { reset: true });
 
@@ -240,7 +255,25 @@ export default class PlayerVehicleSystem {
       this.setPaint(paint);
     }
 
+    if (this.vehicle) {
+      this.vehicle.visible = true;
+      this.vehicle.frustumCulled = false;
+      this.vehicle.traverse((ch) => {
+        if (ch.isMesh) {
+          ch.visible = true;
+          ch.frustumCulled = false;
+        }
+      });
+    }
+
     this.initialized = true;
+    this.enabled = true;
+
+    // Point chase camera at this vehicle if available
+    try {
+      opts.cameraSystem?.setTarget?.(this);
+      this.context?.cameraSystem?.setTarget?.(this);
+    } catch (e) {}
 
     this.eventBus?.emit?.("playerVehicle:initialized", {
       type: this.vehicleType,
@@ -248,7 +281,25 @@ export default class PlayerVehicleSystem {
       position: this.position.toArray(),
     });
 
+    console.log(
+      "[Kano Run] Player keke spawned",
+      this.position.toArray(),
+      "type=",
+      this.vehicleType,
+    );
+
     return this;
+  }
+
+  start() {
+    if (!this.vehicle) {
+      this.initialize({ lane: 1, z: 0 });
+    }
+    if (this.vehicle) {
+      this.vehicle.visible = true;
+    }
+    this.enabled = true;
+    this.initialized = true;
   }
 
   update(deltaTime, state = {}) {
@@ -569,6 +620,8 @@ export default class PlayerVehicleSystem {
       this.position.z,
     );
 
+    this.vehicle.visible = true;
+    this.vehicle.frustumCulled = false;
     this.scene.add(this.vehicle);
 
     this.eventBus?.emit?.("playerVehicle:typeChanged", {
