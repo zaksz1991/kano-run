@@ -32,9 +32,7 @@ export class SceneBuilder {
     }
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(
-      this.options.background
-    );
+    this.scene.background = new THREE.Color(this.options.background);
 
     if (this.options.enableFog) {
       this.scene.fog = new THREE.Fog(
@@ -113,10 +111,7 @@ export class SceneBuilder {
     this.scene.add(sun);
     this.lights.sun = sun;
 
-    const fill = new THREE.DirectionalLight(
-      0xb9d9ff,
-      0.45
-    );
+    const fill = new THREE.DirectionalLight(0xb9d9ff, 0.45);
 
     fill.name = "sky-fill-light";
     fill.position.set(35, 25, -45);
@@ -141,6 +136,9 @@ export class SceneBuilder {
     ground.name = "world-ground";
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.12;
+    
+    // OPTIMIZATION: Ground receives shadows, but never casts them (saves GPU cycles)
+    ground.castShadow = false;
     ground.receiveShadow = Boolean(this.options.shadows);
     ground.userData.worldGround = true;
 
@@ -155,9 +153,7 @@ export class SceneBuilder {
     }
 
     if (!object || !object.isObject3D) {
-      throw new TypeError(
-        "SceneBuilder.add expects a Three.js Object3D."
-      );
+      throw new TypeError("SceneBuilder.add expects a Three.js Object3D.");
     }
 
     const group = this.groups[name];
@@ -168,9 +164,7 @@ export class SceneBuilder {
       const target = this.groups[options.group];
 
       if (!target) {
-        throw new Error(
-          `Unknown scene group: ${options.group}`
-        );
+        throw new Error(`Unknown scene group: ${options.group}`);
       }
 
       target.add(object);
@@ -246,34 +240,16 @@ export class SceneBuilder {
       this.build();
     }
 
-    if (
-      Number.isFinite(options.ambientIntensity) &&
-      this.lights.ambient
-    ) {
-      this.lights.ambient.intensity = Math.max(
-        0,
-        options.ambientIntensity
-      );
+    if (Number.isFinite(options.ambientIntensity) && this.lights.ambient) {
+      this.lights.ambient.intensity = Math.max(0, options.ambientIntensity);
     }
 
-    if (
-      Number.isFinite(options.sunIntensity) &&
-      this.lights.sun
-    ) {
-      this.lights.sun.intensity = Math.max(
-        0,
-        options.sunIntensity
-      );
+    if (Number.isFinite(options.sunIntensity) && this.lights.sun) {
+      this.lights.sun.intensity = Math.max(0, options.sunIntensity);
     }
 
-    if (
-      Number.isFinite(options.fillIntensity) &&
-      this.lights.fill
-    ) {
-      this.lights.fill.intensity = Math.max(
-        0,
-        options.fillIntensity
-      );
+    if (Number.isFinite(options.fillIntensity) && this.lights.fill) {
+      this.lights.fill.intensity = Math.max(0, options.fillIntensity);
     }
   }
 
@@ -284,11 +260,19 @@ export class SceneBuilder {
       this.lights.sun.castShadow = this.options.shadows;
     }
 
-    for (const group of Object.values(this.groups)) {
+    // OPTIMIZATION: Only apply shadow properties to groups that actually need them
+    // This skips "effects", "passengers", etc., and prevents transparent mesh artifacts
+    const shadowGroups = ["road", "buildings", "vegetation", "vehicles", "landmarks"];
+
+    for (const groupName of shadowGroups) {
+      const group = this.groups[groupName];
+      if (!group) continue;
+
       group.traverse((object) => {
-        if (!object.isMesh) {
-          return;
-        }
+        if (!object.isMesh) return;
+        
+        // Skip transparent objects to prevent shadow map rendering glitches
+        if (object.material?.transparent) return;
 
         object.castShadow = this.options.shadows;
         object.receiveShadow = this.options.shadows;
