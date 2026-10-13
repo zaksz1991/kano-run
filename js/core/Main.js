@@ -220,7 +220,6 @@ class KanoRunApp {
     try {
       console.log("[Kano Run] Start button clicked. Preparing game instance...");
       
-      // Always use a fresh Game instance after a failed start
       if (!this.game || this.game.isDestroyed || this.game.isInitialized === false) {
         try { this.game?.destroy?.(); } catch (e) {}
         this.createGame();
@@ -245,10 +244,10 @@ class KanoRunApp {
       }
 
       document.dispatchEvent(new CustomEvent("kanorun:started"));
+      console.log("[Kano Run] Game started! Start screen hidden.");
     } catch (error) {
       console.error("[Kano Run] Start failed with error:", error);
 
-      // Game.initialize() destroys its instance when initialization fails.
       if (this.game?.isDestroyed) {
         this.game = null;
       }
