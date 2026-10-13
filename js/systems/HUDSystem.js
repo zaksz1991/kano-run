@@ -1,705 +1,180 @@
+import { GAME_CONFIG } from "../core/config.js";
+
+const DEFAULTS = {
+  updateInterval: 0.1,
+  fadeDuration: 2.0,
+};
+
 export default class HUDSystem {
-  constructor(options = {}) {
-    this.options = {
-      rootId: "game-ui",
-      updateInterval: 0.1,
-      animationDuration: 180,
-      ...options,
-    };
+  constructor({ eventBus = null, gameState = null, garageSystem = null, config = {} } = {}) {
+    this.eventBus = eventBus;
+    this.gameState = gameState;
+    this.garageSystem = garageSystem;
+    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.hud ?? {}), ...config };
 
-    this.root = null;
     this.elements = {};
-    this.state = {};
-    this.elapsed = 0;
-    this.disposed = false;
-    this.visible = true;
+    this.timers = {};
+    this._disposers = [];
 
-    this.previousValues = new Map();
-
-    this.createHUD();
+    this._bindEvents();
   }
 
-  createHUD() {
-    if (typeof document === "undefined") return;
+  initialize() {
+    this._createUI();
+    this._updateGarageUI();
+  }
 
-    this.root =
-      document.getElementById(this.options.rootId) ||
-      this.createRoot();
-
-    this.root.classList.add("kano-game-ui");
-
-    Object.assign(this.root.style, {
-      position: "absolute",
-      inset: "0",
-      pointerEvents: "none",
-      zIndex: "10",
-      color: "#ffffff",
-      fontFamily: "Arial, Helvetica, sans-serif",
-      userSelect: "none",
+  _bindEvents() {
+    // Listen for gameplay events to update UI
+    this._subscribe("passenger:spotted", (p) => this._showNotification(`"${p.text}"`, 2.0));
+    this._subscribe("passenger:boarded", (p) => {
+      this._showNotification(`Destination: ${p.destination}`, 3.0);
+      this._updateTripUI(p.destination);
+    });
+    this._subscribe("passenger:shout", () => this._showNotification("AKWAI! (Stop here!)", 2.0, "urgent"));
+    this._subscribe("passenger:dropped", (p) => {
+      this._showNotification(`Fare: ${p.fare}`, 3.0, "success");
+      this._clearTripUI();
     });
 
-    this.injectStyles();
-    this.createTopBar();
-    this.createDrivingPanel();
-    this.createMissionPanel();
-    this.createMessageArea();
+    this._subscribe("negotiation:started", (p) => this._showNegotiation(p));
+    this._subscribe("negotiation:finished", (p) => this._hideNegotiation());
+
+    this._subscribe("checkpoint:approaching", () => this._showNotification("KAROTA Checkpoint Ahead", 3.0, "warning"));
+    this._subscribe("checkpoint:fined", (p) => this._showNotification(`KAROTA Fine: ₦${p.amount}`, 3.0, "urgent"));
+    this._subscribe("checkpoint:cleared", () => this._showNotification("Checkpoint Cleared", 2.0, "success"));
+
+    this._subscribe("radio:changed", (p) => this._showNotification(`Radio: ${p.station}`, 2.0));
+
+    this._subscribe("game:started", () => this._toggleUI(true));
+    this._subscribe("game:over", () => this._toggleUI(false));
   }
 
-  createRoot() {
-    const root = document.createElement("div");
-    root.id = this.options.rootId;
-
-    Object.assign(root.style, {
-      position: "absolute",
-      inset: "0",
-      pointerEvents: "none",
-      zIndex: "10",
+  _createUI() {
+    // Create a clean, modern HUD container
+    const container = document.createElement("div");
+    container.id = "kano-hud";
+    Object.assign(container.style, {
+      position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+      pointerEvents: "none", fontFamily: "Arial, sans-serif", zIndex: 1000
     });
 
-    document.body.appendChild(root);
-    return root;
-  }
-
-  injectStyles() {
-    if (document.getElementById("kano-hud-styles")) return;
-
-    const style = document.createElement("style");
-    style.id = "kano-hud-styles";
-
-    style.textContent = `
-      .kano-hud-panel {
-        background: rgba(7, 17, 31, .88);
-        border: 1px solid rgba(0, 180, 216, .55);
-        border-radius: 12px;
-        padding: 10px 14px;
-        box-shadow: 0 4px 18px rgba(0,0,0,.22);
-        backdrop-filter: blur(6px);
-      }
-
-      .kano-hud-label {
-        font-size: 10px;
-        letter-spacing: 1.2px;
-        text-transform: uppercase;
-        color: #aebdca;
-      }
-
-      .kano-hud-value {
-        font-size: 20px;
-        font-weight: 800;
-        line-height: 1.3;
-        color: #fff;
-      }
-
-      .kano-hud-cyan { color: #00d4ff; }
-      .kano-hud-gold { color: #fbbf24; }
-      .kano-hud-green { color: #5ce1a0; }
-      .kano-hud-red { color: #ff6961; }
-
-      .kano-hud-meter {
-        height: 6px;
-        margin-top: 5px;
-        overflow: hidden;
-        border-radius: 5px;
-        background: rgba(255,255,255,.15);
-      }
-
-      .kano-hud-meter-fill {
-        width: 100%;
-        height: 100%;
-        background: #00b4d8;
-        transition: width .15s linear;
-      }
-
-      .kano-hud-message {
-        padding: 10px 16px;
-        border-radius: 8px;
-        background: rgba(7,17,31,.92);
-        border: 1px solid #00b4d8;
-        font-size: 15px;
-        font-weight: 700;
-        text-align: center;
-        opacity: 0;
-        transform: translateY(-6px);
-        transition: opacity .18s, transform .18s;
-      }
-
-      .kano-hud-value.score-pop {
-        transform: scale(1.25);
-        color: #fbbf24 !important;
-        text-shadow: 0 0 12px rgba(251, 191, 36, 0.85);
-        transition: transform 0.12s ease-out, color 0.15s ease;
-      }
-
-      .kano-hud-value {
-        transition: transform 0.12s ease-out, color 0.15s ease;
-      }
-
-      .kano-hud-message.visible {
-        opacity: 1;
-        transform: translateY(0);
-      }
-
-      @media (max-width: 600px) {
-        .kano-hud-panel {
-          padding: 7px 9px;
-          border-radius: 9px;
-        }
-
-        .kano-hud-value { font-size: 16px; }
-        .kano-hud-label { font-size: 9px; }
-      }
+    // Top Bar: Stats
+    const topBar = this._createElement("div", {
+      position: "absolute", top: "20px", left: "20px", display: "flex", gap: "20px",
+      background: "rgba(0,0,0,0.6)", padding: "10px 20px", borderRadius: "8px", color: "#fff"
+    });
+    topBar.innerHTML = `
+      <div><span style="color:#aaa">SPEED</span><br><b id="hud-speed">0</b> km/h</div>
+      <div><span style="color:#aaa">WALLET</span><br><b id="hud-money">₦0</b></div>
+      <div><span style="color:#aaa">LEVEL</span><br><b id="hud-level">1</b></div>
     `;
+    container.appendChild(topBar);
 
-    document.head.appendChild(style);
-  }
+    // Trip Info (Center Top)
+    const tripInfo = this._createElement("div", {
+      position: "absolute", top: "20px", left: "50%", transform: "translateX(-50%)",
+      background: "rgba(0,180,216,0.8)", padding: "10px 30px", borderRadius: "8px",
+      color: "#fff", textAlign: "center", display: "none"
+    });
+    tripInfo.innerHTML = `<div style="font-size:12px">CURRENT TRIP</div><b id="hud-destination" style="font-size:18px">---</b>`;
+    container.appendChild(tripInfo);
 
-  createElement(tag, className, parent, styles = {}) {
-    const safeTag = (typeof tag === "string" && tag.trim()) ? tag.trim() : "div";
-    const element = document.createElement(safeTag);
+    // Notification Area (Center)
+    const notification = this._createElement("div", {
+      position: "absolute", top: "40%", left: "50%", transform: "translate(-50%, -50%)",
+      background: "rgba(0,0,0,0.8)", padding: "15px 40px", borderRadius: "12px",
+      color: "#fff", fontSize: "24px", fontWeight: "bold", textAlign: "center",
+      opacity: 0, transition: "opacity 0.3s ease"
+    });
+    container.appendChild(notification);
 
-    if (className) element.className = className;
-
-    Object.assign(element.style, styles || {});
-    if (parent && typeof parent.appendChild === "function") {
-      parent.appendChild(element);
-    }
-
-    return element;
-  }
-
-  createTopBar() {
-    const top = this.createElement(
-      "div",
-      "",
-      this.root,
-      {
-        position: "absolute",
-        top: "14px",
-        left: "14px",
-        right: "210px",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "8px",
-        alignItems: "flex-start",
-      }
-    );
-
-    this.elements.brand = this.createElement(
-      "div",
-      "kano-hud-panel",
-      top,
-      { minWidth: "145px" }
-    );
-
-    this.elements.brand.innerHTML = `
-      <div style="font-size:17px;font-weight:900;letter-spacing:.5px">
-        KANO <span style="color:#00d4ff">RUN</span>
+    // Negotiation UI (Bottom Center)
+    const negotiation = this._createElement("div", {
+      position: "absolute", bottom: "100px", left: "50%", transform: "translateX(-50%)",
+      background: "rgba(255,255,255,0.9)", padding: "20px", borderRadius: "12px",
+      color: "#000", textAlign: "center", display: "none", pointerEvents: "auto"
+    });
+    negotiation.innerHTML = `
+      <div id="neg-dialogue" style="font-size:18px; margin-bottom:10px">...</div>
+      <div style="display:flex; gap:10px; justify-content:center">
+        <button id="btn-accept" style="padding:10px 20px; background:#28a745; color:#fff; border:none; border-radius:6px; cursor:pointer">Accept (E)</button>
+        <button id="btn-counter" style="padding:10px 20px; background:#ffc107; color:#000; border:none; border-radius:6px; cursor:pointer">Counter (Q)</button>
       </div>
-      <div class="kano-hud-label">ADAIDAITA SAHU</div>
     `;
+    container.appendChild(negotiation);
 
-    this.elements.speedPanel = this.createMetric(
-      top,
-      "SPEED",
-      "0",
-      "km/h",
-      "speed"
-    );
-
-    this.elements.moneyPanel = this.createMetric(
-      top,
-      "WALLET",
-      "₦0",
-      "",
-      "money"
-    );
-
-    this.elements.levelPanel = this.createMetric(
-      top,
-      "DRIVER LEVEL",
-      "1",
-      "",
-      "level"
-    );
-
-    this.elements.scorePanel = this.createMetric(
-      top,
-      "TRIP SCORE",
-      "0",
-      "",
-      "score"
-    );
+    document.body.appendChild(container);
+    this.elements = { speed: document.getElementById("hud-speed"), money: document.getElementById("hud-money"), level: document.getElementById("hud-level"), trip: tripInfo, destination: document.getElementById("hud-destination"), notification, negotiation };
   }
 
-  createMetric(parent, label, value, suffix, key) {
-    const panel = this.createElement(
-      "div",
-      "kano-hud-panel",
-      parent,
-      { minWidth: "76px" }
-    );
-
-    const labelElement = this.createElement(
-      "div",
-      "kano-hud-label",
-      panel
-    );
-
-    labelElement.textContent = label;
-
-    const valueElement = this.createElement(
-      "div",
-      "kano-hud-value",
-      panel
-    );
-
-    valueElement.textContent = value;
-
-    if (suffix) {
-      const suffixElement = this.createElement(
-        "span",
-        "",
-        valueElement,
-        {
-          marginLeft: "4px",
-          fontSize: "10px",
-          fontWeight: "600",
-          color: "#aebdca",
-        }
-      );
-
-      suffixElement.textContent = suffix;
-    }
-
-    this.elements[`${key}Value`] = valueElement;
-
-    return panel;
-  }
-
-  createDrivingPanel() {
-    const panel = this.createElement(
-      "div",
-      "kano-hud-panel",
-      this.root,
-      {
-        position: "absolute",
-        left: "14px",
-        bottom: "18px",
-        width: "190px",
-        boxSizing: "border-box",
-      }
-    );
-
-    this.elements.drivingPanel = panel;
-
-    this.elements.fuelMeter = this.createMeter(
-      panel,
-      "FUEL",
-      "fuel"
-    );
-
-    this.elements.conditionMeter = this.createMeter(
-      panel,
-      "VEHICLE CONDITION",
-      "condition"
-    );
-
-    this.elements.passengers = this.createElement(
-      "div",
-      "",
-      panel,
-      {
-        marginTop: "10px",
-        fontSize: "13px",
-        fontWeight: "700",
-      }
-    );
-
-    this.elements.passengers.textContent = "Passengers: 0";
-  }
-
-  createMeter(parent, label, key) {
-    const wrapper = this.createElement(
-      "div",
-      "",
-      parent,
-      { marginTop: "5px" }
-    );
-
-    const heading = this.createElement(
-      "div",
-      "",
-      wrapper,
-      {
-        display: "flex",
-        justifyContent: "space-between",
-        fontSize: "10px",
-        color: "#aebdca",
-      }
-    );
-
-    const title = this.createElement("", "", heading);
-    title.textContent = label;
-
-    const value = this.createElement("", "", heading);
-    value.textContent = "100%";
-
-    const meter = this.createElement(
-      "div",
-      "kano-hud-meter",
-      wrapper
-    );
-
-    const fill = this.createElement(
-      "div",
-      "kano-hud-meter-fill",
-      meter
-    );
-
-    this.elements[`${key}Text`] = value;
-    this.elements[`${key}Fill`] = fill;
-
-    return wrapper;
-  }
-
-  createMissionPanel() {
-    const panel = this.createElement(
-      "div",
-      "kano-hud-panel",
-      this.root,
-      {
-        position: "absolute",
-        left: "50%",
-        bottom: "20px",
-        transform: "translateX(-50%)",
-        minWidth: "190px",
-        maxWidth: "min(320px, 55vw)",
-        textAlign: "center",
-      }
-    );
-
-    this.elements.missionPanel = panel;
-
-    this.elements.missionTitle = this.createElement(
-      "div",
-      "kano-hud-label",
-      panel
-    );
-
-    this.elements.missionTitle.textContent = "CURRENT MISSION";
-
-    this.elements.missionText = this.createElement(
-      "div",
-      "",
-      panel,
-      {
-        marginTop: "5px",
-        fontSize: "14px",
-        fontWeight: "700",
-      }
-    );
-
-    this.elements.missionText.textContent = "Explore Kano";
-
-    this.elements.missionProgress = this.createElement(
-      "div",
-      "kano-hud-meter",
-      panel
-    );
-
-    this.elements.missionProgressFill = this.createElement(
-      "div",
-      "kano-hud-meter-fill",
-      this.elements.missionProgress
-    );
-
-    this.elements.missionProgressFill.style.width = "0%";
-  }
-
-  createMessageArea() {
-    this.elements.message = this.createElement(
-      "div",
-      "kano-hud-message",
-      this.root,
-      {
-        position: "absolute",
-        top: "100px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        maxWidth: "80vw",
-      }
-    );
-
-    this.elements.messageTimer = 0;
-  }
-
-  update(deltaTime = 0, state = {}) {
-    if (this.disposed || !this.visible) return;
-
-    this.elapsed += Math.max(0, deltaTime);
-
-    if (this.elapsed < this.options.updateInterval) return;
-
-    this.elapsed = 0;
-    this.state = state;
-
-    this.updateSpeed(state);
-    this.updateMoney(state);
-    this.updateLevel(state);
-    this.updateScore(state);
-    this.updateFuel(state);
-    this.updateCondition(state);
-    this.updatePassengers(state);
-    this.updateMission(state);
-    this.updateMessageTimer(deltaTime);
-  }
-
-  read(state, paths, fallback = 0) {
-    for (const path of paths) {
-      let value = state;
-
-      for (const key of path.split(".")) {
-        value = value?.[key];
-      }
-
-      if (value !== undefined && value !== null) {
-        return value;
-      }
-    }
-
-    return fallback;
-  }
-
-  updateSpeed(state) {
-    const speed = Math.max(
-      0,
-      Number(
-        this.read(
-          state,
-          ["speedKmh", "speed", "player.speedKmh"],
-          0
-        )
-      ) || 0
-    );
-
-    this.setText("speedValue", Math.round(speed));
-  }
-
-  updateMoney(state) {
-    const money = Number(
-      this.read(
-        state,
-        ["money", "wallet", "profile.money", "player.money"],
-        0
-      )
-    ) || 0;
-
-    this.setText(
-      "moneyValue",
-      `₦${Math.floor(money).toLocaleString("en-NG")}`
-    );
-  }
-
-  updateLevel(state) {
-    const level = Number(
-      this.read(
-        state,
-        ["level", "playerLevel", "profile.level"],
-        1
-      )
-    ) || 1;
-
-    this.setText("levelValue", Math.max(1, level));
-  }
-
-  updateScore(state) {
-    const score = Number(
-      state?.score ??
-        state?.tripScore ??
-        state?.run?.score ??
-        0
-    );
-    const rounded = Math.floor(score);
-    const el = this.elements.scoreValue;
-    const prev = this.previousValues.get("score");
-
-    this.setText("scoreValue", rounded);
-
-    if (el && prev !== undefined && rounded > prev) {
-      el.classList.add("score-pop");
-      clearTimeout(this._scorePopTimer);
-      this._scorePopTimer = setTimeout(() => {
-        el.classList.remove("score-pop");
-      }, 180);
-    }
-    this.previousValues.set("score", rounded);
-  }
-
-  updateFuel(state) {
-    const fuel = this.read(
-      state,
-      ["fuel", "player.fuel", "vehicle.fuel", "vehicle.fuelPercent"],
-      100
-    );
-
-    this.setMeter("fuel", fuel);
-  }
-
-  updateCondition(state) {
-    const condition = this.read(
-      state,
-      [
-        "condition",
-        "health",
-        "player.condition",
-        "vehicle.condition",
-        "vehicle.health",
-      ],
-      100
-    );
-
-    this.setMeter("condition", condition);
-  }
-
-  updatePassengers(state) {
-    const count = this.read(
-      state,
-      [
-        "passengerCount",
-        "passengers.length",
-        "passengerSystem.passengers.length",
-      ],
-      0
-    );
-
-    this.setText(
-      "passengers",
-      `Passengers: ${Number(count) || 0}`
-    );
-  }
-
-  updateMission(state) {
-    const mission = this.read(
-      state,
-      ["mission", "activeMission", "missionSystem.activeMission"],
-      null
-    );
-
-    if (!mission) return;
-
-    const title =
-      mission.title ||
-      mission.name ||
-      mission.description ||
-      "Complete your mission";
-
-    const progress = Number(mission.progress) || 0;
-    const target = Number(mission.target) || 0;
-
-    const percent =
-      target > 0
-        ? Math.min(100, (progress / target) * 100)
-        : mission.completed
-          ? 100
-          : 0;
-
-    this.setText("missionText", title);
-
-    if (this.elements.missionProgressFill) {
-      this.elements.missionProgressFill.style.width =
-        `${percent}%`;
+  update(deltaTime) {
+    // Update dynamic stats
+    if (this.gameState) {
+      const run = this.gameState.getRunState();
+      if (this.elements.speed) this.elements.speed.textContent = Math.floor(run.speed);
+      if (this.elements.money) this.elements.money.textContent = `₦${this.gameState.profile.money}`;
+      if (this.elements.level) this.elements.level.textContent = this.gameState.profile.level;
     }
   }
 
-  setMeter(key, rawValue) {
-    const numeric = Number(rawValue);
-
-    const value = Math.max(
-      0,
-      Math.min(100, Number.isFinite(numeric) ? numeric : 100)
-    );
-
-    if (this.elements[`${key}Text`]) {
-      this.elements[`${key}Text`].textContent =
-        `${Math.round(value)}%`;
-    }
-
-    if (this.elements[`${key}Fill`]) {
-      this.elements[`${key}Fill`].style.width = `${value}%`;
-
-      this.elements[`${key}Fill`].style.background =
-        value < 25
-          ? "#ff6961"
-          : value < 50
-            ? "#fbbf24"
-            : "#00b4d8";
-    }
+  _showNotification(text, duration, type = "normal") {
+    const el = this.elements.notification;
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = type === "urgent" ? "#ff4444" : type === "success" ? "#44ff44" : "#fff";
+    el.style.opacity = 1;
+    clearTimeout(this.timers.notification);
+    this.timers.notification = setTimeout(() => { el.style.opacity = 0; }, duration * 1000);
   }
 
-  setText(key, value) {
-    const element = this.elements[key];
-
-    if (!element) return;
-
-    const text = String(value);
-
-    if (element.textContent !== text) {
-      element.textContent = text;
-    }
+  _updateTripUI(destination) {
+    if (this.elements.trip) this.elements.trip.style.display = "block";
+    if (this.elements.destination) this.elements.destination.textContent = destination;
   }
 
-  showMessage(message, duration = 2200) {
-    if (!this.elements.message) return;
-
-    this.elements.message.textContent = String(message);
-    this.elements.message.classList.add("visible");
-    this.elements.messageTimer = duration / 1000;
+  _clearTripUI() {
+    if (this.elements.trip) this.elements.trip.style.display = "none";
   }
 
-  updateMessageTimer(deltaTime) {
-    if (!this.elements.message) return;
-
-    if (this.elements.messageTimer > 0) {
-      this.elements.messageTimer -= Math.max(0, deltaTime);
-
-      if (this.elements.messageTimer <= 0) {
-        this.elements.message.classList.remove("visible");
-      }
-    }
+  _showNegotiation(payload) {
+    if (!this.elements.negotiation) return;
+    this.elements.negotiation.style.display = "block";
+    document.getElementById("neg-dialogue").textContent = payload.dialogue;
+    
+    // Bind buttons (simplified for this example)
+    document.getElementById("btn-accept").onclick = () => this.eventBus?.emit?.("negotiation:accept");
+    document.getElementById("btn-counter").onclick = () => this.eventBus?.emit?.("negotiation:counter");
   }
 
-  setVisible(visible) {
-    this.visible = Boolean(visible);
-
-    if (this.root) {
-      this.root.style.display = this.visible ? "block" : "none";
-    }
+  _hideNegotiation() {
+    if (this.elements.negotiation) this.elements.negotiation.style.display = "none";
   }
 
-  setMission(title, progress = 0) {
-    this.setText("missionText", title);
-
-    if (this.elements.missionProgressFill) {
-      const value = Math.max(0, Math.min(100, progress));
-
-      this.elements.missionProgressFill.style.width =
-        `${value}%`;
-    }
+  _toggleUI(visible) {
+    const container = document.getElementById("kano-hud");
+    if (container) container.style.display = visible ? "block" : "none";
   }
 
-  getElements() {
-    return { ...this.elements };
+  _updateGarageUI() {
+    // This would populate the garage screen if you have one
+  }
+
+  _createElement(tag, styles) {
+    const el = document.createElement(tag);
+    Object.assign(el.style, styles);
+    return el;
+  }
+
+  _subscribe(event, handler) {
+    if (!this.eventBus?.on) return;
+    const unsub = this.eventBus.on(event, handler);
+    if (typeof unsub === "function") this._disposers.push(unsub);
   }
 
   dispose() {
-    if (this.disposed) return;
-
-    this.root?.remove();
-
-    this.root = null;
-    this.elements = {};
-    this.state = {};
-    this.previousValues.clear();
-    this.disposed = true;
+    document.getElementById("kano-hud")?.remove();
+    for (const unsub of this._disposers) unsub();
+    this._disposers = [];
   }
 }
