@@ -6,6 +6,8 @@ class KanoRunApp {
     this.started = false;
     this.destroyed = false;
     this.startButton = null;
+    this.loadingScreen = null;
+    this.loadingProgress = null;
     this.errorElement = null;
 
     this.handleStart = this.handleStart.bind(this);
@@ -23,7 +25,23 @@ class KanoRunApp {
     }
 
     console.log("[Kano Run] App initializing...");
-    this.createStartScreen();
+
+    //  Use the existing HTML elements instead of creating new ones
+    this.loadingScreen = document.getElementById("loading-screen");
+    this.startButton = document.getElementById("start-btn");
+    this.loadingProgress = document.getElementById("loading-progress");
+
+    if (this.startButton) {
+      this.startButton.addEventListener("click", this.handleStart);
+      console.log("[Kano Run] Start button found and wired up.");
+    } else {
+      console.warn("[Kano Run] Start button not found in HTML.");
+    }
+
+    if (this.loadingProgress) {
+      this.loadingProgress.classList.add("active");
+    }
+
     this.createErrorDisplay();
     this.createGame(canvas);
     this.bindEvents();
@@ -42,6 +60,10 @@ class KanoRunApp {
       container: canvas.parentElement || document.body,
       onReady: () => {
         console.log("[Kano Run] Game engine is ready.");
+        if (this.loadingProgress) {
+          this.loadingProgress.style.width = "100%";
+          this.loadingProgress.classList.remove("active");
+        }
         document.dispatchEvent(new CustomEvent("kanorun:ready"));
       },
       onError: (error) => {
@@ -51,119 +73,6 @@ class KanoRunApp {
     });
 
     return this.game;
-  }
-
-  createStartScreen() {
-    if (document.getElementById("kano-run-start-screen")) {
-      return;
-    }
-
-    const screen = document.createElement("div");
-    screen.id = "kano-run-start-screen";
-
-    Object.assign(screen.style, {
-      position: "fixed",
-      inset: "0",
-      zIndex: "15000",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "24px",
-      boxSizing: "border-box",
-      background: "radial-gradient(ellipse at center, #173451 0%, #091626 58%, #040a12 100%)",
-      color: "#ffffff",
-      fontFamily: "Arial, Helvetica, sans-serif",
-      textAlign: "center",
-    });
-
-    const panel = document.createElement("div");
-    Object.assign(panel.style, { width: "min(100%, 520px)" });
-
-    const monogram = document.createElement("div");
-    monogram.textContent = "RN";
-    Object.assign(monogram.style, {
-      width: "82px",
-      height: "82px",
-      display: "grid",
-      placeItems: "center",
-      margin: "0 auto 24px",
-      border: "2px solid #00b4d8",
-      borderRadius: "22px",
-      color: "#00b4d8",
-      fontSize: "36px",
-      fontWeight: "900",
-      background: "rgba(0, 180, 216, 0.08)",
-    });
-
-    const title = document.createElement("h1");
-    title.textContent = "KANO RUN";
-    Object.assign(title.style, {
-      margin: "0",
-      fontSize: "clamp(38px, 10vw, 66px)",
-      fontWeight: "900",
-      letterSpacing: "5px",
-      lineHeight: "1.1",
-    });
-
-    const subtitle = document.createElement("p");
-    subtitle.textContent = "ADAIDAITA SAHU";
-    Object.assign(subtitle.style, {
-      margin: "14px 0 12px",
-      color: "#00b4d8",
-      fontSize: "14px",
-      fontWeight: "800",
-      letterSpacing: "4px",
-    });
-
-    const description = document.createElement("p");
-    description.textContent = "Drive through Kano. Pick up passengers. Earn fares. Build your reputation.";
-    Object.assign(description.style, {
-      maxWidth: "390px",
-      margin: "0 auto 30px",
-      color: "#b6c7d9",
-      fontSize: "14px",
-      lineHeight: "1.8",
-    });
-
-    this.startButton = document.createElement("button");
-    this.startButton.type = "button";
-    this.startButton.textContent = "START DRIVING";
-    Object.assign(this.startButton.style, {
-      width: "min(100%, 280px)",
-      minHeight: "56px",
-      border: "none",
-      borderRadius: "12px",
-      background: "#00b4d8",
-      color: "#061421",
-      fontSize: "15px",
-      fontWeight: "900",
-      letterSpacing: "2px",
-      cursor: "pointer",
-    });
-    this.startButton.addEventListener("click", this.handleStart);
-
-    const controls = document.createElement("p");
-    controls.textContent = "W / ↑ Accelerate   •   S / ↓ Brake   •   A / D Steer";
-    Object.assign(controls.style, {
-      margin: "26px 0 0",
-      color: "#a9bbd0",
-      fontSize: "12px",
-      lineHeight: "1.8",
-    });
-
-    const credit = document.createElement("p");
-    credit.textContent = "RUFFNECK ENTERTAINMENT";
-    Object.assign(credit.style, {
-      margin: "30px 0 0",
-      color: "#71849a",
-      fontSize: "10px",
-      fontWeight: "800",
-      letterSpacing: "3px",
-    });
-
-    panel.append(monogram, title, subtitle, description, this.startButton, controls, credit);
-    screen.appendChild(panel);
-    document.body.appendChild(screen);
   }
 
   createErrorDisplay() {
@@ -214,14 +123,24 @@ class KanoRunApp {
       return;
     }
 
-    this.setStartButton("LOADING...", true);
+    console.log("[Kano Run] Start button clicked. Preparing game instance...");
+
+    if (this.startButton) {
+      this.startButton.disabled = true;
+      this.startButton.textContent = "LOADING...";
+      this.startButton.style.opacity = "0.65";
+    }
+
     this.hideError();
 
     try {
-      console.log("[Kano Run] Start button clicked. Preparing game instance...");
-      
+      // Always use a fresh Game instance after a failed start
       if (!this.game || this.game.isDestroyed || this.game.isInitialized === false) {
-        try { this.game?.destroy?.(); } catch (e) {}
+        try {
+          this.game?.destroy?.();
+        } catch (e) {
+          console.warn("[Kano Run] Cleanup failed:", e);
+        }
         this.createGame();
       }
 
@@ -238,16 +157,17 @@ class KanoRunApp {
 
       this.started = true;
 
-      const screen = document.getElementById("kano-run-start-screen");
-      if (screen) {
-        screen.style.display = "none";
+      //  Hide the HTML loading screen
+      if (this.loadingScreen) {
+        this.loadingScreen.classList.add("hidden");
       }
 
       document.dispatchEvent(new CustomEvent("kanorun:started"));
-      console.log("[Kano Run] Game started! Start screen hidden.");
+      console.log("[Kano Run] Game started! Loading screen hidden.");
     } catch (error) {
       console.error("[Kano Run] Start failed with error:", error);
 
+      // Game.initialize() destroys its instance when initialization fails.
       if (this.game?.isDestroyed) {
         this.game = null;
       }
@@ -280,9 +200,8 @@ class KanoRunApp {
       this.started = true;
       this.hideError();
 
-      const screen = document.getElementById("kano-run-start-screen");
-      if (screen) {
-        screen.style.display = "none";
+      if (this.loadingScreen) {
+        this.loadingScreen.classList.add("hidden");
       }
 
       document.dispatchEvent(new CustomEvent("kanorun:started"));
@@ -329,9 +248,9 @@ class KanoRunApp {
 
     this.setStartButton("TRY AGAIN", false);
 
-    const screen = document.getElementById("kano-run-start-screen");
-    if (screen) {
-      screen.style.display = "flex";
+    // Show the loading screen again if there's an error
+    if (this.loadingScreen) {
+      this.loadingScreen.classList.remove("hidden");
     }
   }
 
@@ -344,15 +263,16 @@ class KanoRunApp {
     window.removeEventListener("keydown", this.handleKeyDown);
     document.removeEventListener("kanorun:restart", this.handleRestartEvent);
 
-    this.startButton?.removeEventListener("click", this.handleStart);
+    if (this.startButton) {
+      this.startButton.removeEventListener("click", this.handleStart);
+    }
 
     await this.game?.destroy?.();
 
-    document.getElementById("kano-run-start-screen")?.remove();
-    document.getElementById("kano-run-error")?.remove();
-
     this.game = null;
     this.startButton = null;
+    this.loadingScreen = null;
+    this.loadingProgress = null;
     this.errorElement = null;
   }
 }
