@@ -91,9 +91,6 @@ export default class Game {
     } catch (error) {
       console.error("[Kano Run] Initialization failed:", error);
 
-      // Soft cleanup — do NOT destroy EventBus here.
-      // Main will recreate Game on retry; hard destroy caused
-      // "EventBus has been destroyed" on TRY AGAIN.
       try {
         this.stop?.();
         for (const system of [...this.systems.values()].reverse()) {
@@ -163,34 +160,27 @@ export default class Game {
       game: this,
       config: this.config,
       services: this.services,
-
       events: this.events,
       eventBus: this.events,
-
       state: this.state,
       gameState: this.state,
-
       input: this.input,
       saveManager: this.saveManager,
       audio: this.audio,
       settings: this.settingsManager,
-
       systems: this.systems,
-
       sceneManager: this.sceneManager,
       scene: this.sceneManager?.scene ?? null,
       camera: this.sceneManager?.camera ?? null,
       renderer: this.sceneManager?.renderer ?? null,
       THREE: this.sceneManager?.THREE ?? null,
-
       progressionSystem: this.systems.get("progression") ?? null,
       routeSystem: this.systems.get("routes") ?? null,
       worldSystem: this.systems.get("world") ?? null,
       roadSystem: this.systems.get("road") ?? null,
       scenerySystem: this.systems.get("scenery") ?? null,
       vehicleSystem: this.systems.get("vehicles") ?? null,
-      playerVehicleSystem:
-        this.systems.get("playerVehicle") ?? null,
+      playerVehicleSystem: this.systems.get("playerVehicle") ?? null,
       drivingSystem: this.systems.get("driving") ?? null,
       trafficSystem: this.systems.get("traffic") ?? null,
       collisionSystem: this.systems.get("collision") ?? null,
@@ -198,68 +188,46 @@ export default class Game {
       economySystem: this.systems.get("economy") ?? null,
       missionSystem: this.systems.get("missions") ?? null,
       garageSystem: this.systems.get("garage") ?? null,
-      customizationSystem:
-        this.systems.get("customization") ?? null,
+      customizationSystem: this.systems.get("customization") ?? null,
       cameraSystem: this.systems.get("camera") ?? null,
       hudSystem: this.systems.get("hud") ?? null,
     };
   }
 
   async initializeSystems() {
-    /*
-     * Initialize dependencies before systems that consume them:
-     * progression -> routes -> world -> environment and gameplay.
-     */
     const systemModules = [
       ["progression", () => import("../systems/ProgressionSystem.js")],
       ["routes", () => import("../systems/RouteSystem.js")],
       ["world", () => import("../systems/WorldSystem.js")],
-
       ["road", () => import("../systems/RoadSystem.js")],
       ["scenery", () => import("../systems/ScenerySystem.js")],
       ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
       ["dayNight", () => import("../systems/DayNightSystem.js")],
       ["weather", () => import("../systems/WeatherSystem.js")],
-
-      [
-        "routeGeneration",
-        () => import("../systems/RouteGenerationSystem.js"),
-      ],
+      ["routeGeneration", () => import("../systems/RouteGenerationSystem.js")],
       ["vehicles", () => import("../systems/VehicleSystem.js")],
-      [
-        "playerVehicle",
-        () => import("../systems/PlayerVehicleSystem.js"),
-      ],
+      ["playerVehicle", () => import("../systems/PlayerVehicleSystem.js")],
       ["driving", () => import("../systems/DrivingSystem.js")],
       ["traffic", () => import("../systems/TrafficSystem.js")],
       ["collision", () => import("../systems/CollisionSystem.js")],
       ["passengers", () => import("../systems/PassengerSystem.js")],
       ["economy", () => import("../systems/EconomySystem.js")],
       ["missions", () => import("../systems/MissionSystem.js")],
-
       ["garage", () => import("../systems/GarageSystem.js")],
-      [
-        "customization",
-        () => import("../systems/CustomizationSystem.js"),
-      ],
+      ["customization", () => import("../systems/CustomizationSystem.js")],
       ["particles", () => import("../systems/ParticleSystem.js")],
       ["camera", () => import("../systems/CameraSystem.js")],
       ["minimap", () => import("../systems/MinimapSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
-      [
-        "touchControls",
-        () => import("../systems/TouchControlsSystem.js"),
-      ],
+      ["touchControls", () => import("../systems/TouchControlsSystem.js")],
       ["pause", () => import("../systems/PauseSystem.js")],
       ["gameOver", () => import("../systems/GameOverSystem.js")],
     ];
 
     for (const [name, loadModule] of systemModules) {
       if (this.isDestroyed) {
-        throw new Error(
-          `Game destroyed while initializing "${name}".`
-        );
+        throw new Error(`Game destroyed while initializing "${name}".`);
       }
 
       try {
@@ -279,8 +247,7 @@ export default class Game {
 
         if (typeof system.initialize === "function") {
           if (name === "world") {
-            const selectedRoute =
-              this.systems.get("routes")?.getSelectedRoute?.() ?? null;
+            const selectedRoute = this.systems.get("routes")?.getSelectedRoute?.() ?? null;
             await system.initialize(selectedRoute);
           } else {
             await system.initialize(this.getSystemContext());
@@ -291,10 +258,6 @@ export default class Game {
       }
     }
 
-    /*
-     * Give systems that support dependency injection their final
-     * context after all systems have been constructed.
-     */
     const finalContext = this.getSystemContext();
 
     for (const [name, system] of this.systems) {
@@ -302,17 +265,11 @@ export default class Game {
         system.setDependencies(finalContext);
       }
 
-      this.events.emit("system:initialized", {
-        name,
-        system,
-      });
+      this.events.emit("system:initialized", { name, system });
     }
 
-    this.events.emit("systems:initialized", {
-      names: [...this.systems.keys()],
-    });
+    this.events.emit("systems:initialized", { names: [...this.systems.keys()] });
 
-    // Guarantee player keke exists and camera follows it
     try {
       const player = this.systems.get("playerVehicle");
       if (player) {
@@ -346,7 +303,6 @@ export default class Game {
     this.isPaused = false;
     this.isRunning = true;
 
-    // Juice: near-miss bullet time
     if (this.events?.on && !this._juiceBound) {
       this._juiceBound = true;
       this.events.on("collision:near-miss", () => {
@@ -374,9 +330,7 @@ export default class Game {
 
     this.animationFrame = requestAnimationFrame(this.boundFrame);
 
-    this.events.emit("game:started", {
-      game: this,
-    });
+    this.events.emit("game:started", { game: this });
 
     return this;
   }
@@ -386,17 +340,12 @@ export default class Game {
       return;
     }
 
-    const elapsed = Math.min(
-      Math.max((timestamp - this.previousTime) / 1000, 0),
-      0.1
-    );
-
+    const elapsed = Math.min(Math.max((timestamp - this.previousTime) / 1000, 0), 0.1);
     this.previousTime = timestamp;
 
     if (!this.isPaused) {
       this.accumulator += elapsed;
 
-      // Smooth time scale for near-miss slow-mo
       this.timeScale = this.timeScale ?? 1;
       this.targetTimeScale = this.targetTimeScale ?? 1;
       const blend = 1 - Math.exp(-8 * elapsed);
@@ -418,12 +367,8 @@ export default class Game {
 
     const player = this.systems.get("playerVehicle");
     const playerZ = Number(player?.position?.z) || 0;
-    const speed =
-      Number(player?.speed) ||
-      Number(this.state.run?.speed) ||
-      0;
+    const speed = Number(player?.speed) || Number(this.state.run?.speed) || 0;
 
-    // Keep game state speed in sync for HUD
     try {
       this.state.run && (this.state.run.speed = speed);
       this.state.setSpeed?.(speed);
@@ -435,28 +380,19 @@ export default class Game {
       if (name === "world") {
         system.update?.(delta, speed);
       } else if (name === "road" || name === "scenery" || name === "traffic") {
-        // These need player Z so the world stays under the camera
         system.update?.(delta, playerZ);
       } else {
         system.update?.(delta);
       }
     }
 
-    this.saveManager.updateProfile?.(
-      this.state.getProfile?.() ?? {},
-      { autosave: true }
-    );
+    this.saveManager.updateProfile?.(this.state.getProfile?.() ?? {}, { autosave: true });
 
-    // Engine voice follows player speed
     try {
-      const player = this.systems.get("playerVehicle");
       if (player && this.audio?.updateEngine) {
-        this.audio.updateEngine(
-          player.speed || 0,
-          player.preset?.maxSpeed || 34
-        );
+        this.audio.updateEngine(player.speed || 0, player.preset?.maxSpeed || 34);
       }
-      // Speed-linked chromatic aberration
+      
       const ratio = Math.min(
         1,
         Math.abs(player?.speed || 0) / Math.max(1, player?.preset?.maxSpeed || 34)
@@ -465,72 +401,59 @@ export default class Game {
     } catch (e) {}
 
     this.events.emit("game:updated", { delta });
+
+    // 🔥 FIX 1: Call the adaptive quality governor every frame
+    this.sceneManager?.govern?.(delta);
   }
 
   render(interpolation = 0) {
     for (const system of this.systems.values()) {
       if (system.enabled === false) continue;
-
       system.render?.(interpolation);
     }
 
-    this.sceneManager?.render?.();
+    // 🔥 FIX 2: Pass interpolation/delta to SceneManager so PostProcessing animates correctly
+    this.sceneManager?.render?.(interpolation);
   }
 
   pause() {
     if (!this.isRunning || this.isPaused) return;
-
     this.isPaused = true;
-
     for (const system of this.systems.values()) {
       system.pause?.();
     }
-
     this.events.emit("game:paused");
   }
 
   resume() {
     if (!this.isRunning || !this.isPaused) return;
-
     this.isPaused = false;
     this.previousTime = performance.now();
-
     for (const system of this.systems.values()) {
       system.resume?.();
     }
-
     this.events.emit("game:resumed");
   }
 
   stop() {
     if (!this.isRunning) return;
-
     this.isRunning = false;
-
     if (this.animationFrame !== null) {
       cancelAnimationFrame(this.animationFrame);
       this.animationFrame = null;
     }
-
     for (const system of this.systems.values()) {
       system.stop?.();
     }
-
     this.saveManager.save?.();
-
     this.events.emit("game:stopped");
   }
 
   resize() {
     if (this.isDestroyed) return;
-
     this.sceneManager?.resize?.();
-
     for (const system of this.systems.values()) {
-      system.resize?.(
-        window.innerWidth,
-        window.innerHeight
-      );
+      system.resize?.(window.innerWidth, window.innerHeight);
     }
   }
 
@@ -542,22 +465,17 @@ export default class Game {
     if (this.isDestroyed) {
       throw new Error("Cannot restart a destroyed game.");
     }
-
     this.stop();
     this.isPaused = false;
-
     for (const system of this.systems.values()) {
       await system.reset?.();
     }
-
     await this.state.reset?.();
-
     return this.start();
   }
 
   destroy() {
     if (this.isDestroyed) return;
-
     this.stop();
 
     if (typeof window !== "undefined") {
@@ -568,15 +486,11 @@ export default class Game {
       try {
         system.destroy?.();
       } catch (error) {
-        console.error(
-          "[Kano Run] System cleanup failed:",
-          error
-        );
+        console.error("[Kano Run] System cleanup failed:", error);
       }
     }
 
     this.systems.clear();
-
     this.input.destroy?.();
     this.audio.destroy?.();
     this.sceneManager?.destroy?.();
