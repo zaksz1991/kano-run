@@ -1,417 +1,187 @@
 import * as THREE from "three";
+import { GAME_CONFIG } from "../core/config.js";
+
+const DEFAULTS = {
+  // Chase camera settings
+  chaseOffset: new THREE.Vector3(0, 4.5, -9),
+  lookAheadOffset: new THREE.Vector3(0, 1.5, 12),
+  positionDamping: 6.0,
+  lookAtDamping: 8.0,
+  
+  // Dynamic FOV settings (Speed effect)
+  baseFOV: 65,
+  maxFOV: 85,
+  speedForMaxFOV: 34, // Matches maxSpeed in config
+  
+  // Screen shake settings
+  shakeDecay: 10.0,
+  maxShakeIntensity: 0.8,
+  
+  // Intro camera settings
+  introRadius: 14,
+  introHeight: 6,
+  introSpeed: 0.15
+};
 
 export default class CameraSystem {
-  constructor(cameraOrContext = {}, options = {}) {
-    const ctx = cameraOrContext && (cameraOrContext.camera || cameraOrContext.scene)
-      ? cameraOrContext
-      : { camera: cameraOrContext };
-    const camera = ctx.camera;
-    if (!camera) {
-      throw new Error("CameraSystem requires a THREE.Camera instance.");
-    }
+  constructor({
+    scene,
+    camera,
+    eventBus = null,
+    config = {},
+    gameState = null,
+  } = {}) {
+    if (!camera) throw new Error("CameraSystem requires a camera.");
 
+    this.scene = scene;
     this.camera = camera;
-    this.context = ctx;
-    this.eventBus = ctx.eventBus || ctx.events || null;
-    this.playerVehicleSystem = ctx.playerVehicleSystem || ctx.playerVehicle || null;
+    this.eventBus = eventBus;
+    this.gameState = gameState;
+    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.camera ?? {}), ...config };
 
-    this.options = {
-      followDistance: 9.0,
-      followHeight: 4.0,
-      lookAhead: 12,
-      positionSmoothness: 4.5,
-      rotationSmoothness: 5,
-      fieldOfView: 58,
-      baseFov: 58,
-      maxFovBoost: 14,
-      minimumHeight: 2.2,
-      maximumHeight: 10,
-      collisionShakeDuration: 0.35,
-      collisionShakeIntensity: 0.3,
-      ...options,
-    };
+    this.target = null; // The player vehicle
+    this.currentShake = 0;
+    this.currentFOV = this.config.baseFOV;
+    this.introAngle = 0;
+    this.isIntroPhase = true;
 
-    this.target = null;
-    this.lookTarget = new THREE.Vector3();
-    this.desiredPosition = new THREE.Vector3();
-    this.currentLookAt = new THREE.Vector3();
-    this.velocity = new THREE.Vector3();
-
-    this.initialized = false;
-    this.enabled = true;
-    this.paused = false;
-
-    this.cameraMode = "chase";
-    this.cameraModes = ["chase", "close", "cinematic", "overhead"];
-
-    this.shakeTime = 0;
-    this.shakeDuration = 0;
-    this.shakeIntensity = 0;
-
-    this.elapsedTime = 0;
-    this.lastTargetPosition = new THREE.Vector3();
-    this.targetSpeed = 0;
-
-    this.originalFov = camera.fov ?? this.options.fieldOfView;
-    this.camera.fov = this.originalFov;
-
-    this.camera.updateProjectionMatrix();
+    this._disposers = [];
+    this._bindEvents();
   }
 
+  _bindEvents() {
+    // Listen for collisions to trigger screen shake
+    this._subscribe("traffic:collision", (payload) => {
+      const intensity = Math.min(this.config.maxShakeIntensity, (payload.weight || 1) * 0.3);
+      this.triggerShake(intensity);
+    });
 
-  initialize(opts = {}) {
-    this.eventBus = opts.eventBus || opts.events || this.eventBus;
-    this.playerVehicleSystem =
-      opts.playerVehicleSystem ||
-      opts.playerVehicle ||
-      this.playerVehicleSystem ||
-      opts.systems?.get?.("playerVehicle") ||
-      null;
+    // Listen for near misses for a subtle "whiplash" shake
+    this._subscribe("traffic:near-miss", () => {
+      this.triggerShake(0.15);
+    });
 
-    this.bindJuiceEvents();
-    return this;
+    // Listen for game phase changes
+    this._subscribe("game:intro-complete", () => {
+      this.isIntroPhase = false;
+    });
+
+    this._subscribe("game:over", () => {
+      this.isIntroPhase = true; // Reset to intro cam on game over
+    });
   }
 
-  bindJuiceEvents() {
-    if (!this.eventBus?.on || this._juiceBound) return;
-    this._juiceBound = true;
-
-    const onCollision = (payload = {}) => {
-      const weight = Number(payload.weight) || Number(payload.relativeSpeed) || 1;
-      const intensity = Math.min(0.85, 0.28 + weight * 0.04);
-      this.triggerCollisionShake(intensity, 0.35);
-    };
-
-    const onNearMiss = () => {
-      this.triggerCollisionShake(0.12, 0.18);
-    };
-
-    this.eventBus.on("collision:detected", onCollision);
-    this.eventBus.on("collision:player", onCollision);
-    this.eventBus.on("collision:near-miss", onNearMiss);
-    this.eventBus.on("traffic:near-miss", onNearMiss);
+  initialize() {
+    // Set initial camera position
+    this.camera.position.set(0, this.config.chaseOffset.y, this.config.chaseOffset.z);
+    this.camera.lookAt(0, 0, 10);
   }
 
   setTarget(target) {
     this.target = target;
-
-    if (target) {
-      const position = this.getTargetPosition();
-
-      this.lastTargetPosition.copy(position);
-      this.currentLookAt.copy(position);
-      this.initialized = false;
-    }
-
-    return this;
   }
 
-  setMode(mode) {
-    if (!this.cameraModes.includes(mode)) {
-      return false;
-    }
+  update(deltaTime, playerSpeed = 0) {
+    if (!this.target) return;
 
-    this.cameraMode = mode;
-    this.initialized = false;
+    const dt = Math.min(deltaTime || 0, 0.1);
 
-    return true;
-  }
-
-  cycleMode() {
-    const currentIndex = this.cameraModes.indexOf(this.cameraMode);
-    const nextIndex = (currentIndex + 1) % this.cameraModes.length;
-
-    this.setMode(this.cameraModes[nextIndex]);
-
-    return this.cameraMode;
-  }
-
-  setEnabled(enabled) {
-    this.enabled = Boolean(enabled);
-  }
-
-  setPaused(paused) {
-    this.paused = Boolean(paused);
-  }
-
-  getTargetPosition() {
-    if (!this.target) {
-      return new THREE.Vector3();
-    }
-
-    if (this.target.position) {
-      return this.target.position;
-    }
-
-    if (typeof this.target.getPosition === "function") {
-      return this.target.getPosition();
-    }
-
-    return new THREE.Vector3();
-  }
-
-  getTargetRotation() {
-    if (!this.target) {
-      return new THREE.Euler();
-    }
-
-    if (this.target.rotation) {
-      return this.target.rotation;
-    }
-
-    if (typeof this.target.getRotation === "function") {
-      return this.target.getRotation();
-    }
-
-    return new THREE.Euler();
-  }
-
-  getTargetForward() {
-    const rotation = this.getTargetRotation();
-
-    return new THREE.Vector3(0, 0, 1)
-      .applyEuler(rotation)
-      .normalize();
-  }
-
-  getCameraOffsets() {
-    switch (this.cameraMode) {
-      case "close":
-        return {
-          distance: 5.2,
-          height: 2.8,
-          lookAhead: 9,
-        };
-
-      case "cinematic":
-        return {
-          distance: 12,
-          height: 5.5,
-          lookAhead: 14,
-        };
-
-      case "overhead":
-        return {
-          distance: 1.5,
-          height: 14,
-          lookAhead: 2,
-        };
-
-      case "chase":
-      default:
-        return {
-          distance: this.options.followDistance,
-          height: this.options.followHeight,
-          lookAhead: this.options.lookAhead,
-        };
-    }
-  }
-
-  calculateDesiredPosition(targetPosition, forward) {
-    const offsets = this.getCameraOffsets();
-
-    this.desiredPosition
-      .copy(targetPosition)
-      .addScaledVector(forward, -offsets.distance);
-
-    this.desiredPosition.y += offsets.height;
-
-    this.desiredPosition.y = THREE.MathUtils.clamp(
-      this.desiredPosition.y,
-      this.options.minimumHeight,
-      this.options.maximumHeight
-    );
-
-    return this.desiredPosition;
-  }
-
-  calculateLookTarget(targetPosition, forward) {
-    const offsets = this.getCameraOffsets();
-
-    this.lookTarget
-      .copy(targetPosition)
-      .addScaledVector(forward, offsets.lookAhead);
-
-    // Bias look-at toward the road surface for a grounded drive feel
-    this.lookTarget.y += 0.55;
-
-    return this.lookTarget;
-  }
-
-  update(deltaTime) {
-    if (!this.enabled || this.paused || !this.target) {
-      return;
-    }
-
-    const dt = THREE.MathUtils.clamp(deltaTime || 0, 0, 0.1);
-
-    if (dt === 0) {
-      return;
-    }
-
-    this.elapsedTime += dt;
-
-    const targetPosition = this.getTargetPosition();
-    const forward = this.getTargetForward();
-
-    this.targetSpeed =
-      targetPosition.distanceTo(this.lastTargetPosition) / dt;
-
-    this.lastTargetPosition.copy(targetPosition);
-
-    this.calculateDesiredPosition(targetPosition, forward);
-    this.calculateLookTarget(targetPosition, forward);
-
-    if (!this.initialized) {
-      this.camera.position.copy(this.desiredPosition);
-      this.currentLookAt.copy(this.lookTarget);
-
-      this.camera.lookAt(this.currentLookAt);
-
-      this.initialized = true;
+    if (this.isIntroPhase) {
+      this._updateIntroCamera(dt);
     } else {
-      const positionAlpha =
-        1 - Math.exp(-this.options.positionSmoothness * dt);
-
-      const rotationAlpha =
-        1 - Math.exp(-this.options.rotationSmoothness * dt);
-
-      this.camera.position.lerp(
-        this.desiredPosition,
-        positionAlpha
-      );
-
-      this.currentLookAt.lerp(
-        this.lookTarget,
-        rotationAlpha
-      );
+      this._updateChaseCamera(dt, playerSpeed);
     }
 
-    this.updateCollisionShake(dt);
-    this.updateFieldOfView(dt);
+    // Decay screen shake
+    if (this.currentShake > 0.001) {
+      this.currentShake = THREE.MathUtils.damp(this.currentShake, 0, this.config.shakeDecay, dt);
+    } else {
+      this.currentShake = 0;
+    }
 
-    this.camera.lookAt(this.currentLookAt);
-  }
+    // Apply shake offset
+    if (this.currentShake > 0) {
+      const shakeX = (Math.random() - 0.5) * this.currentShake;
+      const shakeY = (Math.random() - 0.5) * this.currentShake;
+      this.camera.position.x += shakeX;
+      this.camera.position.y += shakeY;
+    }
 
-  updateFieldOfView(deltaTime) {
-    const player =
-      this.playerVehicleSystem ||
-      this.context?.playerVehicleSystem ||
-      this.context?.systems?.get?.("playerVehicle");
-
-    const currentSpeed = Math.abs(
-      Number(player?.speed) || this.targetSpeed || 0
-    );
-    const maxSpeed = Math.max(
-      20,
-      Number(player?.preset?.maxSpeed) ||
-        Number(player?.config?.maxSpeed) ||
-        34
-    );
-
-    const baseFov = this.options.baseFov ?? this.originalFov ?? 58;
-    const maxBoost = this.options.maxFovBoost ?? 14;
-    const speedRatio = THREE.MathUtils.clamp(currentSpeed / maxSpeed, 0, 1);
-    const targetFov = baseFov + speedRatio * maxBoost;
-
-    this.camera.fov = THREE.MathUtils.damp(
-      this.camera.fov,
-      targetFov,
-      5.0,
-      Math.max(0.001, deltaTime)
-    );
-    this.camera.updateProjectionMatrix();
-  }
-
-  triggerCollisionShake(
-    intensity = this.options.collisionShakeIntensity,
-    duration = this.options.collisionShakeDuration
-  ) {
-    const i = Math.max(0, Number(intensity) || 0);
-    const d = Math.max(0, Number(duration) || 0);
-    this.shakeIntensity = Math.max(this.shakeIntensity, i);
-    this.shakeDuration = Math.max(this.shakeDuration, d);
-    this.shakeTime = this.shakeDuration;
-  }
-
-  updateCollisionShake(deltaTime) {
-    if (this.shakeDuration <= 0 && this.shakeIntensity <= 0) return;
-
-    const dt = Math.max(0.001, deltaTime);
-    this.shakeDuration = Math.max(0, this.shakeDuration - dt);
-
-    const offsetX = (Math.random() - 0.5) * 2 * this.shakeIntensity;
-    const offsetY = (Math.random() - 0.5) * 2 * this.shakeIntensity;
-
-    this.camera.position.x += offsetX;
-    this.camera.position.y += offsetY;
-
-    this.shakeIntensity = THREE.MathUtils.damp(
-      this.shakeIntensity,
-      0,
-      this.shakeDecay || 6,
-      dt
-    );
-
-    if (this.shakeDuration <= 0) {
-      this.shakeIntensity *= 0.85;
+    // Update FOV based on speed (Dynamic FOV)
+    const speedRatio = Math.min(1, playerSpeed / this.config.speedForMaxFOV);
+    const targetFOV = this.config.baseFOV + (this.config.maxFOV - this.config.baseFOV) * speedRatio;
+    this.currentFOV = THREE.MathUtils.damp(this.currentFOV, targetFOV, 5.0, dt);
+    
+    if (this.camera.fov !== this.currentFOV) {
+      this.camera.fov = this.currentFOV;
+      this.camera.updateProjectionMatrix();
     }
   }
 
-  setFieldOfView(fov) {
-    this.originalFov = THREE.MathUtils.clamp(fov, 35, 100);
-    this.camera.fov = this.originalFov;
-    this.camera.updateProjectionMatrix();
+  _updateIntroCamera(dt) {
+    // Cinematic orbit around the starting position
+    this.introAngle += this.config.introSpeed * dt;
+    
+    const x = Math.sin(this.introAngle) * this.config.introRadius;
+    const z = Math.cos(this.introAngle) * this.config.introRadius;
+    const y = this.config.introHeight;
+
+    this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, x, 2.0, dt);
+    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, y, 2.0, dt);
+    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, z, 2.0, dt);
+
+    // Look at the center of the road where the keke will spawn
+    this.camera.lookAt(0, 1.5, 0);
   }
 
-  setFollowDistance(distance) {
-    this.options.followDistance = THREE.MathUtils.clamp(
-      distance,
-      3,
-      25
+  _updateChaseCamera(dt, playerSpeed) {
+    const targetPos = this.target.position;
+    const targetRot = this.target.vehicle?.rotation.y || 0;
+
+    // Calculate desired camera position relative to player
+    // We use simple offsets here, but you can add rotation-based offsets if the keke turns sharply
+    const desiredPos = new THREE.Vector3(
+      targetPos.x + this.config.chaseOffset.x,
+      targetPos.y + this.config.chaseOffset.y,
+      targetPos.z + this.config.chaseOffset.z
     );
-  }
 
-  setFollowHeight(height) {
-    this.options.followHeight = THREE.MathUtils.clamp(
-      height,
-      2,
-      15
+    // Smoothly interpolate camera position
+    this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, desiredPos.x, this.config.positionDamping, dt);
+    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, desiredPos.y, this.config.positionDamping, dt);
+    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, desiredPos.z, this.config.positionDamping, dt);
+
+    // Calculate look-at target (ahead of the player)
+    const lookAtTarget = new THREE.Vector3(
+      targetPos.x + this.config.lookAheadOffset.x,
+      targetPos.y + this.config.lookAheadOffset.y,
+      targetPos.z + this.config.lookAheadOffset.z
     );
+
+    // Create a temporary object to handle smooth look-at rotation
+    const tempObj = new THREE.Object3D();
+    tempObj.position.copy(this.camera.position);
+    tempObj.lookAt(lookAtTarget);
+    
+    // Damp the rotation for a smoother, less jittery chase cam
+    this.camera.quaternion.slerp(tempObj.quaternion, 1 - Math.exp(-this.config.lookAtDamping * dt));
   }
 
-  reset() {
-    this.initialized = false;
-    this.elapsedTime = 0;
-    this.targetSpeed = 0;
+  triggerShake(intensity) {
+    this.currentShake = Math.max(this.currentShake, intensity);
+  }
 
-    this.shakeTime = 0;
-    this.shakeDuration = 0;
-    this.shakeIntensity = 0;
-
-    this.camera.fov = this.originalFov;
-    this.camera.updateProjectionMatrix();
-
-    if (this.target) {
-      this.lastTargetPosition.copy(this.getTargetPosition());
-    }
+  _subscribe(eventName, handler) {
+    if (!this.eventBus?.on) return;
+    const result = this.eventBus.on(eventName, handler);
+    if (typeof result === "function") this._disposers.push(result);
+    else if (this.eventBus.off) this._disposers.push(() => this.eventBus.off(eventName, handler));
   }
 
   dispose() {
-    this.target = null;
-    this.enabled = false;
-    this.paused = true;
-  }
-
-  getSnapshot() {
-    return {
-      mode: this.cameraMode,
-      enabled: this.enabled,
-      paused: this.paused,
-      targetSpeed: this.targetSpeed,
-      fieldOfView: this.camera.fov,
-      followDistance: this.options.followDistance,
-      followHeight: this.options.followHeight,
-    };
+    for (const unsub of this._disposers) {
+      try { unsub(); } catch {}
+    }
+    this._disposers = [];
   }
 }
