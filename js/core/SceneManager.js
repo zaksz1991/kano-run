@@ -96,20 +96,28 @@ export default class SceneManager {
   async loadThree(path = "/vendor/three.module.js") {
     if (this.THREE) return this.THREE;
 
-    try {
-      const module = await import(path);
+    const candidates = ["three", path, "/vendor/three.module.js"];
+    let lastError = null;
 
-      if (!module.Scene || !module.WebGLRenderer) {
-        throw new Error("Three.js module is missing required exports.");
+    for (const candidate of candidates) {
+      try {
+        const module = await import(/* @vite-ignore */ candidate);
+        const resolved = module.default && module.Scene ? module : (module.default || module);
+
+        if (!resolved.Scene || !resolved.WebGLRenderer) {
+          throw new Error("Three.js module is missing required exports.");
+        }
+
+        this.THREE = resolved;
+        return resolved;
+      } catch (error) {
+        lastError = error;
       }
-
-      this.THREE = module;
-      return module;
-    } catch (error) {
-      throw new Error(
-        `Unable to load Three.js from "${path}": ${error.message}`
-      );
     }
+
+    throw new Error(
+      `Unable to load Three.js: ${lastError?.message || lastError}`
+    );
   }
 
   createDefaultLighting() {

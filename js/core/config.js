@@ -328,7 +328,7 @@ export const KANO_DISTRICTS = Object.freeze([
     difficulty: 5,
     unlocked: false,
     theme: "industrial",
-  }),
+  },
 ]);
 
 export const DRIVER_CATALOG = Object.freeze([

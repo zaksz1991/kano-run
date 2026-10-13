@@ -1,4 +1,4 @@
-import * as THREE from "../../vendor/three.module.js";
+import * as THREE from "three";
 import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {

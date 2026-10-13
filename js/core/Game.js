@@ -246,35 +246,32 @@ export default class Game {
         );
       }
 
-      const module = await loadModule();
-      const SystemClass = module.default;
+      try {
+        const module = await loadModule();
+        const SystemClass = module.default;
 
-      if (typeof SystemClass !== "function") {
-        throw new Error(
-          `[Kano Run] Invalid system constructor: ${name}`
-        );
-      }
-
-      const context = this.getSystemContext();
-      const system = new SystemClass(context);
-
-      this.systems.set(name, system);
-      this.registerService(`system:${name}`, system);
-
-      if (typeof system.initialize === "function") {
-        /*
-         * WorldSystem.initialize() accepts a district, not the
-         * general system context. Passing context here would
-         * incorrectly treat the context object as a district.
-         */
-        if (name === "world") {
-          const selectedRoute =
-            this.systems.get("routes")?.getSelectedRoute?.() ?? null;
-
-          await system.initialize(selectedRoute);
-        } else {
-          await system.initialize(this.getSystemContext());
+        if (typeof SystemClass !== "function") {
+          console.warn(`[Kano Run] Skip system (no default export): ${name}`);
+          continue;
         }
+
+        const context = this.getSystemContext();
+        const system = new SystemClass(context);
+
+        this.systems.set(name, system);
+        this.registerService(`system:${name}`, system);
+
+        if (typeof system.initialize === "function") {
+          if (name === "world") {
+            const selectedRoute =
+              this.systems.get("routes")?.getSelectedRoute?.() ?? null;
+            await system.initialize(selectedRoute);
+          } else {
+            await system.initialize(this.getSystemContext());
+          }
+        }
+      } catch (err) {
+        console.warn(`[Kano Run] System failed (continuing): ${name}`, err?.message || err);
       }
     }
 
