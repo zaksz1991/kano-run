@@ -10,6 +10,7 @@ export default class SceneManager {
     this.scene = null;
     this.camera = null;
     this.renderer = null;
+    this.post = null;
 
     this.backgroundColor = options.backgroundColor ?? 0x87b8d8;
     this.fogColor = options.fogColor ?? 0xc5d4c8;
@@ -64,9 +65,7 @@ export default class SceneManager {
       window.innerHeight
     );
 
-    this.renderer.shadowMap.enabled =
-      options.shadows ?? true;
-
+    this.renderer.shadowMap.enabled = options.shadows ?? true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     if ("outputColorSpace" in this.renderer && THREE.SRGBColorSpace) {
@@ -95,12 +94,15 @@ export default class SceneManager {
 
     this.createDefaultLighting();
 
+    // Initialize Post-Processing
     this.post = new PostProcessing({
       scene: this.scene,
       camera: this.camera,
       renderer: this.renderer,
       THREE: this.THREE,
     });
+
+    // Initialize the adaptive quality governor
     this._initGovernor();
 
     return {
@@ -144,11 +146,7 @@ export default class SceneManager {
   }
 
   resize() {
-    if (
-      this.destroyed ||
-      !this.camera ||
-      !this.renderer
-    ) {
+    if (this.destroyed || !this.camera || !this.renderer) {
       return;
     }
 
@@ -162,6 +160,8 @@ export default class SceneManager {
     this.renderer.setPixelRatio(
       Math.min(window.devicePixelRatio || 1, 2)
     );
+    
+    // Resize the post-processing composer as well
     this.post?.setSize(width, height);
   }
 
@@ -198,17 +198,17 @@ export default class SceneManager {
     return true;
   }
 
-  render() {
-    if (
-      this.destroyed ||
-      !this.scene ||
-      !this.camera ||
-      !this.renderer
-    ) {
+  render(delta = 0) {
+    if (this.destroyed || !this.scene || !this.camera || !this.renderer) {
       return;
     }
 
-    this.renderer.render(this.scene, this.camera);
+    // Use post-processing if available, otherwise fallback to standard render
+    if (this.post) {
+      this.post.render(delta);
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   getContext() {
@@ -222,15 +222,50 @@ export default class SceneManager {
 
   assertAvailable() {
     if (this.destroyed) {
-      throw new Error(
-        "[SceneManager] Scene manager has been destroyed."
-      );
+      throw new Error("[SceneManager] Scene manager has been destroyed.");
     }
 
     if (typeof window === "undefined" || typeof document === "undefined") {
-      throw new Error(
-        "[SceneManager] A browser environment is required."
-      );
+      throw new Error("[SceneManager] A browser environment is required.");
+    }
+  }
+
+  // --- ADAPTIVE QUALITY GOVERNOR ---
+  _initGovernor() {
+    this._frames = 0;
+    this._accum = 0;
+    this._tierDrops = 0;          // never downgrade more than twice
+    this._lastCheck = performance.now();
+  }
+
+  govern(dt) {
+    if (!this.post) return; // Safety check
+    
+    this._frames++;
+    this._accum += dt;
+    const now = performance.now();
+    
+    // Sample every 2 seconds
+    if (now - this._lastCheck < 2000) return; 
+
+    const avgFps = this._frames / (this._accum || 1);
+    this._frames = 0; 
+    this._accum = 0; 
+    this._lastCheck = now;
+
+    // Hysteresis: stop oscillating after 2 drops
+    if (this._tierDrops >= 2) return;          
+
+    if (avgFps < 42) {
+      this._tierDrops++;
+      const next = this.post.tier === 'high' ? 'medium' : 'low';
+      this.post.setTier(next);
+      
+      if (next === 'low') {
+        this.renderer.shadowMap.enabled = false;
+        this.renderer.setPixelRatio(1);
+      }
+      console.info(`[KanoRun] Perf tier → ${next} (${avgFps.toFixed(0)} fps)`);
     }
   }
 
@@ -244,6 +279,12 @@ export default class SceneManager {
     }
 
     this.resizeHandler = null;
+
+    // Clean up post-processing first
+    if (this.post) {
+      this.post.dispose();
+      this.post = null;
+    }
 
     if (this.scene) {
       this.scene.traverse((object) => {
