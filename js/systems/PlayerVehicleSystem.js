@@ -32,8 +32,9 @@ const VEHICLE_PRESETS = {
     handling: 1,
     fuelCapacity: 100,
     fuelConsumption: 0.12,
-    color: 0x168447,
+    color: 0xfbbf24,
     wheels: 3,
+    style: "standard",
     passengers: 3,
   },
   luxury: {
@@ -48,6 +49,7 @@ const VEHICLE_PRESETS = {
     fuelConsumption: 0.13,
     color: 0xc9a227,
     wheels: 3,
+    style: "luxury",
     passengers: 3,
   },
   cargo: {
@@ -62,6 +64,7 @@ const VEHICLE_PRESETS = {
     fuelConsumption: 0.16,
     color: 0x305e48,
     wheels: 3,
+    style: "cargo",
     passengers: 1,
   },
   open: {
@@ -76,6 +79,7 @@ const VEHICLE_PRESETS = {
     fuelConsumption: 0.12,
     color: 0xd4a72c,
     wheels: 3,
+    style: "open",
     passengers: 3,
   },
   police: {
@@ -90,6 +94,7 @@ const VEHICLE_PRESETS = {
     fuelConsumption: 0.15,
     color: 0xf3f3ed,
     wheels: 3,
+    style: "police",
     passengers: 2,
   },
   karota: {
@@ -104,6 +109,7 @@ const VEHICLE_PRESETS = {
     fuelConsumption: 0.14,
     color: 0xe5a323,
     wheels: 3,
+    style: "karota",
     passengers: 2,
   },
 };
@@ -537,7 +543,12 @@ export default class PlayerVehicleSystem {
     const wheels = this.vehicle.userData.wheels ?? [];
 
     for (const wheel of wheels) {
-      wheel.rotation.x += this.speed * dt * 0.7;
+      // Groups or meshes
+      if (wheel.isGroup || wheel.children?.length) {
+        wheel.rotation.x += this.speed * dt * 2.2;
+      } else {
+        wheel.rotation.x += this.speed * dt * 2.2;
+      }
     }
 
     if (this.collisionTimer > 0) {
@@ -742,112 +753,209 @@ export default class PlayerVehicleSystem {
     canopyMaterial = null,
   ) {
     const canopyMat = canopyMaterial || darkMaterial;
-    const w = Math.min(preset.width || 1.55, 1.7);
-    const len = Math.min(preset.length || 2.6, 2.8);
-    const wheelRadius = 0.28;
-    const wheelMaterial = new THREE.MeshStandardMaterial({
+    const w = Math.min(preset.width || 1.5, 1.65);
+    const len = Math.min(preset.length || 2.45, 2.7);
+    const style = preset.style || "standard";
+
+    const chrome = new THREE.MeshStandardMaterial({
+      color: 0xc0c0c0,
+      metalness: 0.85,
+      roughness: 0.25,
+    });
+    const rubber = new THREE.MeshStandardMaterial({
       color: 0x111111,
-      roughness: 1,
+      roughness: 0.95,
+      metalness: 0.05,
+    });
+    const seatMat = new THREE.MeshStandardMaterial({
+      color: style === "luxury" ? 0x1e3a5f : 0x2a2a2a,
+      roughness: 0.8,
+    });
+    const yellowPlate = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      roughness: 0.55,
+      metalness: 0.1,
     });
 
-    // --- Chassis (lower frame) ---
-    this._box(group, "keke-chassis", w * 0.85, 0.18, len * 0.9, darkMaterial, 0, 0.42, 0.05);
+    // ===== FRAME / CHASSIS =====
+    this._box(group, "frame-main", w * 0.55, 0.12, len * 0.88, darkMaterial, 0, 0.38, 0.05);
+    this._box(group, "frame-cross", w * 0.9, 0.08, 0.12, darkMaterial, 0, 0.36, len * 0.22);
 
-    // --- Front nose / driver cabin (narrower) ---
-    this._box(group, "keke-nose", w * 0.55, 0.55, len * 0.32, bodyMaterial, 0, 0.78, -len * 0.28);
+    // ===== FRONT NOSE (narrow driver pod) =====
+    const noseZ = -len * 0.32;
+    this._box(group, "nose-lower", w * 0.48, 0.38, len * 0.28, bodyMaterial, 0, 0.62, noseZ);
+    this._box(group, "nose-upper", w * 0.42, 0.28, len * 0.2, bodyMaterial, 0, 0.95, noseZ + 0.05);
 
-    // Windshield
-    this._box(group, "keke-glass", w * 0.48, 0.42, 0.04, glassMaterial, 0, 1.15, -len * 0.42);
+    // Curved-ish front using cylinder half-feel: short cylinder as nose cap
+    const noseCap = new THREE.Mesh(
+      new THREE.CylinderGeometry(w * 0.22, w * 0.26, 0.2, 10),
+      bodyMaterial,
+    );
+    noseCap.rotation.x = Math.PI / 2;
+    noseCap.position.set(0, 0.7, noseZ - len * 0.12);
+    noseCap.castShadow = true;
+    noseCap.name = "nose-cap";
+    group.add(noseCap);
 
-    // Handlebar bar
-    this._box(group, "keke-handle", w * 0.5, 0.06, 0.06, darkMaterial, 0, 1.05, -len * 0.38);
+    // Windshield (tilted)
+    const glass = this._box(group, "windshield", w * 0.4, 0.38, 0.04, glassMaterial, 0, 1.12, noseZ - len * 0.08);
+    glass.rotation.x = -0.25;
 
-    // --- Passenger cabin (rear, wider) ---
-    this._box(group, "keke-cabin", w * 0.95, 0.5, len * 0.42, bodyMaterial, 0, 0.85, len * 0.12);
-
-    // Side panels
+    // Handlebars
+    this._box(group, "handle-bar", w * 0.55, 0.05, 0.05, chrome, 0, 1.08, noseZ - len * 0.02);
     for (const side of [-1, 1]) {
-      this._box(group, "keke-side", 0.06, 0.55, len * 0.4, bodyMaterial, side * w * 0.48, 0.95, len * 0.1);
+      const grip = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.035, 0.035, 0.12, 8),
+        rubber,
+      );
+      grip.rotation.z = Math.PI / 2;
+      grip.position.set(side * w * 0.28, 1.08, noseZ - len * 0.02);
+      group.add(grip);
     }
 
-    // Black fabric canopy (signature NAPEP look)
-    this._box(group, "keke-canopy", w * 1.02, 0.08, len * 0.72, canopyMat, 0, 1.55, 0.0);
+    // Driver seat (front)
+    this._box(group, "driver-seat", w * 0.32, 0.1, 0.28, seatMat, 0, 0.78, noseZ + len * 0.08);
+    this._box(group, "driver-back", w * 0.3, 0.28, 0.06, seatMat, 0, 0.98, noseZ + len * 0.18);
 
-    // Canopy poles
+    // Floorboard under driver
+    this._box(group, "floor-front", w * 0.4, 0.04, len * 0.22, darkMaterial, 0, 0.48, noseZ + 0.05);
+
+    // ===== REAR PASSENGER CABIN =====
+    const cabinZ = len * 0.18;
+    this._box(group, "cabin-floor", w * 0.95, 0.08, len * 0.4, darkMaterial, 0, 0.5, cabinZ);
+    this._box(group, "cabin-base", w * 0.95, 0.35, len * 0.38, bodyMaterial, 0, 0.72, cabinZ);
+
+    // Side walls with slight thickness
     for (const side of [-1, 1]) {
-      for (const z of [-len * 0.22, len * 0.28]) {
-        this._box(group, "keke-pole", 0.05, 0.7, 0.05, darkMaterial, side * w * 0.45, 1.2, z);
+      this._box(group, "cabin-side", 0.07, 0.55, len * 0.36, bodyMaterial, side * w * 0.48, 0.95, cabinZ);
+      // arm rail
+      this._box(group, "cabin-rail", 0.04, 0.04, len * 0.32, chrome, side * w * 0.5, 1.15, cabinZ);
+    }
+
+    // Rear panel
+    this._box(group, "cabin-rear", w * 0.92, 0.5, 0.06, bodyMaterial, 0, 0.9, cabinZ + len * 0.18);
+
+    // Passenger bench (rear seat for 3)
+    this._box(group, "bench-seat", w * 0.82, 0.12, 0.32, seatMat, 0, 0.88, cabinZ + 0.05);
+    this._box(group, "bench-back", w * 0.8, 0.35, 0.07, seatMat, 0, 1.1, cabinZ + len * 0.12);
+
+    // ===== BLACK NAPEP CANOPY =====
+    // Slightly arched: center + two side strips
+    this._box(group, "canopy-main", w * 1.05, 0.06, len * 0.78, canopyMat, 0, 1.58, cabinZ * 0.3);
+    this._box(group, "canopy-front", w * 0.9, 0.05, 0.2, canopyMat, 0, 1.52, noseZ + len * 0.05);
+    // Side flaps
+    for (const side of [-1, 1]) {
+      this._box(group, "canopy-flap", 0.04, 0.25, len * 0.55, canopyMat, side * w * 0.52, 1.4, cabinZ * 0.2);
+    }
+
+    // Canopy poles (4)
+    for (const side of [-1, 1]) {
+      for (const z of [noseZ + 0.15, cabinZ + len * 0.12]) {
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.025, 0.03, 0.75, 6),
+          chrome,
+        );
+        pole.position.set(side * w * 0.45, 1.2, z);
+        pole.castShadow = true;
+        group.add(pole);
       }
     }
 
-    // Rear bench
-    this._box(group, "keke-bench", w * 0.8, 0.12, 0.35, darkMaterial, 0, 0.95, len * 0.22);
+    // ===== FRONT BUMPER + LIGHTS =====
+    this._box(group, "bumper", w * 0.45, 0.1, 0.1, darkMaterial, 0, 0.42, noseZ - len * 0.15);
 
-    // Front bumper
-    this._box(group, "keke-bumper", w * 0.5, 0.12, 0.12, darkMaterial, 0, 0.4, -len * 0.48);
-
-    // Headlights
     for (const side of [-1, 1]) {
-      this._box(
-        group,
-        "keke-light",
-        0.16,
-        0.12,
-        0.08,
-        new THREE.MeshStandardMaterial({ color: 0xfff7d6, emissive: 0xaa8844, emissiveIntensity: 0.4 }),
-        side * w * 0.2,
-        0.55,
-        -len * 0.5,
+      const light = new THREE.Mesh(
+        new THREE.SphereGeometry(0.08, 8, 8),
+        new THREE.MeshStandardMaterial({
+          color: 0xfff7d6,
+          emissive: 0xccaa44,
+          emissiveIntensity: 0.55,
+        }),
       );
+      light.position.set(side * w * 0.18, 0.58, noseZ - len * 0.16);
+      light.name = "headlight";
+      group.add(light);
     }
+
+    // NAPEP yellow plate
+    this._box(group, "plate", 0.32, 0.11, 0.02, yellowPlate, 0, 0.36, noseZ - len * 0.16);
 
     // Rear lights
     for (const side of [-1, 1]) {
       this._box(
         group,
-        "keke-tail",
-        0.12,
+        "tail-light",
         0.1,
-        0.06,
-        new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x661111, emissiveIntensity: 0.3 }),
-        side * w * 0.35,
-        0.55,
-        len * 0.42,
+        0.08,
+        0.05,
+        new THREE.MeshStandardMaterial({
+          color: 0xdc2626,
+          emissive: 0x881111,
+          emissiveIntensity: 0.35,
+        }),
+        side * w * 0.38,
+        0.65,
+        cabinZ + len * 0.2,
       );
     }
 
-    // Wheels: 1 front + 2 rear
+    // ===== WHEELS: 1 front + 2 rear with rims =====
+    const wheelR = 0.3;
     const wheelPositions = [
-      [0, wheelRadius, -len * 0.42],
-      [-w * 0.48, wheelRadius, len * 0.28],
-      [w * 0.48, wheelRadius, len * 0.28],
+      [0, wheelR, noseZ - len * 0.08],
+      [-w * 0.5, wheelR, cabinZ + len * 0.08],
+      [w * 0.5, wheelR, cabinZ + len * 0.08],
     ];
 
-    for (const [x, y, z] of wheelPositions) {
-      const wheel = new THREE.Mesh(
-        new THREE.CylinderGeometry(wheelRadius, wheelRadius, 0.16, 14),
-        wheelMaterial,
+    for (let i = 0; i < wheelPositions.length; i++) {
+      const [x, y, z] = wheelPositions[i];
+      const wheelGroup = new THREE.Group();
+      wheelGroup.position.set(x, y, z);
+
+      const tire = new THREE.Mesh(
+        new THREE.CylinderGeometry(wheelR, wheelR, i === 0 ? 0.14 : 0.18, 16),
+        rubber,
       );
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(x, y, z);
-      wheel.castShadow = true;
-      group.add(wheel);
-      wheels.push(wheel);
+      tire.rotation.z = Math.PI / 2;
+      tire.castShadow = true;
+      wheelGroup.add(tire);
+
+      const rim = new THREE.Mesh(
+        new THREE.CylinderGeometry(wheelR * 0.55, wheelR * 0.55, i === 0 ? 0.15 : 0.19, 12),
+        chrome,
+      );
+      rim.rotation.z = Math.PI / 2;
+      wheelGroup.add(rim);
+
+      // Front mudguard
+      if (i === 0) {
+        const guard = this._box(
+          group,
+          "mudguard",
+          0.35,
+          0.08,
+          0.35,
+          bodyMaterial,
+          0,
+          wheelR + 0.2,
+          z,
+        );
+      }
+
+      group.add(wheelGroup);
+      wheels.push(wheelGroup);
     }
 
-    // Yellow number-plate style front strip
-    this._box(
-      group,
-      "keke-plate",
-      0.35,
-      0.12,
-      0.02,
-      new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.6 }),
-      0,
-      0.35,
-      -len * 0.5,
-    );
+    // Style accents
+    if (style === "luxury") {
+      this._box(group, "chrome-trim", w * 0.98, 0.04, 0.04, chrome, 0, 1.05, cabinZ);
+    }
+    if (style === "cargo") {
+      this._box(group, "cargo-box", w * 0.85, 0.55, len * 0.3, darkMaterial, 0, 1.15, cabinZ + 0.05);
+    }
   }
+
 
   _box(
     parent,
