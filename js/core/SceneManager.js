@@ -1,4 +1,7 @@
+import * as THREE_NS from "three";
 import GAME_CONFIG from "./config.js";
+
+const THREE_STATIC = THREE_NS;
 
 export default class SceneManager {
   constructor(options = {}) {
@@ -93,31 +96,14 @@ export default class SceneManager {
     };
   }
 
-  async loadThree(path = "/vendor/three.module.js") {
+  async loadThree(_path) {
+    // Static import so Vite bundles three into the app (bare "three" fails in browser)
     if (this.THREE) return this.THREE;
-
-    const candidates = ["three", path, "/vendor/three.module.js"];
-    let lastError = null;
-
-    for (const candidate of candidates) {
-      try {
-        const module = await import(/* @vite-ignore */ candidate);
-        const resolved = module.default && module.Scene ? module : (module.default || module);
-
-        if (!resolved.Scene || !resolved.WebGLRenderer) {
-          throw new Error("Three.js module is missing required exports.");
-        }
-
-        this.THREE = resolved;
-        return resolved;
-      } catch (error) {
-        lastError = error;
-      }
+    if (!THREE_STATIC?.Scene || !THREE_STATIC?.WebGLRenderer) {
+      throw new Error("Unable to load Three.js: static module missing Scene/WebGLRenderer");
     }
-
-    throw new Error(
-      `Unable to load Three.js: ${lastError?.message || lastError}`
-    );
+    this.THREE = THREE_STATIC;
+    return this.THREE;
   }
 
   createDefaultLighting() {
