@@ -3,8 +3,19 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
 import { MODEL_PATHS, MODEL_SCALES } from "../core/AssetCatalog.js";
 
-const DEFAULTS = { maxVehicles: 40, spawnDistance: 150, despawnDistance: 65, laneWidth: 3.2, roadWidth: 12, playerCollisionRadius: 1.1, minimumSpawnGap: 16, vehicleCollisionGap: 8, maxSpawnAttempts: 12 };
+const DEFAULTS = {
+  maxVehicles: 40,
+  spawnDistance: 150,
+  despawnDistance: 65,
+  laneWidth: 3.2,
+  roadWidth: 12,
+  playerCollisionRadius: 1.1,
+  minimumSpawnGap: 16,
+  vehicleCollisionGap: 8,
+  maxSpawnAttempts: 12,
+};
 
+// 🔥 TRAFFIC SPECS: Mapped to your GLB models via AssetCatalog
 const VEHICLE_SPECS = {
   car: { width: 1.8, height: 1.45, length: 4.1, maxSpeed: 23, acceleration: 2.2, weight: 1.2, color: [0xc0392b, 0x2471a3, 0xf4d03f, 0xecf0f1, 0x273746], modelPath: MODEL_PATHS.traffic.car, modelScale: MODEL_SCALES.traffic.car },
   car1: { width: 1.8, height: 1.45, length: 4.1, maxSpeed: 22, acceleration: 2.0, weight: 1.2, color: [0x2980b9, 0x8e44ad, 0x16a085], modelPath: MODEL_PATHS.traffic.car1, modelScale: MODEL_SCALES.traffic.car1 },
@@ -39,7 +50,10 @@ export default class VehicleSystem {
     this.spawnWeights = { car: 20, car1: 10, car2: 10, taxi: 17, bus: 8, motorcycle: 15, truck: 5, police: 3, karota: 3 };
     this._cachedWeightEntries = Object.entries(this.spawnWeights);
     this._totalSpawnWeight = this._cachedWeightEntries.reduce((sum, [, weight]) => sum + weight, 0);
-    this._glbLoader = new GLTFLoader(); this._modelCache = new Map();
+    
+    // 🔥 GLB Loader & Cache
+    this._glbLoader = new GLTFLoader(); 
+    this._modelCache = new Map();
     
     this._onRunStarted = () => { this.paused = false; };
     this._onRunEnded = () => { this.paused = true; };
@@ -94,7 +108,7 @@ export default class VehicleSystem {
     vehicle.changeLaneTimer = randomBetween(3, 8); vehicle.stopped = false;
 
     vehicle.group.position.set(this._laneX(lane), 0, z);
-    vehicle.group.rotation.y = Math.PI; // Face forward
+    vehicle.group.rotation.y = Math.PI; // 🔥 FIX: Face forward (+Z)
 
     this.vehicles.set(vehicle.id, vehicle); this.scene.add(vehicle.group);
     this.eventBus?.emit?.("vehicle:spawned", { id: vehicle.id, type: vehicle.type, lane: vehicle.lane, z: vehicle.z, speed: vehicle.speed });
@@ -118,7 +132,7 @@ export default class VehicleSystem {
     for (const vehicle of this.vehicles.values()) {
       this._updateLaneChange(vehicle, dt); this._updateFollowing(vehicle, dt);
       if (vehicle.stopped) vehicle.speed = Math.max(0, vehicle.speed - 5 * dt);
-      vehicle.z += vehicle.speed * dt;
+      vehicle.z += vehicle.speed * dt; // 🔥 FIX: Move FORWARD (+Z)
       vehicle.group.position.x = THREE.MathUtils.damp(vehicle.group.position.x, this._laneX(vehicle.targetLane), 5, dt);
       vehicle.group.position.z = vehicle.z;
       this._avoidVehicleAhead(vehicle, dt); this._checkPlayerProximity(vehicle);
@@ -182,19 +196,24 @@ export default class VehicleSystem {
     }
   }
 
+  // 🔥 GLB LOADING & CACHING
   async _createVehicle(type) {
     const spec = VEHICLE_SPECS[type];
     const cacheKey = spec.modelPath;
     let gltf;
+    
     if (this._modelCache.has(cacheKey)) { gltf = this._modelCache.get(cacheKey); } 
     else {
       gltf = await new Promise((resolve, reject) => {
         this._glbLoader.load(cacheKey, (loaded) => { this._modelCache.set(cacheKey, loaded); resolve(loaded); }, undefined, reject);
       });
     }
+    
     const group = gltf.scene.clone(true);
     if (spec.modelScale) group.scale.setScalar(spec.modelScale);
     const color = choose(spec.color);
+    
+    // Apply stylized flat shading to the cloned model
     group.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true; child.receiveShadow = true;
