@@ -1,488 +1,208 @@
-import GAME_CONFIG, {
-  WEATHER_TYPES,
-  TIME_PERIODS,
-} from "../core/config.js";
+import * as THREE from "three";
+import { GAME_CONFIG } from "../core/config.js";
 
+const WEATHER_TYPES = {
+  CLEAR: "clear",
+  HARMATTAN: "harmattan",
+  RAIN: "rain",
+  STORM: "storm"
+};
+
+// Kano-specific weather presets
 const WEATHER_PRESETS = {
-  clear: {
-    label: "Clear",
-    visibility: 1,
-    roadGrip: 1,
-    trafficMultiplier: 1,
-    fogDensity: 0,
-    rainIntensity: 0,
-    windIntensity: 0,
-  },
-  cloudy: {
-    label: "Cloudy",
-    visibility: 0.95,
-    roadGrip: 0.98,
-    trafficMultiplier: 1,
+  [WEATHER_TYPES.CLEAR]: {
+    fogColor: 0xc5d4c8, // Light blue/grey
     fogDensity: 0.015,
-    rainIntensity: 0,
-    windIntensity: 0.1,
+    sunIntensity: 2.2,
+    sunColor: 0xfff4e6,
+    ambientIntensity: 0.6,
+    gripMultiplier: 1.0,
+    skyColor: 0x87ceeb
   },
-  rain: {
-    label: "Rain",
-    visibility: 0.72,
-    roadGrip: 0.68,
-    trafficMultiplier: 0.9,
+  [WEATHER_TYPES.HARMATTAN]: {
+    fogColor: 0xd4c4a8, // Dusty beige/orange
+    fogDensity: 0.035, // Thick dust
+    sunIntensity: 1.5, // Dimmed sun
+    sunColor: 0xffe0b2, // Warm orange sun
+    ambientIntensity: 0.5,
+    gripMultiplier: 0.95, // Slightly slippery dust
+    skyColor: 0xe6d5b8
+  },
+  [WEATHER_TYPES.RAIN]: {
+    fogColor: 0x8899a6, // Grey
     fogDensity: 0.025,
-    rainIntensity: 0.8,
-    windIntensity: 0.25,
+    sunIntensity: 1.0, // Overcast
+    sunColor: 0xccddee, // Cool blue/grey
+    ambientIntensity: 0.4,
+    gripMultiplier: 0.75, // Wet road
+    skyColor: 0x778899
   },
-  storm: {
-    label: "Thunderstorm",
-    visibility: 0.48,
-    roadGrip: 0.48,
-    trafficMultiplier: 0.75,
-    fogDensity: 0.045,
-    rainIntensity: 1,
-    windIntensity: 0.8,
-  },
-  fog: {
-    label: "Fog",
-    visibility: 0.4,
-    roadGrip: 0.95,
-    trafficMultiplier: 0.85,
-    fogDensity: 0.085,
-    rainIntensity: 0,
-    windIntensity: 0.05,
-  },
-};
-
-const TIME_PRESETS = {
-  dawn: {
-    label: "Dawn",
-    ambient: 0.55,
-    sunIntensity: 0.6,
-    headlightRequired: false,
-    skyTint: 0xffbd91,
-  },
-  morning: {
-    label: "Morning",
-    ambient: 0.9,
-    sunIntensity: 1,
-    headlightRequired: false,
-    skyTint: 0xc8e4ff,
-  },
-  afternoon: {
-    label: "Afternoon",
-    ambient: 1,
-    sunIntensity: 1.15,
-    headlightRequired: false,
-    skyTint: 0x87ceeb,
-  },
-  evening: {
-    label: "Evening",
-    ambient: 0.55,
-    sunIntensity: 0.45,
-    headlightRequired: true,
-    skyTint: 0xf29b68,
-  },
-  night: {
-    label: "Night",
-    ambient: 0.2,
-    sunIntensity: 0.08,
-    headlightRequired: true,
-    skyTint: 0x101a38,
-  },
-};
-
-const WEATHER_ALIASES = {
-  clear: "clear",
-  sunny: "clear",
-  cloudy: "cloudy",
-  overcast: "cloudy",
-  rain: "rain",
-  rainy: "rain",
-  storm: "storm",
-  thunderstorm: "storm",
-  fog: "fog",
-  foggy: "fog",
-};
-
-const TIME_ALIASES = {
-  dawn: "dawn",
-  morning: "morning",
-  afternoon: "afternoon",
-  evening: "evening",
-  dusk: "evening",
-  night: "night",
+  [WEATHER_TYPES.STORM]: {
+    fogColor: 0x445566, // Dark grey
+    fogDensity: 0.040,
+    sunIntensity: 0.5, // Very dark
+    sunColor: 0x8899aa,
+    ambientIntensity: 0.3,
+    gripMultiplier: 0.60, // Very slippery
+    skyColor: 0x334455
+  }
 };
 
 export default class WeatherSystem {
-  constructor({
-    gameState,
-    eventBus,
-    initialWeather = "clear",
-    initialTime = "morning",
-    autoCycle = true,
-    cycleDuration = 180,
-    weatherChangeInterval = 240,
-    seed = Date.now(),
-  } = {}) {
-    this.gameState = gameState ?? null;
-    this.eventBus = eventBus ?? null;
-
-    this.autoCycle = Boolean(autoCycle);
-    this.cycleDuration = Math.max(30, Number(cycleDuration) || 180);
-    this.weatherChangeInterval = Math.max(
-      30,
-      Number(weatherChangeInterval) || 240
-    );
-
-    this.randomState = Number(seed) >>> 0 || 1;
-    this.elapsed = 0;
-    this.weatherElapsed = 0;
-    this.destroyed = false;
-    this.listeners = [];
-
-    this.weather = this.normalizeWeather(initialWeather);
-    this.time = this.normalizeTime(initialTime);
-
-    this.transition = null;
-    this.lightningTimer = 0;
-    this.lightningFlash = 0;
-
-    this.current = this.buildSnapshot();
-
-    this.bindEvents();
+  constructor({ scene, eventBus = null, lightingSystem = null, config = {} } = {}) {
+    if (!scene) throw new Error("WeatherSystem requires a scene.");
+    
+    this.scene = scene;
+    this.eventBus = eventBus;
+    this.lightingSystem = lightingSystem; // Optional reference to update lights directly
+    this.config = { ...GAME_CONFIG?.weather ?? {}, ...config };
+    
+    this.currentWeather = WEATHER_TYPES.CLEAR;
+    this.targetWeather = WEATHER_TYPES.CLEAR;
+    this.transitionProgress = 1.0; // 1.0 means fully transitioned
+    this.transitionDuration = 5.0; // Seconds to transition
+    this.transitionTimer = 0.0;
+    
+    this.gripMultiplier = 1.0;
+    this.enabled = false;
+    this._disposers = [];
+    
+    this._bindEvents();
   }
 
-  normalizeWeather(value) {
-    const key = WEATHER_ALIASES[String(value ?? "").toLowerCase()];
-    if (key) return key;
-
-    const configured = Array.isArray(WEATHER_TYPES)
-      ? WEATHER_TYPES.map((item) =>
-          typeof item === "string" ? item : item?.id
-        )
-      : [];
-
-    return configured.includes("clear") ? "clear" : Object.keys(WEATHER_PRESETS)[0];
-  }
-
-  normalizeTime(value) {
-    const key = TIME_ALIASES[String(value ?? "").toLowerCase()];
-    if (key) return key;
-
-    const configured = Array.isArray(TIME_PERIODS)
-      ? TIME_PERIODS.map((item) =>
-          typeof item === "string" ? item : item?.id
-        )
-      : [];
-
-    return configured.includes("morning")
-      ? "morning"
-      : Object.keys(TIME_PRESETS)[0];
-  }
-
-  bindEvents() {
-    this.listen(this.eventBus, "run:started", () => {
-      this.emit("weather:changed", this.getSnapshot());
+  _bindEvents() {
+    this._subscribe("game:started", () => {
+      this.enabled = true;
+      // Optional: Start with a random weather or specific route weather
+      // this.setWeather(this.config.initialWeather || WEATHER_TYPES.CLEAR);
+    });
+    
+    this._subscribe("game:stopped", () => {
+      this.enabled = false;
     });
 
-    this.listen(this.eventBus, "weather:set", (payload = {}) => {
-      if (payload.weather) this.setWeather(payload.weather);
-      if (payload.time) this.setTime(payload.time);
+    // Allow external systems (like RouteSystem) to trigger weather
+    this._subscribe("weather:set", (payload) => {
+      if (payload && payload.type) this.setWeather(payload.type);
     });
   }
 
-  listen(source, eventName, callback) {
-    if (!source || typeof source.on !== "function") return;
-
-    const unsubscribe = source.on(eventName, callback);
-
-    if (typeof unsubscribe === "function") {
-      this.listeners.push(unsubscribe);
-    } else if (typeof source.off === "function") {
-      this.listeners.push(() => source.off(eventName, callback));
-    }
+  initialize() {
+    this.enabled = true;
+    this.setWeather(this.config.initialWeather || WEATHER_TYPES.CLEAR, true); // true = instant
   }
 
-  update(deltaTime) {
-    if (this.destroyed) return this.getSnapshot();
-
-    const delta = Math.max(0, Math.min(0.25, Number(deltaTime) || 0));
-
-    if (delta === 0) return this.getSnapshot();
-
-    this.elapsed += delta;
-    this.weatherElapsed += delta;
-
-    if (this.autoCycle) {
-      this.updateTimeCycle(delta);
-      this.updateWeatherCycle();
-    }
-
-    this.updateTransition(delta);
-    this.updateLightning(delta);
-
-    this.current = this.buildSnapshot();
-
-    return this.getSnapshot();
-  }
-
-  updateTimeCycle(delta) {
-    const progress = (this.elapsed % this.cycleDuration) / this.cycleDuration;
-    const periods = ["dawn", "morning", "afternoon", "evening", "night"];
-    const index = Math.min(
-      periods.length - 1,
-      Math.floor(progress * periods.length)
-    );
-
-    const nextTime = periods[index];
-
-    if (nextTime !== this.time) {
-      this.setTime(nextTime, { silent: false });
-    }
-  }
-
-  updateWeatherCycle() {
-    if (this.weatherElapsed < this.weatherChangeInterval) return;
-
-    this.weatherElapsed = 0;
-
-    const choices = ["clear", "cloudy", "rain", "fog"];
-    const roll = this.random();
-
-    let nextWeather = "clear";
-
-    if (roll < 0.42) {
-      nextWeather = "clear";
-    } else if (roll < 0.66) {
-      nextWeather = "cloudy";
-    } else if (roll < 0.87) {
-      nextWeather = "rain";
-    } else {
-      nextWeather = "fog";
-    }
-
-    if (this.weather === "storm" && roll < 0.6) {
-      nextWeather = "rain";
-    }
-
-    if (!choices.includes(nextWeather)) {
-      nextWeather = "clear";
-    }
-
-    if (nextWeather !== this.weather) {
-      this.setWeather(nextWeather);
-    }
-  }
-
-  updateTransition(delta) {
-    if (!this.transition) return;
-
-    this.transition.elapsed += delta;
-
-    const progress = Math.min(
-      1,
-      this.transition.elapsed / this.transition.duration
-    );
-
-    this.transition.progress = progress;
-
-    if (progress >= 1) {
-      const completed = this.transition;
-      this.transition = null;
-
-      this.emit("weather:transition-complete", {
-        weather: this.weather,
-        time: this.time,
-        previousWeather: completed.previousWeather,
-        previousTime: completed.previousTime,
-      });
-    }
-  }
-
-  updateLightning(delta) {
-    if (this.weather !== "storm") {
-      this.lightningTimer = 0;
-      this.lightningFlash = Math.max(0, this.lightningFlash - delta * 4);
+  setWeather(type, instant = false) {
+    if (!WEATHER_PRESETS[type]) {
+      console.warn(`WeatherSystem: Unknown weather type "${type}".`);
       return;
     }
 
-    this.lightningTimer -= delta;
+    if (this.currentWeather === type && this.transitionProgress >= 1.0) return;
 
-    if (this.lightningTimer <= 0) {
-      this.lightningTimer = 3 + this.random() * 7;
+    this.targetWeather = type;
+    this.transitionProgress = instant ? 1.0 : 0.0;
+    this.transitionTimer = 0.0;
+    
+    if (instant) {
+      this._applyPreset(WEATHER_PRESETS[type]);
+      this.currentWeather = type;
+    }
 
-      if (this.random() > 0.45) {
-        this.lightningFlash = 1;
+    this.eventBus?.emit?.("weather:changed", { type, instant });
+  }
 
-        this.emit("weather:lightning", {
-          intensity: this.lightningFlash,
-          duration: 0.15 + this.random() * 0.25,
-        });
+  update(deltaTime) {
+    if (!this.enabled) return;
+
+    if (this.transitionProgress < 1.0) {
+      this.transitionTimer += deltaTime;
+      this.transitionProgress = Math.min(1.0, this.transitionTimer / this.transitionDuration);
+      
+      // Smooth interpolation (ease-in-out)
+      const t = this.transitionProgress < 0.5 
+        ? 2 * this.transitionProgress * this.transitionProgress 
+        : 1 - Math.pow(-2 * this.transitionProgress + 2, 2) / 2;
+
+      this._interpolateWeather(t);
+
+      if (this.transitionProgress >= 1.0) {
+        this.currentWeather = this.targetWeather;
+        this._applyPreset(WEATHER_PRESETS[this.currentWeather]);
       }
     }
-
-    this.lightningFlash = Math.max(0, this.lightningFlash - delta * 5);
   }
 
-  setWeather(value, { silent = false, transitionDuration = 2 } = {}) {
-    const next = this.normalizeWeather(value);
+  _interpolateWeather(t) {
+    const currentPreset = WEATHER_PRESETS[this.currentWeather];
+    const targetPreset = WEATHER_PRESETS[this.targetWeather];
 
-    if (next === this.weather) return this.getSnapshot();
+    // Interpolate fog
+    if (this.scene.fog) {
+      this.scene.fog.color.lerpColors(
+        new THREE.Color(currentPreset.fogColor),
+        new THREE.Color(targetPreset.fogColor),
+        t
+      );
+      this.scene.fog.density = currentPreset.fogDensity + (targetPreset.fogDensity - currentPreset.fogDensity) * t;
+    }
+    if (this.scene.background && this.scene.background.isColor) {
+      this.scene.background.lerpColors(
+        new THREE.Color(currentPreset.skyColor),
+        new THREE.Color(targetPreset.skyColor),
+        t
+      );
+    }
 
-    const previousWeather = this.weather;
-    const previousTime = this.time;
+    // Interpolate grip
+    this.gripMultiplier = currentPreset.gripMultiplier + (targetPreset.gripMultiplier - currentPreset.gripMultiplier) * t;
 
-    this.weather = next;
-    this.transition = {
-      previousWeather,
-      previousTime,
-      elapsed: 0,
-      duration: Math.max(0.1, Number(transitionDuration) || 2),
-      progress: 0,
-    };
-
-    this.current = this.buildSnapshot();
-
-    if (!silent) {
-      this.emit("weather:changed", {
-        ...this.getSnapshot(),
-        previousWeather,
+    // Update lighting system if available
+    if (this.lightingSystem) {
+      const sunIntensity = currentPreset.sunIntensity + (targetPreset.sunIntensity - currentPreset.sunIntensity) * t;
+      const ambientIntensity = currentPreset.ambientIntensity + (targetPreset.ambientIntensity - currentPreset.ambientIntensity) * t;
+      
+      this.lightingSystem.setLighting?.({
+        sunIntensity,
+        ambientIntensity
       });
     }
-
-    return this.getSnapshot();
   }
 
-  setTime(value, { silent = false, transitionDuration = 2 } = {}) {
-    const next = this.normalizeTime(value);
+  _applyPreset(preset) {
+    if (this.scene.fog) {
+      this.scene.fog.color.setHex(preset.fogColor);
+      this.scene.fog.density = preset.fogDensity;
+    }
+    if (this.scene.background && this.scene.background.isColor) {
+      this.scene.background.setHex(preset.skyColor);
+    }
+    this.gripMultiplier = preset.gripMultiplier;
 
-    if (next === this.time) return this.getSnapshot();
-
-    const previousWeather = this.weather;
-    const previousTime = this.time;
-
-    this.time = next;
-    this.transition = {
-      previousWeather,
-      previousTime,
-      elapsed: 0,
-      duration: Math.max(0.1, Number(transitionDuration) || 2),
-      progress: 0,
-    };
-
-    this.current = this.buildSnapshot();
-
-    if (!silent) {
-      this.emit("time:changed", {
-        ...this.getSnapshot(),
-        previousTime,
+    if (this.lightingSystem) {
+      this.lightingSystem.setLighting?.({
+        sunIntensity: preset.sunIntensity,
+        ambientIntensity: preset.ambientIntensity
       });
     }
-
-    return this.getSnapshot();
   }
 
-  setConditions({ weather, time } = {}) {
-    if (weather) this.setWeather(weather);
-    if (time) this.setTime(time);
-
-    return this.getSnapshot();
+  getGripMultiplier() {
+    return this.gripMultiplier;
   }
 
-  buildSnapshot() {
-    const weather = WEATHER_PRESETS[this.weather] ?? WEATHER_PRESETS.clear;
-    const time = TIME_PRESETS[this.time] ?? TIME_PRESETS.morning;
-
-    return {
-      weather: this.weather,
-      weatherLabel: weather.label,
-      time: this.time,
-      timeLabel: time.label,
-      visibility: weather.visibility,
-      roadGrip: weather.roadGrip,
-      trafficMultiplier: weather.trafficMultiplier,
-      fogDensity: weather.fogDensity,
-      rainIntensity: weather.rainIntensity,
-      windIntensity: weather.windIntensity,
-      ambientLight: time.ambient,
-      sunIntensity: time.sunIntensity,
-      headlightRequired: time.headlightRequired,
-      skyTint: time.skyTint,
-      lightningFlash: this.lightningFlash,
-      transitionProgress: this.transition?.progress ?? 1,
-    };
+  getCurrentWeather() {
+    return this.currentWeather;
   }
 
-  getSnapshot() {
-    return { ...this.current };
+  _subscribe(event, handler) {
+    if (!this.eventBus?.on) return;
+    const unsub = this.eventBus.on(event, handler);
+    if (typeof unsub === "function") this._disposers.push(unsub);
   }
 
-  getWeatherPreset(weather = this.weather) {
-    const key = this.normalizeWeather(weather);
-    return { ...WEATHER_PRESETS[key] };
-  }
-
-  getTimePreset(time = this.time) {
-    const key = this.normalizeTime(time);
-    return { ...TIME_PRESETS[key] };
-  }
-
-  getDrivingModifiers() {
-    const snapshot = this.getSnapshot();
-
-    return {
-      roadGrip: snapshot.roadGrip,
-      visibility: snapshot.visibility,
-      trafficMultiplier: snapshot.trafficMultiplier,
-      steeringMultiplier: snapshot.roadGrip < 0.7 ? 0.85 : 1,
-      brakingMultiplier: snapshot.roadGrip < 0.7 ? 1.25 : 1,
-      headlightRequired: snapshot.headlightRequired,
-    };
-  }
-
-  random() {
-    this.randomState = (1664525 * this.randomState + 1013904223) >>> 0;
-    return this.randomState / 4294967296;
-  }
-
-  emit(eventName, payload) {
-    if (this.eventBus && typeof this.eventBus.emit === "function") {
-      this.eventBus.emit(eventName, payload);
-    }
-
-    if (this.gameState && typeof this.gameState.emit === "function") {
-      this.gameState.emit(eventName, payload);
-    }
-  }
-
-  reset({ weather = "clear", time = "morning" } = {}) {
-    this.elapsed = 0;
-    this.weatherElapsed = 0;
-    this.lightningTimer = 0;
-    this.lightningFlash = 0;
-    this.transition = null;
-
-    this.weather = this.normalizeWeather(weather);
-    this.time = this.normalizeTime(time);
-    this.current = this.buildSnapshot();
-
-    this.emit("weather:reset", this.getSnapshot());
-
-    return this.getSnapshot();
-  }
-
-  destroy() {
-    if (this.destroyed) return;
-
-    this.destroyed = true;
-
-    for (const unsubscribe of this.listeners) {
-      try {
-        unsubscribe();
-      } catch {
-        // Ignore listeners that were already removed.
-      }
-    }
-
-    this.listeners.length = 0;
-    this.transition = null;
+  dispose() {
+    for (const unsub of this._disposers) unsub();
+    this._disposers = [];
   }
 }
