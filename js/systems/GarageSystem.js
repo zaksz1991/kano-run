@@ -105,6 +105,8 @@ const DEFAULT_GARAGE = Object.freeze({
     engine: 0,
     handling: 0,
     fuelTank: 0,
+    tires: 0,
+    bumper: 0,
   },
 });
 
@@ -115,6 +117,20 @@ const UPGRADE_CATALOG = Object.freeze({
     basePrice: 8000,
     priceMultiplier: 1.65,
     description: "Improves acceleration and top speed.",
+  },
+  tires: {
+    name: "Tires",
+    maxLevel: 5,
+    basePrice: 6000,
+    priceMultiplier: 1.55,
+    description: "Improves grip, lane snap, and drift control.",
+  },
+  bumper: {
+    name: "Reinforced Bumper",
+    maxLevel: 3,
+    basePrice: 10000,
+    priceMultiplier: 1.8,
+    description: "Survive extra collisions before game over.",
   },
   handling: {
     name: "Handling",

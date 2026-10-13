@@ -575,4 +575,70 @@ export default class AudioManager {
     this.engineVoice?.setEnabled(on);
   }
 
+  crossfadeAmbient(theme = "city", duration = 2.0) {
+    if (!this.context || this.destroyed) return;
+    this.ensureContext?.();
+
+    if (this.currentAmbientTheme === theme) return;
+    this.currentAmbientTheme = theme;
+
+    const t = this.context.currentTime;
+    const fade = Math.max(0.3, duration / 2);
+
+    // Fade out previous ambient gain
+    if (this.ambientGain) {
+      this.ambientGain.gain.setTargetAtTime(0.001, t, fade);
+    }
+
+    // Lightweight procedural ambient (no external files)
+    try {
+      if (this.ambientOsc) {
+        try { this.ambientOsc.stop(); } catch (e) {}
+        this.ambientOsc.disconnect();
+      }
+      if (!this.ambientGain) {
+        this.ambientGain = this.context.createGain();
+        this.ambientGain.connect(this.musicGain || this.masterGain);
+      }
+      this.ambientGain.gain.setValueAtTime(0.001, t);
+
+      const osc = this.context.createOscillator();
+      const filter = this.context.createBiquadFilter();
+      filter.type = "lowpass";
+
+      // Theme "vibe"
+      if (theme === "city" || theme === "market") {
+        osc.frequency.value = 55;
+        filter.frequency.value = 400;
+        this.ambientGain.gain.setTargetAtTime(0.04, t, fade);
+      } else if (theme === "industrial") {
+        osc.frequency.value = 40;
+        filter.frequency.value = 250;
+        this.ambientGain.gain.setTargetAtTime(0.035, t, fade);
+      } else {
+        osc.frequency.value = 70;
+        filter.frequency.value = 180;
+        this.ambientGain.gain.setTargetAtTime(0.025, t, fade);
+      }
+
+      osc.type = "sawtooth";
+      osc.connect(filter);
+      filter.connect(this.ambientGain);
+      osc.start();
+      this.ambientOsc = osc;
+      this.ambientFilter = filter;
+    } catch (e) {
+      console.warn("[Kano Run] ambient crossfade failed", e);
+    }
+  }
+
+  bindDistrictAudio() {
+    if (!this.eventBus?.on || this._districtAudioBound) return;
+    this._districtAudioBound = true;
+    this.eventBus.on("scenery:districtChanged", (payload) => {
+      const theme = payload?.theme || payload?.district || "city";
+      this.crossfadeAmbient(String(theme).toLowerCase(), 2.0);
+    });
+  }
+
 }

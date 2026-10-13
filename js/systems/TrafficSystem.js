@@ -147,6 +147,84 @@ export class TrafficSystem {
       nearMisses: 0,
       collisions: 0,
     };
+
+    this.eventBus?.on?.("scenery:districtChanged", (payload) => {
+      this.applyDistrictWeights(payload?.district || payload?.theme);
+    });
+    this.eventBus?.on?.("world:districtChanged", (payload) => {
+      this.applyDistrictWeights(payload?.district || payload?.theme);
+    });
+  }
+
+  applyDistrictWeights(districtOrTheme) {
+    const key = String(districtOrTheme || "").toLowerCase();
+
+    if (
+      key.includes("city") ||
+      key.includes("centre") ||
+      key.includes("center") ||
+      key.includes("nassarawa")
+    ) {
+      this.setWeights({
+        taxi: 25,
+        police: 10,
+        car: 20,
+        keke: 15,
+        bus: 8,
+        motorcycle: 10,
+        truck: 2,
+        karota: 5,
+        robber: 3,
+      });
+    } else if (
+      key.includes("sabon") ||
+      key.includes("kurmi") ||
+      key.includes("market") ||
+      key.includes("boko")
+    ) {
+      this.setWeights({
+        motorcycle: 28,
+        truck: 14,
+        keke: 22,
+        car: 12,
+        bus: 6,
+        taxi: 8,
+        police: 2,
+        karota: 4,
+        robber: 4,
+      });
+    } else if (key.includes("industrial") || key.includes("sharada") || key.includes("bompai")) {
+      this.setWeights({
+        truck: 22,
+        car: 18,
+        bus: 10,
+        motorcycle: 12,
+        keke: 12,
+        taxi: 8,
+        police: 4,
+        karota: 4,
+        robber: 2,
+      });
+    } else if (key.includes("outskirt") || key.includes("airport") || key.includes("kumbotso")) {
+      this.setWeights({
+        car: 22,
+        motorcycle: 18,
+        truck: 12,
+        keke: 15,
+        taxi: 10,
+        bus: 8,
+        police: 5,
+        karota: 3,
+        robber: 3,
+      });
+    } else {
+      this.setWeights(DEFAULT_TRAFFIC_WEIGHTS);
+    }
+
+    this.emit("traffic:weights-changed", {
+      district: districtOrTheme,
+      weights: { ...this.weights },
+    });
   }
 
   start() {
@@ -216,23 +294,67 @@ export class TrafficSystem {
   updateRobber(vehicle, dt, player) {
     if (vehicle.laneChangeTimer > 0) return;
 
-    const playerZ = Number(player.z) || 0;
+    const playerZ = Number(player.z) || Number(player.position?.z) || 0;
+    const playerLane = Number.isFinite(player.lane)
+      ? player.lane
+      : 1;
+    const playerSpeed = Math.max(0, Number(player.speed) || 0);
+
+    // Positive = robber ahead of player; negative = behind
     const distance = vehicle.z - playerZ;
 
-    if (distance > 0 && distance < 28 && Math.random() < dt * 0.8) {
-      const candidates = this.getAvailableAdjacentLanes(vehicle);
+    // STATE 1: THE HUNT — behind player, closing in
+    if (distance < 0 && distance > -40) {
+      vehicle.speed = Math.max(vehicle.speed, playerSpeed + 2.5);
 
-      if (candidates.length > 0) {
-        vehicle.lane = randomItem(candidates);
-        vehicle.laneChangeTimer = 2;
-        vehicle.x = this.getLaneX(vehicle.lane);
-
-        this.emit("traffic:robber-maneuver", {
-          vehicleId: vehicle.id,
-          lane: vehicle.lane,
-        });
+      if (vehicle.lane !== playerLane) {
+        const candidates = this.getAvailableAdjacentLanes(vehicle);
+        if (candidates.includes(playerLane)) {
+          vehicle.lane = playerLane;
+          vehicle.laneChangeTimer = 1.2;
+          vehicle.x = this.getLaneX(vehicle.lane);
+          this.emit("traffic:robber-hunt", {
+            vehicleId: vehicle.id,
+            lane: vehicle.lane,
+          });
+        } else if (candidates.length > 0 && Math.random() < dt * 1.2) {
+          vehicle.lane = randomItem(candidates);
+          vehicle.laneChangeTimer = 1.5;
+          vehicle.x = this.getLaneX(vehicle.lane);
+        }
       }
+      return;
     }
+
+    // STATE 2: THE BAIT — just ahead, slow and swerve
+    if (distance > 0 && distance < 20) {
+      vehicle.speed = Math.min(vehicle.speed, Math.max(6, playerSpeed - 4));
+
+      if (vehicle.lane === playerLane) {
+        const safeLanes = this.getAvailableAdjacentLanes(vehicle);
+        const escapeLanes = safeLanes.filter((l) => l !== playerLane);
+        if (escapeLanes.length > 0) {
+          vehicle.lane = randomItem(escapeLanes);
+          vehicle.laneChangeTimer = 2.5;
+          vehicle.x = this.getLaneX(vehicle.lane);
+          this.emit("traffic:robber-bait", {
+            vehicleId: vehicle.id,
+            lane: vehicle.lane,
+          });
+          this.emit("traffic:robber-maneuver", {
+            vehicleId: vehicle.id,
+            lane: vehicle.lane,
+          });
+        }
+      }
+      return;
+    }
+
+    // STATE 3: CRUISING — out of range
+    const specs = VEHICLE_SPECS.robber;
+    const cruise =
+      specs.speedMin + Math.random() * (specs.speedMax - specs.speedMin);
+    vehicle.speed += (cruise - vehicle.speed) * dt * 2;
   }
 
   updateMotorcycle(vehicle, dt) {

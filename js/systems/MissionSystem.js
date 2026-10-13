@@ -6,6 +6,43 @@ const clamp = (value, min, max) =>
 const randomItem = (items) =>
   items[Math.floor(Math.random() * items.length)];
 
+
+const DAILY_QUESTS = [
+  {
+    id: "daily-fare",
+    title: "Daily Hustle",
+    description: "Earn ₦5,000 in a single run.",
+    type: "earnings",
+    target: 5000,
+    reward: 1000,
+    xp: 80,
+    difficulty: 1,
+    daily: true,
+  },
+  {
+    id: "daily-near-miss",
+    title: "Close Calls",
+    description: "Get 10 near-misses in one run.",
+    type: "near_misses",
+    target: 10,
+    reward: 500,
+    xp: 60,
+    difficulty: 1,
+    daily: true,
+  },
+  {
+    id: "daily-clean",
+    title: "Clean Run",
+    description: "Drive 3km without crashing.",
+    type: "distance",
+    target: 3000,
+    reward: 2000,
+    xp: 100,
+    difficulty: 2,
+    daily: true,
+  },
+];
+
 const MISSION_TEMPLATES = [
   {
     id: "passenger-rush",
@@ -110,11 +147,41 @@ export class MissionSystem {
     this.elapsed = 0;
 
     this.bindEvents();
+    this.ensureDailyMissions();
     this.ensureMissions();
 
     this.emit("missions:system-started", {
       activeMissions: this.getActiveMissions().length,
     });
+  }
+
+
+  ensureDailyMissions() {
+    const today = new Date().toISOString().slice(0, 10);
+    const last = this.gameState?.profile?.lastDailyDate || this._lastDailyDate;
+    if (last === today) {
+      const hasDaily = [...this.missions.values()].some((ms) => ms.daily);
+      if (hasDaily) return;
+    }
+    this._lastDailyDate = today;
+    if (this.gameState?.profile) this.gameState.profile.lastDailyDate = today;
+    for (const [id, mission] of this.missions) {
+      if (mission.daily) this.missions.delete(id);
+    }
+    const pool = typeof DAILY_QUESTS !== "undefined" ? [...DAILY_QUESTS] : [];
+    pool.sort(() => Math.random() - 0.5);
+    for (const template of pool.slice(0, 2)) {
+      const id = `daily-${template.id}-${today}`;
+      this.missions.set(id, {
+        ...template,
+        id,
+        progress: 0,
+        completed: false,
+        failed: false,
+        active: true,
+      });
+    }
+    this.emit("missions:daily-refreshed", { date: today });
   }
 
   bindEvents() {
