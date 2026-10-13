@@ -57,9 +57,16 @@ export default class Game {
         events: this.events,
       });
 
-      await this.sceneManager.initialize();
+      await this.sceneManager.initialize({
+        container:
+          this.options.container ??
+          this.options.canvas?.parentElement ??
+          document.getElementById("game-container") ??
+          document.body,
+      });
 
       this.registerSceneServices();
+
       await this.initializeSystems();
 
       this.input.initialize?.();
@@ -71,14 +78,20 @@ export default class Game {
 
       this.isInitialized = true;
 
-      this.events.emit?.("game:initialized", {
+      this.events.emit("game:initialized", {
         game: this,
       });
+
+      this.options.onReady?.(this);
 
       return this;
     } catch (error) {
       console.error("[Kano Run] Initialization failed:", error);
+
+      this.options.onError?.(error);
+
       this.destroy();
+
       throw error;
     }
   }
@@ -88,7 +101,9 @@ export default class Game {
       game: this,
       config: this.config,
       events: this.events,
+      eventBus: this.events,
       state: this.state,
+      gameState: this.state,
       input: this.input,
       saveManager: this.saveManager,
       audio: this.audio,
@@ -109,6 +124,7 @@ export default class Game {
       scene: this.sceneManager.scene,
       camera: this.sceneManager.camera,
       renderer: this.sceneManager.renderer,
+      THREE: this.sceneManager.THREE,
     };
 
     for (const [name, service] of Object.entries(sceneServices)) {
@@ -126,73 +142,160 @@ export default class Game {
     }
   }
 
+  getSystemContext() {
+    return {
+      game: this,
+      config: this.config,
+      services: this.services,
+
+      events: this.events,
+      eventBus: this.events,
+
+      state: this.state,
+      gameState: this.state,
+
+      input: this.input,
+      saveManager: this.saveManager,
+      audio: this.audio,
+      settings: this.settingsManager,
+
+      systems: this.systems,
+
+      sceneManager: this.sceneManager,
+      scene: this.sceneManager?.scene ?? null,
+      camera: this.sceneManager?.camera ?? null,
+      renderer: this.sceneManager?.renderer ?? null,
+      THREE: this.sceneManager?.THREE ?? null,
+
+      progressionSystem: this.systems.get("progression") ?? null,
+      routeSystem: this.systems.get("routes") ?? null,
+      worldSystem: this.systems.get("world") ?? null,
+      roadSystem: this.systems.get("road") ?? null,
+      scenerySystem: this.systems.get("scenery") ?? null,
+      vehicleSystem: this.systems.get("vehicles") ?? null,
+      playerVehicleSystem:
+        this.systems.get("playerVehicle") ?? null,
+      drivingSystem: this.systems.get("driving") ?? null,
+      trafficSystem: this.systems.get("traffic") ?? null,
+      collisionSystem: this.systems.get("collision") ?? null,
+      passengerSystem: this.systems.get("passengers") ?? null,
+      economySystem: this.systems.get("economy") ?? null,
+      missionSystem: this.systems.get("missions") ?? null,
+      garageSystem: this.systems.get("garage") ?? null,
+      customizationSystem:
+        this.systems.get("customization") ?? null,
+      cameraSystem: this.systems.get("camera") ?? null,
+      hudSystem: this.systems.get("hud") ?? null,
+    };
+  }
+
   async initializeSystems() {
+    /*
+     * Initialize dependencies before systems that consume them:
+     * progression -> routes -> world -> environment and gameplay.
+     */
     const systemModules = [
+      ["progression", () => import("../systems/ProgressionSystem.js")],
+      ["routes", () => import("../systems/RouteSystem.js")],
       ["world", () => import("../systems/WorldSystem.js")],
+
       ["road", () => import("../systems/RoadSystem.js")],
       ["scenery", () => import("../systems/ScenerySystem.js")],
       ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
       ["dayNight", () => import("../systems/DayNightSystem.js")],
       ["weather", () => import("../systems/WeatherSystem.js")],
-      ["routes", () => import("../systems/RouteSystem.js")],
-      ["routeGeneration", () => import("../systems/RouteGenerationSystem.js")],
+
+      [
+        "routeGeneration",
+        () => import("../systems/RouteGenerationSystem.js"),
+      ],
       ["vehicles", () => import("../systems/VehicleSystem.js")],
-      ["playerVehicle", () => import("../systems/PlayerVehicleSystem.js")],
+      [
+        "playerVehicle",
+        () => import("../systems/PlayerVehicleSystem.js"),
+      ],
       ["driving", () => import("../systems/DrivingSystem.js")],
       ["traffic", () => import("../systems/TrafficSystem.js")],
       ["collision", () => import("../systems/CollisionSystem.js")],
       ["passengers", () => import("../systems/PassengerSystem.js")],
       ["economy", () => import("../systems/EconomySystem.js")],
       ["missions", () => import("../systems/MissionSystem.js")],
-      ["progression", () => import("../systems/ProgressionSystem.js")],
+
       ["garage", () => import("../systems/GarageSystem.js")],
-      ["customization", () => import("../systems/CustomizationSystem.js")],
+      [
+        "customization",
+        () => import("../systems/CustomizationSystem.js"),
+      ],
       ["particles", () => import("../systems/ParticleSystem.js")],
       ["camera", () => import("../systems/CameraSystem.js")],
       ["minimap", () => import("../systems/MinimapSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
-      ["touchControls", () => import("../systems/TouchControlsSystem.js")],
+      [
+        "touchControls",
+        () => import("../systems/TouchControlsSystem.js"),
+      ],
       ["pause", () => import("../systems/PauseSystem.js")],
       ["gameOver", () => import("../systems/GameOverSystem.js")],
     ];
 
     for (const [name, loadModule] of systemModules) {
+      if (this.isDestroyed) {
+        throw new Error(
+          `Game destroyed while initializing "${name}".`
+        );
+      }
+
       const module = await loadModule();
       const SystemClass = module.default;
 
       if (typeof SystemClass !== "function") {
-        console.warn(`[Kano Run] Skipping invalid system: ${name}`);
-        continue;
+        throw new Error(
+          `[Kano Run] Invalid system constructor: ${name}`
+        );
       }
 
-      const context = {
-        game: this,
-        config: this.config,
-        services: this.services,
-        events: this.events,
-        state: this.state,
-        input: this.input,
-        sceneManager: this.sceneManager,
-        scene: this.sceneManager?.scene,
-        camera: this.sceneManager?.camera,
-        renderer: this.sceneManager?.renderer,
-        saveManager: this.saveManager,
-        audio: this.audio,
-      };
-
+      const context = this.getSystemContext();
       const system = new SystemClass(context);
 
       this.systems.set(name, system);
-
       this.registerService(`system:${name}`, system);
 
       if (typeof system.initialize === "function") {
-        await system.initialize(context);
+        /*
+         * WorldSystem.initialize() accepts a district, not the
+         * general system context. Passing context here would
+         * incorrectly treat the context object as a district.
+         */
+        if (name === "world") {
+          const selectedRoute =
+            this.systems.get("routes")?.getSelectedRoute?.() ?? null;
+
+          await system.initialize(selectedRoute);
+        } else {
+          await system.initialize(this.getSystemContext());
+        }
       }
     }
 
-    this.events.emit?.("systems:initialized", {
+    /*
+     * Give systems that support dependency injection their final
+     * context after all systems have been constructed.
+     */
+    const finalContext = this.getSystemContext();
+
+    for (const [name, system] of this.systems) {
+      if (typeof system.setDependencies === "function") {
+        system.setDependencies(finalContext);
+      }
+
+      this.events.emit("system:initialized", {
+        name,
+        system,
+      });
+    }
+
+    this.events.emit("systems:initialized", {
       names: [...this.systems.keys()],
     });
   }
@@ -206,7 +309,9 @@ export default class Game {
       await this.initialize();
     }
 
-    if (this.isRunning) return this;
+    if (this.isRunning) {
+      return this;
+    }
 
     this.isPaused = false;
     this.isRunning = true;
@@ -219,7 +324,7 @@ export default class Game {
 
     this.animationFrame = requestAnimationFrame(this.boundFrame);
 
-    this.events.emit?.("game:started", {
+    this.events.emit("game:started", {
       game: this,
     });
 
@@ -227,7 +332,9 @@ export default class Game {
   }
 
   frame(timestamp) {
-    if (!this.isRunning || this.isDestroyed) return;
+    if (!this.isRunning || this.isDestroyed) {
+      return;
+    }
 
     const elapsed = Math.min(
       Math.max((timestamp - this.previousTime) / 1000, 0),
@@ -253,10 +360,20 @@ export default class Game {
   update(delta) {
     this.state.update?.(delta);
 
-    for (const system of this.systems.values()) {
+    const speed = Number(this.state.run?.speed) || 0;
+
+    for (const [name, system] of this.systems) {
       if (system.enabled === false) continue;
 
-      system.update?.(delta);
+      /*
+       * WorldSystem.update() accepts delta and speed.
+       * Other systems continue receiving delta as their first argument.
+       */
+      if (name === "world") {
+        system.update?.(delta, speed);
+      } else {
+        system.update?.(delta);
+      }
     }
 
     this.saveManager.updateProfile?.(
@@ -264,7 +381,7 @@ export default class Game {
       { autosave: true }
     );
 
-    this.events.emit?.("game:updated", { delta });
+    this.events.emit("game:updated", { delta });
   }
 
   render(interpolation = 0) {
@@ -286,7 +403,7 @@ export default class Game {
       system.pause?.();
     }
 
-    this.events.emit?.("game:paused");
+    this.events.emit("game:paused");
   }
 
   resume() {
@@ -299,7 +416,7 @@ export default class Game {
       system.resume?.();
     }
 
-    this.events.emit?.("game:resumed");
+    this.events.emit("game:resumed");
   }
 
   stop() {
@@ -318,7 +435,7 @@ export default class Game {
 
     this.saveManager.save?.();
 
-    this.events.emit?.("game:stopped");
+    this.events.emit("game:stopped");
   }
 
   resize() {
@@ -339,6 +456,10 @@ export default class Game {
   }
 
   async restart() {
+    if (this.isDestroyed) {
+      throw new Error("Cannot restart a destroyed game.");
+    }
+
     this.stop();
     this.isPaused = false;
 
@@ -356,13 +477,18 @@ export default class Game {
 
     this.stop();
 
-    window.removeEventListener("resize", this.boundResize);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("resize", this.boundResize);
+    }
 
     for (const system of [...this.systems.values()].reverse()) {
       try {
         system.destroy?.();
       } catch (error) {
-        console.error("[Kano Run] System cleanup failed:", error);
+        console.error(
+          "[Kano Run] System cleanup failed:",
+          error
+        );
       }
     }
 
@@ -372,9 +498,11 @@ export default class Game {
     this.audio.destroy?.();
     this.sceneManager?.destroy?.();
     this.saveManager.destroy?.();
+    this.state.destroy?.();
+    this.services.destroy?.();
 
-    this.events.emit?.("game:destroyed");
-    this.events.clear?.();
+    this.events.emit("game:destroyed");
+    this.events.destroy?.();
 
     this.isInitialized = false;
     this.isDestroyed = true;

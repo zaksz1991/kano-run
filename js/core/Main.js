@@ -1,4 +1,4 @@
-import Game from "./core/Game.js";
+import Game from "./Game.js";
 
 class KanoRunApp {
   constructor() {
@@ -11,6 +11,7 @@ class KanoRunApp {
     this.handleStart = this.handleStart.bind(this);
     this.handlePageHide = this.handlePageHide.bind(this);
     this.handleKeyDown = this.handleKeyDown.bind(this);
+    this.handleRestartEvent = this.handleRestartEvent.bind(this);
   }
 
   async initialize() {
@@ -26,20 +27,7 @@ class KanoRunApp {
 
     this.createStartScreen();
     this.createErrorDisplay();
-
-    this.game = new Game({
-      canvas,
-      container: canvas.parentElement || document.body,
-      onReady: () => {
-        document.dispatchEvent(
-          new CustomEvent("kanorun:ready")
-        );
-      },
-      onError: (error) => {
-        this.showError(error);
-      },
-    });
-
+    this.createGame(canvas);
     this.bindEvents();
 
     document.dispatchEvent(
@@ -47,8 +35,33 @@ class KanoRunApp {
     );
   }
 
+  createGame(canvas = document.getElementById("c")) {
+    if (!canvas) {
+      throw new Error("Cannot create the game: canvas #c was not found.");
+    }
+
+    this.game = new Game({
+      canvas,
+      container: canvas.parentElement || document.body,
+
+      onReady: () => {
+        document.dispatchEvent(
+          new CustomEvent("kanorun:ready")
+        );
+      },
+
+      onError: (error) => {
+        this.showError(error);
+      },
+    });
+
+    return this.game;
+  }
+
   createStartScreen() {
-    if (document.getElementById("kano-run-start-screen")) return;
+    if (document.getElementById("kano-run-start-screen")) {
+      return;
+    }
 
     const screen = document.createElement("div");
     screen.id = "kano-run-start-screen";
@@ -115,6 +128,7 @@ class KanoRunApp {
     });
 
     const description = document.createElement("p");
+
     description.textContent =
       "Drive through Kano. Pick up passengers. Earn fares. Build your reputation.";
 
@@ -143,9 +157,13 @@ class KanoRunApp {
       cursor: "pointer",
     });
 
-    this.startButton.addEventListener("click", this.handleStart);
+    this.startButton.addEventListener(
+      "click",
+      this.handleStart
+    );
 
     const controls = document.createElement("p");
+
     controls.textContent =
       "W / ↑ Accelerate   •   S / ↓ Brake   •   A / D Steer";
 
@@ -182,6 +200,13 @@ class KanoRunApp {
   }
 
   createErrorDisplay() {
+    const existing = document.getElementById("kano-run-error");
+
+    if (existing) {
+      this.errorElement = existing;
+      return;
+    }
+
     this.errorElement = document.createElement("div");
     this.errorElement.id = "kano-run-error";
     this.errorElement.setAttribute("role", "alert");
@@ -209,43 +234,85 @@ class KanoRunApp {
   }
 
   bindEvents() {
-    window.addEventListener("pagehide", this.handlePageHide);
-    window.addEventListener("keydown", this.handleKeyDown);
+    window.addEventListener(
+      "pagehide",
+      this.handlePageHide
+    );
 
-    document.addEventListener("kanorun:restart", () => {
-      this.restart();
-    });
+    window.addEventListener(
+      "keydown",
+      this.handleKeyDown
+    );
+
+    document.addEventListener(
+      "kanorun:restart",
+      this.handleRestartEvent
+    );
+  }
+
+  handleRestartEvent() {
+    this.restart();
   }
 
   async handleStart() {
-    if (this.started || this.destroyed) return;
+    if (this.started || this.destroyed) {
+      return;
+    }
 
     this.setStartButton("LOADING...", true);
+    this.hideError();
 
     try {
+      if (!this.game || this.game.isDestroyed) {
+        this.createGame();
+      }
+
       await this.game.initialize();
 
-      const screen = document.getElementById("kano-run-start-screen");
+      if (this.destroyed) {
+        return;
+      }
+
+      await this.game.start();
+
+      if (this.destroyed) {
+        return;
+      }
+
+      this.started = true;
+
+      const screen = document.getElementById(
+        "kano-run-start-screen"
+      );
 
       if (screen) {
         screen.style.display = "none";
       }
 
-      await this.game.start();
-
-      this.started = true;
-
       document.dispatchEvent(
         new CustomEvent("kanorun:started")
       );
     } catch (error) {
+      console.error("[Kano Run] Start failed:", error);
+
+      /*
+       * Game.initialize() destroys its instance when initialization
+       * fails. Replace that instance before the next retry.
+       */
+      if (this.game?.isDestroyed) {
+        this.game = null;
+      }
+
+      this.started = false;
       this.setStartButton("TRY AGAIN", false);
       this.showError(error);
     }
   }
 
   setStartButton(label, disabled) {
-    if (!this.startButton) return;
+    if (!this.startButton) {
+      return;
+    }
 
     this.startButton.textContent = label;
     this.startButton.disabled = disabled;
@@ -253,18 +320,40 @@ class KanoRunApp {
   }
 
   async restart() {
-    if (!this.game || this.destroyed) return;
+    if (!this.game || this.destroyed) {
+      return;
+    }
 
     try {
-      await this.game.restart();
-      this.started = true;
+      if (this.game.isDestroyed) {
+        this.createGame();
+        await this.game.initialize();
+      }
 
-      const screen = document.getElementById("kano-run-start-screen");
+      await this.game.restart();
+
+      this.started = true;
+      this.hideError();
+
+      const screen = document.getElementById(
+        "kano-run-start-screen"
+      );
 
       if (screen) {
         screen.style.display = "none";
       }
+
+      document.dispatchEvent(
+        new CustomEvent("kanorun:started")
+      );
     } catch (error) {
+      console.error("[Kano Run] Restart failed:", error);
+
+      if (this.game?.isDestroyed) {
+        this.game = null;
+      }
+
+      this.started = false;
       this.showError(error);
     }
   }
@@ -283,10 +372,19 @@ class KanoRunApp {
     this.game?.stop?.();
   }
 
+  hideError() {
+    if (this.errorElement) {
+      this.errorElement.style.display = "none";
+      this.errorElement.textContent = "";
+    }
+  }
+
   showError(error) {
     console.error("[Kano Run]", error);
 
-    if (!this.errorElement) return;
+    if (!this.errorElement) {
+      this.createErrorDisplay();
+    }
 
     const message =
       error instanceof Error
@@ -298,7 +396,9 @@ class KanoRunApp {
 
     this.setStartButton("TRY AGAIN", false);
 
-    const screen = document.getElementById("kano-run-start-screen");
+    const screen = document.getElementById(
+      "kano-run-start-screen"
+    );
 
     if (screen) {
       screen.style.display = "flex";
@@ -306,19 +406,45 @@ class KanoRunApp {
   }
 
   async destroy() {
-    if (this.destroyed) return;
+    if (this.destroyed) {
+      return;
+    }
 
     this.destroyed = true;
 
-    window.removeEventListener("pagehide", this.handlePageHide);
-    window.removeEventListener("keydown", this.handleKeyDown);
+    window.removeEventListener(
+      "pagehide",
+      this.handlePageHide
+    );
+
+    window.removeEventListener(
+      "keydown",
+      this.handleKeyDown
+    );
+
+    document.removeEventListener(
+      "kanorun:restart",
+      this.handleRestartEvent
+    );
+
+    this.startButton?.removeEventListener(
+      "click",
+      this.handleStart
+    );
 
     await this.game?.destroy?.();
 
-    document.getElementById("kano-run-start-screen")?.remove();
-    document.getElementById("kano-run-error")?.remove();
+    document.getElementById(
+      "kano-run-start-screen"
+    )?.remove();
+
+    document.getElementById(
+      "kano-run-error"
+    )?.remove();
 
     this.game = null;
+    this.startButton = null;
+    this.errorElement = null;
   }
 }
 
@@ -330,9 +456,13 @@ async function bootstrap() {
   try {
     await app.initialize();
   } catch (error) {
-    console.error("Kano Run failed to initialize:", error);
+    console.error(
+      "[Kano Run] Application initialization failed:",
+      error
+    );
 
     const message = document.createElement("pre");
+
     message.textContent =
       `Kano Run could not initialize.\n${error?.message || error}`;
 
@@ -356,9 +486,11 @@ async function bootstrap() {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", bootstrap, {
-    once: true,
-  });
+  document.addEventListener(
+    "DOMContentLoaded",
+    bootstrap,
+    { once: true }
+  );
 } else {
   bootstrap();
 }
