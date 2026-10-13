@@ -1,4 +1,5 @@
 import * as THREE_NS from "three";
+import PostProcessing from "./PostProcessing.js";
 import GAME_CONFIG from "./config.js";
 
 const THREE_STATIC = THREE_NS;
@@ -94,6 +95,14 @@ export default class SceneManager {
 
     this.createDefaultLighting();
 
+    this.post = new PostProcessing({
+      scene: this.scene,
+      camera: this.camera,
+      renderer: this.renderer,
+      THREE: this.THREE,
+    });
+    this._initGovernor();
+
     return {
       scene: this.scene,
       camera: this.camera,
@@ -153,6 +162,7 @@ export default class SceneManager {
     this.renderer.setPixelRatio(
       Math.min(window.devicePixelRatio || 1, 2)
     );
+    this.post?.setSize(width, height);
   }
 
   setBackground(color) {

@@ -1,3 +1,4 @@
+import EngineVoice from "./EngineVoice.js";
 const DEFAULT_SETTINGS = Object.freeze({
   enabled: true,
   musicEnabled: true,
@@ -544,4 +545,34 @@ export default class AudioManager {
     this.initialized = false;
     this.musicPlaying = false;
   }
+  ensureEngineVoice() {
+    if (this.engineVoice || !this.context || !this.soundGain) return;
+    try {
+      this.engineVoice = new EngineVoice({
+        audioContext: this.context,
+        destination: this.soundGain || this.masterGain,
+      });
+    } catch (e) {
+      console.warn("[Kano Run] EngineVoice failed", e);
+    }
+  }
+
+  updateEngine(speed = 0, maxSpeed = 34) {
+    this.ensureEngineVoice();
+    if (!this.engineVoice) return;
+    if (!this.engineVoice.enabled) {
+      this.engineVoice.setEnabled(true);
+    }
+    this.engineVoice.update(
+      speed,
+      maxSpeed,
+      this.context?.currentTime ?? performance.now() / 1000
+    );
+  }
+
+  setEngineEnabled(on) {
+    this.ensureEngineVoice();
+    this.engineVoice?.setEnabled(on);
+  }
+
 }

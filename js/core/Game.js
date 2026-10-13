@@ -34,6 +34,8 @@ export default class Game {
     this.previousTime = 0;
     this.accumulator = 0;
     this.fixedDelta = 1 / 60;
+    this.timeScale = 1;
+    this.targetTimeScale = 1;
 
     this.boundFrame = this.frame.bind(this);
     this.boundResize = this.resize.bind(this);
@@ -343,6 +345,26 @@ export default class Game {
 
     this.isPaused = false;
     this.isRunning = true;
+
+    // Juice: near-miss bullet time
+    if (this.events?.on && !this._juiceBound) {
+      this._juiceBound = true;
+      this.events.on("collision:near-miss", () => {
+        this.targetTimeScale = 0.35;
+        clearTimeout(this._slowMoTimer);
+        this._slowMoTimer = setTimeout(() => {
+          this.targetTimeScale = 1;
+        }, 220);
+      });
+      this.events.on("traffic:near-miss", () => {
+        this.targetTimeScale = 0.4;
+        clearTimeout(this._slowMoTimer);
+        this._slowMoTimer = setTimeout(() => {
+          this.targetTimeScale = 1;
+        }, 180);
+      });
+    }
+
     this.previousTime = performance.now();
     this.accumulator = 0;
 
@@ -374,8 +396,14 @@ export default class Game {
     if (!this.isPaused) {
       this.accumulator += elapsed;
 
+      // Smooth time scale for near-miss slow-mo
+      this.timeScale = this.timeScale ?? 1;
+      this.targetTimeScale = this.targetTimeScale ?? 1;
+      const blend = 1 - Math.exp(-8 * elapsed);
+      this.timeScale += (this.targetTimeScale - this.timeScale) * blend;
+
       while (this.accumulator >= this.fixedDelta) {
-        this.update(this.fixedDelta);
+        this.update(this.fixedDelta * this.timeScale);
         this.accumulator -= this.fixedDelta;
       }
 
@@ -418,6 +446,23 @@ export default class Game {
       this.state.getProfile?.() ?? {},
       { autosave: true }
     );
+
+    // Engine voice follows player speed
+    try {
+      const player = this.systems.get("playerVehicle");
+      if (player && this.audio?.updateEngine) {
+        this.audio.updateEngine(
+          player.speed || 0,
+          player.preset?.maxSpeed || 34
+        );
+      }
+      // Speed-linked chromatic aberration
+      const ratio = Math.min(
+        1,
+        Math.abs(player?.speed || 0) / Math.max(1, player?.preset?.maxSpeed || 34)
+      );
+      this.sceneManager?.post?.setSpeedAberration?.(ratio);
+    } catch (e) {}
 
     this.events.emit("game:updated", { delta });
   }

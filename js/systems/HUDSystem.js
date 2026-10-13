@@ -123,6 +123,17 @@ export default class HUDSystem {
         transition: opacity .18s, transform .18s;
       }
 
+      .kano-hud-value.score-pop {
+        transform: scale(1.25);
+        color: #fbbf24 !important;
+        text-shadow: 0 0 12px rgba(251, 191, 36, 0.85);
+        transition: transform 0.12s ease-out, color 0.15s ease;
+      }
+
+      .kano-hud-value {
+        transition: transform 0.12s ease-out, color 0.15s ease;
+      }
+
       .kano-hud-message.visible {
         opacity: 1;
         transform: translateY(0);
@@ -503,14 +514,25 @@ export default class HUDSystem {
 
   updateScore(state) {
     const score = Number(
-      this.read(
-        state,
-        ["score", "tripScore", "run.score"],
+      state?.score ??
+        state?.tripScore ??
+        state?.run?.score ??
         0
-      )
-    ) || 0;
+    );
+    const rounded = Math.floor(score);
+    const el = this.elements.scoreValue;
+    const prev = this.previousValues.get("score");
 
-    this.setText("scoreValue", Math.floor(score));
+    this.setText("scoreValue", rounded);
+
+    if (el && prev !== undefined && rounded > prev) {
+      el.classList.add("score-pop");
+      clearTimeout(this._scorePopTimer);
+      this._scorePopTimer = setTimeout(() => {
+        el.classList.remove("score-pop");
+      }, 180);
+    }
+    this.previousValues.set("score", rounded);
   }
 
   updateFuel(state) {

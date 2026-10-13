@@ -12,6 +12,8 @@ export default class CameraSystem {
 
     this.camera = camera;
     this.context = ctx;
+    this.eventBus = ctx.eventBus || ctx.events || null;
+    this.playerVehicleSystem = ctx.playerVehicleSystem || ctx.playerVehicle || null;
 
     this.options = {
       followDistance: 9.0,
@@ -20,6 +22,8 @@ export default class CameraSystem {
       positionSmoothness: 4.5,
       rotationSmoothness: 5,
       fieldOfView: 58,
+      baseFov: 58,
+      maxFovBoost: 14,
       minimumHeight: 2.2,
       maximumHeight: 10,
       collisionShakeDuration: 0.35,
@@ -52,6 +56,40 @@ export default class CameraSystem {
     this.camera.fov = this.originalFov;
 
     this.camera.updateProjectionMatrix();
+  }
+
+
+  initialize(opts = {}) {
+    this.eventBus = opts.eventBus || opts.events || this.eventBus;
+    this.playerVehicleSystem =
+      opts.playerVehicleSystem ||
+      opts.playerVehicle ||
+      this.playerVehicleSystem ||
+      opts.systems?.get?.("playerVehicle") ||
+      null;
+
+    this.bindJuiceEvents();
+    return this;
+  }
+
+  bindJuiceEvents() {
+    if (!this.eventBus?.on || this._juiceBound) return;
+    this._juiceBound = true;
+
+    const onCollision = (payload = {}) => {
+      const weight = Number(payload.weight) || Number(payload.relativeSpeed) || 1;
+      const intensity = Math.min(0.85, 0.28 + weight * 0.04);
+      this.triggerCollisionShake(intensity, 0.35);
+    };
+
+    const onNearMiss = () => {
+      this.triggerCollisionShake(0.12, 0.18);
+    };
+
+    this.eventBus.on("collision:detected", onCollision);
+    this.eventBus.on("collision:player", onCollision);
+    this.eventBus.on("collision:near-miss", onNearMiss);
+    this.eventBus.on("traffic:near-miss", onNearMiss);
   }
 
   setTarget(target) {
@@ -256,22 +294,32 @@ export default class CameraSystem {
   }
 
   updateFieldOfView(deltaTime) {
-    const baseFov = this.originalFov;
-    const speedFactor = THREE.MathUtils.clamp(
-      this.targetSpeed / 30,
-      0,
-      1
+    const player =
+      this.playerVehicleSystem ||
+      this.context?.playerVehicleSystem ||
+      this.context?.systems?.get?.("playerVehicle");
+
+    const currentSpeed = Math.abs(
+      Number(player?.speed) || this.targetSpeed || 0
+    );
+    const maxSpeed = Math.max(
+      20,
+      Number(player?.preset?.maxSpeed) ||
+        Number(player?.config?.maxSpeed) ||
+        34
     );
 
-    const desiredFov = baseFov + speedFactor * 5;
-    const alpha = 1 - Math.exp(-2 * deltaTime);
+    const baseFov = this.options.baseFov ?? this.originalFov ?? 58;
+    const maxBoost = this.options.maxFovBoost ?? 14;
+    const speedRatio = THREE.MathUtils.clamp(currentSpeed / maxSpeed, 0, 1);
+    const targetFov = baseFov + speedRatio * maxBoost;
 
-    this.camera.fov = THREE.MathUtils.lerp(
+    this.camera.fov = THREE.MathUtils.damp(
       this.camera.fov,
-      desiredFov,
-      alpha
+      targetFov,
+      5.0,
+      Math.max(0.001, deltaTime)
     );
-
     this.camera.updateProjectionMatrix();
   }
 
@@ -279,35 +327,35 @@ export default class CameraSystem {
     intensity = this.options.collisionShakeIntensity,
     duration = this.options.collisionShakeDuration
   ) {
-    this.shakeIntensity = Math.max(
-      this.shakeIntensity,
-      THREE.MathUtils.clamp(intensity, 0, 2)
-    );
-
-    this.shakeDuration = Math.max(
-      this.shakeDuration,
-      duration
-    );
-
+    const i = Math.max(0, Number(intensity) || 0);
+    const d = Math.max(0, Number(duration) || 0);
+    this.shakeIntensity = Math.max(this.shakeIntensity, i);
+    this.shakeDuration = Math.max(this.shakeDuration, d);
     this.shakeTime = this.shakeDuration;
   }
 
   updateCollisionShake(deltaTime) {
-    if (this.shakeTime <= 0) {
-      return;
+    if (this.shakeDuration <= 0 && this.shakeIntensity <= 0) return;
+
+    const dt = Math.max(0.001, deltaTime);
+    this.shakeDuration = Math.max(0, this.shakeDuration - dt);
+
+    const offsetX = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+    const offsetY = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+
+    this.camera.position.x += offsetX;
+    this.camera.position.y += offsetY;
+
+    this.shakeIntensity = THREE.MathUtils.damp(
+      this.shakeIntensity,
+      0,
+      this.shakeDecay || 6,
+      dt
+    );
+
+    if (this.shakeDuration <= 0) {
+      this.shakeIntensity *= 0.85;
     }
-
-    this.shakeTime = Math.max(0, this.shakeTime - deltaTime);
-
-    const strength =
-      this.shakeIntensity *
-      (this.shakeTime / Math.max(this.shakeDuration, 0.001));
-
-    const shakeX = (Math.random() - 0.5) * strength;
-    const shakeY = (Math.random() - 0.5) * strength;
-
-    this.camera.position.x += shakeX;
-    this.camera.position.y += shakeY;
   }
 
   setFieldOfView(fov) {
