@@ -329,10 +329,12 @@ export default class PlayerVehicleSystem {
       input?.isDown?.("right") ??
       false;
 
+    // Looking along +Z: screen-left should move vehicle toward -X
+    // Invert so LEFT key/button = visual left
     const steeringAxis =
       Number(state.steeringAxis) ||
-      (right ? 1 : 0) -
-        (left ? 1 : 0);
+      (left ? 1 : 0) -
+        (right ? 1 : 0);
 
     this.isAccelerating = Boolean(accelerate);
     this.isBraking = Boolean(brake);
@@ -553,6 +555,9 @@ export default class PlayerVehicleSystem {
     this.paintColor = preset.color;
 
     this.vehicle = this._createVehicle(preset);
+
+    // Mesh nose was modeled toward -Z; travel is +Z — face forward
+    this.vehicle.rotation.y = Math.PI;
 
     this.vehicle.position.set(
       this.position.x,
@@ -836,11 +841,11 @@ export default class PlayerVehicleSystem {
   }
 
   steerLeft() {
-    this.steeringInput = -1;
+    this.steeringInput = 1; // screen left
   }
 
   steerRight() {
-    this.steeringInput = 1;
+    this.steeringInput = -1; // screen right
   }
 
   releaseSteering() {
