@@ -327,114 +327,55 @@ export default class ScenerySystem {
     this._refreshSegmentTheme(segment);
   }
 
+  /**
+   * Ground ONLY — RoadSystem owns asphalt, shoulders, sidewalks, markings.
+   * Scenery places sand/dirt below the road (y < 0) to avoid z-fighting.
+   */
   _buildGround(segment) {
     const length = this.config.segmentLength;
     const groundWidth = 180;
+    const palette = this._getPalette?.() || { ground: 0xb4a178 };
+    const groundColor = palette.ground ?? 0xb4a178;
 
+    // Full terrain under everything (below RoadSystem surface)
     const ground = this._mesh(
-      "ground",
+      "terrain",
       new THREE.PlaneGeometry(groundWidth, length),
-      makeMaterial(0xb4a178),
+      makeMaterial(groundColor, 0.98),
     );
 
     ground.rotation.x = -Math.PI / 2;
-    ground.position.set(0, -0.08, 0);
+    ground.position.set(0, -0.15, 0);
     ground.receiveShadow = true;
-
     segment.group.add(ground);
 
-    const road = this._mesh(
-      "road",
-      new THREE.PlaneGeometry(this.config.roadWidth, length),
-      makeMaterial(0x454747, 0.98),
-    );
+    // Outer dirt strips only (outside road corridor) — no overlap with RoadSystem
+    const halfRoad = this.config.roadWidth / 2 + 2.5;
+    const outerWidth = (groundWidth / 2) - halfRoad;
 
-    road.rotation.x = -Math.PI / 2;
-    road.position.set(0, 0, 0);
-    road.receiveShadow = true;
-
-    segment.group.add(road);
-
-    const shoulderWidth = 0.65;
-
-    for (const side of [-1, 1]) {
-      const shoulder = this._mesh(
-        "shoulder",
-        new THREE.PlaneGeometry(shoulderWidth, length),
-        makeMaterial(0xb0a28a),
-      );
-
-      shoulder.rotation.x = -Math.PI / 2;
-      shoulder.position.set(
-        side * (this.config.roadWidth / 2 + shoulderWidth / 2),
-        0.006,
-        0,
-      );
-
-      segment.group.add(shoulder);
-
-      const sidewalk = this._mesh(
-        "sidewalk",
-        new THREE.PlaneGeometry(this.config.sidewalkWidth, length),
-        makeMaterial(0x9d9789),
-      );
-
-      sidewalk.rotation.x = -Math.PI / 2;
-      sidewalk.position.set(
-        side *
-          (this.config.roadWidth / 2 +
-            shoulderWidth +
-            this.config.sidewalkWidth / 2),
-        0.012,
-        0,
-      );
-
-      segment.group.add(sidewalk);
-    }
-
-    this._buildLaneMarkings(segment);
-  }
-
-  _buildLaneMarkings(segment) {
-    const length = this.config.segmentLength;
-    const halfRoad = this.config.roadWidth / 2;
-
-    const edgeMaterial = makeMaterial(0xe5dfc9, 0.85);
-
-    for (const side of [-1, 1]) {
-      const line = this._mesh(
-        "edge-line",
-        new THREE.PlaneGeometry(0.12, length),
-        edgeMaterial,
-      );
-
-      line.rotation.x = -Math.PI / 2;
-      line.position.set(side * (halfRoad - 0.18), 0.025, 0);
-
-      segment.group.add(line);
-    }
-
-    const laneMaterial = makeMaterial(0xe4d9a9, 0.9);
-    const laneOffsets = [-2, 2];
-
-    for (const x of laneOffsets) {
-      for (
-        let z = -length / 2 + 3;
-        z < length / 2;
-        z += 7
-      ) {
-        const dash = this._mesh(
-          "lane-dash",
-          new THREE.PlaneGeometry(0.075, 3.4),
-          laneMaterial,
+    if (outerWidth > 4) {
+      for (const side of [-1, 1]) {
+        const strip = this._mesh(
+          "outer-ground",
+          new THREE.PlaneGeometry(outerWidth, length),
+          makeMaterial(groundColor, 0.97),
         );
-
-        dash.rotation.x = -Math.PI / 2;
-        dash.position.set(x, 0.028, z);
-
-        segment.group.add(dash);
+        strip.rotation.x = -Math.PI / 2;
+        strip.position.set(
+          side * (halfRoad + outerWidth / 2),
+          -0.12,
+          0,
+        );
+        strip.receiveShadow = true;
+        segment.group.add(strip);
       }
     }
+
+    // Intentionally NO road / shoulder / sidewalk / lane markings here.
+  }
+
+  _buildLaneMarkings(_segment) {
+    // Deprecated — RoadSystem owns lane markings. Kept as no-op for safety.
   }
 
   _buildRoadside(segment) {
@@ -448,9 +389,9 @@ export default class ScenerySystem {
         localZ < length / 2;
         localZ += spacing
       ) {
-        if (Math.random() > 0.92) continue;
+        if (Math.random() > 0.78) continue;
 
-        const x = side * randomBetween(10, 26);
+        const x = side * randomBetween(9, 24);
         const z = localZ + randomBetween(-1.5, 1.5);
         const roll = Math.random();
 
