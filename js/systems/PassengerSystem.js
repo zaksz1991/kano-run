@@ -5,8 +5,16 @@ const PASSENGER_MODELS = [
   "/assets/models/pedestrian-passengers/passenger.glb",
   "/assets/models/pedestrian-passengers/pedestrian.glb",
   "/assets/models/pedestrian-passengers/hijab_muslim_woman.glb",
+  "/assets/models/pedestrian-passengers/women_in_hijab.glb",
+  "/assets/models/pedestrian-passengers/muslim_girl.glb",
   "/assets/models/pedestrian-passengers/Man.glb",
   "/assets/models/pedestrian-passengers/Man in Suit.glb",
+  "/assets/models/pedestrian-passengers/Man in Long Sleeves.glb",
+  "/assets/models/pedestrian-passengers/isi_agu_igbo_traditional_wear.glb",
+  "/assets/models/pedestrian-passengers/tekamist_mens_attire_and_tagulemust-_turban.glb",
+  "/assets/models/pedestrian-passengers/woman with her arms crossed.glb",
+  "/assets/models/pedestrian-passengers/keke female.glb",
+  "/assets/models/city-pack/Animated Woman.glb",
 ];
 
 const DESTINATIONS = [
@@ -122,7 +130,7 @@ export default class PassengerSystem {
   async _cacheModel(path) {
     if (this.modelCache.has(path)) return path;
     try {
-      const gltf = await this.loader.loadAsync(path);
+      const gltf = await this.loader.loadAsync(encodeURI(path));
       const model = gltf.scene;
       model.traverse((object) => {
         if (object.isMesh) {
@@ -460,8 +468,6 @@ export default class PassengerSystem {
 
     // Exit animation: detach from keke and walk to roadside
     this._startExitAnimation(player, trip.destination);
-
-    this._emit("passenger:dropping", { fare, distance });
 
     this.activePassenger = null;
     this.totalDroppedOff += 1;

@@ -1,31 +1,39 @@
-# Kano Run upgrade pack 13 — faster load + assets
+# Kano Run — real asset wiring pack
 
-## Features
-1. **BootLoader** — priority GLBs first, rest in background
-2. **AssetCatalog** — city-kit / city-pack / character paths
-3. **PassengerSystem** — 1 model first; `boarding` / `dropping` events for hold
-4. Pack 12 systems included: orientation, hold, pedestrians, Naija, mobile title
+Uses **exact paths** from your `model-inventory.txt`.
+
+## What gets used
+
+| Folder | In-game use |
+|--------|-------------|
+| `keke/` | Player + traffic keke variants |
+| `car-kit/` | Sedan, taxi, truck, van, SUV, police, ambulance… |
+| `cars-bundle/` | Extra cars / police / sports |
+| `city-kit-suburban/` | Roadside houses (a–u) + trees/fences |
+| `city-kit-industrial/` | Factories, tanks, containers (Sharada theme) |
+| `city-kit-roads/` | Lights, poles, signs, dumpsters |
+| `city-pack/` | Big buildings, bus stop, billboard, bench, tree… |
+| `pedestrian-passengers/` | Hausa/Igbo attire, hijab, suit, drivers |
 
 ## Install
 ```bat
 cd C:\Users\DELL\Documents\GitHub\kano-run
-copy /Y path\to\kano-upgrade13\index.html index.html
-copy /Y path\to\kano-upgrade13\js\core\*.js js\core\
-copy /Y path\to\kano-upgrade13\js\systems\*.js js\systems\
+copy /Y path\to\kano-assets\js\core\AssetCatalog.js js\core\
+copy /Y path\to\kano-assets\js\systems\ScenerySystem.js js\systems\
+copy /Y path\to\kano-assets\js\systems\PassengerSystem.js js\systems\
+copy /Y path\to\kano-assets\js\systems\VehicleSystem.js js\systems\
 npm.cmd run build
 npm.cmd run dev
 ```
 
-### Wire BootLoader in Main.js (recommended)
-```js
-import BootLoader from "./BootLoader.js";
-import { attachTitleBridge } from "./TitleBridge.js";
+Spaces in filenames are handled with `encodeURI` / `modelUrl()`.
 
-const boot = new BootLoader({ eventBus });
-const bar = document.getElementById("loading-progress");
-await boot.loadPriority((p) => { if (bar) bar.style.width = Math.round(p * 55) + "%"; });
-boot.loadBackground((p) => { if (bar) bar.style.width = Math.round(55 + p * 45) + "%"; });
-attachTitleBridge(eventBus);
-```
+## Themes
+- Default / city centre → suburban + city-pack buildings  
+- Industrial district → city-kit-industrial  
+- Market → pizza corner, red/green buildings + props  
 
-Match GLB filenames under public/assets/models/ to AssetCatalog if any 404.
+## Test
+1. Drive — varied buildings on both sides (not empty fog)  
+2. Traffic includes van/SUV/pickup/keke if VehicleSystem applied  
+3. Passengers include hijab / Igbo wear / turban models  
