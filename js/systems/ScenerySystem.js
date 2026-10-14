@@ -1,14 +1,12 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import {
-  MODEL_PATHS,
-  modelUrl,
-  buildingsForTheme,
-  propsForTheme,
-} from "../core/AssetCatalog.js";
+import { modelCache } from "../core/SmartModelCache.js";
+import { MODEL_PATHS } from "../core/AssetCatalog.js";
 
 /**
- * Dense Kano roadside using YOUR real GLBs from public/assets/models.
+ * Realistic scenery using curated GLBs.
+ * - initialize() only warms a SMALL set (fast)
+ * - segments spawn clones from cache
+ * - more models stream in background after start
  */
 export default class ScenerySystem {
   constructor({ scene, eventBus = null, config = {} } = {}) {
@@ -17,55 +15,58 @@ export default class ScenerySystem {
     this.eventBus = eventBus;
     this.config = {
       segmentLength: 48,
-      segmentsAhead: 10,
+      segmentsAhead: 8,
       segmentsBehind: 2,
-      buildingDensity: 0.85,
-      propDensity: 0.7,
-      sideOffset: 16,
+      buildingDensity: 0.8,
+      propDensity: 0.55,
+      sideOffset: 15,
       ...config,
     };
-
-    this.loader = new GLTFLoader();
-    this.cache = new Map();
-    this.failed = new Set();
     this.segments = [];
-    this.currentTheme = "city";
     this.initialized = false;
-    this._anchorZ = 0;
+    this.currentTheme = "city";
     this.disposers = [];
-    this.sharedGeometries = new Map();
-    this.sharedMaterials = new Map();
+    this._mat = {
+      road: new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 0.95 }),
+      dirt: new THREE.MeshStandardMaterial({ color: 0x3f4a36, roughness: 1 }),
+    };
+    this._geo = {
+      road: new THREE.PlaneGeometry(11, this.config.segmentLength),
+      dirt: new THREE.PlaneGeometry(40, this.config.segmentLength),
+    };
 
-    this._subscribe("game:started", () => this.reset(0));
+    this._subscribe("game:started", () => {
+      // Background: expand variety without blocking
+      modelCache.warmBackground(
+        [...MODEL_PATHS.buildingsMore, ...MODEL_PATHS.propsMore],
+        2,
+      );
+      this.reset(0);
+    });
     this._subscribe("game:stopped", () => this.clear());
     this._subscribe("scenery:theme", (p) => {
       this.currentTheme = p?.theme || "city";
     });
-    this._subscribe("world:districtChanged", (p) => {
-      const d = String(p?.district || p?.theme || "").toLowerCase();
-      if (d.includes("industrial") || d.includes("sharada") || d.includes("bompai")) {
-        this.currentTheme = "industrial";
-      } else if (d.includes("sabon") || d.includes("market") || d.includes("kurmi")) {
-        this.currentTheme = "market";
-      } else {
-        this.currentTheme = "city";
-      }
-    });
   }
 
   async initialize() {
-    // Warm a few common assets (non-blocking full set)
-    const warm = [
-      ...buildingsForTheme("city").slice(0, 4),
-      ...propsForTheme().slice(0, 4),
+    // ONLY boot set — not entire city-kit
+    const boot = [
+      ...MODEL_PATHS.buildingsBoot.slice(0, 6),
+      ...MODEL_PATHS.propsBoot.slice(0, 4),
     ];
-    await Promise.allSettled(warm.map((p) => this._load(p)));
+    await modelCache.warm(boot, (path, ok) => {
+      if (!ok) console.warn("[Scenery] miss", path);
+    });
     this.initialized = true;
     this.reset(0);
+    console.info(
+      `[ScenerySystem] Ready with ${boot.length} curated GLBs (more stream after start).`,
+    );
     return this;
   }
 
-  update(deltaTime, playerZ = 0) {
+  update(_dt, playerZ = 0) {
     if (!this.initialized) return;
     const z = Number(playerZ) || 0;
     this._recycle(z);
@@ -74,22 +75,38 @@ export default class ScenerySystem {
 
   reset(playerZ = 0) {
     this.clear();
-    this._anchorZ = playerZ;
     this._ensureAhead(playerZ);
   }
 
   clear() {
-    for (const seg of this.segments) {
-      this.scene.remove(seg.group);
-    }
+    for (const s of this.segments) this.scene.remove(s.group);
     this.segments = [];
+  }
+
+  _buildingPaths() {
+    const boot = MODEL_PATHS.buildingsBoot;
+    const more = MODEL_PATHS.buildingsMore.filter((p) => modelCache.has(p));
+    if (this.currentTheme === "industrial") {
+      return [
+        ...boot,
+        ...more.filter((p) => p.includes("industrial")),
+      ];
+    }
+    return [...boot, ...more];
+  }
+
+  _propPaths() {
+    return [
+      ...MODEL_PATHS.propsBoot,
+      ...MODEL_PATHS.propsMore.filter((p) => modelCache.has(p)),
+    ];
   }
 
   _recycle(playerZ) {
     const minZ = playerZ - this.config.segmentLength * this.config.segmentsBehind;
-    this.segments = this.segments.filter((seg) => {
-      if (seg.z + this.config.segmentLength < minZ) {
-        this.scene.remove(seg.group);
+    this.segments = this.segments.filter((s) => {
+      if (s.z + this.config.segmentLength < minZ) {
+        this.scene.remove(s.group);
         return false;
       }
       return true;
@@ -98,171 +115,74 @@ export default class ScenerySystem {
 
   _ensureAhead(playerZ) {
     const maxZ = playerZ + this.config.segmentLength * this.config.segmentsAhead;
-    let farthest = this.segments.reduce(
+    let far = this.segments.reduce(
       (m, s) => Math.max(m, s.z),
       playerZ - this.config.segmentLength,
     );
-    while (farthest < maxZ) {
-      farthest += this.config.segmentLength;
-      this._spawnSegment(farthest);
+    while (far < maxZ) {
+      far += this.config.segmentLength;
+      this._spawn(far);
     }
   }
 
-  _spawnSegment(z) {
+  _spawn(z) {
     const group = new THREE.Group();
-    group.name = `scenery-${z}`;
     group.position.z = z;
 
-    // Ground strip
-    const ground = new THREE.Mesh(
-      this._geo("ground", () => new THREE.PlaneGeometry(40, this.config.segmentLength)),
-      this._mat("ground", 0x3d4a3a),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.02;
-    ground.receiveShadow = true;
-    group.add(ground);
-
-    // Road surface
-    const road = new THREE.Mesh(
-      this._geo("road", () => new THREE.PlaneGeometry(11, this.config.segmentLength)),
-      this._mat("road", 0x2a2e33),
-    );
+    const road = new THREE.Mesh(this._geo.road, this._mat.road);
     road.rotation.x = -Math.PI / 2;
     road.position.y = 0.01;
     road.receiveShadow = true;
     group.add(road);
 
-    const props = [];
-    this._placeBuildings(group, props);
-    this._placeProps(group, props);
+    const dirt = new THREE.Mesh(this._geo.dirt, this._mat.dirt);
+    dirt.rotation.x = -Math.PI / 2;
+    dirt.position.y = -0.02;
+    dirt.receiveShadow = true;
+    group.add(dirt);
 
-    this.scene.add(group);
-    this.segments.push({ z, group, props });
-  }
-
-  _placeBuildings(group, props) {
-    const paths = buildingsForTheme(this.currentTheme);
-    if (!paths.length) return;
-    const slots = 5;
-    const len = this.config.segmentLength;
+    const buildings = this._buildingPaths();
+    const slots = 4;
     for (let i = 0; i < slots; i++) {
-      const localZ = -len / 2 + (i + 0.5) * (len / slots);
+      const lz =
+        -this.config.segmentLength / 2 +
+        (i + 0.5) * (this.config.segmentLength / slots);
       for (const side of [-1, 1]) {
         if (Math.random() > this.config.buildingDensity) continue;
-        const path = paths[Math.floor(Math.random() * paths.length)];
-        const inst = this._instance(path, 8 + Math.random() * 6);
-        if (!inst) {
-          this._boxBuilding(group, props, side, localZ);
-          continue;
+        const path = buildings[Math.floor(Math.random() * buildings.length)];
+        const inst = modelCache.clone(path, 6 + Math.random() * 5);
+        if (inst) {
+          inst.position.set(
+            side * (this.config.sideOffset + Math.random() * 2),
+            0,
+            lz,
+          );
+          inst.rotation.y = side < 0 ? 0 : Math.PI;
+          group.add(inst);
         }
-        inst.position.set(
-          side * (this.config.sideOffset + Math.random() * 3),
-          0,
-          localZ,
-        );
-        inst.rotation.y = side < 0 ? 0.1 : Math.PI - 0.1;
-        group.add(inst);
-        props.push({ type: "building", mesh: inst });
       }
     }
-  }
 
-  _placeProps(group, propsList) {
-    const paths = propsForTheme(this.currentTheme);
-    const count = 3 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < count; i++) {
+    const props = this._propPaths();
+    const propCount = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < propCount; i++) {
       if (Math.random() > this.config.propDensity) continue;
-      const path = paths[Math.floor(Math.random() * paths.length)];
-      const inst = this._instance(path, 2 + Math.random() * 3);
+      const path = props[Math.floor(Math.random() * props.length)];
+      const h = path.includes("Tree") || path.includes("tree") ? 4 : 2.2;
+      const inst = modelCache.clone(path, h);
       if (!inst) continue;
       const side = Math.random() > 0.5 ? 1 : -1;
       inst.position.set(
-        side * (10 + Math.random() * 5),
+        side * (9 + Math.random() * 4),
         0,
-        (Math.random() - 0.5) * this.config.segmentLength * 0.9,
+        (Math.random() - 0.5) * this.config.segmentLength * 0.85,
       );
       inst.rotation.y = Math.random() * Math.PI * 2;
       group.add(inst);
-      propsList.push({ type: "prop", mesh: inst });
     }
-  }
 
-  _boxBuilding(group, props, side, z) {
-    const h = 4 + Math.random() * 8;
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(6, h, 6),
-      this._mat("bldg", 0xc4b59a),
-    );
-    mesh.position.set(side * this.config.sideOffset, h / 2, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    group.add(mesh);
-    props.push({ type: "building", mesh });
-  }
-
-  _instance(path, targetHeight = 5) {
-    const gltf = this.cache.get(path);
-    if (!gltf) {
-      this._load(path);
-      return null;
-    }
-    const root = gltf.scene.clone(true);
-    const box = new THREE.Box3().setFromObject(root);
-    const size = box.getSize(new THREE.Vector3());
-    const h = size.y || 1;
-    const scale = targetHeight / h;
-    root.scale.setScalar(scale);
-    const box2 = new THREE.Box3().setFromObject(root);
-    root.position.y -= box2.min.y;
-    root.traverse((c) => {
-      if (c.isMesh) {
-        c.castShadow = true;
-        c.receiveShadow = true;
-      }
-    });
-    return root;
-  }
-
-  _load(path) {
-    if (this.cache.has(path) || this.failed.has(path)) {
-      return Promise.resolve(this.cache.get(path) || null);
-    }
-    return new Promise((resolve) => {
-      this.loader.load(
-        modelUrl(path),
-        (gltf) => {
-          this.cache.set(path, gltf);
-          resolve(gltf);
-        },
-        undefined,
-        () => {
-          this.failed.add(path);
-          console.warn("[ScenerySystem] missing", path);
-          resolve(null);
-        },
-      );
-    });
-  }
-
-  _geo(key, factory) {
-    if (!this.sharedGeometries.has(key)) this.sharedGeometries.set(key, factory());
-    return this.sharedGeometries.get(key);
-  }
-
-  _mat(key, color) {
-    const k = `${key}-${color}`;
-    if (!this.sharedMaterials.has(k)) {
-      this.sharedMaterials.set(
-        k,
-        new THREE.MeshStandardMaterial({
-          color,
-          roughness: 0.9,
-          flatShading: true,
-        }),
-      );
-    }
-    return this.sharedMaterials.get(k);
+    this.scene.add(group);
+    this.segments.push({ z, group });
   }
 
   _subscribe(name, handler) {
