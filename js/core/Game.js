@@ -371,6 +371,8 @@ export default class Game {
       ["intro", () => import("../systems/IntroSystem.js")],
       ["negotiation", () => import("../systems/NegotiationSystem.js")],
       ["checkpoint", () => import("../systems/CheckpointSystem.js")],
+      ["chase", () => import("../systems/ChaseSystem.js")],
+      ["landmarks", () => import("../systems/LandmarkSystem.js")],
     ];
 
     for (const [name, loadModule] of criticalSystems) {
@@ -578,6 +580,9 @@ export default class Game {
 
             case "passengers":
             case "checkpoint":
+            case "chase":
+            case "landmarks":
+            case "weather":
               system.update?.(delta, playerZ, speed);
               break;
 

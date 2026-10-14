@@ -66,8 +66,51 @@ export default class WeatherSystem {
     this.gripMultiplier = 1.0;
     this.enabled = false;
     this._disposers = [];
+    this._dust = null;
+    this._dustGeo = null;
+    this._clock = 0;
     
     this._bindEvents();
+  }
+
+  _ensureDust() {
+    if (this._dust || !this.scene) return;
+    const count = 400;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 60;
+      positions[i * 3 + 1] = Math.random() * 12 + 0.5;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xd4c4a8,
+      size: 0.35,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+    });
+    this._dust = new THREE.Points(geo, mat);
+    this._dust.name = "harmattan-dust";
+    this._dust.visible = false;
+    this._dustGeo = geo;
+    this.scene.add(this._dust);
+  }
+
+  _updateDust(dt, playerZ = 0) {
+    if (!this._dust) return;
+    const harmattan = this.targetWeather === "harmattan" || this.currentWeather === "harmattan";
+    this._dust.visible = harmattan;
+    if (!harmattan) return;
+    this._dust.position.z = playerZ;
+    const pos = this._dustGeo.attributes.position.array;
+    for (let i = 0; i < pos.length; i += 3) {
+      pos[i] += (Math.random() - 0.5) * 0.15;
+      pos[i + 2] -= 4 * dt;
+      if (pos[i + 2] < -40) pos[i + 2] = 40;
+    }
+    this._dustGeo.attributes.position.needsUpdate = true;
   }
 
   _bindEvents() {
@@ -89,7 +132,11 @@ export default class WeatherSystem {
 
   initialize() {
     this.enabled = true;
-    this.setWeather(this.config.initialWeather || WEATHER_TYPES.CLEAR, true); // true = instant
+    this._ensureDust();
+    // Kano dry season bias: start clear, chance of harmattan later
+    this.setWeather(this.config.initialWeather || WEATHER_TYPES.CLEAR, true);
+    // Schedule mild harmattan during long runs
+    this._harmattanTimer = 45 + Math.random() * 40;
   }
 
   setWeather(type, instant = false) {
@@ -112,8 +159,23 @@ export default class WeatherSystem {
     this.eventBus?.emit?.("weather:changed", { type, instant });
   }
 
-  update(deltaTime) {
+  update(deltaTime, playerZ = 0) {
     if (!this.enabled) return;
+
+    const dt = Math.min(Number(deltaTime) || 0, 0.1);
+    this._clock = (this._clock || 0) + dt;
+    this._updateDust(dt, Number(playerZ) || 0);
+
+    if (typeof this._harmattanTimer === "number") {
+      this._harmattanTimer -= dt;
+      if (this._harmattanTimer <= 0 && this.currentWeather === WEATHER_TYPES.CLEAR) {
+        this.setWeather(WEATHER_TYPES.HARMATTAN, false);
+        this._harmattanTimer = 90 + Math.random() * 60;
+      } else if (this._harmattanTimer <= 0 && this.currentWeather === WEATHER_TYPES.HARMATTAN) {
+        this.setWeather(WEATHER_TYPES.CLEAR, false);
+        this._harmattanTimer = 50 + Math.random() * 40;
+      }
+    }
 
     if (this.transitionProgress < 1.0) {
       this.transitionTimer += deltaTime;

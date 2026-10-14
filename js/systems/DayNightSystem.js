@@ -56,7 +56,7 @@ export default class DayNightSystem {
     ambientLight = null,
     sunLight = null,
     eventBus = null,
-    cycleDuration = 180000,
+    cycleDuration = 120000,
     initialHour = 8,
     autoCycle = true,
   } = {}) {
@@ -76,6 +76,31 @@ export default class DayNightSystem {
 
     this.applyLighting();
     this.emit("time:initialized", this.getSnapshot());
+  }
+
+
+  initialize(options = {}) {
+    if (options && typeof options === "object") {
+      if (options.scene) this.scene = options.scene;
+      if (options.renderer) this.renderer = options.renderer;
+      if (options.eventBus) this.eventBus = options.eventBus;
+      if (options.ambientLight) this.ambientLight = options.ambientLight;
+      if (options.sunLight) this.sunLight = options.sunLight;
+    }
+
+    if (this.scene && (!this.ambientLight || !this.sunLight)) {
+      this.scene.traverse((obj) => {
+        if (!this.ambientLight && obj.isAmbientLight) {
+          this.ambientLight = obj;
+        }
+        if (!this.sunLight && obj.isDirectionalLight) {
+          this.sunLight = obj;
+        }
+      });
+    }
+
+    this.applyLighting();
+    return this;
   }
 
   normalizeHour(hour) {
