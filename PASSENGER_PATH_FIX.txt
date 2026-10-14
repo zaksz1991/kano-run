@@ -1,0 +1,3 @@
+If console shows Failed to load isi_agu_igbo_traditional_wear.glb:
+In PassengerSystem.js ensure load uses encodeURI(path) for names with spaces.
+Real file: /assets/models/pedestrian-passengers/isi_agu_igbo_traditional_wear.glb

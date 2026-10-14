@@ -1,39 +1,22 @@
-# Kano Run — real asset wiring pack
+# Kano Run — new title screen
 
-Uses **exact paths** from your `model-inventory.txt`.
+## Changes
+- Full-bleed Kano street hero (brand/keke-street.webp)
+- Gold START button (game-like, not flat cyan card)
+- Live status text under button while systems load
+- Progress bar advances during long init (scenery / checkpoint)
+- Garage + Naija Challenge secondary actions
 
-## What gets used
-
-| Folder | In-game use |
-|--------|-------------|
-| `keke/` | Player + traffic keke variants |
-| `car-kit/` | Sedan, taxi, truck, van, SUV, police, ambulance… |
-| `cars-bundle/` | Extra cars / police / sports |
-| `city-kit-suburban/` | Roadside houses (a–u) + trees/fences |
-| `city-kit-industrial/` | Factories, tanks, containers (Sharada theme) |
-| `city-kit-roads/` | Lights, poles, signs, dumpsters |
-| `city-pack/` | Big buildings, bus stop, billboard, bench, tree… |
-| `pedestrian-passengers/` | Hausa/Igbo attire, hijab, suit, drivers |
+## Why LOADING stuck before
+Console showed checkpoint ~70s and scenery ~7s. The button said LOADING with no feedback.
+Main.js now shows status messages so users know it is still working.
 
 ## Install
 ```bat
 cd C:\Users\DELL\Documents\GitHub\kano-run
-copy /Y path\to\kano-assets\js\core\AssetCatalog.js js\core\
-copy /Y path\to\kano-assets\js\systems\ScenerySystem.js js\systems\
-copy /Y path\to\kano-assets\js\systems\PassengerSystem.js js\systems\
-copy /Y path\to\kano-assets\js\systems\VehicleSystem.js js\systems\
+copy /Y path\to\kano-title\index.html index.html
+copy /Y path\to\kano-title\js\core\Main.js js\core\Main.js
 npm.cmd run build
-npm.cmd run dev
 ```
 
-Spaces in filenames are handled with `encodeURI` / `modelUrl()`.
-
-## Themes
-- Default / city centre → suburban + city-pack buildings  
-- Industrial district → city-kit-industrial  
-- Market → pizza corner, red/green buildings + props  
-
-## Test
-1. Drive — varied buildings on both sides (not empty fog)  
-2. Traffic includes van/SUV/pickup/keke if VehicleSystem applied  
-3. Passengers include hijab / Igbo wear / turban models  
+Deploy to Vercel after push.

@@ -130,6 +130,8 @@ class KanoRunApp {
       this.startButton.textContent = "LOADING...";
       this.startButton.style.opacity = "0.65";
     }
+    this.setStatus("Loading world… this can take a minute on first run");
+    this.setProgress(8);
 
     this.hideError();
 
@@ -145,12 +147,35 @@ class KanoRunApp {
       }
 
       console.log("[Kano Run] Calling game.initialize()...");
-      await this.game.initialize();
+      this.setStatus("Initializing systems…");
+      this.setProgress(15);
+
+      // Progress pulse while init runs (checkpoint can be slow)
+      let fake = 15;
+      const pulse = setInterval(() => {
+        fake = Math.min(88, fake + 2);
+        this.setProgress(fake);
+        if (fake > 40) this.setStatus("Loading scenery & vehicles…");
+        if (fake > 70) this.setStatus("Almost ready…");
+      }, 800);
+
+      const initPromise = this.game.initialize();
+      // Soft timeout warning only — do not kill init
+      const warn = setTimeout(() => {
+        this.setStatus("Still loading large assets — please wait…");
+      }, 20000);
+
+      await initPromise;
+      clearInterval(pulse);
+      clearTimeout(warn);
+      this.setProgress(92);
+      this.setStatus("Starting run…");
       console.log("[Kano Run] game.initialize() finished. Calling game.start()...");
 
       if (this.destroyed) return;
 
       await this.game.start();
+      this.setProgress(100);
       console.log("[Kano Run] game.start() finished successfully.");
 
       if (this.destroyed) return;
@@ -174,6 +199,7 @@ class KanoRunApp {
 
       this.started = false;
       this.setStartButton("TRY AGAIN", false);
+      this.setStatus("Load failed — try again");
       this.showError(error);
     }
   }
