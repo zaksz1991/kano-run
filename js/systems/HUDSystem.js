@@ -732,6 +732,56 @@ export default class HUDSystem {
     }
   }
 
+
+  _renderMissions(list = []) {
+    const el = this.elements.missionsList;
+    if (!el) return;
+    if (!list.length) {
+      el.innerHTML = '<div style="opacity:0.7">No active missions</div>';
+      return;
+    }
+    el.innerHTML = list
+      .map((m) => {
+        const pct = Math.min(100, Math.round(Number(m.progressPercent) || 0));
+        const done = m.completed ? "✓ " : "";
+        let claim = "";
+        if (m.completed && !m.claimed) {
+          claim =
+            '<button data-claim="' +
+            m.id +
+            '" style="margin-top:6px;padding:6px 10px;border:0;border-radius:6px;background:#fbbf24;color:#422006;font-weight:700;font-size:11px;cursor:pointer">Claim ₦' +
+            (m.moneyReward || 0) +
+            "</button>";
+        } else if (m.claimed) {
+          claim =
+            '<div style="margin-top:4px;color:#4ade80;font-size:11px">Claimed</div>';
+        }
+        return (
+          '<div style="margin-bottom:10px" data-mission="' +
+          m.id +
+          '"><div>' +
+          done +
+          (m.description || m.templateId || "Mission") +
+          '</div><div style="height:6px;background:#1e293b;border-radius:4px;margin-top:4px"><div style="height:100%;width:' +
+          pct +
+          '%;background:#22c55e;border-radius:4px"></div></div>' +
+          claim +
+          "</div>"
+        );
+      })
+      .join("");
+
+    el.querySelectorAll("[data-claim]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-claim");
+        this.eventBus?.emit?.("mission:claim", { missionId: id });
+        btn.disabled = true;
+        btn.textContent = "Claiming…";
+      });
+    });
+  }
+
   dispose() {
     clearTimeout(this.timers.notification);
 

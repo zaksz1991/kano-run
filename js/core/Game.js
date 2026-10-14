@@ -406,6 +406,7 @@ export default class Game {
       ["minimap", () => import("../systems/MinimapSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
       ["lifeSaver", () => import("../systems/LifeSaverSystem.js")],
+      ["billboardAds", () => import("../systems/BillboardAdSystem.js")],
       ["touchControls", () => import("../systems/TouchControlsSystem.js")],
       ["pause", () => import("../systems/PauseSystem.js")],
       ["gameOver", () => import("../systems/GameOverSystem.js")],

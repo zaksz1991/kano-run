@@ -287,6 +287,7 @@ export default class ScenerySystem {
 
   update(deltaTime, playerZ = this.playerZ) {
     if (!this.initialized) return;
+    // billboard proximity checked when z known
 
     const dt = Math.max(
       0,
@@ -786,6 +787,24 @@ export default class ScenerySystem {
     }
 
     return this.sharedMaterials.get(materialKey);
+  }
+
+  _checkBillboardProximity(playerZ) {
+    const z = Number(playerZ) || 0;
+    for (const segment of this.segments || []) {
+      for (const prop of segment.props || []) {
+        if (prop.type !== "billboard" || !prop.mesh) continue;
+        const worldZ = (segment.group?.position?.z || 0) + (prop.mesh.position?.z || 0);
+        const dist = Math.abs(worldZ - z);
+        if (dist < 18 && !prop._adFired) {
+          prop._adFired = true;
+          this.eventBus?.emit?.("billboard:nearby", {
+            ad: prop.mesh.userData?.ad,
+            z: worldZ,
+          });
+        }
+      }
+    }
   }
 
   dispose() {
