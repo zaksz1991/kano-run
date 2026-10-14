@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-const MAX_PARTICLES = 1500;
+const MAX_PARTICLES = 400;
 
 /**
  * GPU-resident particle system — one Points mesh, ring-buffer pool, zero per-frame alloc.

@@ -75,7 +75,7 @@ export default class WeatherSystem {
 
   _ensureDust() {
     if (this._dust || !this.scene) return;
-    const count = 400;
+    const count = 180;
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       positions[i * 3] = (Math.random() - 0.5) * 60;

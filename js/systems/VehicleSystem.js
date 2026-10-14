@@ -21,26 +21,18 @@ const DEFAULTS = {
  * City-pack motorcycle and keke GLBs need 0.
  */
 const MODEL_YAW = {
-  // Travel is +Z. Most car-kit models need Math.PI.
-  // If a type still looks reversed in playtest, flip only that entry.
-  car: Math.PI,
-  car1: Math.PI,
-  car2: Math.PI,
-  taxi: Math.PI,
-  bus: Math.PI,
-  truck: Math.PI,
-  police: Math.PI,
-  karota: Math.PI,
-  // City-pack bikes/kekes often need the opposite of car-kit.
-  // Previous build used 0 and still looked reversed — force PI + child flip below.
-  motorcycle: Math.PI,
-  keke: Math.PI,
-  keke1: Math.PI,
-  keke2: Math.PI,
-  keke3: Math.PI,
-  keke4: Math.PI,
-  keke5: Math.PI,
+  // Traffic travels +Z. Default body yaw is Math.PI.
+  // Keke/motorcycle GLBs often face opposite — use 0 absolute via flag.
+  motorcycle: "flip",
+  keke: "flip",
+  car: "normal", car1: "normal", car2: "normal", taxi: "normal",
+  bus: "normal", truck: "normal", police: "normal", karota: "normal",
+  van: "normal", suv: "normal", pickup: "normal", delivery: "normal",
 };
+function facingYaw(type) {
+  // flip = nose +Z with yaw 0; normal = nose +Z with yaw PI
+  return MODEL_YAW[type] === "flip" ? 0 : Math.PI;
+}
 
 const MODEL_CHILD_FLIP = new Set([
   "motorcycle", "keke", "keke1", "keke2", "keke3", "keke4", "keke5",
@@ -281,7 +273,7 @@ export default class VehicleSystem {
 
     vehicle.group.position.set(this._laneX(lane), 0, z);
     // Per-type yaw — do not use Math.PI for every model
-    vehicle.group.rotation.y = MODEL_YAW[vehicleType] ?? Math.PI;
+    vehicle.group.rotation.y = facingYaw(vehicleType);
 
     this.vehicles.set(vehicle.id, vehicle);
     this.scene.add(vehicle.group);
@@ -368,12 +360,7 @@ export default class VehicleSystem {
       if (Math.abs(dz) > 1e-5) {
         const base = dz >= 0 ? Math.PI : 0;
         const yaw = base + (MODEL_YAW[vehicle.type] ?? 0);
-        vehicle.group.rotation.y = THREE.MathUtils.damp(
-          vehicle.group.rotation.y,
-          yaw,
-          10,
-          dt,
-        );
+        vehicle.group.rotation.y = facingYaw(vehicleType);
       }
 
       this._avoidVehicleAhead(vehicle, dt);
@@ -575,24 +562,59 @@ export default class VehicleSystem {
 
   _createFallbackVehicle(type, spec) {
     const group = new THREE.Group();
-    group.name = `traffic-fallback-${type}`;
+    const color = Array.isArray(spec.color) ? spec.color[Math.floor(Math.random() * spec.color.length)] : (spec.color || 0x888888);
+    const mat = new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.8 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x111827, flatShading: true });
+    const w = spec.width || 1.6;
+    const h = spec.height || 1.4;
+    const L = spec.length || 3.5;
 
-    const color = choose(spec.color);
-    const bodyMaterial = new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.85,
-      metalness: 0.0,
-      flatShading: true,
+    if (type === "motorcycle") {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 1.6), mat);
+      body.position.y = 0.55;
+      group.add(body);
+      for (const z of [0.55, -0.55]) {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.12, 10), dark);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(0, 0.28, z);
+        group.add(wheel);
+      }
+    } else if (type === "keke") {
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.85, 1.2), mat);
+      cabin.position.set(0, 0.75, 0.25);
+      group.add(cabin);
+      const rear = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.75, 0.95), mat);
+      rear.position.set(0, 0.7, -0.7);
+      group.add(rear);
+      const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.08, 1.4), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+      canopy.position.set(0, 1.35, -0.2);
+      group.add(canopy);
+      for (const [x, z] of [[0, 0.85], [-0.45, -0.85], [0.45, -0.85]]) {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.14, 10), dark);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(x, 0.28, z);
+        group.add(wheel);
+      }
+    } else {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.7, L), mat);
+      body.position.y = h * 0.45;
+      group.add(body);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, h * 0.45, L * 0.4), mat);
+      cabin.position.set(0, h * 0.85, L * 0.1);
+      group.add(cabin);
+      for (const [x, z] of [[-w * 0.4, L * 0.35], [w * 0.4, L * 0.35], [-w * 0.4, -L * 0.35], [w * 0.4, -L * 0.35]]) {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.18, 8), dark);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(x, 0.28, z);
+        group.add(wheel);
+      }
+    }
+    group.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = true;
+        c.receiveShadow = true;
+      }
     });
-
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(spec.width, spec.height * 0.6, spec.length),
-      bodyMaterial,
-    );
-    body.position.y = spec.height * 0.3;
-    body.castShadow = true;
-    group.add(body);
-
     return { group };
   }
 

@@ -48,7 +48,7 @@ export const GAME_CONFIG = Object.freeze({
   },
 
   economy: {
-    startingMoney: 2500,
+    startingMoney: 30000,
     baseFare: 300,
     farePerKilometer: 180,
     minimumFare: 200,

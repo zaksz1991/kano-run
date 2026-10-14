@@ -1,20 +1,18 @@
-# Title v2 — 3D keke + fix setStatus crash
+# Kano Run fix pack 16
 
-## Fixes
-- `this.setStatus is not a function` — Main.js always defines setStatus / setProgress
-- Front page: **no photo background**
-- Live **3D Adaidaita Sahu** (yellow napep) rotating on navy/gold palette
-
-## Colors
-- Navy background `#0c1222`
-- Gold title + START button
-- Sky-blue accents (subtitle, ghost borders)
+1. **Keke facing** — flip yaw for keke/motorcycle so they face travel direction
+2. **Better fallbacks** — tricycle/bike/car shapes instead of plain boxes when GLB fails
+3. **No snow** — harmattan dust only (beige); fewer particles
+4. **Simple title** — no 3D hero keke; clean navy/gold UI
+5. **New users ₦30,000** — EconomySystem + config startingMoney
 
 ## Install
 ```bat
 cd C:\Users\DELL\Documents\GitHub\kano-run
-copy /Y path\to\kano-title2\index.html index.html
-copy /Y path\to\kano-title2\js\core\Main.js js\core\Main.js
+copy /Y path\to\kano-fix16\index.html index.html
+copy /Y path\to\kano-fix16\js\core\*.js js\core\
+copy /Y path\to\kano-fix16\js\systems\*.js js\systems\
 npm.cmd run build
-git push
 ```
+
+Clear localStorage once to get ₦30k as a new profile, or set money manually.

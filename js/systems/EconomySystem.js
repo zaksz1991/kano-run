@@ -8,7 +8,7 @@ const DEFAULTS = {
   repairCostPerCondition: 50,
   karotaFineBase: 200,
   dailyExpenses: 0, // set >0 only if you want rank fee every run
-  startingMoney: 2500,
+  startingMoney: 30000,
 };
 
 /**
