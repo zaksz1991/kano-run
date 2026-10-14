@@ -645,7 +645,7 @@ export default class PlayerVehicleSystem {
       console.log(`[PlayerVehicle] Loaded GLB: ${preset.modelPath}`);
     }
 
-    this.vehicle.rotation.y = Math.PI;
+    this.vehicle.rotation.y = 0;
     this.vehicle.position.set(
       this.position.x,
       0,
@@ -694,6 +694,20 @@ export default class PlayerVehicleSystem {
       if (preset.modelScale) {
         model.scale.multiplyScalar(preset.modelScale);
       }
+
+      // Guarantee visible player keke size (fixes "driver size poor")
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      if (maxDim > 0.01 && maxDim < 1.8) {
+        model.scale.multiplyScalar(2.2 / maxDim);
+      } else if (maxDim > 6) {
+        model.scale.multiplyScalar(2.8 / maxDim);
+      }
+
+      // Ground the model
+      const box2 = new THREE.Box3().setFromObject(model);
+      model.position.y -= box2.min.y;
 
       model.traverse((child) => {
         if (!child.isMesh) return;
@@ -1028,7 +1042,7 @@ export default class PlayerVehicleSystem {
         this.position.z,
       );
 
-      this.vehicle.rotation.set(0, Math.PI, 0);
+      this.vehicle.rotation.set(0, 0, 0);
     }
 
     this.eventBus?.emit?.("playerVehicle:reset", this.getSnapshot());

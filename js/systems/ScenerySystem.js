@@ -3,12 +3,12 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
-  segmentLength: 40,
-  segmentsAhead: 6,
-  segmentsBehind: 2,
-  recycleDistance: 20,
-  buildingDensity: 0.85,
-  propDensity: 0.6,
+  segmentLength: 48,
+  segmentsAhead: 12,
+  segmentsBehind: 3,
+  recycleDistance: 24,
+  buildingDensity: 0.95,
+  propDensity: 0.75,
 };
 
 const TEXTURE_BASE = "/assets/models/textures";
@@ -98,19 +98,21 @@ export default class ScenerySystem {
   _loadSceneryModels() {
     const loader = new GLTFLoader();
 
+    // Use real files under public/assets/models — priority set loads first
+    // so the game can start quickly; remaining models stream in later.
     this.modelPaths = {
       buildings: [
-        ...Array.from({ length: 21 }, (_, i) =>
-          `/assets/models/city-kit-suburban/building-type-${String.fromCharCode(97 + i)}.glb`
-        ),
-        ...Array.from({ length: 20 }, (_, i) =>
-          `/assets/models/city-kit-industrial/building-${String.fromCharCode(97 + i)}.glb`
-        ),
         "/assets/models/city-pack/Big Building.glb",
         "/assets/models/city-pack/Brown Building.glb",
         "/assets/models/city-pack/Building Green.glb",
         "/assets/models/city-pack/Building Red.glb",
         "/assets/models/city-pack/Building Red Corner.glb",
+        ...Array.from({ length: 12 }, (_, i) =>
+          `/assets/models/city-kit-suburban/building-type-${String.fromCharCode(97 + i)}.glb`
+        ),
+        ...Array.from({ length: 10 }, (_, i) =>
+          `/assets/models/city-kit-industrial/building-${String.fromCharCode(97 + i)}.glb`
+        ),
       ],
       tree: "/assets/models/city-kit-suburban/tree-large.glb",
       smallTree: "/assets/models/city-kit-suburban/tree-small.glb",
@@ -123,33 +125,48 @@ export default class ScenerySystem {
 
     this.modelCache = new Map();
 
-    const paths = [
-      ...this.modelPaths.buildings,
+    const priority = [
+      ...this.modelPaths.buildings.slice(0, 6),
       this.modelPaths.tree,
-      this.modelPaths.smallTree,
       this.modelPaths.pole,
       this.modelPaths.light,
-      this.modelPaths.bench,
       this.modelPaths.busStop,
+    ];
+
+    const rest = [
+      ...this.modelPaths.buildings.slice(6),
+      this.modelPaths.smallTree,
+      this.modelPaths.bench,
       this.modelPaths.pedestrian,
     ];
 
-    Promise.allSettled(
-      paths.map(async (path) => {
+    const loadOne = async (path) => {
+      try {
         const gltf = await loader.loadAsync(path);
         this.modelCache.set(path, gltf.scene);
-      }),
-    ).then((results) => {
-      const loaded = results.filter((result) => result.status === "fulfilled").length;
-      console.info(`[ScenerySystem] Loaded ${loaded}/${paths.length} scenery models.`);
-
-      if (!this.initialized || !this.segments.length) return;
-
-      for (const segment of this.segments) {
-        this._clearSegmentProps(segment);
-        this._buildBuildings(segment);
-        this._buildProps(segment);
+        return true;
+      } catch {
+        return false;
       }
+    };
+
+    // Fast path — do not block initialize on the full city kit
+    Promise.allSettled(priority.map(loadOne)).then((results) => {
+      const n = results.filter((r) => r.status === "fulfilled" && r.value).length;
+      console.info(`[ScenerySystem] Priority scenery ${n}/${priority.length}`);
+      if (this.initialized && this.segments.length) {
+        for (const segment of this.segments) {
+          this._clearSegmentProps(segment);
+          this._buildBuildings(segment);
+          this._buildProps(segment);
+        }
+      }
+    });
+
+    // Background fill for denser environment
+    Promise.allSettled(rest.map(loadOne)).then((results) => {
+      const n = results.filter((r) => r.status === "fulfilled" && r.value).length;
+      console.info(`[ScenerySystem] Background scenery +${n}/${rest.length}`);
     });
   }
 

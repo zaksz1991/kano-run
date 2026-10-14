@@ -97,6 +97,32 @@ export default class Game {
 
       this.options.onReady?.(this);
 
+      // Lobby: wait for MenuSystem START before driving phase
+      this.events?.on?.("game:request-start", (payload) => {
+        try {
+          const player = this.systems.get("playerVehicle");
+          if (payload?.vehicleType && player?.setVehicleType) {
+            player.setVehicleType(payload.vehicleType, { reset: true });
+          }
+          if (payload?.driver && player) {
+            player.driverProfile = payload.driver;
+            if (payload.driver.maxSpeedBonus) {
+              player.config = {
+                ...player.config,
+                maxSpeed:
+                  (player.config.maxSpeed || 34) +
+                  Number(payload.driver.maxSpeedBonus || 0),
+              };
+            }
+          }
+        } catch (e) {
+          console.warn("[Kano Run] lobby apply failed", e);
+        }
+        if (!this.isRunning) {
+          this.start();
+        }
+      });
+
       return this;
     } catch (error) {
       console.error("[Kano Run] Initialization failed:", error);
@@ -362,6 +388,7 @@ export default class Game {
     }
 
     const optionalSystems = [
+      ["menu", () => import("../systems/MenuSystem.js")],
       ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
       ["dayNight", () => import("../systems/DayNightSystem.js")],

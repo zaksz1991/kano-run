@@ -21,6 +21,8 @@ const DEFAULTS = {
  * City-pack motorcycle and keke GLBs need 0.
  */
 const MODEL_YAW = {
+  // Travel is +Z. Most car-kit models need Math.PI.
+  // If a type still looks reversed in playtest, flip only that entry.
   car: Math.PI,
   car1: Math.PI,
   car2: Math.PI,
@@ -29,14 +31,20 @@ const MODEL_YAW = {
   truck: Math.PI,
   police: Math.PI,
   karota: Math.PI,
-  motorcycle: 0,
-  keke: 0,
-  keke1: 0,
-  keke2: 0,
-  keke3: 0,
-  keke4: 0,
-  keke5: 0,
+  // City-pack bikes/kekes often need the opposite of car-kit.
+  // Previous build used 0 and still looked reversed — force PI + child flip below.
+  motorcycle: Math.PI,
+  keke: Math.PI,
+  keke1: Math.PI,
+  keke2: Math.PI,
+  keke3: Math.PI,
+  keke4: Math.PI,
+  keke5: Math.PI,
 };
+
+const MODEL_CHILD_FLIP = new Set([
+  "motorcycle", "keke", "keke1", "keke2", "keke3", "keke4", "keke5",
+]);
 
 const VEHICLE_SPECS = {
   car: {
@@ -541,6 +549,12 @@ export default class VehicleSystem {
         }
       }
     });
+
+    // Extra 180° on child for bike/keke packs whose forward axis
+    // is opposite car-kit even after parent yaw.
+    if (MODEL_CHILD_FLIP.has(type)) {
+      model.rotation.y += Math.PI;
+    }
 
     root.add(model);
     return { group: root };
