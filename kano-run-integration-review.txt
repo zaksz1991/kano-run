@@ -1,0 +1,3959 @@
+﻿
+========== .\js\core\Game.js ==========
+
+import GAME_CONFIG from "./config.js";
+import EventBus from "./EventBus.js";
+import GameState from "./GameState.js";
+import InputManager from "./InputManager.js";
+import SaveManager from "./SaveManager.js";
+import ServiceContainer from "./ServiceContainer.js";
+import SceneManager from "./SceneManager.js";
+import AudioManager from "./AudioManager.js";
+import SettingsManager from "./SettingsManager.js";
+
+export default class Game {
+  constructor(options = {}) {
+    this.options = options;
+    this.config = options.config ?? GAME_CONFIG;
+
+    this.events = new EventBus();
+    this.services = new ServiceContainer();
+
+    this.state = new GameState();
+    this.input = new InputManager();
+    this.saveManager = new SaveManager();
+    this.audio = new AudioManager();
+    this.settingsManager = new SettingsManager();
+
+    this.sceneManager = null;
+    this.systems = new Map();
+
+    this.isInitialized = false;
+    this.isRunning = false;
+    this.isPaused = false;
+    this.isDestroyed = false;
+
+    this.phase = "intro";
+    this.introTime = 0;
+    this.introDuration = 6;
+
+    this.animationFrame = null;
+    this.previousTime = 0;
+    this.accumulator = 0;
+    this.fixedDelta = 1 / 60;
+
+    this.timeScale = 1;
+    this.targetTimeScale = 1;
+
+    this._juiceBound = false;
+    this._slowMoTimer = null;
+
+    this.boundFrame = this.frame.bind(this);
+    this.boundResize = this.resize.bind(this);
+  }
+
+  async initialize() {
+    if (this.isDestroyed) {
+      throw new Error("Cannot initialize a destroyed game.");
+    }
+
+    if (this.isInitialized) return this;
+
+    try {
+      this.registerCoreServices();
+
+      this.sceneManager = new SceneManager({
+        config: this.config,
+        services: this.services,
+        events: this.events,
+      });
+
+      await this.sceneManager.initialize({
+        container:
+          this.options.container ??
+          this.options.canvas?.parentElement ??
+          document.getElementById("game-container") ??
+          document.body,
+      });
+
+      this.registerSceneServices();
+
+      await this.initializeSystems();
+
+      this.input.initialize?.();
+      this.input.enable?.();
+      this.saveManager.loadProfile?.();
+
+      if (typeof window !== "undefined") {
+        window.addEventListener("resize", this.boundResize);
+      }
+
+      this.resize();
+
+      this.isInitialized = true;
+
+      this.events.emit("game:initialized", {
+        game: this,
+      });
+
+      this.options.onReady?.(this);
+
+      return this;
+    } catch (error) {
+      console.error("[Kano Run] Initialization failed:", error);
+
+      this.stop();
+
+      for (const system of [...this.systems.values()].reverse()) {
+        this._disposeSystem(system);
+      }
+
+      this.systems.clear();
+
+      try {
+        this.sceneManager?.destroy?.();
+      } catch (cleanupError) {
+        console.warn(
+          "[Kano Run] Scene cleanup failed:",
+          cleanupError,
+        );
+      }
+
+      this.sceneManager = null;
+      this.isInitialized = false;
+
+      this.options.onError?.(error);
+
+      throw error;
+    }
+  }
+
+  registerCoreServices() {
+    const services = {
+      game: this,
+      config: this.config,
+      events: this.events,
+      eventBus: this.events,
+      state: this.state,
+      gameState: this.state,
+      input: this.input,
+      saveManager: this.saveManager,
+      audio: this.audio,
+      settings: this.settingsManager,
+      systems: this.systems,
+    };
+
+    for (const [name, service] of Object.entries(services)) {
+      this.registerService(name, service);
+    }
+  }
+
+  registerSceneServices() {
+    if (!this.sceneManager) return;
+
+    const sceneServices = {
+      sceneManager: this.sceneManager,
+      scene: this.sceneManager.scene,
+      camera: this.sceneManager.camera,
+      renderer: this.sceneManager.renderer,
+      THREE: this.sceneManager.THREE,
+    };
+
+    for (const [name, service] of Object.entries(sceneServices)) {
+      if (service) {
+        this.registerService(name, service);
+      }
+    }
+  }
+
+  registerService(name, service) {
+    if (typeof this.services.register === "function") {
+      this.services.register(name, service);
+    } else if (typeof this.services.set === "function") {
+      this.services.set(name, service);
+    }
+  }
+
+  getSystemContext() {
+    const playerVehicle = this.systems.get("playerVehicle") ?? null;
+
+    return {
+      game: this,
+      config: this.config,
+      services: this.services,
+
+      events: this.events,
+      eventBus: this.events,
+
+      state: this.state,
+      gameState: this.state,
+
+      input: this.input,
+      saveManager: this.saveManager,
+      audio: this.audio,
+      settings: this.settingsManager,
+
+      systems: this.systems,
+
+      sceneManager: this.sceneManager,
+      scene: this.sceneManager?.scene ?? null,
+      camera: this.sceneManager?.camera ?? null,
+      renderer: this.sceneManager?.renderer ?? null,
+      THREE: this.sceneManager?.THREE ?? null,
+
+      progressionSystem: this.systems.get("progression") ?? null,
+      routeSystem: this.systems.get("routes") ?? null,
+      worldSystem: this.systems.get("world") ?? null,
+      roadSystem: this.systems.get("road") ?? null,
+      scenerySystem: this.systems.get("scenery") ?? null,
+
+      player: playerVehicle,
+      playerVehicleSystem: playerVehicle,
+      vehicleSystem: this.systems.get("vehicles") ?? null,
+
+      drivingSystem: this.systems.get("driving") ?? null,
+      trafficSystem: this.systems.get("traffic") ?? null,
+      collisionSystem: this.systems.get("collision") ?? null,
+      passengerSystem: this.systems.get("passengers") ?? null,
+
+      economySystem: this.systems.get("economy") ?? null,
+      missionSystem: this.systems.get("missions") ?? null,
+      garageSystem: this.systems.get("garage") ?? null,
+      customizationSystem: this.systems.get("customization") ?? null,
+
+      cameraSystem: this.systems.get("camera") ?? null,
+      hudSystem: this.systems.get("hud") ?? null,
+      introSystem: this.systems.get("intro") ?? null,
+      negotiationSystem: this.systems.get("negotiation") ?? null,
+      checkpointSystem: this.systems.get("checkpoint") ?? null,
+    };
+  }
+
+  getSystemInitializationOptions(name) {
+    const player = this.systems.get("playerVehicle");
+
+    const playerZ = Number(player?.position?.z) || 0;
+    const playerLane = Number.isFinite(player?.lane)
+      ? player.lane
+      : 1;
+
+    switch (name) {
+      case "world":
+        // WorldSystem.initialize expects a district, not the
+        // entire system context.
+        return undefined;
+
+      case "road":
+        return { playerZ };
+
+      case "scenery":
+        return {
+          playerZ,
+          worldSystem: this.systems.get("world") ?? null,
+          routeSystem: this.systems.get("routes") ?? null,
+          weatherSystem: this.systems.get("weather") ?? null,
+          eventBus: this.events,
+        };
+
+      case "playerVehicle":
+        return {
+          lane: playerLane,
+          z: playerZ,
+        };
+
+      case "vehicles":
+        return {
+          playerZ,
+          playerLane,
+          initialVehicles: 8,
+        };
+
+      default:
+        return this.getSystemContext();
+    }
+  }
+
+  async loadSystem(name, loadModule, { required = false } = {}) {
+    try {
+      const module = await loadModule();
+      const SystemClass = module.default;
+
+      if (typeof SystemClass !== "function") {
+        throw new Error(
+          `System "${name}" has no valid default export.`,
+        );
+      }
+
+      const system = new SystemClass(this.getSystemContext());
+
+      this.systems.set(name, system);
+      this.registerService(`system:${name}`, system);
+
+      const initOptions = this.getSystemInitializationOptions(name);
+
+      if (initOptions === undefined) {
+        await system.initialize?.();
+      } else {
+        await system.initialize?.(initOptions);
+      }
+
+      return system;
+    } catch (error) {
+      const partialSystem = this.systems.get(name);
+
+      if (partialSystem) {
+        this._disposeSystem(partialSystem);
+      }
+
+      this.systems.delete(name);
+
+      if (required) {
+        console.error(
+          `[Kano Run] Required system failed: ${name}`,
+          error,
+        );
+
+        throw error;
+      }
+
+      console.warn(
+        `[Kano Run] Optional system failed: ${name}`,
+        error,
+      );
+
+      return null;
+    }
+  }
+
+  async initializeSystems() {
+    const criticalSystems = [
+      ["progression", () => import("../systems/ProgressionSystem.js")],
+      ["routes", () => import("../systems/RouteSystem.js")],
+      ["world", () => import("../systems/WorldSystem.js")],
+      ["road", () => import("../systems/RoadSystem.js")],
+      ["scenery", () => import("../systems/ScenerySystem.js")],
+      ["playerVehicle", () => import("../systems/PlayerVehicleSystem.js")],
+      ["camera", () => import("../systems/CameraSystem.js")],
+      ["traffic", () => import("../systems/TrafficSystem.js")],
+      ["collision", () => import("../systems/CollisionSystem.js")],
+      ["passengers", () => import("../systems/PassengerSystem.js")],
+      ["intro", () => import("../systems/IntroSystem.js")],
+      ["negotiation", () => import("../systems/NegotiationSystem.js")],
+      ["checkpoint", () => import("../systems/CheckpointSystem.js")],
+    ];
+
+    for (const [name, loadModule] of criticalSystems) {
+      await this.loadSystem(name, loadModule, {
+        required: true,
+      });
+    }
+
+    // Initialize the player before systems that depend on its state.
+    const player = this.systems.get("playerVehicle");
+
+    if (player) {
+      const camera = this.systems.get("camera");
+      camera?.setTarget?.(player);
+    }
+
+    const optionalSystems = [
+      ["environment", () => import("../systems/EnvironmentSystem.js")],
+      ["lighting", () => import("../systems/LightingSystem.js")],
+      ["dayNight", () => import("../systems/DayNightSystem.js")],
+      ["weather", () => import("../systems/WeatherSystem.js")],
+      ["routeGeneration", () => import("../systems/RouteGenerationSystem.js")],
+      ["driving", () => import("../systems/DrivingSystem.js")],
+      ["vehicles", () => import("../systems/VehicleSystem.js")],
+      ["economy", () => import("../systems/EconomySystem.js")],
+      ["missions", () => import("../systems/MissionSystem.js")],
+      ["garage", () => import("../systems/GarageSystem.js")],
+      ["customization", () => import("../systems/CustomizationSystem.js")],
+      ["particles", () => import("../systems/ParticleSystem.js")],
+      ["minimap", () => import("../systems/MinimapSystem.js")],
+      ["hud", () => import("../systems/HUDSystem.js")],
+      ["touchControls", () => import("../systems/TouchControlsSystem.js")],
+      ["pause", () => import("../systems/PauseSystem.js")],
+      ["gameOver", () => import("../systems/GameOverSystem.js")],
+    ];
+
+    // Await each optional system so its dependencies are available
+    // before the next system is constructed and initialized.
+    for (const [name, loadModule] of optionalSystems) {
+      await this.loadSystem(name, loadModule);
+    }
+
+    this.events.emit("systems:initialized", {
+      names: [...this.systems.keys()],
+    });
+  }
+
+  async start() {
+    if (this.isDestroyed) {
+      throw new Error("Cannot start a destroyed game.");
+    }
+
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (this.isRunning) return this;
+
+    this.isPaused = false;
+    this.isRunning = true;
+    this.phase = "intro";
+    this.introTime = 0;
+
+    if (this.events?.on && !this._juiceBound) {
+      this._juiceBound = true;
+
+      this.events.on("collision:near-miss", () => {
+        this.targetTimeScale = 0.35;
+
+        clearTimeout(this._slowMoTimer);
+
+        this._slowMoTimer = setTimeout(() => {
+          this.targetTimeScale = 1;
+        }, 220);
+      });
+
+      this.events.on("traffic:near-miss", () => {
+        this.targetTimeScale = 0.4;
+
+        clearTimeout(this._slowMoTimer);
+
+        this._slowMoTimer = setTimeout(() => {
+          this.targetTimeScale = 1;
+        }, 180);
+      });
+    }
+
+    this.previousTime = performance.now();
+    this.accumulator = 0;
+
+    for (const system of this.systems.values()) {
+      system.start?.();
+    }
+
+    this.animationFrame = requestAnimationFrame(this.boundFrame);
+
+    this.events.emit("game:started", {
+      game: this,
+    });
+
+    return this;
+  }
+
+  frame(timestamp) {
+    if (!this.isRunning || this.isDestroyed) return;
+
+    const elapsed = Math.min(
+      Math.max((timestamp - this.previousTime) / 1000, 0),
+      0.1,
+    );
+
+    this.previousTime = timestamp;
+
+    if (!this.isPaused) {
+      this.accumulator += elapsed;
+
+      const blend = 1 - Math.exp(-8 * elapsed);
+
+      this.timeScale +=
+        (this.targetTimeScale - this.timeScale) * blend;
+
+      while (this.accumulator >= this.fixedDelta) {
+        this.update(this.fixedDelta * this.timeScale);
+        this.accumulator -= this.fixedDelta;
+      }
+
+      this.render(this.accumulator / this.fixedDelta);
+    }
+
+    this.animationFrame = requestAnimationFrame(this.boundFrame);
+  }
+
+  update(delta) {
+    this.state.update?.(delta);
+
+    if (this.phase === "intro") {
+      this.introTime += delta;
+
+      this.systems.get("intro")?.update?.(delta);
+
+      if (this.introTime >= this.introDuration) {
+        this.phase = "playing";
+
+        this.systems.get("playerVehicle")?.start?.();
+
+        this.events.emit("game:intro-complete");
+      }
+    } else if (this.phase === "playing") {
+      const player = this.systems.get("playerVehicle");
+
+      const playerZ = Number(player?.position?.z) || 0;
+      const playerLane = Number.isFinite(player?.lane)
+        ? player.lane
+        : 1;
+      const speed =
+        Number(player?.speed) ||
+        Number(this.state.run?.speed) ||
+        0;
+
+      try {
+        if (this.state.run) {
+          this.state.run.speed = speed;
+        }
+
+        this.state.setSpeed?.(speed);
+      } catch {
+        // Keep the frame running if a state implementation
+        // does not expose a speed setter.
+      }
+
+      for (const [name, system] of this.systems) {
+        if (system.enabled === false) continue;
+
+        try {
+          switch (name) {
+            case "world":
+              system.update?.(delta, speed);
+              break;
+
+            case "road":
+              system.update?.(delta, playerZ);
+              break;
+
+            case "scenery":
+              system.update?.(delta, playerZ);
+              break;
+
+            case "vehicles":
+              system.update?.(delta, {
+                playerZ,
+                playerLane,
+                playerSpeed: speed,
+              });
+              break;
+
+            case "traffic":
+            case "passengers":
+            case "checkpoint":
+              system.update?.(delta, playerZ, speed);
+              break;
+
+            default:
+              system.update?.(delta);
+              break;
+          }
+        } catch (error) {
+          console.error(
+            `[Kano Run] System update failed: ${name}`,
+            error,
+          );
+        }
+      }
+
+      this.saveManager.updateProfile?.(
+        this.state.getProfile?.() ?? {},
+        { autosave: true },
+      );
+
+      try {
+        if (player && this.audio?.updateEngine) {
+          this.audio.updateEngine(
+            player.speed || 0,
+            player.preset?.maxSpeed || 34,
+          );
+        }
+
+        const ratio = Math.min(
+          1,
+          Math.abs(player?.speed || 0) /
+            Math.max(1, player?.preset?.maxSpeed || 34),
+        );
+
+        this.sceneManager?.post?.setSpeedAberration?.(ratio);
+      } catch {
+        // Audio and post-processing must not stop gameplay.
+      }
+
+      this.events.emit("game:updated", { delta });
+    }
+
+    this.sceneManager?.govern?.(delta);
+  }
+
+  render(interpolation = 0) {
+    for (const system of this.systems.values()) {
+      if (system.enabled === false) continue;
+
+      try {
+        system.render?.(interpolation);
+      } catch (error) {
+        console.error("[Kano Run] System render failed:", error);
+      }
+    }
+
+    this.sceneManager?.render?.(interpolation);
+  }
+
+  pause() {
+    if (!this.isRunning || this.isPaused) return;
+
+    this.isPaused = true;
+    this.phase = "paused";
+
+    for (const system of this.systems.values()) {
+      system.pause?.();
+    }
+
+    this.events.emit("game:paused");
+  }
+
+  resume() {
+    if (!this.isRunning || !this.isPaused) return;
+
+    this.isPaused = false;
+    this.phase = "playing";
+    this.previousTime = performance.now();
+
+    for (const system of this.systems.values()) {
+      system.resume?.();
+    }
+
+    this.events.emit("game:resumed");
+  }
+
+  stop() {
+    if (this.isRunning) {
+      this.isRunning = false;
+
+      if (this.animationFrame !== null) {
+        cancelAnimationFrame(this.animationFrame);
+        this.animationFrame = null;
+      }
+
+      for (const system of this.systems.values()) {
+        try {
+          system.stop?.();
+        } catch (error) {
+          console.warn("[Kano Run] System stop failed:", error);
+        }
+      }
+
+      this.saveManager.save?.();
+
+      this.events?.emit?.("game:stopped");
+    }
+
+    clearTimeout(this._slowMoTimer);
+    this._slowMoTimer = null;
+  }
+
+  resize() {
+    if (this.isDestroyed) return;
+
+    this.sceneManager?.resize?.();
+
+    if (typeof window !== "undefined") {
+      for (const system of this.systems.values()) {
+        system.resize?.(window.innerWidth, window.innerHeight);
+      }
+    }
+  }
+
+  getSystem(name) {
+    return this.systems.get(name) ?? null;
+  }
+
+  async restart() {
+    if (this.isDestroyed) {
+      throw new Error("Cannot restart a destroyed game.");
+    }
+
+    this.stop();
+
+    this.isPaused = false;
+    this.phase = "intro";
+    this.introTime = 0;
+
+    for (const system of this.systems.values()) {
+      await system.reset?.();
+    }
+
+    await this.state.reset?.();
+
+    return this.start();
+  }
+
+  _disposeSystem(system) {
+    if (!system) return;
+
+    try {
+      if (typeof system.destroy === "function") {
+        system.destroy();
+      } else if (typeof system.dispose === "function") {
+        system.dispose();
+      } else if (typeof system.clear === "function") {
+        system.clear();
+      }
+    } catch (error) {
+      console.error("[Kano Run] System cleanup failed:", error);
+    }
+  }
+
+  destroy() {
+    if (this.isDestroyed) return;
+
+    this.stop();
+
+    if (typeof window !== "undefined") {
+      window.removeEventListener("resize", this.boundResize);
+    }
+
+    for (const system of [...this.systems.values()].reverse()) {
+      this._disposeSystem(system);
+    }
+
+    this.systems.clear();
+
+    try {
+      this.input.destroy?.();
+    } catch {}
+
+    try {
+      this.audio.destroy?.();
+    } catch {}
+
+    try {
+      this.sceneManager?.destroy?.();
+    } catch {}
+
+    try {
+      this.saveManager.destroy?.();
+    } catch {}
+
+    try {
+      this.state.destroy?.();
+    } catch {}
+
+    try {
+      this.services.destroy?.();
+    } catch {}
+
+    try {
+      this.events?.safeEmit?.("game:destroyed") ??
+        this.events?.emit?.("game:destroyed");
+    } catch {}
+
+    try {
+      this.events?.destroy?.();
+    } catch {}
+
+    this.sceneManager = null;
+    this.isInitialized = false;
+    this.isDestroyed = true;
+  }
+}
+
+========== .\js\core\GameFactory.js ==========
+
+import Game from "./Game.js";
+import Bootstrap from "./Bootstrap.js";
+import GAME_CONFIG from "./config.js";
+
+export default class GameFactory {
+  static create(options = {}) {
+    const config = {
+      ...GAME_CONFIG,
+      ...(options.config ?? {}),
+    };
+
+    return new Game({
+      ...options,
+      config,
+    });
+  }
+
+  static createBootstrap(options = {}) {
+    return new Bootstrap({
+      ...options,
+      gameOptions: {
+        ...(options.gameOptions ?? {}),
+        config: {
+          ...GAME_CONFIG,
+          ...(options.gameOptions?.config ?? {}),
+        },
+      },
+    });
+  }
+
+  static async launch(options = {}) {
+    const bootstrap = GameFactory.createBootstrap({
+      autoStart: false,
+      ...options,
+    });
+
+    await bootstrap.initialize();
+
+    if (options.autoStart !== false) {
+      await bootstrap.start();
+    }
+
+    return bootstrap;
+  }
+
+  static async createAndInitialize(options = {}) {
+    const game = GameFactory.create(options);
+
+    await game.initialize();
+
+    if (options.autoStart) {
+      await game.start();
+    }
+
+    return game;
+  }
+
+  static getDefaultConfig() {
+    return structuredClone(GAME_CONFIG);
+  }
+
+  static getVersion() {
+    return GAME_CONFIG.version ?? "1.0.0";
+  }
+}
+
+========== .\js\core\AudioManager.js ==========
+
+export default class AudioManager {
+  constructor() {
+    this.context = null;
+    this.masterGain = null;
+    this.engineGain = null;
+    this.radioGain = null;
+    this.sfxGain = null;
+    
+    this.isInitialized = false;
+    this.isMuted = false;
+    this.volume = 1.0;
+    
+    // Audio Buffers (Loaded MP3s)
+    this.buffers = {};
+    this.isLoading = false;
+    
+    // Active Nodes
+    this.engineSource = null;
+    this.radioSource = null;
+    this.currentRadioTrack = null;
+    
+    // Engine specific
+    this._engineSpeed = 0;
+    this._engineMaxSpeed = 34;
+    
+    this._boundUnlock = this._unlockAudio.bind(this);
+  }
+
+  async initialize() {
+    if (this.isInitialized) return;
+
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      this.context = new AudioContext();
+      
+      // Master Gain
+      this.masterGain = this.context.createGain();
+      this.masterGain.gain.value = this.volume;
+      this.masterGain.connect(this.context.destination);
+      
+      // Sub-mixers
+      this.engineGain = this.context.createGain();
+      this.engineGain.gain.value = 0;
+      this.engineGain.connect(this.masterGain);
+
+      this.radioGain = this.context.createGain();
+      this.radioGain.gain.value = 0;
+      this.radioGain.connect(this.masterGain);
+
+      this.sfxGain = this.context.createGain();
+      this.sfxGain.gain.value = 1.0;
+      this.sfxGain.connect(this.masterGain);
+
+      // Load all assets
+      await this._loadAssets();
+      
+      this.isInitialized = true;
+      
+      // Bind mobile unlock
+      document.addEventListener('click', this._boundUnlock, { once: true });
+      document.addEventListener('touchstart', this._boundUnlock, { once: true });
+      
+      console.log("[AudioManager] Initialized with real assets.");
+    } catch (e) {
+      console.warn("[AudioManager] Web Audio API failed:", e);
+    }
+  }
+
+  async _loadAssets() {
+    this.isLoading = true;
+    const assets = [
+      'engine', 'horn', 'whistle', 'collision', 'pickup', 'coin',
+      'radio-kano', 'arewa', 'cool', 'freedom', 'rahama', 'ruffneck', 'wazobia'
+    ];
+    
+    const promises = assets.map(name => this._loadBuffer(`/assets/audio/${name}.mp3`, name));
+    await Promise.all(promises);
+    this.isLoading = false;
+  }
+
+  _loadBuffer(url, name) {
+    return fetch(url)
+      .then(response => response.arrayBuffer())
+      .then(arrayBuffer => this.context.decodeAudioData(arrayBuffer))
+      .then(audioBuffer => {
+        this.buffers[name] = audioBuffer;
+        console.log(`[AudioManager] Loaded ${name}`);
+      })
+      .catch(e => console.warn(`[AudioManager] Failed to load ${name}:`, e));
+  }
+
+  _unlockAudio() {
+    if (this.context && this.context.state === 'suspended') {
+      this.context.resume().then(() => {
+        console.log("[AudioManager] Audio context resumed");
+        // Auto-start engine if game is running
+        if (this._engineSpeed > 0) this._startEngineNode();
+      });
+    }
+  }
+
+  // ðŸ”¥ DYNAMIC ENGINE SOUND
+  updateEngine(speed = 0, maxSpeed = 34) {
+    if (!this.isInitialized || this.isMuted || !this.buffers['engine']) return;
+
+    this._engineSpeed = speed;
+    this._engineMaxSpeed = maxSpeed;
+    const rpm = Math.min(speed / maxSpeed, 1);
+
+    // Start engine node if not running
+    if (!this.engineSource && speed > 0.5) {
+      this._startEngineNode();
+    } 
+    // Stop engine node if stopped
+    else if (this.engineSource && speed <= 0.5) {
+      this._stopEngineNode();
+    }
+
+    if (this.engineSource) {
+      const now = this.context.currentTime;
+      // Pitch shift based on speed (0.8x to 2.5x speed)
+      const playbackRate = 0.8 + (rpm * 1.7); 
+      this.engineSource.playbackRate.setTargetAtTime(playbackRate, now, 0.1);
+      
+      // Volume based on throttle
+      const targetVol = speed > 0 ? 0.3 + (rpm * 0.4) : 0;
+      this.engineGain.gain.setTargetAtTime(targetVol, now, 0.1);
+    }
+  }
+
+  _startEngineNode() {
+    if (this.engineSource) return;
+    const source = this.context.createBufferSource();
+    source.buffer = this.buffers['engine'];
+    source.loop = true;
+    source.playbackRate.value = 0.8; // Idle speed
+    
+    source.connect(this.engineGain);
+    source.start(0);
+    this.engineSource = source;
+  }
+
+  _stopEngineNode() {
+    if (this.engineSource) {
+      try {
+        this.engineSource.stop();
+        this.engineSource.disconnect();
+      } catch(e) {}
+      this.engineSource = null;
+    }
+    this.engineGain.gain.setTargetAtTime(0, this.context.currentTime, 0.1);
+  }
+
+  // ðŸ“» RADIO SYSTEM
+  startRadio(district = "city") {
+    if (!this.isInitialized || this.isMuted) return;
+    this.stopRadio();
+
+    // Map district to a radio station file
+    let trackName = 'radio-kano'; // Default
+    const d = district.toLowerCase();
+    if (d.includes('sabon') || d.includes('market')) trackName = 'arewa';
+    else if (d.includes('industrial')) trackName = 'cool';
+    else if (d.includes('outskirt')) trackName = 'freedom';
+    else if (d.includes('city')) trackName = 'wazobia';
+
+    if (this.buffers[trackName]) {
+      const source = this.context.createBufferSource();
+      source.buffer = this.buffers[trackName];
+      source.loop = true;
+      source.connect(this.radioGain);
+      source.start(0);
+      this.radioSource = source;
+      this.currentRadioTrack = trackName;
+      
+      this.radioGain.gain.setTargetAtTime(0.4, this.context.currentTime, 0.5); // Fade in
+    }
+  }
+
+  stopRadio() {
+    if (this.radioSource) {
+      try {
+        this.radioSource.stop();
+        this.radioSource.disconnect();
+      } catch(e) {}
+      this.radioSource = null;
+    }
+    this.radioGain.gain.setTargetAtTime(0, this.context.currentTime, 0.1);
+    this.currentRadioTrack = null;
+  }
+
+  // ðŸ”Š SOUND EFFECTS (SFX)
+  playSFX(type) {
+    if (!this.isInitialized || this.isMuted) return;
+    
+    let bufferName = type;
+    if (type === 'horn') bufferName = 'horn';
+    if (type === 'whistle') bufferName = 'whistle';
+    if (type === 'collision') bufferName = 'collision'; // You might need to add a crash.mp3 later
+    if (type === 'pickup' || type === 'coin') bufferName = 'coin';
+
+    if (this.buffers[bufferName]) {
+      const source = this.context.createBufferSource();
+      source.buffer = this.buffers[bufferName];
+      source.connect(this.sfxGain);
+      source.start(0);
+    }
+  }
+
+  setVolume(val) {
+    this.volume = Math.max(0, Math.min(1, val));
+    if (this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(this.volume, this.context.currentTime, 0.1);
+    }
+  }
+
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    if (this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.volume, this.context.currentTime, 0.1);
+    }
+  }
+
+  destroy() {
+    this._stopEngineNode();
+    this.stopRadio();
+    if (this.context) {
+      this.context.close();
+    }
+    document.removeEventListener('click', this._boundUnlock);
+    document.removeEventListener('touchstart', this._boundUnlock);
+  }
+}
+
+========== .\js\systems\ScenerySystem.js ==========
+
+import * as THREE from "three";
+import { GAME_CONFIG } from "../core/config.js";
+
+const DEFAULTS = {
+  segmentLength: 40,
+  segmentsAhead: 6,
+  segmentsBehind: 2,
+  recycleDistance: 20,
+  buildingDensity: 0.85,
+  propDensity: 0.6,
+};
+
+const TEXTURE_BASE = "/assets/models/textures";
+
+export default class ScenerySystem {
+  constructor({
+    scene,
+    worldSystem = null,
+    routeSystem = null,
+    weatherSystem = null,
+    config = {},
+    eventBus = null,
+  } = {}) {
+    if (!scene) {
+      throw new Error("ScenerySystem requires a Three.js scene.");
+    }
+
+    this.scene = scene;
+    this.worldSystem = worldSystem;
+    this.routeSystem = routeSystem;
+    this.weatherSystem = weatherSystem;
+    this.eventBus = eventBus;
+
+    this.config = {
+      ...DEFAULTS,
+      ...(GAME_CONFIG?.world ?? {}),
+      ...config,
+    };
+
+    this.segments = [];
+    this.sharedMaterials = new Map();
+    this.sharedGeometries = new Map();
+    this.disposers = [];
+    this.textures = {};
+    this.playerZ = 0;
+    this.initialized = false;
+    this.currentDistrict = "Kano City Centre";
+    this.currentTheme = "city";
+
+    this.textureLoader = new THREE.TextureLoader();
+    this._loadTextures();
+
+    this._handleRouteChanged = (payload) => {
+      const route = payload?.route ?? payload;
+
+      const district =
+        payload?.district ??
+        route?.district ??
+        route?.name ??
+        route?.title;
+
+      if (district) {
+        this.setDistrict(district);
+      }
+    };
+
+    this._subscribe("route:changed", this._handleRouteChanged);
+    this._subscribe("routeChanged", this._handleRouteChanged);
+  }
+
+  _loadTextures() {
+    const definitions = {
+      asphalt: `${TEXTURE_BASE}/asphalt.jpg`,
+      wall: `${TEXTURE_BASE}/building-wall.jpg`,
+      market: `${TEXTURE_BASE}/market-stall.jpg`,
+      ground: `${TEXTURE_BASE}/asphalt-1.jpg`,
+    };
+
+    for (const [name, path] of Object.entries(definitions)) {
+      const texture = this.textureLoader.load(
+        path,
+        () => {
+          texture.needsUpdate = true;
+        },
+        undefined,
+        () => {
+          console.warn(`[ScenerySystem] Texture unavailable: ${path}`);
+        },
+      );
+
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.colorSpace = THREE.SRGBColorSpace;
+
+      this.textures[name] = texture;
+    }
+  }
+
+  _subscribe(eventName, handler) {
+    if (!this.eventBus?.on) return;
+
+    const result = this.eventBus.on(eventName, handler);
+
+    if (typeof result === "function") {
+      this.disposers.push(result);
+    } else if (this.eventBus.off) {
+      this.disposers.push(() =>
+        this.eventBus.off(eventName, handler),
+      );
+    }
+  }
+
+  initialize(options = {}) {
+    if (this.initialized) return this;
+
+    // Game.js may pass its complete system context.
+    const isContext =
+      options &&
+      typeof options === "object" &&
+      ("game" in options ||
+        "scene" in options ||
+        "routeSystem" in options);
+
+    const playerZ = Number.isFinite(options?.playerZ)
+      ? options.playerZ
+      : 0;
+
+    const district = options?.district ?? null;
+
+    if (isContext) {
+      this.worldSystem =
+        options.worldSystem ?? this.worldSystem;
+
+      this.routeSystem =
+        options.routeSystem ?? this.routeSystem;
+
+      this.weatherSystem =
+        options.weatherSystem ?? this.weatherSystem;
+
+      this.eventBus =
+        options.eventBus ?? this.eventBus;
+    }
+
+    this.playerZ = playerZ;
+
+    if (district) {
+      this.setDistrict(district);
+    } else {
+      this._detectDistrict();
+    }
+
+    const totalSegments =
+      this.config.segmentsAhead +
+      this.config.segmentsBehind +
+      1;
+
+    const firstZ =
+      playerZ -
+      this.config.segmentsBehind * this.config.segmentLength;
+
+    for (let i = 0; i < totalSegments; i++) {
+      const segment = this._createSegment(
+        firstZ + i * this.config.segmentLength,
+        i,
+      );
+
+      this.segments.push(segment);
+    }
+
+    this.initialized = true;
+
+    this.eventBus?.emit?.("scenery:ready", {
+      segments: this.segments.length,
+      district: this.currentDistrict,
+      theme: this.currentTheme,
+    });
+
+    console.info(
+      `[ScenerySystem] Ready: ${this.segments.length} visible scenery segments.`,
+    );
+
+    return this;
+  }
+
+  update(deltaTime, playerZ = this.playerZ) {
+    if (!this.initialized) return;
+
+    const dt = Math.max(
+      0,
+      Math.min(Number(deltaTime) || 0, 0.1),
+    );
+
+    this.playerZ = Number.isFinite(playerZ)
+      ? playerZ
+      : this.playerZ;
+
+    this._detectDistrict();
+
+    const segmentLength = this.config.segmentLength;
+
+    const targetAhead =
+      this.playerZ +
+      this.config.segmentsAhead * segmentLength;
+
+    const targetBehind =
+      this.playerZ -
+      this.config.segmentsBehind * segmentLength;
+
+    for (const segment of this.segments) {
+      if (
+        segment.z <
+        targetBehind - this.config.recycleDistance
+      ) {
+        this._moveSegment(
+          segment,
+          targetAhead + segmentLength,
+        );
+      } else if (
+        segment.z >
+        targetAhead + this.config.recycleDistance
+      ) {
+        this._moveSegment(
+          segment,
+          targetBehind - segmentLength,
+        );
+      }
+
+      segment.group.position.z = segment.z;
+      segment.elapsed += dt;
+    }
+  }
+
+  _detectDistrict() {
+    const route =
+      this.routeSystem?.getSelectedRoute?.() ??
+      this.routeSystem?.getRoute?.(
+        this.routeSystem?.getSelectedRouteId?.(),
+      );
+
+    const district =
+      route?.district ??
+      route?.name ??
+      route?.title ??
+      null;
+
+    if (
+      district &&
+      String(district) !== this.currentDistrict
+    ) {
+      this.setDistrict(district);
+    }
+  }
+
+  setDistrict(district) {
+    const name = String(district ?? "Kano City Centre");
+    const key = name.toLowerCase();
+
+    let theme = "residential";
+
+    if (
+      key.includes("sabon") ||
+      key.includes("kurmi") ||
+      key.includes("market") ||
+      key.includes("kantin")
+    ) {
+      theme = "market";
+    } else if (
+      key.includes("city") ||
+      key.includes("centre") ||
+      key.includes("center") ||
+      key.includes("central") ||
+      key.includes("nassarawa")
+    ) {
+      theme = "city";
+    }
+
+    const changed =
+      name !== this.currentDistrict ||
+      theme !== this.currentTheme;
+
+    this.currentDistrict = name;
+    this.currentTheme = theme;
+
+    if (changed) {
+      for (const segment of this.segments) {
+        this._refreshSegmentTheme(segment);
+      }
+
+      this.eventBus?.emit?.("scenery:districtChanged", {
+        district: this.currentDistrict,
+        theme: this.currentTheme,
+      });
+    }
+  }
+
+  _createSegment(z, index) {
+    const group = new THREE.Group();
+    group.name = `scenery-segment-${index}`;
+    group.position.z = z;
+
+    const segment = {
+      id: `scenery-${index}-${Math.round(z)}`,
+      group,
+      z,
+      elapsed: 0,
+      theme: this.currentTheme,
+      props: [],
+    };
+
+    this.scene.add(group);
+
+    this._buildGround(segment);
+    this._buildRoadside(segment);
+    this._buildBuildings(segment);
+    this._buildProps(segment);
+
+    return segment;
+  }
+
+  _moveSegment(segment, newZ) {
+    segment.z = newZ;
+    segment.group.position.z = newZ;
+    segment.elapsed = 0;
+
+    this._clearSegmentProps(segment);
+    this._buildRoadside(segment);
+    this._buildBuildings(segment);
+    this._buildProps(segment);
+  }
+
+  _refreshSegmentTheme(segment) {
+    segment.theme = this.currentTheme;
+
+    this._clearSegmentBuildings(segment);
+    this._buildBuildings(segment);
+  }
+
+  _buildGround(segment) {
+    const material = this._material(
+      "ground",
+      0xc2b280,
+      { map: this.textures.ground },
+    );
+
+    if (material.map) {
+      material.map.repeat.set(20, 2);
+    }
+
+    const geometry = this._geometry(
+      "ground",
+      () =>
+        new THREE.PlaneGeometry(
+          200,
+          this.config.segmentLength,
+        ),
+    );
+
+    const mesh = new THREE.Mesh(geometry, material);
+
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = -0.1;
+    mesh.receiveShadow = true;
+
+    segment.group.add(mesh);
+    segment.props.push({ type: "ground", mesh });
+  }
+
+  _buildRoadside(segment) {
+    const material = this._material(
+      "shoulder",
+      0xbcaaa4,
+      { map: this.textures.asphalt },
+    );
+
+    if (material.map) {
+      material.map.repeat.set(4, 1);
+    }
+
+    const geometry = this._geometry(
+      "shoulder",
+      () =>
+        new THREE.PlaneGeometry(
+          40,
+          this.config.segmentLength,
+        ),
+    );
+
+    for (const x of [-26, 26]) {
+      const mesh = new THREE.Mesh(geometry, material);
+
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x, -0.05, 0);
+      mesh.receiveShadow = true;
+
+      segment.group.add(mesh);
+      segment.props.push({ type: "shoulder", mesh });
+    }
+  }
+
+  _buildBuildings(segment) {
+    const segmentLength = this.config.segmentLength;
+    const slots = 4;
+    const slotWidth = segmentLength / slots;
+
+    for (let i = 0; i < slots; i++) {
+      const z =
+        -segmentLength / 2 +
+        i * slotWidth +
+        slotWidth / 2;
+
+      if (Math.random() < this.config.buildingDensity) {
+        this._createBuilding(
+          segment,
+          this._pickBuildingType(),
+          -18 - Math.random() * 5,
+          z,
+          Math.random() * 0.2 - 0.1,
+        );
+      }
+
+      if (Math.random() < this.config.buildingDensity) {
+        this._createBuilding(
+          segment,
+          this._pickBuildingType(),
+          18 + Math.random() * 5,
+          z,
+          Math.PI + Math.random() * 0.2 - 0.1,
+        );
+      }
+    }
+  }
+
+  _pickBuildingType() {
+    const random = Math.random();
+
+    if (this.currentTheme === "market") {
+      return random < 0.7 ? "market" : "compound";
+    }
+
+    if (this.currentTheme === "city") {
+      if (random < 0.4) return "highrise";
+      if (random < 0.8) return "compound";
+      return "mosque";
+    }
+
+    return random < 0.6 ? "compound" : "house";
+  }
+
+  _createBuilding(segment, type, x, z, rotationY) {
+    const group = new THREE.Group();
+
+    const texture =
+      type === "market"
+        ? this.textures.market
+        : this.textures.wall;
+
+    const material = this._material(
+      `building-${type}`,
+      0xe3d5b8,
+      { map: texture },
+    );
+
+    if (material.map) {
+      material.map.repeat.set(2, 2);
+    }
+
+    let height = 4;
+    let width = 6;
+    let depth = 6;
+
+    if (type === "highrise") {
+      height = 12;
+      width = 8;
+      depth = 8;
+    } else if (type === "market") {
+      height = 3;
+      width = 8;
+      depth = 5;
+    } else if (type === "mosque") {
+      height = 7;
+      width = 8;
+      depth = 8;
+    }
+
+    const geometry = this._geometry(
+      `building-${type}`,
+      () => new THREE.BoxGeometry(width, height, depth),
+    );
+
+    const building = new THREE.Mesh(geometry, material);
+
+    building.position.y = height / 2;
+    building.castShadow = true;
+    building.receiveShadow = true;
+
+    group.add(building);
+
+    const roofGeometry = this._geometry(
+      `roof-${type}`,
+      () =>
+        new THREE.BoxGeometry(
+          width + 0.5,
+          0.5,
+          depth + 0.5,
+        ),
+    );
+
+    const roof = new THREE.Mesh(
+      roofGeometry,
+      this._material("roof", 0x8b4513),
+    );
+
+    roof.position.y = height + 0.25;
+    roof.castShadow = true;
+
+    group.add(roof);
+
+    group.position.set(x, 0, z);
+    group.rotation.y = rotationY;
+
+    segment.group.add(group);
+    segment.props.push({ type: "building", mesh: group });
+  }
+
+  _buildProps(segment) {
+    if (Math.random() > this.config.propDensity) return;
+
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const x = side * (12 + Math.random() * 4);
+    const z =
+      (Math.random() - 0.5) * this.config.segmentLength;
+
+    let prop;
+
+    if (Math.random() > 0.5) {
+      prop = new THREE.Mesh(
+        this._geometry(
+          "pole",
+          () =>
+            new THREE.CylinderGeometry(
+              0.15,
+              0.15,
+              6,
+              6,
+            ),
+        ),
+        this._material("pole", 0x5d4037),
+      );
+
+      prop.position.y = 3;
+      prop.castShadow = true;
+    } else {
+      const trunk = new THREE.Mesh(
+        this._geometry(
+          "trunk",
+          () =>
+            new THREE.CylinderGeometry(
+              0.2,
+              0.3,
+              2,
+              6,
+            ),
+        ),
+        this._material("trunk", 0x795548),
+      );
+
+      trunk.position.y = 1;
+      trunk.castShadow = true;
+
+      const leaves = new THREE.Mesh(
+        this._geometry(
+          "leaves",
+          () => new THREE.SphereGeometry(1.5, 8, 6),
+        ),
+        this._material("leaves", 0x558b2f),
+      );
+
+      leaves.position.y = 3;
+      leaves.castShadow = true;
+
+      prop = new THREE.Group();
+      prop.add(trunk, leaves);
+    }
+
+    prop.position.x = x;
+    prop.position.z = z;
+
+    segment.group.add(prop);
+    segment.props.push({ type: "prop", mesh: prop });
+  }
+
+  _clearSegmentProps(segment) {
+    for (const item of segment.props) {
+      segment.group.remove(item.mesh);
+    }
+
+    segment.props = [];
+  }
+
+  _clearSegmentBuildings(segment) {
+    segment.props = segment.props.filter((item) => {
+      if (item.type !== "building") return true;
+
+      segment.group.remove(item.mesh);
+      return false;
+    });
+  }
+
+  _geometry(key, factory) {
+    if (!this.sharedGeometries.has(key)) {
+      this.sharedGeometries.set(key, factory());
+    }
+
+    return this.sharedGeometries.get(key);
+  }
+
+  _material(key, color, options = {}) {
+    const materialKey = `${key}-${color}`;
+
+    if (!this.sharedMaterials.has(materialKey)) {
+      this.sharedMaterials.set(
+        materialKey,
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: options.roughness ?? 0.85,
+          metalness: options.metalness ?? 0,
+          flatShading: true,
+          map: options.map ?? null,
+        }),
+      );
+    }
+
+    return this.sharedMaterials.get(materialKey);
+  }
+
+  dispose() {
+    for (const dispose of this.disposers) {
+      try {
+        dispose();
+      } catch {}
+    }
+
+    this.disposers.length = 0;
+
+    for (const segment of this.segments) {
+      this.scene.remove(segment.group);
+    }
+
+    this.segments.length = 0;
+
+    for (const geometry of this.sharedGeometries.values()) {
+      geometry.dispose();
+    }
+
+    for (const material of this.sharedMaterials.values()) {
+      material.dispose();
+    }
+
+    for (const texture of Object.values(this.textures)) {
+      texture.dispose();
+    }
+
+    this.sharedGeometries.clear();
+    this.sharedMaterials.clear();
+    this.textures = {};
+    this.initialized = false;
+  }
+
+  destroy() {
+    this.dispose();
+  }
+}
+
+========== .\js\systems\EnvironmentSystem.js ==========
+
+const ENVIRONMENT_CONFIG = Object.freeze({
+  fog: {
+    clear: { near: 90, far: 260, density: 0 },
+    cloudy: { near: 70, far: 220, density: 0.002 },
+    rain: { near: 35, far: 140, density: 0.008 },
+    storm: { near: 20, far: 90, density: 0.015 },
+    harmattan: { near: 12, far: 65, density: 0.025 },
+  },
+
+  grip: {
+    clear: 1,
+    cloudy: 0.98,
+    rain: 0.78,
+    storm: 0.58,
+    harmattan: 0.9,
+  },
+
+  visibility: {
+    clear: 1,
+    cloudy: 0.9,
+    rain: 0.68,
+    storm: 0.45,
+    harmattan: 0.4,
+  },
+
+  wind: {
+    clear: 0.2,
+    cloudy: 1.2,
+    rain: 2.5,
+    storm: 6,
+    harmattan: 3.5,
+  },
+
+  particleLimits: {
+    rain: 900,
+    storm: 1500,
+    harmattan: 500,
+  },
+});
+
+const WEATHER_TYPES = Object.freeze([
+  "clear",
+  "cloudy",
+  "rain",
+  "storm",
+  "harmattan",
+]);
+
+export default class EnvironmentSystem {
+  constructor({
+    scene = null,
+    eventBus = null,
+    weatherSystem = null,
+    dayNightSystem = null,
+    random = Math.random,
+  } = {}) {
+    this.scene = scene;
+    this.eventBus = eventBus;
+    this.weatherSystem = weatherSystem;
+    this.dayNightSystem = dayNightSystem;
+    this.random = random;
+
+    this.weather = "clear";
+    this.windSpeed = ENVIRONMENT_CONFIG.wind.clear;
+    this.visibility = 1;
+    this.roadGrip = 1;
+    this.particleIntensity = 0;
+    this.lightningTimer = 0;
+    this.lightningFlash = 0;
+    this.disposed = false;
+
+    this.unsubscribeWeather = null;
+
+    if (this.eventBus?.on) {
+      this.unsubscribeWeather = this.eventBus.on(
+        "weather:changed",
+        (payload) => {
+          const nextWeather =
+            typeof payload === "string"
+              ? payload
+              : payload?.weather ?? payload?.type;
+
+          if (nextWeather) {
+            this.setWeather(nextWeather);
+          }
+        }
+      );
+    }
+
+    this.setWeather("clear");
+    this.emit("environment:ready", this.getSnapshot());
+  }
+
+  setWeather(weather) {
+    if (!WEATHER_TYPES.includes(weather)) {
+      return {
+        ok: false,
+        error: `Unsupported weather: ${weather}`,
+      };
+    }
+
+    const previous = this.weather;
+
+    this.weather = weather;
+    this.windSpeed = ENVIRONMENT_CONFIG.wind[weather];
+    this.visibility = ENVIRONMENT_CONFIG.visibility[weather];
+    this.roadGrip = ENVIRONMENT_CONFIG.grip[weather];
+
+    this.particleIntensity = {
+      clear: 0,
+      cloudy: 0,
+      rain: 0.55,
+      storm: 1,
+      harmattan: 0.35,
+    }[weather];
+
+    this.applyFog();
+
+    if (previous !== weather) {
+      this.emit("environment:weather-changed", {
+        previous,
+        current: weather,
+        visibility: this.visibility,
+        roadGrip: this.roadGrip,
+        windSpeed: this.windSpeed,
+      });
+    }
+
+    return {
+      ok: true,
+      snapshot: this.getSnapshot(),
+    };
+  }
+
+  applyFog() {
+    if (!this.scene?.fog) {
+      return;
+    }
+
+    const fog = ENVIRONMENT_CONFIG.fog[this.weather];
+
+    if (fog) {
+      if ("near" in this.scene.fog) {
+        this.scene.fog.near = fog.near;
+      }
+
+      if ("far" in this.scene.fog) {
+        this.scene.fog.far = fog.far;
+      }
+
+      this.scene.fog.density = fog.density;
+    }
+  }
+
+  update(deltaSeconds) {
+    if (this.disposed || !Number.isFinite(deltaSeconds)) {
+      return;
+    }
+
+    const delta = Math.max(0, Math.min(deltaSeconds, 0.1));
+
+    if (this.weather === "storm") {
+      this.updateLightning(delta);
+    } else {
+      this.lightningFlash = Math.max(
+        0,
+        this.lightningFlash - delta * 5
+      );
+    }
+
+    this.updateWind(delta);
+  }
+
+  updateLightning(delta) {
+    this.lightningTimer -= delta;
+
+    this.lightningFlash = Math.max(
+      0,
+      this.lightningFlash - delta * 8
+    );
+
+    if (this.lightningTimer <= 0) {
+      this.lightningTimer = 4 + this.random() * 12;
+
+      if (this.random() < 0.65) {
+        this.lightningFlash = 1;
+
+        this.emit("environment:lightning", {
+          intensity: this.lightningFlash,
+          duration: 0.12,
+        });
+      }
+    }
+  }
+
+  updateWind(delta) {
+    if (this.weather !== "storm" && this.weather !== "harmattan") {
+      return;
+    }
+
+    if (this.random() < delta * 0.15) {
+      this.emit("environment:wind-gust", {
+        strength: this.windSpeed * (1 + this.random()),
+        weather: this.weather,
+      });
+    }
+  }
+
+  getDrivingModifiers() {
+    const hour = this.dayNightSystem?.hour ?? 12;
+    const isNight = hour >= 19 || hour < 5;
+
+    let visibility = this.visibility;
+
+    if (isNight) {
+      visibility *= 0.75;
+    }
+
+    if (this.weather === "storm") {
+      visibility *= 0.8;
+    }
+
+    return {
+      roadGrip: this.roadGrip,
+      visibility: Math.max(0.2, Math.min(1, visibility)),
+      windSpeed: this.windSpeed,
+      brakingMultiplier: 1 + (1 - this.roadGrip) * 0.8,
+      steeringMultiplier: this.roadGrip,
+      isNight,
+      weather: this.weather,
+    };
+  }
+
+  getSnapshot() {
+    return {
+      weather: this.weather,
+      windSpeed: this.windSpeed,
+      visibility: this.visibility,
+      roadGrip: this.roadGrip,
+      particleIntensity: this.particleIntensity,
+      lightningFlash: this.lightningFlash,
+      fog: {
+        ...ENVIRONMENT_CONFIG.fog[this.weather],
+      },
+      driving: this.getDrivingModifiers(),
+    };
+  }
+
+  emit(eventName, payload = {}) {
+    this.eventBus?.emit?.(eventName, payload);
+  }
+
+  destroy() {
+    if (typeof this.unsubscribeWeather === "function") {
+      this.unsubscribeWeather();
+    }
+
+    this.scene = null;
+    this.eventBus = null;
+    this.weatherSystem = null;
+    this.dayNightSystem = null;
+    this.disposed = true;
+  }
+}
+
+export {
+  ENVIRONMENT_CONFIG,
+  WEATHER_TYPES,
+};
+
+========== .\js\systems\WorldSystem.js ==========
+
+const WORLD_CONFIG = Object.freeze({
+  roadWidth: 12,
+  laneWidth: 3.2,
+  segmentLength: 40,
+  visibleSegments: 12,
+  roadLength: 480,
+  sidewalkWidth: 2.5,
+  buildingSpacing: 18,
+  roadsideOffset: 10,
+  worldSeed: 1991,
+});
+
+const DISTRICT_THEMES = Object.freeze({
+  city_centre: {
+    buildingHeight: [8, 30],
+    buildingDensity: 0.95,
+    marketDensity: 0.7,
+    vegetationDensity: 0.15,
+    colors: ["#d7b58a", "#c8a078", "#e0c7a4", "#b58a63"],
+  },
+  market: {
+    buildingHeight: [4, 16],
+    buildingDensity: 0.85,
+    marketDensity: 1,
+    vegetationDensity: 0.08,
+    colors: ["#c58d52", "#b97a40", "#e0b36e", "#a86d3b"],
+  },
+  residential: {
+    buildingHeight: [5, 18],
+    buildingDensity: 0.7,
+    marketDensity: 0.25,
+    vegetationDensity: 0.4,
+    colors: ["#d8c7a6", "#c9b18b", "#e5d8bf", "#bca27b"],
+  },
+  industrial: {
+    buildingHeight: [7, 24],
+    buildingDensity: 0.6,
+    marketDensity: 0.15,
+    vegetationDensity: 0.12,
+    colors: ["#92989a", "#b1aaa0", "#a49a8d", "#777f83"],
+  },
+  outskirts: {
+    buildingHeight: [3, 12],
+    buildingDensity: 0.3,
+    marketDensity: 0.1,
+    vegetationDensity: 0.8,
+    colors: ["#d5b98a", "#c6a878", "#e0ca9d", "#ad956e"],
+  },
+});
+
+const PROP_TYPES = Object.freeze([
+  "streetlight",
+  "tree",
+  "market_stall",
+  "signboard",
+  "utility_pole",
+  "wall",
+  "shop",
+  "residential_building",
+  "commercial_building",
+]);
+
+export default class WorldSystem {
+  constructor({
+    scene = null,
+    eventBus = null,
+    routeSystem = null,
+    randomSeed = WORLD_CONFIG.worldSeed,
+  } = {}) {
+    this.scene = scene;
+    this.eventBus = eventBus;
+    this.routeSystem = routeSystem;
+
+    this.seed = randomSeed >>> 0;
+    this.segmentIndex = 0;
+    this.worldOffset = 0;
+    this.currentDistrict = null;
+    this.currentTheme = "residential";
+
+    this.segments = [];
+    this.props = [];
+    this.disposed = false;
+
+    this.emit("world:ready", this.getSnapshot());
+  }
+
+  random() {
+    this.seed = (1664525 * this.seed + 1013904223) >>> 0;
+    return this.seed / 4294967296;
+  }
+
+  randomRange(min, max) {
+    return min + this.random() * (max - min);
+  }
+
+  randomInt(min, max) {
+    return Math.floor(this.randomRange(min, max + 1));
+  }
+
+  choose(items) {
+    return items[Math.floor(this.random() * items.length)];
+  }
+
+  createSegment(district = null) {
+    if (this.disposed) {
+      throw new Error("Cannot create segments after WorldSystem.destroy().");
+    }
+
+    const theme = this.resolveTheme(district);
+    const index = this.segmentIndex++;
+
+    const segment = {
+      id: `segment_${index}`,
+      index,
+      length: WORLD_CONFIG.segmentLength,
+      z: -index * WORLD_CONFIG.segmentLength,
+      district: district?.name ?? this.currentDistrict?.name ?? "Kano",
+      theme,
+      road: {
+        width: WORLD_CONFIG.roadWidth,
+        laneWidth: WORLD_CONFIG.laneWidth,
+        lanes: 3,
+        color: "#45484c",
+        markingColor: "#f6f0d7",
+      },
+      props: this.generateProps(index, theme),
+      createdAt: Date.now(),
+    };
+
+    this.segments.push(segment);
+    this.props.push(...segment.props);
+
+    this.emit("world:segment-created", segment);
+
+    return segment;
+  }
+
+  generateProps(segmentIndex, themeName) {
+    const theme = DISTRICT_THEMES[themeName] ??
+      DISTRICT_THEMES.residential;
+
+    const generated = [];
+    const buildingCount = Math.round(
+      theme.buildingDensity * this.randomRange(1, 4)
+    );
+
+    for (let i = 0; i < buildingCount; i += 1) {
+      const side = this.random() < 0.5 ? -1 : 1;
+
+      generated.push({
+        id: `prop_${segmentIndex}_building_${i}`,
+        type: this.choose([
+          "shop",
+          "residential_building",
+          "commercial_building",
+        ]),
+        side,
+        x: side * this.randomRange(
+          WORLD_CONFIG.roadsideOffset,
+          WORLD_CONFIG.roadsideOffset + 16
+        ),
+        z: -segmentIndex * WORLD_CONFIG.segmentLength -
+          this.randomRange(0, WORLD_CONFIG.segmentLength),
+        width: this.randomRange(4, 10),
+        height: this.randomRange(
+          theme.buildingHeight[0],
+          theme.buildingHeight[1]
+        ),
+        depth: this.randomRange(5, 12),
+        color: this.choose(theme.colors),
+        theme: themeName,
+      });
+    }
+
+    const extraCount = this.randomInt(1, 4);
+
+    for (let i = 0; i < extraCount; i += 1) {
+      const side = this.random() < 0.5 ? -1 : 1;
+      const roll = this.random();
+
+      let type;
+
+      if (roll < theme.vegetationDensity * 0.5) {
+        type = "tree";
+      } else if (roll < theme.marketDensity) {
+        type = "market_stall";
+      } else if (roll < 0.75) {
+        type = "streetlight";
+      } else if (roll < 0.9) {
+        type = "signboard";
+      } else {
+        type = "utility_pole";
+      }
+
+      generated.push({
+        id: `prop_${segmentIndex}_extra_${i}`,
+        type,
+        side,
+        x: side * this.randomRange(
+          WORLD_CONFIG.roadWidth / 2 + 1,
+          WORLD_CONFIG.roadsideOffset + 5
+        ),
+        z: -segmentIndex * WORLD_CONFIG.segmentLength -
+          this.randomRange(0, WORLD_CONFIG.segmentLength),
+        scale: this.randomRange(0.8, 1.5),
+        theme: themeName,
+      });
+    }
+
+    return generated;
+  }
+
+  resolveTheme(district) {
+    if (!district) {
+      return this.currentTheme;
+    }
+
+    const name = String(
+      district.type ?? district.theme ?? district.name ?? ""
+    ).toLowerCase();
+
+    if (
+      name.includes("market") ||
+      name.includes("kasuwa") ||
+      name.includes("sabon gari")
+    ) {
+      return "market";
+    }
+
+    if (
+      name.includes("industrial") ||
+      name.includes("factory") ||
+      name.includes("challawa")
+    ) {
+      return "industrial";
+    }
+
+    if (
+      name.includes("outskirts") ||
+      name.includes("rural") ||
+      name.includes("airport")
+    ) {
+      return "outskirts";
+    }
+
+    if (
+      name.includes("centre") ||
+      name.includes("center") ||
+      name.includes("city")
+    ) {
+      return "city_centre";
+    }
+
+    return "residential";
+  }
+
+  setDistrict(district) {
+    if (!district) {
+      return false;
+    }
+
+    const previous = this.currentDistrict;
+
+    this.currentDistrict = district;
+    this.currentTheme = this.resolveTheme(district);
+
+    this.emit("world:district-changed", {
+      previous,
+      current: district,
+      theme: this.currentTheme,
+    });
+
+    return true;
+  }
+
+  initialize(district = null) {
+    this.clearSegments();
+
+    this.segmentIndex = 0;
+    this.worldOffset = 0;
+
+    if (district) {
+      this.setDistrict(district);
+    }
+
+    for (
+      let i = 0;
+      i < WORLD_CONFIG.visibleSegments;
+      i += 1
+    ) {
+      this.createSegment(this.currentDistrict);
+    }
+
+    this.emit("world:initialized", this.getSnapshot());
+
+    return this.getSnapshot();
+  }
+
+  update(deltaSeconds, speed = 0) {
+    if (this.disposed || !Number.isFinite(deltaSeconds)) {
+      return;
+    }
+
+    const delta = Math.max(0, Math.min(deltaSeconds, 0.1));
+    const distance = Math.max(0, speed) * delta;
+
+    this.worldOffset += distance;
+
+    for (const segment of this.segments) {
+      segment.z += distance;
+    }
+
+    const recycleDistance = WORLD_CONFIG.segmentLength;
+
+    while (
+      this.segments.length > 0 &&
+      this.segments[0].z > recycleDistance
+    ) {
+      const recycled = this.segments.shift();
+
+      this.removeSegmentProps(recycled);
+
+      const nextZ = this.segments.length
+        ? this.segments[this.segments.length - 1].z -
+          WORLD_CONFIG.segmentLength
+        : -WORLD_CONFIG.segmentLength;
+
+      const replacement = this.createSegment(this.currentDistrict);
+      replacement.z = nextZ;
+
+      for (const prop of replacement.props) {
+        prop.z = nextZ - this.randomRange(
+          0,
+          WORLD_CONFIG.segmentLength
+        );
+      }
+
+      this.emit("world:segment-recycled", {
+        removedId: recycled.id,
+        replacementId: replacement.id,
+      });
+    }
+  }
+
+  removeSegmentProps(segment) {
+    const removedIds = new Set(
+      segment.props.map((prop) => prop.id)
+    );
+
+    this.props = this.props.filter(
+      (prop) => !removedIds.has(prop.id)
+    );
+  }
+
+  clearSegments() {
+    this.segments.length = 0;
+    this.props.length = 0;
+  }
+
+  getNearbyProps(positionZ, range = 80) {
+    return this.props.filter(
+      (prop) => Math.abs(prop.z - positionZ) <= range
+    );
+  }
+
+  getSnapshot() {
+    return {
+      segmentCount: this.segments.length,
+      propCount: this.props.length,
+      segmentIndex: this.segmentIndex,
+      worldOffset: this.worldOffset,
+      currentDistrict: this.currentDistrict,
+      currentTheme: this.currentTheme,
+      roadWidth: WORLD_CONFIG.roadWidth,
+      laneWidth: WORLD_CONFIG.laneWidth,
+    };
+  }
+
+  emit(eventName, payload = {}) {
+    this.eventBus?.emit?.(eventName, payload);
+  }
+
+  destroy() {
+    this.clearSegments();
+
+    this.scene = null;
+    this.routeSystem = null;
+    this.eventBus = null;
+    this.currentDistrict = null;
+    this.disposed = true;
+  }
+}
+
+export {
+  WORLD_CONFIG,
+  DISTRICT_THEMES,
+  PROP_TYPES,
+};
+
+========== .\js\systems\AudioSystem.js ==========
+
+const DEFAULT_SETTINGS = Object.freeze({
+  masterVolume: 0.7,
+  musicVolume: 0.35,
+  effectsVolume: 0.8,
+  radioVolume: 0.45,
+  muted: false,
+  radioEnabled: true,
+  engineEnabled: true,
+});
+
+const SOUND_PRESETS = Object.freeze({
+  engine: { frequency: 65, type: "sawtooth", volume: 0.12 },
+  horn: { frequency: 390, type: "square", volume: 0.25 },
+  collision: { frequency: 95, type: "sawtooth", volume: 0.3 },
+  pickup: { frequency: 620, type: "sine", volume: 0.18 },
+  delivery: { frequency: 780, type: "sine", volume: 0.22 },
+  nearMiss: { frequency: 950, type: "triangle", volume: 0.12 },
+  levelUp: { frequency: 880, type: "sine", volume: 0.2 },
+  unlock: { frequency: 1040, type: "triangle", volume: 0.2 },
+  button: { frequency: 440, type: "sine", volume: 0.08 },
+  refuel: { frequency: 330, type: "triangle", volume: 0.12 },
+  repair: { frequency: 260, type: "sine", volume: 0.12 },
+});
+
+export default class AudioSystem {
+  constructor({
+    eventBus = null,
+    saveManager = null,
+    settings = {},
+    radioTracks = [],
+  } = {}) {
+    this.eventBus = eventBus;
+    this.saveManager = saveManager;
+
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      ...settings,
+    };
+
+    this.radioTracks = Array.isArray(radioTracks)
+      ? radioTracks.filter(
+          (track) => track && typeof track.src === "string" && track.src.trim()
+        )
+      : [];
+
+    this.context = null;
+    this.masterGain = null;
+    this.effectsGain = null;
+    this.musicGain = null;
+    this.radioGain = null;
+
+    this.engineOscillator = null;
+    this.engineGain = null;
+    this.engineFilter = null;
+
+    this.radioAudio = null;
+    this.radioObjectUrl = null;
+
+    this.listeners = [];
+    this.activeSounds = new Set();
+    this.destroyed = false;
+    this.initialized = false;
+    this.engineRunning = false;
+    this.radioIndex = -1;
+    this.radioPlaying = false;
+    this.radioUnavailable = false;
+    this.lastEngineUpdate = 0;
+
+    this.bindEvents();
+  }
+
+  bindEvents() {
+    this.listen("run:started", () => {
+      this.startEngine();
+    });
+
+    this.listen("run:finished", () => {
+      this.stopEngine();
+    });
+
+    this.listen("player:collision", () => {
+      this.play("collision");
+    });
+
+    this.listen("traffic:near-miss", () => {
+      this.play("nearMiss");
+    });
+
+    this.listen("passengers:picked-up", () => {
+      this.play("pickup");
+    });
+
+    this.listen("passengers:delivered", () => {
+      this.play("delivery");
+    });
+
+    this.listen("progression:level-up", () => {
+      this.play("levelUp");
+    });
+
+    this.listen("progression:item-unlocked", () => {
+      this.play("unlock");
+    });
+
+    this.listen("ui:button", () => {
+      this.play("button");
+    });
+
+    this.listen("economy:vehicle-repaired", () => {
+      this.play("repair");
+    });
+
+    this.listen("economy:fuel-purchased", () => {
+      this.play("refuel");
+    });
+  }
+
+  listen(eventName, callback) {
+    if (!this.eventBus || typeof this.eventBus.on !== "function") return;
+
+    const unsubscribe = this.eventBus.on(eventName, callback);
+
+    if (typeof unsubscribe === "function") {
+      this.listeners.push(unsubscribe);
+    } else if (typeof this.eventBus.off === "function") {
+      this.listeners.push(() => this.eventBus.off(eventName, callback));
+    }
+  }
+
+  async initialize() {
+    if (this.destroyed) return false;
+    if (this.initialized) return true;
+
+    const AudioContextClass =
+      globalThis.AudioContext || globalThis.webkitAudioContext;
+
+    if (!AudioContextClass) {
+      this.initialized = true;
+      return false;
+    }
+
+    try {
+      this.context = new AudioContextClass();
+
+      this.masterGain = this.context.createGain();
+      this.effectsGain = this.context.createGain();
+      this.musicGain = this.context.createGain();
+      this.radioGain = this.context.createGain();
+
+      this.effectsGain.connect(this.masterGain);
+      this.musicGain.connect(this.masterGain);
+      this.radioGain.connect(this.masterGain);
+      this.masterGain.connect(this.context.destination);
+
+      this.applyVolumes();
+      this.initialized = true;
+
+      if (this.settings.engineEnabled && this.engineRunning) {
+        this.createEngineSound();
+      }
+
+      return true;
+    } catch {
+      this.initialized = true;
+      return false;
+    }
+  }
+
+  async resume() {
+    if (!this.context) {
+      await this.initialize();
+    }
+
+    if (!this.context) return false;
+
+    try {
+      if (this.context.state === "suspended") {
+        await this.context.resume();
+      }
+
+      return this.context.state === "running";
+    } catch {
+      return false;
+    }
+  }
+
+  applyVolumes() {
+    const master = this.settings.muted
+      ? 0
+      : this.clamp(this.settings.masterVolume, 0, 1);
+
+    if (this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(
+        master,
+        this.context.currentTime,
+        0.03
+      );
+    }
+
+    if (this.effectsGain) {
+      this.effectsGain.gain.setTargetAtTime(
+        this.clamp(this.settings.effectsVolume, 0, 1),
+        this.context.currentTime,
+        0.03
+      );
+    }
+
+    if (this.musicGain) {
+      this.musicGain.gain.setTargetAtTime(
+        this.clamp(this.settings.musicVolume, 0, 1),
+        this.context.currentTime,
+        0.03
+      );
+    }
+
+    if (this.radioGain) {
+      this.radioGain.gain.setTargetAtTime(
+        this.settings.radioEnabled
+          ? this.clamp(this.settings.radioVolume, 0, 1)
+          : 0,
+        this.context.currentTime,
+        0.03
+      );
+    }
+
+    if (this.radioAudio) {
+      this.radioAudio.volume = this.settings.muted
+        ? 0
+        : this.clamp(
+            this.settings.masterVolume * this.settings.radioVolume,
+            0,
+            1
+          );
+    }
+  }
+
+  async play(name, options = {}) {
+    if (this.destroyed || this.settings.muted) return false;
+
+    const preset = SOUND_PRESETS[name];
+
+    if (!preset) return false;
+
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    if (!this.context || !(await this.resume())) {
+      return false;
+    }
+
+    const {
+      frequency = preset.frequency,
+      duration = 0.16,
+      volume = preset.volume,
+      type = preset.type,
+      endFrequency = null,
+    } = options;
+
+    const oscillator = this.context.createOscillator();
+    const gain = this.context.createGain();
+
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(
+      Math.max(20, Number(frequency) || preset.frequency),
+      this.context.currentTime
+    );
+
+    if (Number.isFinite(endFrequency)) {
+      oscillator.frequency.exponentialRampToValueAtTime(
+        Math.max(20, endFrequency),
+        this.context.currentTime + Math.max(0.04, duration)
+      );
+    }
+
+    const soundVolume = this.clamp(Number(volume) || 0, 0, 1);
+
+    gain.gain.setValueAtTime(0.001, this.context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      Math.max(0.001, soundVolume),
+      this.context.currentTime + 0.015
+    );
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,
+      this.context.currentTime + Math.max(0.04, duration)
+    );
+
+    oscillator.connect(gain);
+    gain.connect(this.effectsGain);
+
+    const sound = { oscillator, gain };
+    this.activeSounds.add(sound);
+
+    oscillator.onended = () => {
+      this.activeSounds.delete(sound);
+
+      try {
+        oscillator.disconnect();
+        gain.disconnect();
+      } catch {
+        // Nodes may already be disconnected.
+      }
+    };
+
+    oscillator.start();
+    oscillator.stop(this.context.currentTime + Math.max(0.05, duration));
+
+    return true;
+  }
+
+  async playHorn() {
+    if (this.destroyed || this.settings.muted) return false;
+
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    if (!this.context || !(await this.resume())) {
+      return false;
+    }
+
+    return this.play("horn", {
+      frequency: 390,
+      endFrequency: 340,
+      duration: 0.45,
+      volume: 0.25,
+    });
+  }
+
+  createEngineSound() {
+    if (
+      !this.context ||
+      this.engineOscillator ||
+      !this.settings.engineEnabled
+    ) {
+      return;
+    }
+
+    this.engineOscillator = this.context.createOscillator();
+    this.engineGain = this.context.createGain();
+    this.engineFilter = this.context.createBiquadFilter();
+
+    this.engineOscillator.type = "sawtooth";
+    this.engineOscillator.frequency.value = 55;
+
+    this.engineFilter.type = "lowpass";
+    this.engineFilter.frequency.value = 250;
+
+    this.engineGain.gain.value = 0.001;
+
+    this.engineOscillator.connect(this.engineFilter);
+    this.engineFilter.connect(this.engineGain);
+    this.engineGain.connect(this.effectsGain);
+
+    this.engineOscillator.start();
+  }
+
+  async startEngine() {
+    this.engineRunning = true;
+
+    if (!this.settings.engineEnabled) return;
+
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    if (!this.context || !(await this.resume())) return;
+
+    this.createEngineSound();
+
+    if (this.engineGain) {
+      this.engineGain.gain.setTargetAtTime(
+        0.08,
+        this.context.currentTime,
+        0.2
+      );
+    }
+  }
+
+  stopEngine() {
+    this.engineRunning = false;
+
+    if (!this.context || !this.engineGain) return;
+
+    this.engineGain.gain.setTargetAtTime(
+      0.001,
+      this.context.currentTime,
+      0.1
+    );
+  }
+
+  updateEngine({ speed = 0, acceleration = 0 } = {}) {
+    if (
+      !this.engineRunning ||
+      !this.engineOscillator ||
+      !this.context ||
+      !this.settings.engineEnabled
+    ) {
+      return;
+    }
+
+    const now = this.context.currentTime;
+
+    if (now - this.lastEngineUpdate < 0.04) return;
+    this.lastEngineUpdate = now;
+
+    const safeSpeed = this.clamp(Number(speed) || 0, 0, 60);
+    const safeAcceleration = this.clamp(
+      Number(acceleration) || 0,
+      -1,
+      1
+    );
+
+    const frequency = 48 + safeSpeed * 5 + safeAcceleration * 18;
+    const volume = 0.025 + (safeSpeed / 60) * 0.09;
+
+    this.engineOscillator.frequency.setTargetAtTime(
+      frequency,
+      now,
+      0.08
+    );
+
+    this.engineFilter.frequency.setTargetAtTime(
+      180 + safeSpeed * 16,
+      now,
+      0.1
+    );
+
+    this.engineGain.gain.setTargetAtTime(
+      volume,
+      now,
+      0.08
+    );
+  }
+
+  async playRadioTrack(index = 0) {
+    if (this.destroyed || !this.settings.radioEnabled) return false;
+    if (this.radioTracks.length === 0) return false;
+
+    const normalizedIndex =
+      ((Math.floor(index) % this.radioTracks.length) +
+        this.radioTracks.length) %
+      this.radioTracks.length;
+
+    const track = this.radioTracks[normalizedIndex];
+
+    if (!track?.src) return false;
+
+    this.stopRadio();
+
+    const audio = new Audio(track.src);
+
+    audio.preload = "auto";
+    audio.loop = Boolean(track.loop);
+    audio.volume = this.settings.muted
+      ? 0
+      : this.clamp(
+          this.settings.masterVolume * this.settings.radioVolume,
+          0,
+          1
+        );
+
+    audio.addEventListener("ended", this.handleRadioEnded);
+
+    this.radioAudio = audio;
+    this.radioIndex = normalizedIndex;
+
+    try {
+      await audio.play();
+      this.radioPlaying = true;
+
+      this.emit("radio:track-changed", {
+        index: normalizedIndex,
+        title: track.title || `Radio Track ${normalizedIndex + 1}`,
+        artist: track.artist || "RuffNeck Radio",
+        playing: true,
+      });
+
+      return true;
+    } catch {
+      this.radioPlaying = false;
+
+      this.emit("radio:playback-blocked", {
+        index: normalizedIndex,
+        reason: "browser_policy_or_media_error",
+      });
+
+      return false;
+    }
+  }
+
+  handleRadioEnded = () => {
+    this.radioPlaying = false;
+
+    if (this.radioAudio) {
+      this.radioAudio.removeEventListener("ended", this.handleRadioEnded);
+    }
+
+    if (this.settings.radioEnabled && this.radioTracks.length > 1) {
+      this.playNextRadioTrack();
+    }
+  };
+
+  async playNextRadioTrack() {
+    if (this.radioTracks.length === 0) return false;
+
+    const nextIndex = (this.radioIndex + 1) % this.radioTracks.length;
+    return this.playRadioTrack(nextIndex);
+  }
+
+  async playPreviousRadioTrack() {
+    if (this.radioTracks.length === 0) return false;
+
+    const previousIndex =
+      (this.radioIndex - 1 + this.radioTracks.length) %
+      this.radioTracks.length;
+
+    return this.playRadioTrack(previousIndex);
+  }
+
+  stopRadio() {
+    if (!this.radioAudio) {
+      this.radioPlaying = false;
+      return;
+    }
+
+    this.radioAudio.removeEventListener("ended", this.handleRadioEnded);
+    this.radioAudio.pause();
+
+    try {
+      this.radioAudio.currentTime = 0;
+    } catch {
+      // Some streaming sources do not support seeking.
+    }
+
+    this.radioAudio.src = "";
+    this.radioAudio.load();
+    this.radioAudio = null;
+    this.radioPlaying = false;
+  }
+
+  toggleRadio() {
+    this.settings.radioEnabled = !this.settings.radioEnabled;
+
+    if (!this.settings.radioEnabled) {
+      this.stopRadio();
+    } else if (this.radioIndex >= 0) {
+      this.playRadioTrack(this.radioIndex);
+    }
+
+    this.applyVolumes();
+    this.persistSettings();
+
+    return this.settings.radioEnabled;
+  }
+
+  toggleMute() {
+    this.settings.muted = !this.settings.muted;
+    this.applyVolumes();
+    this.persistSettings();
+
+    this.emit("audio:mute-changed", {
+      muted: this.settings.muted,
+    });
+
+    return this.settings.muted;
+  }
+
+  setVolume(channel, value) {
+    const volume = this.clamp(Number(value) || 0, 0, 1);
+
+    const keys = {
+      master: "masterVolume",
+      effects: "effectsVolume",
+      music: "musicVolume",
+      radio: "radioVolume",
+    };
+
+    const key = keys[channel];
+
+    if (!key) {
+      throw new Error(`Unknown audio channel: ${channel}`);
+    }
+
+    this.settings[key] = volume;
+
+    this.applyVolumes();
+    this.persistSettings();
+
+    this.emit("audio:volume-changed", {
+      channel,
+      volume,
+    });
+
+    return volume;
+  }
+
+  setEngineEnabled(enabled) {
+    this.settings.engineEnabled = Boolean(enabled);
+
+    if (!this.settings.engineEnabled) {
+      this.stopEngine();
+      this.disposeEngineNodes();
+    } else if (this.engineRunning) {
+      this.startEngine();
+    }
+
+    this.persistSettings();
+    return this.settings.engineEnabled;
+  }
+
+  disposeEngineNodes() {
+    if (this.engineOscillator) {
+      try {
+        this.engineOscillator.stop();
+        this.engineOscillator.disconnect();
+        this.engineGain?.disconnect();
+        this.engineFilter?.disconnect();
+      } catch {
+        // Nodes may already be stopped.
+      }
+    }
+
+    this.engineOscillator = null;
+    this.engineGain = null;
+    this.engineFilter = null;
+  }
+
+  getSettings() {
+    return { ...this.settings };
+  }
+
+  getRadioState() {
+    const track =
+      this.radioIndex >= 0 ? this.radioTracks[this.radioIndex] : null;
+
+    return {
+      enabled: this.settings.radioEnabled,
+      playing: this.radioPlaying,
+      index: this.radioIndex,
+      trackCount: this.radioTracks.length,
+      title: track?.title || "RuffNeck Radio",
+      artist: track?.artist || "Arewa Mix",
+    };
+  }
+
+  persistSettings() {
+    if (
+      this.saveManager &&
+      typeof this.saveManager.saveSettings === "function"
+    ) {
+      this.saveManager.saveSettings({
+        audio: this.getSettings(),
+      });
+    }
+
+    this.emit("audio:settings-updated", this.getSettings());
+  }
+
+  emit(eventName, payload) {
+    if (this.eventBus && typeof this.eventBus.emit === "function") {
+      this.eventBus.emit(eventName, payload);
+    }
+  }
+
+  clamp(value, minimum, maximum) {
+    return Math.min(maximum, Math.max(minimum, value));
+  }
+
+  async destroy() {
+    if (this.destroyed) return;
+
+    this.destroyed = true;
+
+    this.stopRadio();
+    this.stopEngine();
+    this.disposeEngineNodes();
+
+    for (const sound of this.activeSounds) {
+      try {
+        sound.oscillator.stop();
+        sound.oscillator.disconnect();
+        sound.gain.disconnect();
+      } catch {
+        // Ignore sounds that have already ended.
+      }
+    }
+
+    this.activeSounds.clear();
+
+    for (const unsubscribe of this.listeners) {
+      try {
+        unsubscribe();
+      } catch {
+        // Ignore removed listeners.
+      }
+    }
+
+    this.listeners.length = 0;
+
+    if (this.context && this.context.state !== "closed") {
+      try {
+        await this.context.close();
+      } catch {
+        // Audio context may already be closed.
+      }
+    }
+
+    this.context = null;
+    this.initialized = false;
+  }
+}
+
+========== .\js\systems\MissionSystem.js ==========
+
+import { GAME_CONFIG } from "../core/config.js";
+
+const DEFAULTS = {
+  maxActiveMissions: 3,
+  dailyResetInterval: 86400000, // 24 hours in ms
+  baseXPReward: 100,
+  baseMoneyReward: 500,
+};
+
+// Mission templates with Kano-specific flavor
+const MISSION_TEMPLATES = [
+  {
+    id: "deliver_passengers",
+    type: "delivery",
+    description: "Deliver {count} passengers to their destinations",
+    target: 5,
+    xpReward: 150,
+    moneyReward: 750,
+    icon: "passenger",
+  },
+  {
+    id: "earn_fares",
+    type: "economy",
+    description: "Earn â‚¦{amount} in fares",
+    target: 3000,
+    xpReward: 200,
+    moneyReward: 1000,
+    icon: "money",
+  },
+  {
+    id: "avoid_collisions",
+    type: "driving",
+    description: "Complete {count} trips without collisions",
+    target: 3,
+    xpReward: 250,
+    moneyReward: 1200,
+    icon: "shield",
+  },
+  {
+    id: "near_misses",
+    type: "driving",
+    description: "Perform {count} near-misses",
+    target: 10,
+    xpReward: 100,
+    moneyReward: 500,
+    icon: "zap",
+  },
+  {
+    id: "distance_traveled",
+    type: "driving",
+    description: "Drive {distance}km in total",
+    target: 15,
+    xpReward: 180,
+    moneyReward: 900,
+    icon: "route",
+  },
+  {
+    id: "visit_districts",
+    type: "exploration",
+    description: "Visit {count} different districts",
+    target: 4,
+    xpReward: 300,
+    moneyReward: 1500,
+    icon: "map",
+  },
+  {
+    id: "karota_checkpoints",
+    type: "special",
+    description: "Pass {count} KAROTA checkpoints without fines",
+    target: 5,
+    xpReward: 200,
+    moneyReward: 1000,
+    icon: "badge",
+  },
+  {
+    id: "night_driving",
+    type: "special",
+    description: "Complete {count} trips during night time",
+    target: 2,
+    xpReward: 250,
+    moneyReward: 1250,
+    icon: "moon",
+  },
+];
+
+export default class MissionSystem {
+  constructor({
+    eventBus = null,
+    gameState = null,
+    saveManager = null,
+    config = {},
+  } = {}) {
+    if (!gameState) throw new Error("MissionSystem requires gameState.");
+
+    this.eventBus = eventBus;
+    this.gameState = gameState;
+    this.saveManager = saveManager;
+    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.missions ?? {}), ...config };
+
+    this.activeMissions = [];
+    this.completedMissions = [];
+    this.missionHistory = [];
+    this.lastDailyReset = 0;
+    this.enabled = false;
+
+    this._disposers = [];
+    this._bindEvents();
+  }
+
+  _bindEvents() {
+    this._subscribe("game:started", () => {
+      this.enabled = true;
+      this._checkDailyReset();
+      if (this.activeMissions.length === 0) {
+        this.generateDailyMissions();
+      }
+    });
+
+    this._subscribe("game:stopped", () => {
+      this.enabled = false;
+    });
+
+    this._subscribe("passenger:delivered", (payload) => {
+      this._updateMissions("deliver_passengers", 1);
+      this._updateMissions("earn_fares", payload.fare || 0);
+    });
+
+    this._subscribe("traffic:near-miss", () => {
+      this._updateMissions("near_misses", 1);
+    });
+
+    this._subscribe("run:finished", (payload) => {
+      if (payload.reason === "completed") {
+        this._updateMissions("avoid_collisions", 1);
+      }
+      this._updateMissions("distance_traveled", (payload.distance || 0) / 1000);
+    });
+
+    this._subscribe("scenery:districtChanged", (payload) => {
+      this._trackDistrictVisit(payload.district);
+    });
+
+    this._subscribe("checkpoint:cleared", () => {
+      this._updateMissions("karota_checkpoints", 1);
+    });
+
+    this._subscribe("time:period-changed", (payload) => {
+      if (payload.period === "night") {
+        this._updateMissions("night_driving", 1);
+      }
+    });
+  }
+
+  initialize() {
+    this._loadMissions();
+    this._checkDailyReset();
+    if (this.activeMissions.length === 0) {
+      this.generateDailyMissions();
+    }
+    this._emitUpdate();
+  }
+
+  generateDailyMissions() {
+    if (this.activeMissions.length >= this.config.maxActiveMissions) {
+      return;
+    }
+
+    const available = MISSION_TEMPLATES.filter(
+      (t) => !this.activeMissions.find((m) => m.templateId === t.id)
+    );
+
+    const shuffled = available.sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, this.config.maxActiveMissions - this.activeMissions.length);
+
+    for (const template of selected) {
+      const mission = this._createMission(template);
+      this.activeMissions.push(mission);
+    }
+
+    this.lastDailyReset = Date.now();
+    this._saveMissions();
+    this._emitUpdate();
+
+    this.eventBus?.emit?.("missions:generated", {
+      missions: this.activeMissions,
+    });
+  }
+
+  _createMission(template) {
+    const difficulty = this.gameState.profile?.level || 1;
+    const multiplier = 1 + (difficulty - 1) * 0.2;
+
+    return {
+      id: `mission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      templateId: template.id,
+      type: template.type,
+      description: template.description.replace("{count}", Math.ceil(template.target * multiplier)).replace("{amount}", Math.ceil(template.target * multiplier)).replace("{distance}", Math.ceil(template.target * multiplier)),
+      target: Math.ceil(template.target * multiplier),
+      progress: 0,
+      xpReward: Math.ceil(template.xpReward * multiplier),
+      moneyReward: Math.ceil(template.moneyReward * multiplier),
+      icon: template.icon,
+      completed: false,
+      claimed: false,
+      createdAt: Date.now(),
+    };
+  }
+
+  _updateMissions(templateId, amount) {
+    let updated = false;
+
+    for (const mission of this.activeMissions) {
+      if (mission.templateId === templateId && !mission.completed) {
+        mission.progress += amount;
+
+        if (mission.progress >= mission.target) {
+          mission.progress = mission.target;
+          mission.completed = true;
+          this.eventBus?.emit?.("mission:completed", {
+            mission: this._serializeMission(mission),
+          });
+        }
+
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      this._saveMissions();
+      this._emitUpdate();
+    }
+  }
+
+  _trackDistrictVisit(district) {
+    if (!district) return;
+
+    const mission = this.activeMissions.find(
+      (m) => m.templateId === "visit_districts" && !m.completed
+    );
+
+    if (mission) {
+      const visited = mission.visitedDistricts || [];
+      if (!visited.includes(district)) {
+        visited.push(district);
+        mission.visitedDistricts = visited;
+        this._updateMissions("visit_districts", 1);
+      }
+    }
+  }
+
+  claimMission(missionId) {
+    const mission = this.activeMissions.find((m) => m.id === missionId);
+
+    if (!mission || !mission.completed || mission.claimed) {
+      return { success: false, reason: "Mission not available for claiming." };
+    }
+
+    mission.claimed = true;
+    this.completedMissions.push(mission);
+
+    // Award rewards
+    this.gameState.addXP?.(mission.xpReward, "mission_completion");
+    this.gameState.addMoney?.(mission.moneyReward, "mission_reward");
+
+    // Remove from active
+    this.activeMissions = this.activeMissions.filter((m) => m.id !== missionId);
+
+    this._saveMissions();
+    this._emitUpdate();
+
+    this.eventBus?.emit?.("mission:claimed", {
+      mission: this._serializeMission(mission),
+      xpReward: mission.xpReward,
+      moneyReward: mission.moneyReward,
+    });
+
+    return {
+      success: true,
+      xpReward: mission.xpReward,
+      moneyReward: mission.moneyReward,
+    };
+  }
+
+  getActiveMissions() {
+    return this.activeMissions.map((m) => this._serializeMission(m));
+  }
+
+  getCompletedMissions() {
+    return this.completedMissions.map((m) => this._serializeMission(m));
+  }
+
+  getMissionProgress() {
+    return {
+      active: this.activeMissions.length,
+      completed: this.completedMissions.length,
+      total: this.missionHistory.length,
+    };
+  }
+
+  _checkDailyReset() {
+    const now = Date.now();
+    const timeSinceReset = now - this.lastDailyReset;
+
+    if (timeSinceReset >= this.config.dailyResetInterval) {
+      this._resetDailyMissions();
+    }
+  }
+
+  _resetDailyMissions() {
+    // Move uncompleted missions to history
+    for (const mission of this.activeMissions) {
+      if (!mission.completed) {
+        this.missionHistory.push({
+          ...mission,
+          failed: true,
+          completedAt: Date.now(),
+        });
+      }
+    }
+
+    this.activeMissions = [];
+    this.lastDailyReset = Date.now();
+
+    this._saveMissions();
+    this._emitUpdate();
+
+    this.eventBus?.emit?.("missions:reset", {
+      reason: "daily_reset",
+    });
+  }
+
+  _serializeMission(mission) {
+    return {
+      id: mission.id,
+      templateId: mission.templateId,
+      type: mission.type,
+      description: mission.description,
+      target: mission.target,
+      progress: Math.min(mission.progress, mission.target),
+      xpReward: mission.xpReward,
+      moneyReward: mission.moneyReward,
+      icon: mission.icon,
+      completed: mission.completed,
+      claimed: mission.claimed,
+      progressPercent: Math.min(100, (mission.progress / mission.target) * 100),
+    };
+  }
+
+  _emitUpdate() {
+    this.eventBus?.emit?.("missions:updated", {
+      active: this.getActiveMissions(),
+      completed: this.getCompletedMissions(),
+      progress: this.getMissionProgress(),
+    });
+  }
+
+  _saveMissions() {
+    if (this.saveManager) {
+      this.saveManager.setValue?.("missions.active", this.activeMissions);
+      this.saveManager.setValue?.("missions.completed", this.completedMissions);
+      this.saveManager.setValue?.("missions.history", this.missionHistory);
+      this.saveManager.setValue?.("missions.lastDailyReset", this.lastDailyReset);
+    }
+  }
+
+  _loadMissions() {
+    if (this.saveManager) {
+      this.activeMissions = this.saveManager.getValue?.("missions.active") || [];
+      this.completedMissions = this.saveManager.getValue?.("missions.completed") || [];
+      this.missionHistory = this.saveManager.getValue?.("missions.history") || [];
+      this.lastDailyReset = this.saveManager.getValue?.("missions.lastDailyReset") || 0;
+    }
+  }
+
+  _subscribe(event, handler) {
+    if (!this.eventBus?.on) return;
+    const unsub = this.eventBus.on(event, handler);
+    if (typeof unsub === "function") this._disposers.push(unsub);
+  }
+
+  dispose() {
+    for (const unsub of this._disposers) unsub();
+    this._disposers = [];
+  }
+}
+
+========== .\js\systems\PassengerSystem.js ==========
+
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { GAME_CONFIG } from "../core/config.js";
+import { MODEL_PATHS } from "../core/AssetCatalog.js";
+
+const DEFAULTS = {
+  maxWaiting: 5,
+  spawnInterval: 18,
+  pickupRadius: 7,
+  pickupSpeedThreshold: 12,
+  dropoffRadius: 9,
+  minTripDistance: 150,
+  maxTripDistance: 400,
+  baseFare: 300,
+  farePerUnit: 2.5,
+};
+
+const DESTINATIONS = [
+  "Sabon Gari", "Kofar Mata", "Fagge", "Farm Centre",
+  "Hotoro", "Zoo Road", "Naibawa", "Tarauni",
+  "Dala", "Kantin Kwari", "Bompai", "Sharada",
+];
+
+const GREETINGS = [
+  "Sannu!", "Oga!", "Mallam!", "Yallabai!", "Aboki!",
+  "Baba!", "Mama!", "Hajiya!", "Driver!",
+];
+
+const CONFIRMATIONS = [
+  "Akwai!", "To!", "Oya!", "Fast fast!", "Let's go!",
+];
+
+export default class PassengerSystem {
+  constructor({ scene, eventBus = null, config = {}, gameState = null } = {}) {
+    if (!scene) {
+      throw new Error("PassengerSystem requires a scene.");
+    }
+
+    this.scene = scene;
+    this.eventBus = eventBus;
+    this.gameState = gameState;
+    this.config = {
+      ...DEFAULTS,
+      ...(GAME_CONFIG?.passengers ?? {}),
+      ...config,
+    };
+
+    this.passengers = new Map();
+    this.currentPassenger = null;
+    this.pool = [];
+    this.spawnTimer = 0;
+    this.tripDistance = 0;
+    this.enabled = false;
+    this.playerZ = 0;
+
+    this._disposers = [];
+    this._glbLoader = new GLTFLoader();
+    this._passengerModelCache = null;
+    this._passengerModelLoadStarted = false;
+    this._disposed = false;
+
+    this._loadPassengerModel();
+  }
+
+  _loadPassengerModel() {
+    if (this._passengerModelLoadStarted || this._disposed) return;
+
+    const path = MODEL_PATHS?.characters?.passenger;
+
+    // A passenger GLB is optional. Use the built-in character
+    // when the catalog does not define a valid model path.
+    if (typeof path !== "string" || path.trim().length === 0) {
+      console.info(
+        "[PassengerSystem] No passenger GLB configured; using fallback characters."
+      );
+      return;
+    }
+
+    this._passengerModelLoadStarted = true;
+
+    this._glbLoader.load(
+      path,
+      (gltf) => {
+        if (this._disposed) {
+          return;
+        }
+
+        this._passengerModelCache = gltf.scene;
+
+        this._passengerModelCache.traverse((child) => {
+          if (!child.isMesh) return;
+          child.castShadow = true;
+          child.receiveShadow = true;
+        });
+
+        console.log("[PassengerSystem] Passenger model loaded:", path);
+      },
+      undefined,
+      (error) => {
+        console.warn(
+          "[PassengerSystem] Passenger model failed to load; using fallback characters.",
+          error
+        );
+      }
+    );
+  }
+
+  initialize() {
+    if (this._disposed) return;
+
+    this.enabled = true;
+
+    this._subscribe("game:started", () => {
+      this.enabled = true;
+      this.reset();
+    });
+
+    this._subscribe("game:stopped", () => {
+      this.enabled = false;
+      this.clearAll();
+    });
+
+    this._subscribe("game:over", () => {
+      this.enabled = false;
+      this.clearAll();
+    });
+
+    for (let i = 0; i < 3; i++) {
+      this._spawnPassenger(this.playerZ + 50 + i * 40);
+    }
+  }
+
+  update(deltaTime, playerZ = 0, playerSpeed = 0, playerLane = 1) {
+    if (!this.enabled || this._disposed) return;
+
+    this.playerZ = playerZ;
+    this.spawnTimer -= deltaTime;
+
+    if (
+      this.spawnTimer <= 0 &&
+      this.passengers.size < this.config.maxWaiting
+    ) {
+      this._spawnPassenger(
+        playerZ + this.config.spawnInterval * 10
+      );
+
+      this.spawnTimer =
+        this.config.spawnInterval * (0.8 + Math.random() * 0.4);
+    }
+
+    for (const [id, passenger] of this.passengers) {
+      if (passenger.z < playerZ - 20) {
+        this._returnToPool(passenger);
+        continue;
+      }
+
+      if (passenger.state === "WAITING") {
+        if (passenger.mesh) {
+          passenger.mesh.position.y =
+            Math.abs(Math.sin(Date.now() * 0.003 + id)) * 0.1;
+        }
+
+        const distance = Math.sqrt(
+          passenger.x * passenger.x +
+          Math.pow(passenger.z - playerZ, 2)
+        );
+
+        if (
+          distance < this.config.pickupRadius &&
+          playerSpeed < this.config.pickupSpeedThreshold
+        ) {
+          this._boardPassenger(passenger);
+        }
+      }
+    }
+
+    if (this.currentPassenger) {
+      this.tripDistance += playerSpeed * deltaTime;
+
+      this.eventBus?.emit?.("passenger:trip-update", {
+        destination: this.currentPassenger.destination,
+        progress: Math.min(
+          1,
+          this.tripDistance / this.currentPassenger.tripLength
+        ),
+      });
+
+      if (
+        this.tripDistance >= this.currentPassenger.tripLength
+      ) {
+        if (!this.currentPassenger.shouted) {
+          this.currentPassenger.shouted = true;
+
+          this.eventBus?.emit?.("passenger:shout", {
+            text: "Akwai! Akwai!",
+            type: "urgent",
+          });
+
+          if (this.currentPassenger.mesh) {
+            this.currentPassenger.mesh.rotation.x = -0.3;
+          }
+        }
+
+        if (playerSpeed < 5) {
+          this._dropoffPassenger();
+        }
+      }
+    }
+  }
+
+  _createFallbackCharacter() {
+    const group = new THREE.Group();
+
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: 0x3b82f6,
+      flatShading: true,
+    });
+
+    const skinMaterial = new THREE.MeshStandardMaterial({
+      color: 0x8d5524,
+      flatShading: true,
+    });
+
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.4, 1.2, 8),
+      bodyMaterial
+    );
+
+    body.position.y = 0.8;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    group.add(body);
+
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.3, 8, 6),
+      skinMaterial
+    );
+
+    head.position.y = 1.6;
+    head.castShadow = true;
+    head.receiveShadow = true;
+    group.add(head);
+
+    return group;
+  }
+
+  _spawnPassenger(z) {
+    if (this._disposed) return;
+
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const x = side * (6 + Math.random() * 2);
+
+    const passenger = this._getFromPool();
+
+    passenger.id = Math.random().toString(36).slice(2, 11);
+    passenger.z = z;
+    passenger.x = x;
+    passenger.state = "WAITING";
+    passenger.greeting =
+      GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+
+    const group = new THREE.Group();
+
+    if (this._passengerModelCache) {
+      const model = this._passengerModelCache.clone(true);
+
+      // Clone materials per passenger but retain shared model geometry
+      // and textures, so returning a passenger to the pool is safe.
+      model.traverse((child) => {
+        if (!child.isMesh) return;
+
+        if (Array.isArray(child.material)) {
+          child.material = child.material.map((material) =>
+            material.clone()
+          );
+        } else if (child.material) {
+          child.material = child.material.clone();
+        }
+
+        child.castShadow = true;
+        child.receiveShadow = true;
+      });
+
+      group.add(model);
+    } else {
+      group.add(this._createFallbackCharacter());
+    }
+
+    group.position.set(x, 0, z);
+    group.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+
+    this.scene.add(group);
+    passenger.mesh = group;
+
+    this.passengers.set(passenger.id, passenger);
+
+    this.eventBus?.emit?.("passenger:spotted", {
+      text: passenger.greeting,
+      x,
+      z,
+    });
+  }
+
+  _boardPassenger(passenger) {
+    this.passengers.delete(passenger.id);
+
+    if (passenger.mesh) {
+      this.scene.remove(passenger.mesh);
+    }
+
+    this.currentPassenger = passenger;
+    this.currentPassenger.state = "RIDING";
+    this.currentPassenger.destination =
+      DESTINATIONS[Math.floor(Math.random() * DESTINATIONS.length)];
+
+    this.currentPassenger.tripLength =
+      this.config.minTripDistance +
+      Math.random() *
+        (this.config.maxTripDistance - this.config.minTripDistance);
+
+    this.currentPassenger.shouted = false;
+    this.tripDistance = 0;
+
+    for (const [, other] of this.passengers) {
+      if (Math.abs(other.z - passenger.z) < 20) {
+        this._returnToPool(other);
+      }
+    }
+
+    this.eventBus?.emit?.("passenger:boarded", {
+      text: CONFIRMATIONS[
+        Math.floor(Math.random() * CONFIRMATIONS.length)
+      ],
+      destination: this.currentPassenger.destination,
+    });
+  }
+
+  _dropoffPassenger() {
+    if (!this.currentPassenger) return;
+
+    const passenger = this.currentPassenger;
+
+    const fare = Math.floor(
+      this.config.baseFare +
+      this.tripDistance * this.config.farePerUnit
+    );
+
+    this.gameState?.addMoney?.(fare, "passenger_fare");
+    this.gameState?.addScore?.(fare);
+    this.gameState?.addXP?.(50, "delivery");
+
+    this.eventBus?.emit?.("passenger:dropped", {
+      text: "Na gode! (Thank you!)",
+      fare,
+    });
+
+    this.currentPassenger = null;
+    this.tripDistance = 0;
+
+    this._spawnPassenger(this.playerZ + 100);
+  }
+
+  _getFromPool() {
+    return this.pool.pop() || {};
+  }
+
+  _disposePassengerMaterials(root) {
+    root.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+
+      const materials = Array.isArray(child.material)
+        ? child.material
+        : [child.material];
+
+      for (const material of materials) {
+        material.dispose();
+      }
+
+      // Do not dispose geometry or textures from cached GLB models.
+      // Geometry can be shared across cloned passenger instances.
+    });
+  }
+
+  _returnToPool(passenger) {
+    if (!passenger) return;
+
+    if (passenger.mesh) {
+      this.scene.remove(passenger.mesh);
+      this._disposePassengerMaterials(passenger.mesh);
+      passenger.mesh = null;
+    }
+
+    this.passengers.delete(passenger.id);
+
+    if (this.currentPassenger === passenger) {
+      this.currentPassenger = null;
+      this.tripDistance = 0;
+    }
+
+    this.pool.push(passenger);
+  }
+
+  clearAll() {
+    for (const passenger of [...this.passengers.values()]) {
+      this._returnToPool(passenger);
+    }
+
+    if (this.currentPassenger) {
+      this.currentPassenger = null;
+      this.tripDistance = 0;
+    }
+  }
+
+  reset() {
+    this.clearAll();
+    this.spawnTimer = 0;
+    this.enabled = true;
+  }
+
+  _subscribe(event, handler) {
+    if (!this.eventBus?.on) return;
+
+    const unsubscribe = this.eventBus.on(event, handler);
+
+    if (typeof unsubscribe === "function") {
+      this._disposers.push(unsubscribe);
+    }
+  }
+
+  dispose() {
+    if (this._disposed) return;
+
+    this.clearAll();
+
+    for (const unsubscribe of this._disposers) {
+      unsubscribe();
+    }
+
+    this._disposers = [];
+    this.pool = [];
+    this._passengerModelCache = null;
+    this._disposed = true;
+  }
+}

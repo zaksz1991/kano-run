@@ -1,4 +1,5 @@
-import * as THREE from "three";
+﻿import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
@@ -49,6 +50,7 @@ export default class ScenerySystem {
 
     this.textureLoader = new THREE.TextureLoader();
     this._loadTextures();
+    this._loadSceneryModels();
 
     this._handleRouteChanged = (payload) => {
       const route = payload?.route ?? payload;
@@ -69,33 +71,117 @@ export default class ScenerySystem {
   }
 
   _loadTextures() {
-    const definitions = {
-      asphalt: `${TEXTURE_BASE}/asphalt.jpg`,
-      wall: `${TEXTURE_BASE}/building-wall.jpg`,
-      market: `${TEXTURE_BASE}/market-stall.jpg`,
-      ground: `${TEXTURE_BASE}/asphalt-1.jpg`,
-    };
+    const path = "/assets/models/road-textures/PNG/Default/roadTexture_01.png";
 
-    for (const [name, path] of Object.entries(definitions)) {
-      const texture = this.textureLoader.load(
-        path,
-        () => {
-          texture.needsUpdate = true;
-        },
-        undefined,
-        () => {
-          console.warn(`[ScenerySystem] Texture unavailable: ${path}`);
-        },
-      );
+    const texture = this.textureLoader.load(
+      path,
+      () => {
+        texture.needsUpdate = true;
+      },
+      undefined,
+      () => {
+        console.warn(`[ScenerySystem] Road texture unavailable: ${path}`);
+      },
+    );
 
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.repeat.set(4, 4);
 
-      this.textures[name] = texture;
-    }
+    this.textures.asphalt = texture;
+    this.textures.ground = texture;
+    this.textures.wall = null;
+    this.textures.market = null;
   }
 
+  _loadSceneryModels() {
+    const loader = new GLTFLoader();
+
+    this.modelPaths = {
+      buildings: [
+        ...Array.from({ length: 21 }, (_, i) =>
+          `/assets/models/city-kit-suburban/building-type-${String.fromCharCode(97 + i)}.glb`
+        ),
+        ...Array.from({ length: 20 }, (_, i) =>
+          `/assets/models/city-kit-industrial/building-${String.fromCharCode(97 + i)}.glb`
+        ),
+        "/assets/models/city-pack/Big Building.glb",
+        "/assets/models/city-pack/Brown Building.glb",
+        "/assets/models/city-pack/Building Green.glb",
+        "/assets/models/city-pack/Building Red.glb",
+        "/assets/models/city-pack/Building Red Corner.glb",
+      ],
+      tree: "/assets/models/city-kit-suburban/tree-large.glb",
+      smallTree: "/assets/models/city-kit-suburban/tree-small.glb",
+      pole: "/assets/models/city-kit-roads/electricity-pole.glb",
+      light: "/assets/models/city-kit-roads/light-square.glb",
+      bench: "/assets/models/city-pack/Bench.glb",
+      busStop: "/assets/models/city-pack/Bus Stop.glb",
+      pedestrian: "/assets/models/pedestrian-passengers/pedestrian.glb",
+    };
+
+    this.modelCache = new Map();
+
+    const paths = [
+      ...this.modelPaths.buildings,
+      this.modelPaths.tree,
+      this.modelPaths.smallTree,
+      this.modelPaths.pole,
+      this.modelPaths.light,
+      this.modelPaths.bench,
+      this.modelPaths.busStop,
+      this.modelPaths.pedestrian,
+    ];
+
+    Promise.allSettled(
+      paths.map(async (path) => {
+        const gltf = await loader.loadAsync(path);
+        this.modelCache.set(path, gltf.scene);
+      }),
+    ).then((results) => {
+      const loaded = results.filter((result) => result.status === "fulfilled").length;
+      console.info(`[ScenerySystem] Loaded ${loaded}/${paths.length} scenery models.`);
+
+      if (!this.initialized || !this.segments.length) return;
+
+      for (const segment of this.segments) {
+        this._clearSegmentProps(segment);
+        this._buildBuildings(segment);
+        this._buildProps(segment);
+      }
+    });
+  }
+
+  _createAssetInstance(path, targetHeight = 6) {
+    const source = this.modelCache?.get(path);
+    if (!source) return null;
+
+    const model = source.clone(true);
+    const bounds = new THREE.Box3().setFromObject(model);
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+
+    if (!Number.isFinite(size.y) || size.y <= 0) {
+      return model;
+    }
+
+    model.scale.setScalar(targetHeight / size.y);
+    model.position.set(
+      -center.x * model.scale.x,
+      -bounds.min.y * model.scale.y,
+      -center.z * model.scale.z,
+    );
+
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    return model;
+  }
   _subscribe(eventName, handler) {
     if (!this.eventBus?.on) return;
 
@@ -401,35 +487,51 @@ export default class ScenerySystem {
     const segmentLength = this.config.segmentLength;
     const slots = 4;
     const slotWidth = segmentLength / slots;
+    const paths = this.modelPaths?.buildings ?? [];
 
     for (let i = 0; i < slots; i++) {
-      const z =
-        -segmentLength / 2 +
-        i * slotWidth +
-        slotWidth / 2;
+      const z = -segmentLength / 2 + i * slotWidth + slotWidth / 2;
 
-      if (Math.random() < this.config.buildingDensity) {
-        this._createBuilding(
-          segment,
-          this._pickBuildingType(),
-          -18 - Math.random() * 5,
-          z,
-          Math.random() * 0.2 - 0.1,
-        );
-      }
+      for (const side of [-1, 1]) {
+        if (Math.random() >= this.config.buildingDensity) continue;
 
-      if (Math.random() < this.config.buildingDensity) {
-        this._createBuilding(
-          segment,
-          this._pickBuildingType(),
-          18 + Math.random() * 5,
+        const path = paths[Math.floor(Math.random() * paths.length)];
+        const targetHeight = this.currentTheme === "city"
+          ? 10 + Math.random() * 8
+          : this.currentTheme === "market"
+            ? 4 + Math.random() * 4
+            : 5 + Math.random() * 6;
+
+        const group = new THREE.Group();
+        const model = path ? this._createAssetInstance(path, targetHeight) : null;
+
+        if (model) {
+          group.add(model);
+        } else {
+          this._createBuilding(
+            segment,
+            this._pickBuildingType(),
+            side * (18 + Math.random() * 5),
+            z,
+            side < 0 ? Math.random() * 0.2 - 0.1 : Math.PI + Math.random() * 0.2 - 0.1,
+          );
+          continue;
+        }
+
+        group.position.set(
+          side * (18 + Math.random() * 5),
+          0,
           z,
-          Math.PI + Math.random() * 0.2 - 0.1,
         );
+        group.rotation.y = side < 0
+          ? Math.random() * 0.2 - 0.1
+          : Math.PI + Math.random() * 0.2 - 0.1;
+
+        segment.group.add(group);
+        segment.props.push({ type: "building", mesh: group });
       }
     }
   }
-
   _pickBuildingType() {
     const random = Math.random();
 
@@ -527,76 +629,58 @@ export default class ScenerySystem {
 
     const side = Math.random() > 0.5 ? 1 : -1;
     const x = side * (12 + Math.random() * 4);
-    const z =
-      (Math.random() - 0.5) * this.config.segmentLength;
+    const z = (Math.random() - 0.5) * this.config.segmentLength;
 
-    let prop;
+    const choices = [
+      { key: "tree", path: this.modelPaths?.tree, height: 5 },
+      { key: "smallTree", path: this.modelPaths?.smallTree, height: 3 },
+      { key: "pole", path: this.modelPaths?.pole, height: 7 },
+      { key: "light", path: this.modelPaths?.light, height: 6 },
+      { key: "bench", path: "/assets/models/city-pack/Bench.glb", height: 1.5 },
+    ];
 
-    if (Math.random() > 0.5) {
-      prop = new THREE.Mesh(
-        this._geometry(
-          "pole",
-          () =>
-            new THREE.CylinderGeometry(
-              0.15,
-              0.15,
-              6,
-              6,
-            ),
-        ),
-        this._material("pole", 0x5d4037),
-      );
+    const choice = choices[Math.floor(Math.random() * choices.length)];
+    const prop = choice.path
+      ? this._createAssetInstance(choice.path, choice.height)
+      : null;
 
-      prop.position.y = 3;
-      prop.castShadow = true;
-    } else {
-      const trunk = new THREE.Mesh(
-        this._geometry(
-          "trunk",
-          () =>
-            new THREE.CylinderGeometry(
-              0.2,
-              0.3,
-              2,
-              6,
-            ),
-        ),
-        this._material("trunk", 0x795548),
-      );
-
-      trunk.position.y = 1;
-      trunk.castShadow = true;
-
-      const leaves = new THREE.Mesh(
-        this._geometry(
-          "leaves",
-          () => new THREE.SphereGeometry(1.5, 8, 6),
-        ),
-        this._material("leaves", 0x558b2f),
-      );
-
-      leaves.position.y = 3;
-      leaves.castShadow = true;
-
-      prop = new THREE.Group();
-      prop.add(trunk, leaves);
+    if (prop) {
+      prop.position.x += x;
+      prop.position.z += z;
+      segment.group.add(prop);
+      segment.props.push({ type: "prop", mesh: prop });
+      return;
     }
 
-    prop.position.x = x;
-    prop.position.z = z;
+    // Keep a simple fallback only while the actual model is unavailable.
+    const fallback = new THREE.Group();
+    const trunk = new THREE.Mesh(
+      this._geometry("fallback-trunk", () => new THREE.CylinderGeometry(0.2, 0.3, 2, 6)),
+      this._material("fallback-trunk", 0x795548),
+    );
+    trunk.position.y = 1;
 
-    segment.group.add(prop);
-    segment.props.push({ type: "prop", mesh: prop });
+    const leaves = new THREE.Mesh(
+      this._geometry("fallback-leaves", () => new THREE.SphereGeometry(1.5, 8, 6)),
+      this._material("fallback-leaves", 0x558b2f),
+    );
+    leaves.position.y = 3;
+
+    fallback.add(trunk, leaves);
+    fallback.position.set(x, 0, z);
+    segment.group.add(fallback);
+    segment.props.push({ type: "prop", mesh: fallback });
   }
-
   _clearSegmentProps(segment) {
-    for (const item of segment.props) {
+    segment.props = segment.props.filter((item) => {
+      if (item.type === "ground" || item.type === "shoulder") {
+        return true;
+      }
+
       segment.group.remove(item.mesh);
-    }
-
-    segment.props = [];
+      return false;
+    });
   }
-
   _clearSegmentBuildings(segment) {
     segment.props = segment.props.filter((item) => {
       if (item.type !== "building") return true;
@@ -657,7 +741,7 @@ export default class ScenerySystem {
     }
 
     for (const texture of Object.values(this.textures)) {
-      texture.dispose();
+      texture?.dispose();
     }
 
     this.sharedGeometries.clear();
@@ -670,3 +754,4 @@ export default class ScenerySystem {
     this.dispose();
   }
 }
+

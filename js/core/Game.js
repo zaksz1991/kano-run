@@ -75,6 +75,8 @@ export default class Game {
 
       this.registerSceneServices();
 
+      await this.audio.initialize?.();
+
       await this.initializeSystems();
 
       this.input.initialize?.();

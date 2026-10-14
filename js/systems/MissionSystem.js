@@ -1,4 +1,4 @@
-import { GAME_CONFIG } from "../core/config.js";
+﻿import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
   maxActiveMissions: 3,
@@ -21,7 +21,7 @@ const MISSION_TEMPLATES = [
   {
     id: "earn_fares",
     type: "economy",
-    description: "Earn ₦{amount} in fares",
+    description: "Earn â‚¦{amount} in fares",
     target: 3000,
     xpReward: 200,
     moneyReward: 1000,
@@ -120,9 +120,9 @@ export default class MissionSystem {
       this.enabled = false;
     });
 
-    this._subscribe("passenger:delivered", (payload) => {
+    this._subscribe("passenger:dropped", (payload = {}) => {
       this._updateMissions("deliver_passengers", 1);
-      this._updateMissions("earn_fares", payload.fare || 0);
+      this._updateMissions("earn_fares", Number(payload.fare) || 0);
     });
 
     this._subscribe("traffic:near-miss", () => {
