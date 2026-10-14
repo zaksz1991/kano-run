@@ -5,24 +5,31 @@ export default class AudioManager {
     this.engineGain = null;
     this.radioGain = null;
     this.sfxGain = null;
-    
+
     this.isInitialized = false;
     this.isMuted = false;
-    this.volume = 1.0;
-    
-    // Audio Buffers (Loaded MP3s)
+    this.volume = 1;
     this.buffers = {};
     this.isLoading = false;
-    
-    // Active Nodes
+
     this.engineSource = null;
     this.radioSource = null;
     this.currentRadioTrack = null;
-    
-    // Engine specific
+
     this._engineSpeed = 0;
     this._engineMaxSpeed = 34;
-    
+    this._radioVolume = 0.4;
+
+    this.radioStations = Object.freeze([
+      { id: "radio-kano", name: "Radio Kano" },
+      { id: "arewa", name: "Arewa Radio" },
+      { id: "wazobia", name: "Wazobia FM" },
+      { id: "rahama", name: "Rahama Radio" },
+      { id: "freedom", name: "Freedom Radio" },
+      { id: "ruffneck", name: "RuffNeck Radio" },
+      { id: "cool", name: "Cool Radio" },
+    ]);
+
     this._boundUnlock = this._unlockAudio.bind(this);
   }
 
@@ -30,15 +37,19 @@ export default class AudioManager {
     if (this.isInitialized) return;
 
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      this.context = new AudioContext();
-      
-      // Master Gain
+      const AudioContextClass =
+        window.AudioContext || window.webkitAudioContext;
+
+      if (!AudioContextClass) {
+        throw new Error("Web Audio API is not supported.");
+      }
+
+      this.context = new AudioContextClass();
+
       this.masterGain = this.context.createGain();
       this.masterGain.gain.value = this.volume;
       this.masterGain.connect(this.context.destination);
-      
-      // Sub-mixers
+
       this.engineGain = this.context.createGain();
       this.engineGain.gain.value = 0;
       this.engineGain.connect(this.masterGain);
@@ -48,95 +59,139 @@ export default class AudioManager {
       this.radioGain.connect(this.masterGain);
 
       this.sfxGain = this.context.createGain();
-      this.sfxGain.gain.value = 1.0;
+      this.sfxGain.gain.value = 1;
       this.sfxGain.connect(this.masterGain);
 
-      // Load all assets
       await this._loadAssets();
-      
+
       this.isInitialized = true;
-      
-      // Bind mobile unlock
-      document.addEventListener('click', this._boundUnlock, { once: true });
-      document.addEventListener('touchstart', this._boundUnlock, { once: true });
-      
-      console.log("[AudioManager] Initialized with real assets.");
-    } catch (e) {
-      console.warn("[AudioManager] Web Audio API failed:", e);
+
+      document.addEventListener("click", this._boundUnlock);
+      document.addEventListener("touchstart", this._boundUnlock);
+
+      if (this.context.state === "running") {
+        console.log("[AudioManager] Audio context ready.");
+      }
+
+      console.log(
+        `[AudioManager] Initialized. ${Object.keys(this.buffers).length} audio assets loaded.`
+      );
+    } catch (error) {
+      console.warn("[AudioManager] Initialization failed:", error);
     }
   }
 
   async _loadAssets() {
     this.isLoading = true;
+
     const assets = [
-      'engine', 'horn', 'whistle', 'collision', 'pickup', 'coin',
-      'radio-kano', 'arewa', 'cool', 'freedom', 'rahama', 'ruffneck', 'wazobia'
+      "engine",
+      "horn",
+      "whistle",
+      "collision",
+      "pickup",
+      "coin",
+      ...this.radioStations.map((station) => station.id),
     ];
-    
-    const promises = assets.map(name => this._loadBuffer(`/assets/audio/${name}.mp3`, name));
-    await Promise.all(promises);
-    this.isLoading = false;
-  }
 
-  _loadBuffer(url, name) {
-    return fetch(url)
-      .then(response => response.arrayBuffer())
-      .then(arrayBuffer => this.context.decodeAudioData(arrayBuffer))
-      .then(audioBuffer => {
-        this.buffers[name] = audioBuffer;
-        console.log(`[AudioManager] Loaded ${name}`);
-      })
-      .catch(e => console.warn(`[AudioManager] Failed to load ${name}:`, e));
-  }
-
-  _unlockAudio() {
-    if (this.context && this.context.state === 'suspended') {
-      this.context.resume().then(() => {
-        console.log("[AudioManager] Audio context resumed");
-        // Auto-start engine if game is running
-        if (this._engineSpeed > 0) this._startEngineNode();
-      });
+    try {
+      await Promise.all(
+        assets.map((name) =>
+          this._loadBuffer(`/assets/models/audio/${name}.mp3`, name)
+        )
+      );
+    } finally {
+      this.isLoading = false;
     }
   }
 
-  // 🔥 DYNAMIC ENGINE SOUND
+  async _loadBuffer(url, name) {
+    try {
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        console.warn(
+          `[AudioManager] Missing asset: ${url} (${response.status})`
+        );
+        return;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
+
+      this.buffers[name] = audioBuffer;
+      console.log(`[AudioManager] Loaded ${name}`);
+    } catch (error) {
+      console.warn(`[AudioManager] Could not load ${name}:`, error);
+    }
+  }
+
+  async _unlockAudio() {
+    if (!this.context || this.context.state === "closed") return;
+
+    try {
+      if (this.context.state === "suspended") {
+        await this.context.resume();
+      }
+
+      if (this._engineSpeed > 0 && !this.isMuted) {
+        this._startEngineNode();
+      }
+    } catch (error) {
+      console.warn("[AudioManager] Could not resume audio:", error);
+    }
+  }
+
   updateEngine(speed = 0, maxSpeed = 34) {
-    if (!this.isInitialized || this.isMuted || !this.buffers['engine']) return;
+    if (!this.isInitialized || this.isMuted || !this.buffers.engine) {
+      return;
+    }
 
-    this._engineSpeed = speed;
-    this._engineMaxSpeed = maxSpeed;
-    const rpm = Math.min(speed / maxSpeed, 1);
+    this._engineSpeed = Math.max(0, speed);
+    this._engineMaxSpeed = Math.max(1, maxSpeed);
 
-    // Start engine node if not running
-    if (!this.engineSource && speed > 0.5) {
+    const rpm = Math.min(this._engineSpeed / this._engineMaxSpeed, 1);
+
+    if (!this.engineSource && this._engineSpeed > 0.5) {
       this._startEngineNode();
-    } 
-    // Stop engine node if stopped
-    else if (this.engineSource && speed <= 0.5) {
+    } else if (this.engineSource && this._engineSpeed <= 0.5) {
       this._stopEngineNode();
     }
 
     if (this.engineSource) {
       const now = this.context.currentTime;
-      // Pitch shift based on speed (0.8x to 2.5x speed)
-      const playbackRate = 0.8 + (rpm * 1.7); 
-      this.engineSource.playbackRate.setTargetAtTime(playbackRate, now, 0.1);
-      
-      // Volume based on throttle
-      const targetVol = speed > 0 ? 0.3 + (rpm * 0.4) : 0;
-      this.engineGain.gain.setTargetAtTime(targetVol, now, 0.1);
+
+      this.engineSource.playbackRate.setTargetAtTime(
+        0.8 + rpm * 1.7,
+        now,
+        0.1
+      );
+
+      this.engineGain.gain.setTargetAtTime(
+        this._engineSpeed > 0 ? 0.3 + rpm * 0.4 : 0,
+        now,
+        0.1
+      );
     }
   }
 
   _startEngineNode() {
-    if (this.engineSource) return;
+    if (
+      this.engineSource ||
+      !this.context ||
+      !this.buffers.engine ||
+      this.context.state !== "running"
+    ) {
+      return;
+    }
+
     const source = this.context.createBufferSource();
-    source.buffer = this.buffers['engine'];
+    source.buffer = this.buffers.engine;
     source.loop = true;
-    source.playbackRate.value = 0.8; // Idle speed
-    
+    source.playbackRate.value = 0.8;
     source.connect(this.engineGain);
-    source.start(0);
+    source.start();
+
     this.engineSource = source;
   }
 
@@ -145,35 +200,100 @@ export default class AudioManager {
       try {
         this.engineSource.stop();
         this.engineSource.disconnect();
-      } catch(e) {}
+      } catch {}
+
       this.engineSource = null;
     }
-    this.engineGain.gain.setTargetAtTime(0, this.context.currentTime, 0.1);
+
+    if (this.engineGain && this.context?.state !== "closed") {
+      this.engineGain.gain.setTargetAtTime(
+        0,
+        this.context.currentTime,
+        0.1
+      );
+    }
   }
 
-  // 📻 RADIO SYSTEM
-  startRadio(district = "city") {
-    if (!this.isInitialized || this.isMuted) return;
+  startRadio(station = "radio-kano") {
+    if (!this.isInitialized || this.isMuted || !this.context) {
+      return false;
+    }
+
+    const requested = String(station).toLowerCase();
+
+    // Preserve support for the previous district-based call.
+    const districtStations = {
+      city: "radio-kano",
+      citycenter: "wazobia",
+      sabongari: "arewa",
+      market: "arewa",
+      industrial: "cool",
+      outskirts: "freedom",
+    };
+
+    const trackName = districtStations[requested] || requested;
+
+    if (!this.buffers[trackName]) {
+      console.warn(`[AudioManager] Station unavailable: ${trackName}`);
+      return false;
+    }
+
+    if (this.currentRadioTrack === trackName && this.radioSource) {
+      return true;
+    }
+
     this.stopRadio();
 
-    // Map district to a radio station file
-    let trackName = 'radio-kano'; // Default
-    const d = district.toLowerCase();
-    if (d.includes('sabon') || d.includes('market')) trackName = 'arewa';
-    else if (d.includes('industrial')) trackName = 'cool';
-    else if (d.includes('outskirt')) trackName = 'freedom';
-    else if (d.includes('city')) trackName = 'wazobia';
+    const source = this.context.createBufferSource();
+    source.buffer = this.buffers[trackName];
+    source.loop = true;
+    source.connect(this.radioGain);
+    source.start();
 
-    if (this.buffers[trackName]) {
-      const source = this.context.createBufferSource();
-      source.buffer = this.buffers[trackName];
-      source.loop = true;
-      source.connect(this.radioGain);
-      source.start(0);
-      this.radioSource = source;
-      this.currentRadioTrack = trackName;
-      
-      this.radioGain.gain.setTargetAtTime(0.4, this.context.currentTime, 0.5); // Fade in
+    this.radioSource = source;
+    this.currentRadioTrack = trackName;
+
+    this.radioGain.gain.setTargetAtTime(
+      this._radioVolume,
+      this.context.currentTime,
+      0.35
+    );
+
+    console.log(`[AudioManager] Radio tuned to ${trackName}`);
+    return true;
+  }
+
+  nextRadioStation() {
+    const stations = this.radioStations;
+    const currentIndex = stations.findIndex(
+      (station) => station.id === this.currentRadioTrack
+    );
+
+    const nextIndex = (currentIndex + 1) % stations.length;
+    return this.startRadio(stations[nextIndex].id);
+  }
+
+  previousRadioStation() {
+    const stations = this.radioStations;
+    const currentIndex = stations.findIndex(
+      (station) => station.id === this.currentRadioTrack
+    );
+
+    const previousIndex =
+      currentIndex <= 0 ? stations.length - 1 : currentIndex - 1;
+
+    return this.startRadio(stations[previousIndex].id);
+  }
+
+  setRadioVolume(value) {
+    this._radioVolume = Math.max(0, Math.min(1, Number(value) || 0));
+
+    if (this.radioGain && this.context?.state !== "closed") {
+      this.radioGain.gain.setTargetAtTime(
+        this.isMuted || !this.radioSource ? 0 : this._radioVolume,
+        this.context.currentTime,
+        0.1
+      );
     }
   }
 
@@ -182,52 +302,92 @@ export default class AudioManager {
       try {
         this.radioSource.stop();
         this.radioSource.disconnect();
-      } catch(e) {}
+      } catch {}
+
       this.radioSource = null;
     }
-    this.radioGain.gain.setTargetAtTime(0, this.context.currentTime, 0.1);
+
+    if (this.radioGain && this.context?.state !== "closed") {
+      this.radioGain.gain.setTargetAtTime(
+        0,
+        this.context.currentTime,
+        0.1
+      );
+    }
+
     this.currentRadioTrack = null;
   }
 
-  // 🔊 SOUND EFFECTS (SFX)
   playSFX(type) {
-    if (!this.isInitialized || this.isMuted) return;
-    
-    let bufferName = type;
-    if (type === 'horn') bufferName = 'horn';
-    if (type === 'whistle') bufferName = 'whistle';
-    if (type === 'collision') bufferName = 'collision'; // You might need to add a crash.mp3 later
-    if (type === 'pickup' || type === 'coin') bufferName = 'coin';
+    if (!this.isInitialized || this.isMuted || !this.context) return;
 
-    if (this.buffers[bufferName]) {
-      const source = this.context.createBufferSource();
-      source.buffer = this.buffers[bufferName];
-      source.connect(this.sfxGain);
-      source.start(0);
+    const aliases = {
+      pickup: "coin",
+      coin: "coin",
+      horn: "horn",
+      whistle: "whistle",
+      collision: "collision",
+    };
+
+    const bufferName = aliases[type] || type;
+    const buffer = this.buffers[bufferName];
+
+    if (!buffer) {
+      console.warn(`[AudioManager] Sound unavailable: ${bufferName}`);
+      return;
     }
+
+    const source = this.context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.sfxGain);
+    source.start();
   }
 
-  setVolume(val) {
-    this.volume = Math.max(0, Math.min(1, val));
-    if (this.masterGain) {
-      this.masterGain.gain.setTargetAtTime(this.volume, this.context.currentTime, 0.1);
+  setVolume(value) {
+    this.volume = Math.max(0, Math.min(1, Number(value) || 0));
+
+    if (this.masterGain && this.context?.state !== "closed") {
+      this.masterGain.gain.setTargetAtTime(
+        this.isMuted ? 0 : this.volume,
+        this.context.currentTime,
+        0.1
+      );
     }
   }
 
   toggleMute() {
     this.isMuted = !this.isMuted;
-    if (this.masterGain) {
-      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.volume, this.context.currentTime, 0.1);
+
+    if (this.masterGain && this.context?.state !== "closed") {
+      this.masterGain.gain.setTargetAtTime(
+        this.isMuted ? 0 : this.volume,
+        this.context.currentTime,
+        0.1
+      );
     }
+
+    if (this.isMuted) {
+      this._stopEngineNode();
+      this.stopRadio();
+    } else if (this._engineSpeed > 0) {
+      this._startEngineNode();
+    }
+
+    return this.isMuted;
   }
 
   destroy() {
     this._stopEngineNode();
     this.stopRadio();
-    if (this.context) {
+
+    document.removeEventListener("click", this._boundUnlock);
+    document.removeEventListener("touchstart", this._boundUnlock);
+
+    if (this.context && this.context.state !== "closed") {
       this.context.close();
     }
-    document.removeEventListener('click', this._boundUnlock);
-    document.removeEventListener('touchstart', this._boundUnlock);
+
+    this.context = null;
+    this.isInitialized = false;
   }
 }
