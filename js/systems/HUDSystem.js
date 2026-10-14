@@ -143,6 +143,15 @@ export default class HUDSystem {
       );
     });
 
+    this._subscribe("fuel:status", (p) => {
+      if (this.elements.fuelBar) {
+        const pct = Math.max(0, Math.min(100, Number(p?.percent) || 0));
+        this.elements.fuelBar.style.width = pct + "%";
+        this.elements.fuelBar.style.background =
+          pct < 25 ? "#ef4444" : pct < 50 ? "#fbbf24" : "#22c55e";
+      }
+    });
+
     this._subscribe("damage:status", (p) => {
       if (this.elements.condition) {
         const c = Math.round(Number(p?.condition) || 0);
@@ -393,6 +402,21 @@ export default class HUDSystem {
     lives.innerHTML = `LIFE SAVERS <b id="hud-lives">3</b>`;
     container.appendChild(lives);
 
+    const fuelBox = this._createElement("div", {
+      position: "absolute",
+      top: "70px",
+      right: "20px",
+      width: "120px",
+      background: "rgba(7, 18, 32, 0.88)",
+      border: "1px solid rgba(251,191,36,0.45)",
+      borderRadius: "10px",
+      padding: "8px 10px",
+      color: "#fff",
+      fontSize: "11px",
+    });
+    fuelBox.innerHTML = `FUEL<div style="height:8px;background:#1e293b;border-radius:4px;margin-top:6px"><div id="hud-fuel-bar" style="height:100%;width:100%;background:#fbbf24;border-radius:4px"></div></div>`;
+    container.appendChild(fuelBox);
+
     document.body.appendChild(container);
 
     this.elements = {
@@ -414,6 +438,7 @@ export default class HUDSystem {
       radioVolumeValue: container.querySelector("#hud-radio-volume-value"),
       missionsList: container.querySelector("#hud-missions-list"),
       lives: container.querySelector("#hud-lives"),
+      fuelBar: container.querySelector("#hud-fuel-bar"),
     };
 
     this._bindRadioControls();

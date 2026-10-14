@@ -408,6 +408,9 @@ export default class Game {
       ["lifeSaver", () => import("../systems/LifeSaverSystem.js")],
       ["damage", () => import("../systems/DamageSystem.js")],
       ["shareRun", () => import("../systems/ShareRunSystem.js")],
+      ["achievements", () => import("../systems/AchievementSystem.js")],
+      ["streetlights", () => import("../systems/StreetlightSystem.js")],
+      ["fuel", () => import("../systems/FuelSystem.js")],
       ["billboardAds", () => import("../systems/BillboardAdSystem.js")],
       ["touchControls", () => import("../systems/TouchControlsSystem.js")],
       ["pause", () => import("../systems/PauseSystem.js")],
@@ -589,6 +592,8 @@ export default class Game {
             case "weather":
             case "damage":
             case "billboardAds":
+            case "fuel":
+            case "streetlights":
               system.update?.(delta, playerZ, speed);
               break;
 

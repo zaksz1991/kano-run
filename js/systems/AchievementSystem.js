@@ -2,578 +2,182 @@ const ACHIEVEMENTS = [
   {
     id: "first_fare",
     title: "First Fare",
-    description: "Earn your first fare.",
-    category: "economy",
-    target: 1,
-    stat: "faresEarned",
-    reward: 100,
+    desc: "Collect your first passenger fare",
+    icon: "₦",
   },
   {
-    id: "first_passenger",
-    title: "Passenger Service",
-    description: "Pick up your first passenger.",
-    category: "passengers",
-    target: 1,
-    stat: "passengersPickedUp",
-    reward: 100,
+    id: "near_miss_5",
+    title: "Close Call",
+    desc: "5 near misses in one run",
+    icon: "⚡",
   },
   {
-    id: "passenger_pro",
-    title: "Passenger Pro",
-    description: "Pick up 25 passengers.",
-    category: "passengers",
-    target: 25,
-    stat: "passengersPickedUp",
-    reward: 500,
+    id: "landmark_3",
+    title: "Tour Guide",
+    desc: "Pass 3 landmarks",
+    icon: "🗺",
   },
   {
-    id: "road_regular",
-    title: "Road Regular",
-    description: "Travel 10 kilometres.",
-    category: "driving",
-    target: 10_000,
-    stat: "distanceTravelled",
-    reward: 300,
+    id: "escape_artist",
+    title: "Escape Artist",
+    desc: "Escape a police chase",
+    icon: "🚔",
   },
   {
-    id: "long_distance",
-    title: "Long Distance Driver",
-    description: "Travel 100 kilometres.",
-    category: "driving",
-    target: 100_000,
-    stat: "distanceTravelled",
-    reward: 1500,
+    id: "full_tank",
+    title: "Full Tank",
+    desc: "Refuel at a petrol station",
+    icon: "⛽",
   },
   {
-    id: "money_maker",
-    title: "Money Maker",
-    description: "Earn ₦10,000 in fares.",
-    category: "economy",
-    target: 10_000,
-    stat: "totalEarnings",
-    reward: 1000,
+    id: "night_rider",
+    title: "Night Rider",
+    desc: "Drive during night period",
+    icon: "🌙",
   },
   {
-    id: "route_explorer",
-    title: "Route Explorer",
-    description: "Complete five routes.",
-    category: "exploration",
-    target: 5,
-    stat: "routesCompleted",
-    reward: 500,
+    id: "karota_clean",
+    title: "Clean Papers",
+    desc: "Clear a KAROTA stop",
+    icon: "📋",
   },
   {
-    id: "veteran_driver",
-    title: "Veteran Driver",
-    description: "Complete 100 trips.",
-    category: "driving",
-    target: 100,
-    stat: "tripsCompleted",
-    reward: 2000,
+    id: "share_run",
+    title: "Show Off",
+    desc: "Share a trip result",
+    icon: "📤",
   },
 ];
 
-const INITIAL_STATS = {
-  faresEarned: 0,
-  passengersPickedUp: 0,
-  distanceTravelled: 0,
-  totalEarnings: 0,
-  routesCompleted: 0,
-  tripsCompleted: 0,
-};
-
-export default class AchievementSystem {
-  constructor(context = {}) {
-    this.game = context.game ?? null;
-    this.config = context.config ?? {};
-    this.services = context.services ?? null;
-
-    this.events =
-      context.eventBus ??
-      context.events ??
-      this.game?.events ??
-      null;
-
-    this.state =
-      context.gameState ??
-      context.state ??
-      this.game?.state ??
-      null;
-
-    this.saveManager = context.saveManager ?? null;
-
-    this.stats = { ...INITIAL_STATS };
-    this.unlocked = new Set();
-    this.pendingRewards = 0;
-
-    this.enabled = true;
-    this.initialized = false;
-    this.destroyed = false;
-
-    this.listeners = [];
-    this.processedEvents = new Set();
-  }
-
-  async initialize(context = {}) {
-    if (this.destroyed || this.initialized) {
-      return this;
-    }
-
-    this.setDependencies(context);
-
-    this.loadProgress();
-    this.bindEvents();
-
-    this.initialized = true;
-
-    this.emit("achievements:initialized", {
-      achievements: this.getAchievements(),
-      stats: this.getStats(),
-    });
-
-    return this;
-  }
-
-  setDependencies(context = {}) {
-    this.game = context.game ?? this.game;
-    this.config = context.config ?? this.config;
-    this.services = context.services ?? this.services;
-
-    this.events =
-      context.eventBus ??
-      context.events ??
-      this.events;
-
-    this.state =
-      context.gameState ??
-      context.state ??
-      this.state;
-
-    this.saveManager =
-      context.saveManager ??
-      this.saveManager;
-  }
-
-  bindEvents() {
-    const eventBindings = [
-      [
-        "fare:earned",
-        (payload) => this.recordFare(payload),
-      ],
-      [
-        "passenger:pickedUp",
-        () => this.recordPassenger(),
-      ],
-      [
-        "passenger:pickup",
-        () => this.recordPassenger(),
-      ],
-      [
-        "route:completed",
-        () => this.recordRoute(),
-      ],
-      [
-        "trip:completed",
-        () => this.recordTrip(),
-      ],
-      [
-        "driving:distance",
-        (payload) => this.recordDistance(payload),
-      ],
-    ];
-
-    for (const [eventName, handler] of eventBindings) {
-      if (!this.events?.on) {
-        continue;
-      }
-
-      this.events.on(eventName, handler);
-
-      this.listeners.push({
-        eventName,
-        handler,
-      });
-    }
-  }
-
-  update(delta = 0) {
-    if (!this.enabled || !this.initialized || this.destroyed) {
-      return;
-    }
-
-    const elapsed = Number(delta);
-
-    if (!Number.isFinite(elapsed) || elapsed <= 0) {
-      return;
-    }
-
-    const run = this.state?.run;
-
-    const speed = Number(run?.speed);
-
-    if (Number.isFinite(speed) && speed > 0) {
-      this.recordDistance(speed * elapsed);
-    }
-  }
-
-  recordFare(payload = {}) {
-    if (!this.enabled || this.destroyed) {
-      return;
-    }
-
-    const amount = Math.max(
-      0,
-      Number(payload.amount ?? payload.fare ?? payload.earnings) || 0
-    );
-
-    if (amount <= 0) {
-      return;
-    }
-
-    const eventId = this.getEventId(payload, "fare");
-
-    if (!this.acceptEvent(eventId)) {
-      return;
-    }
-
-    this.stats.faresEarned += 1;
-    this.stats.totalEarnings += amount;
-
-    this.checkAchievements();
-    this.persistProgress();
-  }
-
-  recordPassenger() {
-    if (!this.enabled || this.destroyed) {
-      return;
-    }
-
-    this.stats.passengersPickedUp += 1;
-
-    this.checkAchievements();
-    this.persistProgress();
-  }
-
-  recordDistance(metres) {
-    if (!this.enabled || this.destroyed) {
-      return;
-    }
-
-    const distance = Number(metres);
-
-    if (!Number.isFinite(distance) || distance <= 0) {
-      return;
-    }
-
-    this.stats.distanceTravelled += distance;
-
-    this.checkAchievements();
-  }
-
-  recordRoute() {
-    if (!this.enabled || this.destroyed) {
-      return;
-    }
-
-    this.stats.routesCompleted += 1;
-
-    this.checkAchievements();
-    this.persistProgress();
-  }
-
-  recordTrip() {
-    if (!this.enabled || this.destroyed) {
-      return;
-    }
-
-    this.stats.tripsCompleted += 1;
-
-    this.checkAchievements();
-    this.persistProgress();
-  }
-
-  getEventId(payload, prefix) {
-    const id =
-      payload.eventId ??
-      payload.transactionId ??
-      payload.id;
-
-    if (id === undefined || id === null) {
-      return null;
-    }
-
-    return `${prefix}:${String(id)}`;
-  }
-
-  acceptEvent(eventId) {
-    if (!eventId) {
-      return true;
-    }
-
-    if (this.processedEvents.has(eventId)) {
-      return false;
-    }
-
-    this.processedEvents.add(eventId);
-
-    if (this.processedEvents.size > 2000) {
-      const oldest = this.processedEvents.values().next().value;
-
-      if (oldest !== undefined) {
-        this.processedEvents.delete(oldest);
-      }
-    }
-
-    return true;
-  }
-
-  checkAchievements() {
-    for (const achievement of ACHIEVEMENTS) {
-      if (this.unlocked.has(achievement.id)) {
-        continue;
-      }
-
-      const progress = this.stats[achievement.stat] ?? 0;
-
-      if (progress >= achievement.target) {
-        this.unlock(achievement);
-      }
-    }
-  }
-
-  unlock(achievement) {
-    if (this.unlocked.has(achievement.id)) {
-      return false;
-    }
-
-    this.unlocked.add(achievement.id);
-    this.pendingRewards += achievement.reward;
-
-    const result = {
-      ...achievement,
-      progress: achievement.target,
-      unlocked: true,
-      unlockedAt: new Date().toISOString(),
-    };
-
-    this.emit("achievement:unlocked", result);
-    this.emit("achievements:changed", this.getAchievements());
-
-    this.persistProgress();
-
-    return true;
-  }
-
-  getAchievements() {
-    return ACHIEVEMENTS.map((achievement) => {
-      const unlocked = this.unlocked.has(achievement.id);
-
-      const current = Math.max(
-        0,
-        Number(this.stats[achievement.stat]) || 0
-      );
-
-      return {
-        ...achievement,
-        progress: Math.min(current, achievement.target),
-        percentage: Math.min(
-          100,
-          Math.floor((current / achievement.target) * 100)
-        ),
-        unlocked,
-      };
-    });
-  }
-
-  getAchievement(id) {
-    return (
-      this.getAchievements().find(
-        (achievement) => achievement.id === id
-      ) ?? null
-    );
-  }
-
-  getStats() {
-    return { ...this.stats };
-  }
-
-  getUnlockedAchievements() {
-    return this.getAchievements().filter(
-      (achievement) => achievement.unlocked
-    );
-  }
-
-  getLockedAchievements() {
-    return this.getAchievements().filter(
-      (achievement) => !achievement.unlocked
-    );
-  }
-
-  getCompletionPercentage() {
-    if (ACHIEVEMENTS.length === 0) {
-      return 100;
-    }
-
-    return Math.round(
-      (this.unlocked.size / ACHIEVEMENTS.length) * 100
-    );
-  }
-
-  getPendingRewards() {
-    return this.pendingRewards;
-  }
-
-  claimRewards() {
-    const reward = this.pendingRewards;
-
-    if (reward <= 0) {
-      return 0;
-    }
-
-    this.pendingRewards = 0;
-
-    this.emit("achievements:rewardsClaimed", {
-      amount: reward,
-    });
-
-    this.persistProgress();
-
-    return reward;
-  }
-
-  loadProgress() {
-    try {
-      const profile = this.saveManager?.loadProfile?.();
-
-      if (!profile || typeof profile !== "object") {
-        return;
-      }
-
-      const saved = profile.achievements;
-
-      if (!saved || typeof saved !== "object") {
-        return;
-      }
-
-      if (saved.stats && typeof saved.stats === "object") {
-        for (const key of Object.keys(INITIAL_STATS)) {
-          const value = Number(saved.stats[key]);
-
-          if (Number.isFinite(value) && value >= 0) {
-            this.stats[key] = value;
-          }
-        }
-      }
-
-      if (Array.isArray(saved.unlocked)) {
-        const validIds = new Set(
-          ACHIEVEMENTS.map((achievement) => achievement.id)
-        );
-
-        for (const id of saved.unlocked) {
-          if (validIds.has(id)) {
-            this.unlocked.add(id);
-          }
-        }
-      }
-
-      const pending = Number(saved.pendingRewards);
-
-      if (Number.isFinite(pending) && pending >= 0) {
-        this.pendingRewards = pending;
-      }
-    } catch (error) {
-      console.warn(
-        "[Kano Run] Could not load achievement progress:",
-        error
-      );
-    }
-  }
-
-  persistProgress() {
-    if (!this.saveManager?.updateProfile) {
-      return;
-    }
-
-    try {
-      const profile =
-        this.state?.getProfile?.() ?? {};
-
-      this.saveManager.updateProfile(
-        {
-          ...profile,
-          achievements: {
-            stats: this.getStats(),
-            unlocked: [...this.unlocked],
-            pendingRewards: this.pendingRewards,
-          },
-        },
-        { autosave: true }
-      );
-    } catch (error) {
-      console.warn(
-        "[Kano Run] Could not save achievement progress:",
-        error
-      );
-    }
-  }
-
-  emit(eventName, payload) {
-    this.events?.emit?.(eventName, payload);
-  }
-
-  start() {
-    this.enabled = true;
-  }
-
-  pause() {
-    this.enabled = false;
-  }
-
-  resume() {
-    if (!this.destroyed) {
-      this.enabled = true;
-    }
-  }
-
-  stop() {
-    this.enabled = false;
-  }
-
-  reset() {
-    this.stats = { ...INITIAL_STATS };
-    this.unlocked.clear();
-    this.pendingRewards = 0;
-    this.processedEvents.clear();
-
-    this.persistProgress();
-
-    this.emit("achievements:changed", this.getAchievements());
-  }
-
-  destroy() {
-    if (this.destroyed) {
-      return;
-    }
-
-    for (const { eventName, handler } of this.listeners) {
-      if (typeof this.events?.off === "function") {
-        this.events.off(eventName, handler);
-      } else if (typeof this.events?.removeListener === "function") {
-        this.events.removeListener(eventName, handler);
-      }
-    }
-
-    this.listeners = [];
-    this.persistProgress();
-
-    this.enabled = false;
-    this.initialized = false;
-    this.destroyed = true;
-
-    this.events = null;
-    this.state = null;
-    this.services = null;
-    this.game = null;
+const STORAGE_KEY = "kano-run-achievements";
+
+function loadUnlocked() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
   }
 }
+
+function saveUnlocked(list) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+export default class AchievementSystem {
+  constructor({ eventBus = null } = {}) {
+    this.eventBus = eventBus;
+    this.unlocked = new Set(loadUnlocked());
+    this._run = { nearMisses: 0, landmarks: 0 };
+    this._disposers = [];
+    this._toast = null;
+
+    this._subscribe("economy:fare-earned", () => this.unlock("first_fare"));
+    this._subscribe("economy:money-added", (p) => {
+      if (p?.reason === "passenger_fare") this.unlock("first_fare");
+    });
+    this._subscribe("passenger:dropped", () => this.unlock("first_fare"));
+
+    this._subscribe("collision:near-miss", () => {
+      this._run.nearMisses += 1;
+      if (this._run.nearMisses >= 5) this.unlock("near_miss_5");
+    });
+    this._subscribe("traffic:near-miss", () => {
+      this._run.nearMisses += 1;
+      if (this._run.nearMisses >= 5) this.unlock("near_miss_5");
+    });
+
+    this._subscribe("landmark:reached", () => {
+      this._run.landmarks += 1;
+      if (this._run.landmarks >= 3) this.unlock("landmark_3");
+    });
+
+    this._subscribe("chase:escaped", () => this.unlock("escape_artist"));
+    this._subscribe("vehicle:refueled", () => this.unlock("full_tank"));
+    this._subscribe("time:period-changed", (p) => {
+      if (p?.current === "night") this.unlock("night_rider");
+    });
+    this._subscribe("checkpoint:cleared", () => this.unlock("karota_clean"));
+    this._subscribe("share:completed", () => this.unlock("share_run"));
+
+    this._subscribe("game:started", () => {
+      this._run = { nearMisses: 0, landmarks: 0 };
+    });
+  }
+
+  unlock(id) {
+    if (this.unlocked.has(id)) return false;
+    const def = ACHIEVEMENTS.find((a) => a.id === id);
+    if (!def) return false;
+
+    this.unlocked.add(id);
+    saveUnlocked([...this.unlocked]);
+
+    this._showUnlock(def);
+    this.eventBus?.emit?.("achievement:unlocked", { ...def });
+    return true;
+  }
+
+  _showUnlock(def) {
+    this._toast?.remove();
+    const el = document.createElement("div");
+    el.id = "achievement-toast";
+    Object.assign(el.style, {
+      position: "fixed",
+      top: "14%",
+      right: "16px",
+      zIndex: "2500",
+      width: "min(280px, 90vw)",
+      background: "linear-gradient(145deg,#1e3a5f,#0f172a)",
+      border: "1px solid #fbbf24",
+      borderRadius: "12px",
+      padding: "14px 16px",
+      color: "#f8fafc",
+      fontFamily: "system-ui, Arial, sans-serif",
+      boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+      pointerEvents: "none",
+    });
+    el.innerHTML = `
+      <div style="font-size:11px;letter-spacing:2px;color:#fbbf24;margin-bottom:4px">ACHIEVEMENT</div>
+      <div style="font-size:18px;font-weight:800">${def.icon} ${def.title}</div>
+      <div style="font-size:12px;color:#94a3b8;margin-top:4px">${def.desc}</div>
+    `;
+    document.body.appendChild(el);
+    this._toast = el;
+    setTimeout(() => {
+      el.remove();
+      if (this._toast === el) this._toast = null;
+    }, 4000);
+  }
+
+  getUnlocked() {
+    return ACHIEVEMENTS.filter((a) => this.unlocked.has(a.id));
+  }
+
+  getAll() {
+    return ACHIEVEMENTS.map((a) => ({
+      ...a,
+      unlocked: this.unlocked.has(a.id),
+    }));
+  }
+
+  _subscribe(name, handler) {
+    if (!this.eventBus?.on) return;
+    const u = this.eventBus.on(name, handler);
+    if (typeof u === "function") this._disposers.push(u);
+  }
+
+  dispose() {
+    this._toast?.remove();
+    for (const u of this._disposers) {
+      try {
+        u();
+      } catch {}
+    }
+    this._disposers = [];
+  }
+}
+
+export { ACHIEVEMENTS };
