@@ -114,6 +114,36 @@ export default class HUDSystem {
     this._subscribe("game:over", () => {
       this._toggleUI(false);
     });
+
+    this._subscribe("economy:balance-changed", (p) => {
+      if (this.elements.money) {
+        const bal = Number(p?.balance);
+        this.elements.money.textContent = `₦${Number.isFinite(bal) ? Math.floor(bal) : 0}`;
+      }
+    });
+
+    this._subscribe("economy:money-spent", (p) => {
+      const amt = Number(p?.amount) || 0;
+      if (amt > 0) {
+        this._showNotification(`Paid ₦${amt}`, 2.0, "urgent");
+      }
+    });
+
+    this._subscribe("economy:money-added", (p) => {
+      const amt = Number(p?.amount) || 0;
+      if (amt > 0) {
+        this._showNotification(`+₦${amt}`, 1.8, "success");
+      }
+    });
+
+    this._subscribe("mission:completed", (p) => {
+      const name = p?.mission?.description || "Mission complete";
+      this._showNotification(name, 3.0, "success");
+    });
+
+    this._subscribe("landmark:reached", (p) => {
+      // LandmarkSystem shows its own toast; optional quiet HUD tick
+    });
   }
 
   _createUI() {

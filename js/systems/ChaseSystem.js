@@ -1,8 +1,10 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MODEL_PATHS, MODEL_SCALES } from "../core/AssetCatalog.js";
 
 /**
- * Police / KAROTA chase after running a checkpoint or hitting marked unit.
- * States: idle → active → escaping → caught | escaped
+ * Police / KAROTA chase after running a checkpoint.
+ * Uses Police Car GLB when available; falls back to simple mesh.
  */
 export default class ChaseSystem {
   constructor({
@@ -31,6 +33,9 @@ export default class ChaseSystem {
     this.enabled = false;
     this._banner = null;
     this._disposers = [];
+    this._loader = new GLTFLoader();
+    this._policeTemplate = null;
+    this._loadPoliceModel();
 
     this._subscribe("game:started", () => {
       this.enabled = true;
@@ -40,6 +45,40 @@ export default class ChaseSystem {
     this._subscribe("chase:start", (p) => this.startChase(p));
     this._subscribe("checkpoint:chase-triggered", (p) =>
       this.startChase({ ...p, reason: p?.reason || "checkpoint" }),
+    );
+  }
+
+  _loadPoliceModel() {
+    const path =
+      MODEL_PATHS?.traffic?.car3 ||
+      MODEL_PATHS?.traffic?.police ||
+      "/assets/models/cars-bundle/Police Car.glb";
+
+    this._loader.load(
+      path,
+      (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        const scale = (MODEL_SCALES?.traffic?.car3 || 1) * (4.2 / maxDim);
+        model.scale.setScalar(scale);
+        const box2 = new THREE.Box3().setFromObject(model);
+        model.position.y -= box2.min.y;
+        model.rotation.y = Math.PI;
+        model.traverse((c) => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = true;
+          }
+        });
+        this._policeTemplate = model;
+        console.info("[ChaseSystem] Police GLB ready");
+      },
+      undefined,
+      () => {
+        console.warn("[ChaseSystem] Police GLB missing — using fallback mesh");
+      },
     );
   }
 
@@ -72,7 +111,6 @@ export default class ChaseSystem {
     const speed = Number(playerSpeed) || 0;
     const playerX = Number(this.player?.position?.x) || 0;
 
-    // Police closes in
     const chaseSpeed = speed + this.config.policeSpeedBonus * this.intensity;
     this.policeZ += chaseSpeed * dt;
     this.policeX = THREE.MathUtils.damp(this.policeX, playerX, 2.5, dt);
@@ -93,7 +131,6 @@ export default class ChaseSystem {
       return;
     }
 
-    // Update banner distance
     if (this._banner) {
       this._banner.textContent = `CHASE · gap ${Math.max(0, Math.round(gap))}m · ${Math.max(0, Math.ceil(this.config.duration - this.timer))}s`;
     }
@@ -103,34 +140,37 @@ export default class ChaseSystem {
     this._clearPolice();
     if (!this.scene) return;
 
-    const g = new THREE.Group();
-    g.name = "chase-police";
-
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(1.9, 1.2, 4.2),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, flatShading: true }),
-    );
-    body.position.y = 0.7;
-    body.castShadow = true;
-    g.add(body);
-
-    const stripe = new THREE.Mesh(
-      new THREE.BoxGeometry(1.92, 0.25, 4.22),
-      new THREE.MeshStandardMaterial({ color: 0x1d4ed8 }),
-    );
-    stripe.position.y = 0.85;
-    g.add(stripe);
-
-    const light = new THREE.Mesh(
-      new THREE.BoxGeometry(0.8, 0.2, 0.8),
-      new THREE.MeshStandardMaterial({
-        color: 0xef4444,
-        emissive: 0xdc2626,
-        emissiveIntensity: 0.8,
-      }),
-    );
-    light.position.set(0, 1.45, 0.2);
-    g.add(light);
+    let g;
+    if (this._policeTemplate) {
+      g = this._policeTemplate.clone(true);
+      g.name = "chase-police";
+    } else {
+      g = new THREE.Group();
+      g.name = "chase-police";
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1.9, 1.2, 4.2),
+        new THREE.MeshStandardMaterial({ color: 0xf8fafc, flatShading: true }),
+      );
+      body.position.y = 0.7;
+      body.castShadow = true;
+      g.add(body);
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(1.92, 0.25, 4.22),
+        new THREE.MeshStandardMaterial({ color: 0x1d4ed8 }),
+      );
+      stripe.position.y = 0.85;
+      g.add(stripe);
+      const light = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 0.2, 0.8),
+        new THREE.MeshStandardMaterial({
+          color: 0xef4444,
+          emissive: 0xdc2626,
+          emissiveIntensity: 0.8,
+        }),
+      );
+      light.position.set(0, 1.45, 0.2);
+      g.add(light);
+    }
 
     g.position.set(this.policeX, 0, this.policeZ);
     this.scene.add(g);
@@ -143,10 +183,9 @@ export default class ChaseSystem {
     this.eventBus?.emit?.("chase:caught", { timer: this.timer });
     this.eventBus?.emit?.("checkpoint:fined", {
       amount: 500,
-      paid: false,
+      paid: true,
       caught: true,
     });
-    this.eventBus?.emit?.("economy:spend", { amount: 500, reason: "chase-caught" });
     this.eventBus?.emit?.("audio:sfx", "collision");
     setTimeout(() => this.reset(), 2200);
   }

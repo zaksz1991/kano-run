@@ -21,7 +21,7 @@ const MISSION_TEMPLATES = [
   {
     id: "earn_fares",
     type: "economy",
-    description: "Earn â‚¦{amount} in fares",
+    description: "Earn N{amount} in fares",
     target: 3000,
     xpReward: 200,
     moneyReward: 1000,
@@ -80,6 +80,24 @@ const MISSION_TEMPLATES = [
     xpReward: 250,
     moneyReward: 1250,
     icon: "moon",
+  },
+  {
+    id: "visit_landmarks",
+    type: "exploration",
+    description: "Pass {count} Kano landmarks on your route",
+    target: 4,
+    xpReward: 220,
+    moneyReward: 1100,
+    icon: "map",
+  },
+  {
+    id: "escape_chase",
+    type: "special",
+    description: "Escape {count} police chase",
+    target: 1,
+    xpReward: 300,
+    moneyReward: 1500,
+    icon: "zap",
   },
 ];
 
@@ -148,6 +166,18 @@ export default class MissionSystem {
       if (payload.period === "night") {
         this._updateMissions("night_driving", 1);
       }
+    });
+
+    this._subscribe("landmark:reached", () => {
+      this._updateMissions("visit_landmarks", 1);
+    });
+
+    this._subscribe("chase:escaped", () => {
+      this._updateMissions("escape_chase", 1);
+    });
+
+    this._subscribe("collision:near-miss", () => {
+      this._updateMissions("near_misses", 1);
     });
   }
 
