@@ -373,6 +373,7 @@ export default class Game {
       ["checkpoint", () => import("../systems/CheckpointSystem.js")],
       ["chase", () => import("../systems/ChaseSystem.js")],
       ["landmarks", () => import("../systems/LandmarkSystem.js")],
+      ["landmarkBillboards", () => import("../systems/LandmarkBillboardSystem.js")],
     ];
 
     for (const [name, loadModule] of criticalSystems) {
@@ -411,6 +412,7 @@ export default class Game {
       ["achievements", () => import("../systems/AchievementSystem.js")],
       ["achievementsMenu", () => import("../systems/AchievementsMenuSystem.js")],
       ["performance", () => import("../systems/PerformanceSystem.js")],
+      ["radioAudio", () => import("../systems/AudioSystem.js")],
       ["physicsTuning", () => import("../systems/PhysicsTuningSystem.js")],
       ["naijaChallenge", () => import("../systems/NaijaChallengeSystem.js")],
       ["pedestrians", () => import("../systems/PedestrianSystem.js")],
@@ -603,6 +605,8 @@ export default class Game {
             case "streetlights":
             case "pedestrians":
             case "passengerHold":
+            case "radioAudio":
+            case "landmarkBillboards":
               system.update?.(delta, playerZ, speed);
               break;
 
