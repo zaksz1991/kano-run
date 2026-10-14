@@ -35,13 +35,20 @@ export default class FuelSystem {
     this._panel = null;
     this._disposers = [];
     this._lowWarned = false;
+    this.limpMode = false;
+    this._loader = null;
+    this._stationTemplate = null;
+    this._tryLoadStationModel();
 
     this._subscribe("game:started", () => {
       this.enabled = true;
       this.fuel = this.config.maxFuel;
       this.nextStationZ = this.config.firstStationZ;
       this._lowWarned = false;
+      this.limpMode = false;
       this._clearStations();
+      this.eventBus?.emit?.("player:limp-mode", { active: false });
+      this.eventBus?.emit?.("player:force-speed-cap", { maxSpeed: 0 });
       this._emit();
     });
     this._subscribe("game:stopped", () => {
@@ -54,6 +61,41 @@ export default class FuelSystem {
       this.fuel = Math.min(this.config.maxFuel, this.fuel + amt);
       this._emit();
     });
+  }
+
+
+  _tryLoadStationModel() {
+    try {
+      import("three/examples/jsm/loaders/GLTFLoader.js").then(({ GLTFLoader }) => {
+        this._loader = new GLTFLoader();
+        const paths = [
+          "/assets/models/city-kit/gas-station.glb",
+          "/assets/models/city-pack/GasStation.glb",
+          "/assets/models/environment/petrol-station.glb",
+          "/assets/models/city-kit/petrol.glb",
+        ];
+        const tryNext = (i) => {
+          if (i >= paths.length) return;
+          this._loader.load(
+            paths[i],
+            (gltf) => {
+              const model = gltf.scene;
+              model.traverse((c) => {
+                if (c.isMesh) {
+                  c.castShadow = true;
+                  c.receiveShadow = true;
+                }
+              });
+              this._stationTemplate = model;
+              console.info("[FuelSystem] Petrol station GLB:", paths[i]);
+            },
+            undefined,
+            () => tryNext(i + 1),
+          );
+        };
+        tryNext(0);
+      }).catch(() => {});
+    } catch {}
   }
 
   update(deltaTime, playerZ = 0, playerSpeed = 0) {
@@ -79,9 +121,20 @@ export default class FuelSystem {
     if (this.fuel > this.config.lowFuelWarn) this._lowWarned = false;
 
     if (this.fuel <= 0) {
-      this.eventBus?.emit?.("fuel:empty");
-      // Soft limit speed via event — player system can listen
-      this.eventBus?.emit?.("player:force-speed-cap", { maxSpeed: 4 });
+      if (!this.limpMode) {
+        this.limpMode = true;
+        this.eventBus?.emit?.("fuel:empty");
+        this.eventBus?.emit?.("hud:notify", {
+          text: "Empty tank — limp mode. Find a station!",
+          type: "urgent",
+        });
+      }
+      this.eventBus?.emit?.("player:force-speed-cap", { maxSpeed: 3.5 });
+      this.eventBus?.emit?.("player:limp-mode", { active: true });
+    } else if (this.limpMode) {
+      this.limpMode = false;
+      this.eventBus?.emit?.("player:force-speed-cap", { maxSpeed: 0 });
+      this.eventBus?.emit?.("player:limp-mode", { active: false });
     }
 
     this._emit();
@@ -111,6 +164,17 @@ export default class FuelSystem {
     const side = Math.random() > 0.5 ? 1 : -1;
     const group = new THREE.Group();
     group.name = "petrol-station";
+
+    if (this._stationTemplate) {
+      const model = this._stationTemplate.clone(true);
+      model.position.set(side * 14, 0, 0);
+      model.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+      group.add(model);
+      group.position.z = z;
+      this.scene.add(group);
+      this.stations.push({ z, mesh: group, used: false, side });
+      return;
+    }
 
     const canopy = new THREE.Mesh(
       new THREE.BoxGeometry(8, 0.3, 6),

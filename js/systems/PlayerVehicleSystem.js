@@ -242,6 +242,17 @@ export default class PlayerVehicleSystem {
       this.enabled = true;
     });
 
+    this._speedCap = 0; // 0 = no extra cap
+    this.limpMode = false;
+
+    this._subscribe("player:force-speed-cap", (payload = {}) => {
+      this._speedCap = Number(payload.maxSpeed) || 0;
+    });
+
+    this._subscribe("player:limp-mode", (payload = {}) => {
+      this.limpMode = Boolean(payload.active);
+    });
+
     this._subscribe("player:revive", (payload = {}) => {
       this.isDestroyed = false;
       this.enabled = true;
