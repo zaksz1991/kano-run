@@ -273,14 +273,14 @@ export default class Game {
   }
 
   async loadSystem(name, loadModule, { required = false } = {}) {
+    const startedAt = performance.now();
+
     try {
       const module = await loadModule();
       const SystemClass = module.default;
 
       if (typeof SystemClass !== "function") {
-        throw new Error(
-          `System "${name}" has no valid default export.`,
-        );
+        throw new Error(`System "${name}" has no valid default export.`);
       }
 
       const system = new SystemClass(this.getSystemContext());
@@ -296,6 +296,10 @@ export default class Game {
         await system.initialize?.(initOptions);
       }
 
+      console.info(
+        `[Kano Run] System "${name}" initialized in ${(performance.now() - startedAt).toFixed(1)} ms`
+      );
+
       return system;
     } catch (error) {
       const partialSystem = this.systems.get(name);
@@ -306,18 +310,20 @@ export default class Game {
 
       this.systems.delete(name);
 
+      const duration = (performance.now() - startedAt).toFixed(1);
+
       if (required) {
         console.error(
-          `[Kano Run] Required system failed: ${name}`,
-          error,
+          `[Kano Run] Required system "${name}" failed after ${duration} ms:`,
+          error
         );
 
         throw error;
       }
 
       console.warn(
-        `[Kano Run] Optional system failed: ${name}`,
-        error,
+        `[Kano Run] Optional system "${name}" failed after ${duration} ms:`,
+        error
       );
 
       return null;

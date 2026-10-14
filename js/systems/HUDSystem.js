@@ -382,24 +382,36 @@ export default class HUDSystem {
       radioVolumeValue,
     } = this.elements;
 
-    radioPrev.addEventListener("click", () => {
-      this._changeRadioStation(-1);
-    });
+    if (radioPrev) {
+      radioPrev.addEventListener("click", () => {
+        this._changeRadioStation(-1);
+      });
+    }
 
-    radioNext.addEventListener("click", () => {
-      this._changeRadioStation(1);
-    });
+    if (radioNext) {
+      radioNext.addEventListener("click", () => {
+        this._changeRadioStation(1);
+      });
+    }
 
-    radioToggle.addEventListener("click", () => {
-      this._toggleRadioPlayback();
-    });
+    if (radioToggle) {
+      radioToggle.addEventListener("click", () => {
+        this._toggleRadioPlayback();
+      });
+    }
 
-    radioVolume.addEventListener("input", () => {
-      const volume = Number(radioVolume.value) / 100;
+    if (radioVolume) {
+      radioVolume.addEventListener("input", () => {
+        const volume = Number(radioVolume.value) / 100;
 
-      this.audio?.setRadioVolume?.(volume);
-      radioVolumeValue.textContent = `${Math.round(volume * 100)}%`;
-    });
+        this.audio?.setRadioVolume?.(volume);
+
+        if (radioVolumeValue) {
+          radioVolumeValue.textContent =
+            `${Math.round(volume * 100)}%`;
+        }
+      });
+    }
   }
 
   _bindRadioKeyboardShortcuts() {
@@ -571,25 +583,23 @@ export default class HUDSystem {
       this.elements.radioToggle.textContent = this.radioPlaying
         ? "Ⅱ PAUSE"
         : "▶ PLAY";
-    }
 
-    const unavailable = !this.audio || this.radioStations.length === 0;
+      const unavailable = !this.audio || this.radioStations.length === 0;
 
-    if (this.elements.radioToggle) {
       this.elements.radioToggle.disabled = unavailable;
       this.elements.radioToggle.style.opacity = unavailable ? "0.5" : "1";
     }
   }
 
   _bindNegotiationControls() {
-    const accept = this.elements.container.querySelector("#btn-accept");
-    const counter = this.elements.container.querySelector("#btn-counter");
+    const accept = this.elements.container?.querySelector("#btn-accept");
+    const counter = this.elements.container?.querySelector("#btn-counter");
 
-    accept.addEventListener("click", () => {
+    accept?.addEventListener("click", () => {
       this.eventBus?.emit?.("negotiation:accept");
     });
 
-    counter.addEventListener("click", () => {
+    counter?.addEventListener("click", () => {
       this.eventBus?.emit?.("negotiation:counter");
     });
   }
@@ -604,11 +614,13 @@ export default class HUDSystem {
     }
 
     if (this.elements.money) {
-      this.elements.money.textContent = `₦${this.gameState.profile?.money ?? 0}`;
+      this.elements.money.textContent =
+        `₦${this.gameState.profile?.money ?? 0}`;
     }
 
     if (this.elements.level) {
-      this.elements.level.textContent = this.gameState.profile?.level ?? 1;
+      this.elements.level.textContent =
+        this.gameState.profile?.level ?? 1;
     }
   }
 
@@ -657,7 +669,7 @@ export default class HUDSystem {
 
     this.elements.negotiation.style.display = "block";
 
-    const dialogue = this.elements.container.querySelector("#neg-dialogue");
+    const dialogue = this.elements.container?.querySelector("#neg-dialogue");
 
     if (dialogue) {
       dialogue.textContent = payload.dialogue ?? "Negotiate the fare";
