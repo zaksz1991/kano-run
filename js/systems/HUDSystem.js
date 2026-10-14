@@ -115,6 +115,38 @@ export default class HUDSystem {
       this._toggleUI(false);
     });
 
+    this._subscribe("missions:updated", (p) => {
+      this._renderMissions(p?.active || []);
+    });
+
+    this._subscribe("mission:completed", (p) => {
+      this._showNotification(
+        p?.mission?.description || "Mission complete!",
+        3.0,
+        "success",
+      );
+    });
+
+    this._subscribe("lives:status", (p) => {
+      if (this.elements.lives) {
+        this.elements.lives.textContent = String(
+          Number(p?.freeLeft) >= 0 ? p.freeLeft : 0,
+        );
+      }
+    });
+
+    this._subscribe("lives:continued", (p) => {
+      this._showNotification(
+        p?.type === "paid" ? "Paid Life Saver used" : "Life Saver used",
+        2.0,
+        "success",
+      );
+    });
+
+    this._subscribe("hud:notify", (p) => {
+      this._showNotification(p?.text || "", 2.2, p?.type || "normal");
+    });
+
     this._subscribe("economy:balance-changed", (p) => {
       if (this.elements.money) {
         const bal = Number(p?.balance);
@@ -318,6 +350,42 @@ export default class HUDSystem {
     });
 
     container.appendChild(radio);
+
+    // Mission panel
+    const missions = this._createElement("div", {
+      position: "absolute",
+      left: "20px",
+      bottom: "20px",
+      width: "min(280px, calc(100vw - 40px))",
+      background: "rgba(7, 18, 32, 0.92)",
+      border: "1px solid rgba(0, 180, 216, 0.45)",
+      borderRadius: "12px",
+      padding: "12px",
+      pointerEvents: "auto",
+      maxHeight: "40vh",
+      overflowY: "auto",
+    });
+    missions.innerHTML = `
+      <div style="color:#00b4d8;font-size:11px;font-weight:bold;letter-spacing:2px;margin-bottom:8px">DAILY MISSIONS</div>
+      <div id="hud-missions-list" style="font-size:12px;color:#cbd5e1"></div>
+    `;
+    container.appendChild(missions);
+
+    // Life savers badge
+    const lives = this._createElement("div", {
+      position: "absolute",
+      top: "20px",
+      right: "20px",
+      background: "rgba(7, 18, 32, 0.88)",
+      border: "1px solid rgba(56,189,248,0.45)",
+      borderRadius: "10px",
+      padding: "10px 14px",
+      color: "#fff",
+      fontSize: "13px",
+    });
+    lives.innerHTML = `LIFE SAVERS <b id="hud-lives">3</b>`;
+    container.appendChild(lives);
+
     document.body.appendChild(container);
 
     this.elements = {
@@ -337,6 +405,8 @@ export default class HUDSystem {
       radioNext: container.querySelector("#hud-radio-next"),
       radioVolume: container.querySelector("#hud-radio-volume"),
       radioVolumeValue: container.querySelector("#hud-radio-volume-value"),
+      missionsList: container.querySelector("#hud-missions-list"),
+      lives: container.querySelector("#hud-lives"),
     };
 
     this._bindRadioControls();

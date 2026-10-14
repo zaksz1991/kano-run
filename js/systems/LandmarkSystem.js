@@ -1,57 +1,40 @@
 const ROUTE_LANDMARKS = {
-  "city-centre": [
-    "Kano Rank", "Kofar Mata", "Kurmi Market", "Emir's Palace",
-    "Murtala Mohammed Way", "Bompai Road",
-  ],
-  citycenter: [
-    "Kano Rank", "Kofar Mata", "Kurmi Market", "Emir's Palace",
-    "Murtala Mohammed Way", "Bompai Road",
-  ],
-  "sabon-gari": [
-    "Sabon Gari Gate", "Sabon Gari Market", "France Road", "Church Road", "New Road",
-  ],
-  sabongari: [
-    "Sabon Gari Gate", "Sabon Gari Market", "France Road", "Church Road",
-  ],
-  "zoo-road": [
-    "Zoo Road start", "Hotoro", "Naibawa junction", "Yankaba",
-  ],
-  panshekara: [
-    "Panshekara", "Kumbotso Junction", "Southern Bypass", "Industrial Area",
-  ],
-  kurmi: [
-    "Kurmi Market", "Kofar Wambai", "Old City Walls", "Kofar Mazugal",
-  ],
-  "farm-centre": [
-    "Farm Centre", "Tarauni Market", "Court Road", "Hadejia Road",
-  ],
-  sharada: [
-    "Sharada Industrial", "Tudun Wada link", "Bompai Industrial",
-  ],
-  naibawa: [
-    "Naibawa", "Yankaba", "Eastern Bypass",
-  ],
-  tarauni: [
-    "Tarauni Market", "Court Road", "Hadejia Road",
-  ],
-  gwale: [
-    "Gwale Market", "Neighborhood Square", "Western Link",
-  ],
-  kumbotso: [
-    "Kumbotso Junction", "Industrial Area", "Southern Bypass",
-  ],
-  nassarawa: [
-    "Nassarawa GRA", "Government House", "Aminu Kano Way",
-  ],
-  "tudunwada": [
-    "Tudun Wada Market", "Community Centre", "Sharada Link",
-  ],
+  "city-centre": ["Kano Rank","Kofar Mata","Kurmi Market","Emir's Palace","Murtala Mohammed Way","Bompai Road","Nassarawa GRA"],
+  citycenter: ["Kano Rank","Kofar Mata","Kurmi Market","Emir's Palace","Murtala Mohammed Way","Bompai Road"],
+  "sabon-gari": ["Sabon Gari Gate","Sabon Gari Market","France Road","Church Road","New Road","Ibrahim Taiwo Road"],
+  sabongari: ["Sabon Gari Gate","Sabon Gari Market","France Road","Church Road","New Road"],
+  "zoo-road": ["Zoo Road","Hotoro","Naibawa junction","Yankaba","Eastern Bypass"],
+  panshekara: ["Panshekara","Kumbotso Junction","Southern Bypass","Industrial Area","Challawa"],
+  kurmi: ["Kurmi Market","Kofar Wambai","Old City Walls","Kofar Mazugal","Dala Hill view"],
+  "farm-centre": ["Farm Centre","Tarauni Market","Court Road","Hadejia Road","Gyadi-Gyadi"],
+  sharada: ["Sharada Industrial","Tudun Wada link","Bompai Industrial","Challawa Industrial"],
+  naibawa: ["Naibawa","Yankaba","Eastern Bypass","Hotoro North"],
+  tarauni: ["Tarauni Market","Court Road","Hadejia Road","Gyadi-Gyadi Junction"],
+  gwale: ["Gwale Market","Neighborhood Square","Western Link","Kofar Ruwa"],
+  kumbotso: ["Kumbotso Junction","Industrial Area","Southern Bypass","Panshekara link"],
+  nassarawa: ["Nassarawa GRA","Government House","Aminu Kano Way","Silver Jubilee"],
+  tudunwada: ["Tudun Wada Market","Community Centre","Sharada Link","Dorayi"],
+  fagge: ["Fagge","Kofar Nassarawa","Wambai Market","City Centre link"],
+  dala: ["Dala","Dala Hill","Goron Dutse","Kofar Dawanau"],
+  "kofar-mata": ["Kofar Mata","Emir's Palace approach","Kurmi","Gidan Makama"],
+  hotoro: ["Hotoro","Zoo Road South","Naibawa","Triumph Junction"],
+  "aminu-kano": ["Aminu Kano Way","Nassarawa","Silver Jubilee House","State Road"],
+  bompai: ["Bompai","Industrial layout","Airport Road link","Sharada"],
+  "airport-road": ["Airport Road","Mal. Aminu Kano Airport","Kumbotso","Panshekara"],
+  "hadejia-road": ["Hadejia Road","Tarauni","Yankaba","Wudil axis"],
+  dorayi: ["Dorayi","Kabuga","Kofar Ruwa","Western Bypass"],
+  kabuga: ["Kabuga","Dorayi","BUK Road","New Site"],
+  "buk-road": ["BUK Road","Bayero University","Kabuga","Goron Dutse"],
+  "wudil": ["Wudil Road","Yankaba East","Garko axis"],
+  "kofar-ruwa": ["Kofar Ruwa","Cattle market","Gwale","Dawanau link"],
+  dawanau: ["Dawanau Market","Kofar Dawanau","Rimin Gado road"],
+  "rimin-gado": ["Rimin Gado","Dawanau","Western outer ring"],
 };
 
 const FALLBACK = [
-  "Leaving the rank", "Kofar Mata area", "Kurmi Market junction",
-  "Emir's Palace road", "Sabon Gari approach", "Zoo Road stretch",
-  "Farm Centre", "Hotoro flyover", "Naibawa axis", "Tarauni", "Kumbotso link",
+  "Leaving the rank","Kofar Mata area","Kurmi Market junction","Emir's Palace road",
+  "Sabon Gari approach","Zoo Road stretch","Farm Centre","Hotoro flyover",
+  "Naibawa axis","Tarauni","Kumbotso link","Sharada Industrial","Airport Road",
 ];
 
 export default class LandmarkSystem {
@@ -91,16 +74,17 @@ export default class LandmarkSystem {
 
   _loadFromRoute(route) {
     const r = route || this.routeSystem?.getSelectedRoute?.() || null;
-    const id = String(r?.id || r?.district || "").toLowerCase().replace(/\s+/g, "-");
+    const raw = String(r?.id || r?.district || r?.name || "").toLowerCase();
+    const id = raw.replace(/\s+/g, "-");
     const names =
       ROUTE_LANDMARKS[id] ||
-      ROUTE_LANDMARKS[String(r?.id || "").toLowerCase()] ||
+      ROUTE_LANDMARKS[raw] ||
       (Array.isArray(r?.landmarks) && r.landmarks.length ? r.landmarks : null) ||
       FALLBACK;
 
-    const step = 220;
+    const step = 200;
     this.landmarks = names.map((name, i) => ({
-      at: 70 + i * step,
+      at: 60 + i * step,
       name,
     }));
   }
@@ -108,7 +92,6 @@ export default class LandmarkSystem {
   update(deltaTime, playerZ = 0) {
     if (!this.enabled) return;
     const distance = Math.max(0, Number(playerZ) || 0);
-
     for (const lm of this.landmarks) {
       const key = `${lm.at}:${lm.name}`;
       if (this.triggered.has(key)) continue;

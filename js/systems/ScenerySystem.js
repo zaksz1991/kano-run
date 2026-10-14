@@ -641,6 +641,57 @@ export default class ScenerySystem {
     segment.props.push({ type: "building", mesh: group });
   }
 
+
+  _buildBillboard(segment) {
+    if (Math.random() > 0.35) return;
+
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const x = side * (14 + Math.random() * 3);
+    const z = (Math.random() - 0.5) * this.config.segmentLength * 0.8;
+
+    const group = new THREE.Group();
+    group.name = "ruffneck-billboard";
+
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.15, 5.5, 8),
+      this._material("bb-pole", 0x64748b),
+    );
+    pole.position.y = 2.75;
+    pole.castShadow = true;
+    group.add(pole);
+
+    const board = new THREE.Mesh(
+      new THREE.BoxGeometry(4.2, 2.2, 0.12),
+      new THREE.MeshStandardMaterial({
+        color: Math.random() > 0.5 ? 0x0ea5e9 : 0x22c55e,
+        emissive: 0x082f49,
+        emissiveIntensity: 0.25,
+        roughness: 0.6,
+      }),
+    );
+    board.position.y = 5.2;
+    board.castShadow = true;
+    group.add(board);
+
+    // Accent strip (brand bar)
+    const strip = new THREE.Mesh(
+      new THREE.BoxGeometry(4.2, 0.35, 0.14),
+      new THREE.MeshStandardMaterial({ color: 0xfbbf24 }),
+    );
+    strip.position.y = 6.15;
+    group.add(strip);
+
+    group.position.set(x, 0, z);
+    group.rotation.y = side < 0 ? 0.15 : Math.PI - 0.15;
+    group.userData.ad =
+      Math.random() > 0.5
+        ? "ruffneck-entertainment.vercel.app"
+        : "ruffneck-lms.vercel.app";
+
+    segment.group.add(group);
+    segment.props.push({ type: "billboard", mesh: group });
+  }
+
   _buildProps(segment) {
     if (Math.random() > this.config.propDensity) return;
 
@@ -666,6 +717,7 @@ export default class ScenerySystem {
       prop.position.z += z;
       segment.group.add(prop);
       segment.props.push({ type: "prop", mesh: prop });
+      this._buildBillboard(segment);
       return;
     }
 
@@ -687,6 +739,8 @@ export default class ScenerySystem {
     fallback.position.set(x, 0, z);
     segment.group.add(fallback);
     segment.props.push({ type: "prop", mesh: fallback });
+
+    this._buildBillboard(segment);
   }
   _clearSegmentProps(segment) {
     segment.props = segment.props.filter((item) => {

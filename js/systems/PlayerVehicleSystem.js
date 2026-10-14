@@ -241,6 +241,19 @@ export default class PlayerVehicleSystem {
     this._subscribe("game:resumed", () => {
       this.enabled = true;
     });
+
+    this._subscribe("player:revive", (payload = {}) => {
+      this.isDestroyed = false;
+      this.enabled = true;
+      this.condition = Math.max(35, this.condition || 40);
+      this.damage = Math.min(this.damage, 55);
+      this.speed = Math.min(this.speed, 8);
+      this.collisionTimer = Number(payload.invulnSeconds) || 2.5;
+      if (this.vehicle) this.vehicle.visible = true;
+      this.eventBus?.emit?.("playerVehicle:revived", {
+        condition: this.condition,
+      });
+    });
   }
 
   _subscribe(eventName, handler) {
@@ -522,6 +535,12 @@ export default class PlayerVehicleSystem {
 
     if (this.condition <= 0 && !this.isDestroyed) {
       this.isDestroyed = true;
+      this.eventBus?.emit?.("playerVehicle:destroyed", {
+        condition: this.condition,
+      });
+      this.eventBus?.emit?.("lives:request-continue", {
+        reason: "destroyed",
+      });
       this.speed = 0;
 
       this.eventBus?.emit?.("playerVehicle:destroyed", {
