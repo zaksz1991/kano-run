@@ -204,6 +204,22 @@ class KanoRunApp {
     }
   }
 
+
+  setStatus(msg) {
+    const el = document.getElementById("load-status");
+    if (el) {
+      el.textContent = msg || "";
+      el.classList.toggle("active", Boolean(msg));
+    }
+  }
+
+  setProgress(pct) {
+    if (this.loadingProgress) {
+      this.loadingProgress.style.width = Math.max(0, Math.min(100, Number(pct) || 0)) + "%";
+      this.loadingProgress.classList.remove("active");
+    }
+  }
+
   setStartButton(label, disabled) {
     if (!this.startButton) return;
 

@@ -3,225 +3,118 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#0a1628" />
+  <meta name="theme-color" content="#0c1222" />
   <title>Kano Run — Adaidaita Sahu</title>
   <link rel="stylesheet" href="/css/styles.css" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    * { margin: 0; padding: 0; box-boxing: border-box; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
-      height: 100%;
-      height: 100dvh;
-      overflow: hidden;
-      background: #0a1628;
+      height: 100%; height: 100dvh; overflow: hidden;
+      background: #0c1222;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      color: #f8fafc;
+      color: #f1f5f9;
       touch-action: none;
     }
     #game-container { position: fixed; inset: 0; }
     #c { width: 100%; height: 100%; display: block; touch-action: none; }
 
-    /* Full-bleed title layer */
     #loading-screen {
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
-      align-items: stretch;
-      padding: 0;
-      transition: opacity 0.45s ease, visibility 0.45s ease;
+      position: fixed; inset: 0; z-index: 1000;
+      display: flex; flex-direction: column;
+      background: radial-gradient(ellipse at 50% 0%, #1a2744 0%, #0c1222 55%, #080c16 100%);
+      transition: opacity 0.4s ease, visibility 0.4s ease;
     }
-    #loading-screen.hidden {
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
+    #loading-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+    #title-canvas {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      z-index: 0;
     }
 
-    .hero {
-      position: absolute;
-      inset: 0;
-      background:
-        linear-gradient(180deg, rgba(10,22,40,0.35) 0%, rgba(10,22,40,0.55) 40%, rgba(10,22,40,0.95) 78%, #0a1628 100%),
-        url("/assets/models/brand/keke-street.webp") center/cover no-repeat,
-        radial-gradient(ellipse at 30% 20%, #1e3a5f 0%, #0a1628 70%);
-    }
-    .hero::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at 70% 30%, rgba(251,191,36,0.12), transparent 45%);
-      pointer-events: none;
-    }
-
-    .sheet {
-      position: relative;
-      z-index: 2;
-      padding: max(20px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 14px;
+    .ui {
+      position: relative; z-index: 2;
+      margin-top: auto;
+      padding: max(16px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+      background: linear-gradient(180deg, transparent 0%, rgba(8,12,22,0.75) 25%, rgba(8,12,22,0.96) 100%);
     }
 
     .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: rgba(251,191,36,0.15);
-      border: 1px solid rgba(251,191,36,0.35);
-      color: #fbbf24;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
+      padding: 6px 14px; border-radius: 999px;
+      background: rgba(251, 191, 36, 0.12);
+      border: 1px solid rgba(251, 191, 36, 0.4);
+      color: #fbbf24; font-size: 11px; font-weight: 800; letter-spacing: 1.5px;
     }
-
     .game-title {
-      font-size: clamp(42px, 12vw, 72px);
-      font-weight: 900;
-      letter-spacing: -2px;
-      line-height: 0.95;
-      text-align: center;
-      text-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      font-size: clamp(40px, 11vw, 68px); font-weight: 900; letter-spacing: -1.5px;
+      background: linear-gradient(180deg, #fff8e7 0%, #fbbf24 45%, #d97706 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      text-align: center; line-height: 1;
     }
-    .game-title span {
-      display: block;
-      background: linear-gradient(90deg, #fff 0%, #fbbf24 55%, #fde68a 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
     .subtitle {
-      font-size: 13px;
-      font-weight: 700;
-      color: #38bdf8;
-      letter-spacing: 4px;
-      text-transform: uppercase;
+      font-size: 12px; font-weight: 700; color: #38bdf8;
+      letter-spacing: 0.35em; text-transform: uppercase;
     }
-
     .tagline {
-      font-size: 14px;
-      color: #94a3b8;
-      text-align: center;
-      max-width: 340px;
-      line-height: 1.5;
+      font-size: 13px; color: #94a3b8; text-align: center; max-width: 320px; line-height: 1.45;
     }
 
     .start-button {
-      width: min(360px, 100%);
-      min-height: 56px;
-      margin-top: 6px;
-      padding: 16px 24px;
-      font-size: 17px;
-      font-weight: 900;
-      border: none;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #ea580c 100%);
-      color: #1c1917;
+      width: min(340px, 100%); min-height: 54px; margin-top: 4px;
+      border: none; border-radius: 14px;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b 60%, #ea580c);
+      color: #1c1917; font-size: 16px; font-weight: 900; letter-spacing: 0.06em;
       cursor: pointer;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      box-shadow: 0 12px 32px rgba(245,158,11,0.35);
-      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s;
+      box-shadow: 0 10px 28px rgba(245, 158, 11, 0.4);
     }
-    .start-button:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 16px 40px rgba(245,158,11,0.45);
-    }
-    .start-button:active:not(:disabled) { transform: scale(0.98); }
-    .start-button:disabled {
-      filter: grayscale(0.2) brightness(0.9);
-      cursor: wait;
-    }
+    .start-button:disabled { opacity: 0.7; cursor: wait; }
+    .start-button:not(:disabled):active { transform: scale(0.98); }
 
-    .status {
-      font-size: 12px;
-      color: #64748b;
-      min-height: 18px;
-      text-align: center;
-    }
-    .status.active { color: #38bdf8; }
+    #load-status { font-size: 12px; color: #64748b; min-height: 16px; }
+    #load-status.active { color: #38bdf8; }
 
     .row-btns {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      width: min(360px, 100%);
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      width: min(340px, 100%);
     }
     .ghost-btn {
-      min-height: 46px;
-      border-radius: 12px;
-      border: 1px solid rgba(148,163,184,0.35);
-      background: rgba(15,23,42,0.55);
-      backdrop-filter: blur(8px);
-      color: #e2e8f0;
-      font-weight: 700;
-      font-size: 13px;
-      cursor: pointer;
+      min-height: 44px; border-radius: 12px;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      background: rgba(15, 23, 42, 0.65);
+      color: #e2e8f0; font-weight: 700; font-size: 13px; cursor: pointer;
     }
-    .ghost-btn:active { background: rgba(30,41,59,0.8); }
 
     .loading-bar {
-      width: min(360px, 100%);
-      height: 5px;
-      background: rgba(255,255,255,0.08);
-      border-radius: 999px;
-      overflow: hidden;
+      width: min(340px, 100%); height: 4px;
+      background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;
     }
     .loading-progress {
-      height: 100%;
-      width: 0%;
+      height: 100%; width: 0%;
       background: linear-gradient(90deg, #fbbf24, #38bdf8);
-      border-radius: 999px;
-      transition: width 0.25s ease;
+      border-radius: 999px; transition: width 0.2s ease;
     }
 
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 8px;
-      font-size: 11px;
-      color: #64748b;
-    }
+    .controls { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
     .control-key {
-      padding: 5px 10px;
-      border-radius: 8px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 11px; color: #64748b; padding: 4px 8px; border-radius: 6px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.06);
     }
-
     .developer {
-      font-size: 10px;
-      color: #475569;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-top: 4px;
-    }
-
-    @media (min-width: 768px) {
-      .sheet { padding-bottom: 48px; }
-      .game-title { font-size: 80px; }
+      font-size: 10px; color: #475569; letter-spacing: 0.2em; text-transform: uppercase;
     }
   </style>
 </head>
 <body>
   <div id="loading-screen">
-    <div class="hero" aria-hidden="true"></div>
-    <div class="sheet">
-      <div class="badge">Naija · Kano streets</div>
-      <h1 class="game-title"><span>KANO RUN</span></h1>
+    <canvas id="title-canvas"></canvas>
+    <div class="ui">
+      <div class="badge">NAIJA · KANO STREETS</div>
+      <h1 class="game-title">KANO RUN</h1>
       <p class="subtitle">Adaidaita Sahu</p>
-      <p class="tagline">Negotiate fares. Dodge okada. Beat KAROTA. Hausa · Yoruba · Igbo challenge.</p>
+      <p class="tagline">Negotiate fares. Dodge okada. Beat KAROTA.</p>
 
       <button class="start-button" id="start-btn" type="button">START DRIVING</button>
-      <p class="status" id="load-status">Tap start when ready</p>
+      <p id="load-status">Tap start when ready</p>
 
       <div class="row-btns">
         <button class="ghost-btn" id="btn-garage" type="button">Garage</button>
@@ -240,11 +133,163 @@
     </div>
   </div>
 
-  <div id="game-container">
-    <canvas id="c"></canvas>
-  </div>
+  <div id="game-container"><canvas id="c"></canvas></div>
 
   <script type="module">
+    import * as THREE from "three";
+
+    const canvas = document.getElementById("title-canvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+    renderer.setClearColor(0x000000, 0);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+    camera.position.set(2.8, 1.9, 5.2);
+
+    scene.add(new THREE.AmbientLight(0x9bb4d0, 0.55));
+    const sun = new THREE.DirectionalLight(0xffe6c2, 1.15);
+    sun.position.set(4, 8, 5);
+    scene.add(sun);
+    const fill = new THREE.DirectionalLight(0x38bdf8, 0.25);
+    fill.position.set(-3, 2, -2);
+    scene.add(fill);
+
+    // Ground disc
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(6, 48),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.95 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    scene.add(ground);
+
+    // Road stripe under keke
+    const road = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 }),
+    );
+    road.rotation.x = -Math.PI / 2;
+    road.position.y = 0.01;
+    scene.add(road);
+
+    // --- Procedural Adaidaita Sahu (3D) ---
+    const keke = new THREE.Group();
+    const yellow = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.15, roughness: 0.55 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.7 });
+    const chrome = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.7, roughness: 0.35 });
+    const white = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
+    const blue = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, roughness: 0.45 });
+
+    // Cabin body
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.95, 1.55), yellow);
+    cabin.position.set(0, 0.85, 0.15);
+    keke.add(cabin);
+
+    // Rear passenger box
+    const rear = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.85, 1.1), yellow);
+    rear.position.set(0, 0.8, -0.95);
+    keke.add(rear);
+
+    // Canopy
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 1.7), white);
+    canopy.position.set(0, 1.55, -0.35);
+    keke.add(canopy);
+    // Canopy posts
+    for (const [x, z] of [[-0.65, 0.35], [0.65, 0.35], [-0.65, -1.1], [0.65, -1.1]]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.75, 6), chrome);
+      post.position.set(x, 1.2, z);
+      keke.add(post);
+    }
+
+    // Windscreen frame
+    const screen = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 0.55, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.35, roughness: 0.2 }),
+    );
+    screen.position.set(0, 1.15, 0.92);
+    keke.add(screen);
+
+    // Handlebar
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 6), black);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.set(0, 1.15, 0.75);
+    keke.add(bar);
+
+    // Wheels: 1 front, 2 rear
+    function wheel(x, z, r = 0.32) {
+      const g = new THREE.Group();
+      const tire = new THREE.Mesh(new THREE.TorusGeometry(r, 0.09, 8, 16), black);
+      tire.rotation.y = Math.PI / 2;
+      g.add(tire);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.12, 10), chrome);
+      hub.rotation.z = Math.PI / 2;
+      g.add(hub);
+      g.position.set(x, r, z);
+      return g;
+    }
+    const wF = wheel(0, 1.05, 0.3);
+    const wL = wheel(-0.55, -1.05);
+    const wR = wheel(0.55, -1.05);
+    keke.add(wF, wL, wR);
+
+    // Headlight
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: 0xfbbf24, emissiveIntensity: 0.5 }));
+    light.position.set(0, 0.75, 1.0);
+    keke.add(light);
+
+    // Number plate style stripe
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.04), blue);
+    stripe.position.set(0, 0.55, 0.95);
+    keke.add(stripe);
+
+    keke.position.set(0, 0, 0);
+    scene.add(keke);
+
+    // Soft particles (dust motes)
+    const dots = new THREE.Points(
+      new THREE.BufferGeometry().setFromPoints(
+        Array.from({ length: 40 }, () => new THREE.Vector3(
+          (Math.random() - 0.5) * 8,
+          Math.random() * 3,
+          (Math.random() - 0.5) * 8,
+        )),
+      ),
+      new THREE.PointsMaterial({ color: 0xfbbf24, size: 0.04, transparent: true, opacity: 0.35 }),
+    );
+    scene.add(dots);
+
+    let raf = 0;
+    const clock = new THREE.Clock();
+    function resize() {
+      const w = innerWidth, h = innerHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    addEventListener("resize", resize);
+
+    function frame() {
+      const t = clock.getElapsedTime();
+      keke.rotation.y = Math.sin(t * 0.45) * 0.55 + 0.35;
+      keke.position.y = Math.sin(t * 1.8) * 0.03;
+      wF.rotation.x = t * 3;
+      wL.rotation.x = t * 3;
+      wR.rotation.x = t * 3;
+      camera.position.x = 2.6 + Math.sin(t * 0.25) * 0.35;
+      camera.lookAt(0, 0.9, 0);
+      dots.rotation.y = t * 0.05;
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(frame);
+    }
+    frame();
+
+    document.getElementById("start-btn")?.addEventListener("click", () => {
+      cancelAnimationFrame(raf);
+      canvas.style.opacity = "0";
+      canvas.style.transition = "opacity 0.4s";
+    });
     document.getElementById("btn-garage")?.addEventListener("click", () => {
       window.dispatchEvent(new CustomEvent("kano:open-garage"));
     });
