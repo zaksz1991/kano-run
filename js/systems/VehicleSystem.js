@@ -354,6 +354,7 @@ export default class VehicleSystem {
         vehicle.speed = Math.max(0, vehicle.speed - 5 * dt);
       }
 
+      const prevZ = vehicle.z;
       vehicle.z += vehicle.speed * dt;
       vehicle.group.position.x = THREE.MathUtils.damp(
         vehicle.group.position.x,
@@ -362,6 +363,18 @@ export default class VehicleSystem {
         dt,
       );
       vehicle.group.position.z = vehicle.z;
+      // Face direction of travel (+Z forward uses PI on many GLBs)
+      const dz = vehicle.z - prevZ;
+      if (Math.abs(dz) > 1e-5) {
+        const base = dz >= 0 ? Math.PI : 0;
+        const yaw = base + (MODEL_YAW[vehicle.type] ?? 0);
+        vehicle.group.rotation.y = THREE.MathUtils.damp(
+          vehicle.group.rotation.y,
+          yaw,
+          10,
+          dt,
+        );
+      }
 
       this._avoidVehicleAhead(vehicle, dt);
       this._checkPlayerProximity(vehicle);

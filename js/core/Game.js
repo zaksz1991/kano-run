@@ -411,6 +411,10 @@ export default class Game {
       ["achievements", () => import("../systems/AchievementSystem.js")],
       ["achievementsMenu", () => import("../systems/AchievementsMenuSystem.js")],
       ["performance", () => import("../systems/PerformanceSystem.js")],
+      ["physicsTuning", () => import("../systems/PhysicsTuningSystem.js")],
+      ["naijaChallenge", () => import("../systems/NaijaChallengeSystem.js")],
+      ["pedestrians", () => import("../systems/PedestrianSystem.js")],
+      ["passengerHold", () => import("../systems/PassengerHoldSystem.js")],
       ["tutorial", () => import("../systems/TutorialSystem.js")],
       ["streetlights", () => import("../systems/StreetlightSystem.js")],
       ["fuel", () => import("../systems/FuelSystem.js")],
@@ -597,6 +601,8 @@ export default class Game {
             case "billboardAds":
             case "fuel":
             case "streetlights":
+            case "pedestrians":
+            case "passengerHold":
               system.update?.(delta, playerZ, speed);
               break;
 
