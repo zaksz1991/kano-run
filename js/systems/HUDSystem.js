@@ -1,4 +1,4 @@
-import { GAME_CONFIG } from "../core/config.js";
+﻿import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
   updateInterval: 0.1,
@@ -63,7 +63,7 @@ export default class HUDSystem {
     });
 
     this._subscribe("passenger:dropped", (p) => {
-      this._showNotification(`Fare: ₦${p.fare}`, 3.0, "success");
+      this._showNotification(`Fare: &#8358;${p.fare}`, 3.0, "success");
       this._clearTripUI();
     });
 
@@ -80,7 +80,7 @@ export default class HUDSystem {
     });
 
     this._subscribe("checkpoint:fined", (p) => {
-      this._showNotification(`KAROTA Fine: ₦${p.amount}`, 3.0, "urgent");
+      this._showNotification(`KAROTA Fine: &#8358;${p.amount}`, 3.0, "urgent");
     });
 
     this._subscribe("checkpoint:cleared", () => {
@@ -141,7 +141,7 @@ export default class HUDSystem {
       <div>
         <span style="color:#00b4d8;font-size:11px">WALLET</span>
         <br>
-        <b id="hud-money">₦0</b>
+        <b id="hud-money">&#8358;0</b>
       </div>
 
       <div>
@@ -283,13 +283,13 @@ export default class HUDSystem {
         margin-bottom:12px
       ">
         <button id="hud-radio-prev" aria-label="Previous station"
-          style="flex:1">◀ PREV</button>
+          style="flex:1">< PREV</button>
 
         <button id="hud-radio-toggle" aria-label="Play or pause radio"
-          style="flex:1.3;background:#00b4d8;color:#071220">▶ PLAY</button>
+          style="flex:1.3;background:#00b4d8;color:#071220">PLAY PLAY</button>
 
         <button id="hud-radio-next" aria-label="Next station"
-          style="flex:1">NEXT ▶</button>
+          style="flex:1">NEXT ></button>
       </div>
 
       <div style="
@@ -320,7 +320,7 @@ export default class HUDSystem {
         font-size:10px;
         text-align:center;
         letter-spacing:0.5px
-      ">R PLAY/PAUSE · N NEXT · B PREVIOUS · M MUTE</div>
+      ">R PLAY/PAUSE | N NEXT | B PREVIOUS | M MUTE</div>
     `;
 
     const buttonStyle = {
@@ -345,6 +345,8 @@ export default class HUDSystem {
         button.style.filter = "none";
       });
     });
+
+    container.appendChild(radio);
 
     document.body.appendChild(container);
 
@@ -566,12 +568,12 @@ export default class HUDSystem {
 
     if (this.elements.radioStatus) {
       if (this.radioMuted) {
-        this.elements.radioStatus.textContent = "● MUTED";
+        this.elements.radioStatus.textContent = "â— MUTED";
         this.elements.radioStatus.style.color = "#fbbf24";
       } else {
         this.elements.radioStatus.textContent = this.radioPlaying
-          ? "● ON AIR"
-          : "● STANDBY";
+          ? "â— ON AIR"
+          : "â— STANDBY";
 
         this.elements.radioStatus.style.color = this.radioPlaying
           ? "#4ade80"
@@ -581,8 +583,8 @@ export default class HUDSystem {
 
     if (this.elements.radioToggle) {
       this.elements.radioToggle.textContent = this.radioPlaying
-        ? "Ⅱ PAUSE"
-        : "▶ PLAY";
+        ? "PAUSE"
+        : "PLAY PLAY";
 
       const unavailable = !this.audio || this.radioStations.length === 0;
 
@@ -615,7 +617,7 @@ export default class HUDSystem {
 
     if (this.elements.money) {
       this.elements.money.textContent =
-        `₦${this.gameState.profile?.money ?? 0}`;
+        `&#8358;${this.gameState.profile?.money ?? 0}`;
     }
 
     if (this.elements.level) {
@@ -732,3 +734,6 @@ export default class HUDSystem {
     this.elements = {};
   }
 }
+
+
+

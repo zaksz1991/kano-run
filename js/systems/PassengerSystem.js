@@ -95,6 +95,11 @@ export default class PassengerSystem {
     this.eventBus?.emit?.(name, payload);
   }
 
+  start() {
+    this.player ??= this.game?.systems?.get?.("playerVehicle") ?? null;
+    this.enabled = true;
+  }
+
   async initialize() {
     this.player ??= this.game?.systems?.get?.("playerVehicle") ?? null;
 
@@ -388,3 +393,4 @@ export default class PassengerSystem {
     this.disposed = true;
   }
 }
+

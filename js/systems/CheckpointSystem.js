@@ -1,4 +1,4 @@
-import * as THREE from "three";
+﻿import * as THREE from "three";
 import { GAME_CONFIG } from "../core/config.js";
 
 export default class CheckpointSystem {
@@ -17,6 +17,10 @@ export default class CheckpointSystem {
 
     this._subscribe("game:started", () => { this.enabled = true; });
     this._subscribe("game:stopped", () => { this.enabled = false; this.clear(); });
+  }
+
+  start() {
+    this.enabled = true;
   }
 
   update(deltaTime, playerZ = 0, playerSpeed = 0) {

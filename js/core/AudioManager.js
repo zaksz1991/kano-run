@@ -1,4 +1,4 @@
-export default class AudioManager {
+﻿export default class AudioManager {
   constructor() {
     this.context = null;
     this.masterGain = null;
@@ -88,9 +88,6 @@ export default class AudioManager {
       "engine",
       "horn",
       "whistle",
-      "collision",
-      "pickup",
-      "coin",
       ...this.radioStations.map((station) => station.id),
     ];
 
