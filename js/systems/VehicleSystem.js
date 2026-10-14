@@ -57,12 +57,12 @@ export default class VehicleSystem {
     else if (this.eventBus.off) { this._disposers ??= []; this._disposers.push(() => this.eventBus.off(eventName, handler)); }
   }
 
-  initialize({ playerZ = 0, playerLane = 1, initialVehicles = 8 } = {}) {
+  async initialize({ playerZ = 0, playerLane = 1, initialVehicles = 8 } = {}) {
     if (this.initialized) return this;
     this.playerZ = playerZ; this.playerLane = clamp(playerLane, 0, 2);
     for (let i = 0; i < initialVehicles; i += 1) {
       const z = playerZ + 28 + i * (this.config.spawnDistance / initialVehicles);
-      this.spawnVehicle({ z, preferredLane: i % 3 });
+      await this.spawnVehicle({ z, preferredLane: i % 3 });
     }
     this.initialized = true;
     this.eventBus?.emit?.("vehicles:initialized", { count: this.vehicles.size });
@@ -97,7 +97,7 @@ export default class VehicleSystem {
     vehicle.changeLaneTimer = randomBetween(3, 8); vehicle.stopped = false;
 
     vehicle.group.position.set(this._laneX(lane), 0, z);
-    vehicle.group.rotation.y = Math.PI;
+    vehicle.group.rotation.y = 0;
 
     this.vehicles.set(vehicle.id, vehicle); this.scene.add(vehicle.group);
     this.eventBus?.emit?.("vehicle:spawned", { id: vehicle.id, type: vehicle.type, lane: vehicle.lane, z: vehicle.z, speed: vehicle.speed });
@@ -292,3 +292,4 @@ export default class VehicleSystem {
   }
 }
 export { VEHICLE_SPECS, VEHICLE_TYPES };
+
