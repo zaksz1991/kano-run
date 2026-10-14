@@ -151,6 +151,11 @@ export default class RouteSystem {
     this.bindEvents();
   }
 
+  async initialize() {
+    // Data-only system — no network
+    return this;
+  }
+
   registerRoute(route) {
     if (!route || typeof route.id !== "string" || !route.id.trim()) {
       throw new Error("Every route must have a valid string id.");

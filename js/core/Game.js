@@ -357,90 +357,105 @@ export default class Game {
   }
 
   async initializeSystems() {
-    const criticalSystems = [
+    /**
+     * Parallel critical boot — sequential was ~90s on routes alone
+     * because each dynamic import waited on a blocked main thread.
+     */
+    const wave1 = [
       ["progression", () => import("../systems/ProgressionSystem.js")],
       ["routes", () => import("../systems/RouteSystem.js")],
+      ["economy", () => import("../systems/EconomySystem.js")],
+    ];
+    await Promise.all(
+      wave1.map(([name, load]) =>
+        this.loadSystem(name, load, { required: true }),
+      ),
+    );
+
+    const wave2 = [
       ["world", () => import("../systems/WorldSystem.js")],
       ["road", () => import("../systems/RoadSystem.js")],
       ["scenery", () => import("../systems/ScenerySystem.js")],
-      ["playerVehicle", () => import("../systems/PlayerVehicleSystem.js")],
-      ["camera", () => import("../systems/CameraSystem.js")],
+    ];
+    await Promise.all(
+      wave2.map(([name, load]) =>
+        this.loadSystem(name, load, { required: true }),
+      ),
+    );
+
+    await this.loadSystem(
+      "playerVehicle",
+      () => import("../systems/PlayerVehicleSystem.js"),
+      { required: true },
+    );
+    await this.loadSystem(
+      "camera",
+      () => import("../systems/CameraSystem.js"),
+      { required: true },
+    );
+
+    const player = this.systems.get("playerVehicle");
+    const camera = this.systems.get("camera");
+    if (player) camera?.setTarget?.(player);
+
+    const wave3 = [
       ["traffic", () => import("../systems/TrafficSystem.js")],
       ["collision", () => import("../systems/CollisionSystem.js")],
       ["passengers", () => import("../systems/PassengerSystem.js")],
+      ["driving", () => import("../systems/DrivingSystem.js")],
+      ["vehicles", () => import("../systems/VehicleSystem.js")],
+    ];
+    await Promise.all(
+      wave3.map(([name, load]) =>
+        this.loadSystem(name, load, { required: true }),
+      ),
+    );
+
+    const wave4 = [
       ["intro", () => import("../systems/IntroSystem.js")],
       ["negotiation", () => import("../systems/NegotiationSystem.js")],
       ["checkpoint", () => import("../systems/CheckpointSystem.js")],
       ["chase", () => import("../systems/ChaseSystem.js")],
-      ["landmarks", () => import("../systems/LandmarkSystem.js")],
-      ["landmarkBillboards", () => import("../systems/LandmarkBillboardSystem.js")],
-    ];
-
-    for (const [name, loadModule] of criticalSystems) {
-      await this.loadSystem(name, loadModule, {
-        required: true,
-      });
-    }
-
-    // Initialize the player before systems that depend on its state.
-    const player = this.systems.get("playerVehicle");
-
-    if (player) {
-      const camera = this.systems.get("camera");
-      camera?.setTarget?.(player);
-    }
-
-    const optionalSystems = [
-      ["menu", () => import("../systems/MenuSystem.js")],
-      ["environment", () => import("../systems/EnvironmentSystem.js")],
+      ["hud", () => import("../systems/HUDSystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
       ["dayNight", () => import("../systems/DayNightSystem.js")],
       ["weather", () => import("../systems/WeatherSystem.js")],
+    ];
+    await Promise.all(
+      wave4.map(([name, load]) =>
+        this.loadSystem(name, load, { required: false }),
+      ),
+    );
+
+    // Defer non-critical — after first playable frame
+    const deferred = [
+      ["landmarks", () => import("../systems/LandmarkSystem.js")],
+      ["landmarkBillboards", () => import("../systems/LandmarkBillboardSystem.js")],
+      ["menu", () => import("../systems/MenuSystem.js")],
+      ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["routeGeneration", () => import("../systems/RouteGenerationSystem.js")],
-      ["driving", () => import("../systems/DrivingSystem.js")],
-      ["vehicles", () => import("../systems/VehicleSystem.js")],
-      ["economy", () => import("../systems/EconomySystem.js")],
       ["missions", () => import("../systems/MissionSystem.js")],
       ["garage", () => import("../systems/GarageSystem.js")],
       ["customization", () => import("../systems/CustomizationSystem.js")],
       ["particles", () => import("../systems/ParticleSystem.js")],
       ["minimap", () => import("../systems/MinimapSystem.js")],
-      ["hud", () => import("../systems/HUDSystem.js")],
-      ["lifeSaver", () => import("../systems/LifeSaverSystem.js")],
-      ["damage", () => import("../systems/DamageSystem.js")],
-      ["shareRun", () => import("../systems/ShareRunSystem.js")],
-      ["achievements", () => import("../systems/AchievementSystem.js")],
-      ["achievementsMenu", () => import("../systems/AchievementsMenuSystem.js")],
-      ["performance", () => import("../systems/PerformanceSystem.js")],
-      ["radioAudio", () => import("../systems/AudioSystem.js")],
-      ["marketDensity", () => import("../systems/MarketDensitySystem.js")],
-      ["negotiationVoice", () => import("../systems/NegotiationVoiceSystem.js")],
-      ["titleMusic", () => import("../systems/TitleMusicSystem.js")],
-      ["fpsMeter", () => import("../systems/FpsMeterSystem.js")],
-      ["dailyMissions", () => import("../systems/DailyMissionSystem.js")],
-      ["physicsTuning", () => import("../systems/PhysicsTuningSystem.js")],
-      ["naijaChallenge", () => import("../systems/NaijaChallengeSystem.js")],
-      ["pedestrians", () => import("../systems/PedestrianSystem.js")],
-      ["passengerHold", () => import("../systems/PassengerHoldSystem.js")],
-      ["tutorial", () => import("../systems/TutorialSystem.js")],
-      ["streetlights", () => import("../systems/StreetlightSystem.js")],
-      ["fuel", () => import("../systems/FuelSystem.js")],
-      ["billboardAds", () => import("../systems/BillboardAdSystem.js")],
-      ["touchControls", () => import("../systems/TouchControlsSystem.js")],
-      ["pause", () => import("../systems/PauseSystem.js")],
-      ["gameOver", () => import("../systems/GameOverSystem.js")],
     ];
 
-    // Await each optional system so its dependencies are available
-    // before the next system is constructed and initialized.
-    for (const [name, loadModule] of optionalSystems) {
-      await this.loadSystem(name, loadModule);
-    }
-
-    this.events.emit("systems:initialized", {
-      names: [...this.systems.keys()],
-    });
+    // Fire and forget — game can start without these
+    this._deferredBoot = Promise.all(
+      deferred.map(([name, load]) =>
+        this.loadSystem(name, load, { required: false }).catch((e) => {
+          console.warn(`[Kano Run] Deferred system ${name}:`, e);
+        }),
+      ),
+    );
+    // Soft wait max 2s then continue
+    await Promise.race([
+      this._deferredBoot,
+      new Promise((r) => setTimeout(r, 2000)),
+    ]);
   }
+
 
   async start() {
     if (this.isDestroyed) {
