@@ -30,11 +30,16 @@ export default class HUDSystem {
 
     this.radioIndex = 0;
     this.radioPlaying = false;
+    this.radioMuted = Boolean(this.audio?.isMuted);
+
     this.radioStations = Array.isArray(this.audio?.radioStations)
       ? this.audio.radioStations
       : [];
 
+    this._radioKeyHandler = null;
+
     this._bindEvents();
+    this._bindRadioKeyboardShortcuts();
   }
 
   initialize() {
@@ -54,19 +59,11 @@ export default class HUDSystem {
     });
 
     this._subscribe("passenger:shout", () => {
-      this._showNotification(
-        "AKWAI! (Stop here!)",
-        2.0,
-        "urgent"
-      );
+      this._showNotification("AKWAI! (Stop here!)", 2.0, "urgent");
     });
 
     this._subscribe("passenger:dropped", (p) => {
-      this._showNotification(
-        `Fare: ₦${p.fare}`,
-        3.0,
-        "success"
-      );
+      this._showNotification(`Fare: ₦${p.fare}`, 3.0, "success");
       this._clearTripUI();
     });
 
@@ -79,27 +76,15 @@ export default class HUDSystem {
     });
 
     this._subscribe("checkpoint:approaching", () => {
-      this._showNotification(
-        "KAROTA Checkpoint Ahead",
-        3.0,
-        "warning"
-      );
+      this._showNotification("KAROTA Checkpoint Ahead", 3.0, "warning");
     });
 
     this._subscribe("checkpoint:fined", (p) => {
-      this._showNotification(
-        `KAROTA Fine: ₦${p.amount}`,
-        3.0,
-        "urgent"
-      );
+      this._showNotification(`KAROTA Fine: ₦${p.amount}`, 3.0, "urgent");
     });
 
     this._subscribe("checkpoint:cleared", () => {
-      this._showNotification(
-        "Checkpoint Cleared",
-        2.0,
-        "success"
-      );
+      this._showNotification("Checkpoint Cleared", 2.0, "success");
     });
 
     this._subscribe("radio:changed", (p) => {
@@ -131,8 +116,6 @@ export default class HUDSystem {
       zIndex: "1000",
       color: "#fff",
     });
-
-    // TOP BAR: SPEED, WALLET AND LEVEL
 
     const topBar = this._createElement("div", {
       position: "absolute",
@@ -170,8 +153,6 @@ export default class HUDSystem {
 
     container.appendChild(topBar);
 
-    // CURRENT TRIP
-
     const tripInfo = this._createElement("div", {
       position: "absolute",
       top: "20px",
@@ -190,14 +171,10 @@ export default class HUDSystem {
       <div style="font-size:11px;letter-spacing:2px">
         CURRENT TRIP
       </div>
-      <b id="hud-destination" style="font-size:18px">
-        ---
-      </b>
+      <b id="hud-destination" style="font-size:18px">---</b>
     `;
 
     container.appendChild(tripInfo);
-
-    // CENTER NOTIFICATIONS
 
     const notification = this._createElement("div", {
       position: "absolute",
@@ -217,8 +194,6 @@ export default class HUDSystem {
     });
 
     container.appendChild(notification);
-
-    // NEGOTIATION PANEL
 
     const negotiation = this._createElement("div", {
       position: "absolute",
@@ -255,8 +230,6 @@ export default class HUDSystem {
     `;
 
     container.appendChild(negotiation);
-
-    // RADIO PLAYER
 
     const radio = this._createElement("div", {
       position: "absolute",
@@ -327,6 +300,7 @@ export default class HUDSystem {
         color:#cbd5e1
       ">
         <label for="hud-radio-volume">VOL</label>
+
         <input
           id="hud-radio-volume"
           type="range"
@@ -336,8 +310,17 @@ export default class HUDSystem {
           aria-label="Radio volume"
           style="flex:1;min-width:0;accent-color:#00b4d8;cursor:pointer"
         >
+
         <span id="hud-radio-volume-value">40%</span>
       </div>
+
+      <div style="
+        margin-top:9px;
+        color:#94a3b8;
+        font-size:10px;
+        text-align:center;
+        letter-spacing:0.5px
+      ">R PLAY/PAUSE · N NEXT · B PREVIOUS · M MUTE</div>
     `;
 
     const buttonStyle = {
@@ -363,7 +346,6 @@ export default class HUDSystem {
       });
     });
 
-    container.appendChild(radio);
     document.body.appendChild(container);
 
     this.elements = {
@@ -375,11 +357,12 @@ export default class HUDSystem {
       destination: container.querySelector("#hud-destination"),
       notification,
       negotiation,
-
       radio,
       radioStation: container.querySelector("#hud-radio-station"),
       radioStatus: container.querySelector("#hud-radio-status"),
       radioToggle: container.querySelector("#hud-radio-toggle"),
+      radioPrev: container.querySelector("#hud-radio-prev"),
+      radioNext: container.querySelector("#hud-radio-next"),
       radioVolume: container.querySelector("#hud-radio-volume"),
       radioVolumeValue: container.querySelector(
         "#hud-radio-volume-value"
@@ -393,75 +376,146 @@ export default class HUDSystem {
   _bindRadioControls() {
     const {
       radioToggle,
+      radioPrev,
+      radioNext,
       radioVolume,
       radioVolumeValue,
     } = this.elements;
 
-    this.elements.radioPrev = this.elements.container.querySelector(
-      "#hud-radio-prev"
-    );
-
-    this.elements.radioNext = this.elements.container.querySelector(
-      "#hud-radio-next"
-    );
-
-    this.elements.radioPrev.addEventListener("click", () => {
+    radioPrev.addEventListener("click", () => {
       this._changeRadioStation(-1);
     });
 
-    this.elements.radioNext.addEventListener("click", () => {
+    radioNext.addEventListener("click", () => {
       this._changeRadioStation(1);
     });
 
-    radioToggle.addEventListener("click", async () => {
-      if (!this.audio) {
-        this._showNotification("Radio audio is unavailable", 2.5, "urgent");
-        return;
-      }
-
-      if (this.radioPlaying) {
-        this.audio.stopRadio?.();
-        this.radioPlaying = false;
-        this._updateRadioUI();
-        return;
-      }
-
-      const station = this.radioStations[this.radioIndex];
-
-      if (!station) {
-        this._showNotification("No radio stations configured", 2.5, "urgent");
-        return;
-      }
-
-      try {
-        const started = this.audio.startRadio?.(station.id);
-
-        this.radioPlaying = started !== false;
-
-        if (!this.radioPlaying) {
-          this._showNotification(
-            "Radio unavailable. Check audio initialization.",
-            3,
-            "urgent"
-          );
-        }
-      } catch (error) {
-        this.radioPlaying = false;
-        console.warn("[Kano Run] Radio playback failed:", error);
-
-        this._showNotification("Unable to start radio", 2.5, "urgent");
-      }
-
-      this._updateRadioUI();
+    radioToggle.addEventListener("click", () => {
+      this._toggleRadioPlayback();
     });
 
     radioVolume.addEventListener("input", () => {
       const volume = Number(radioVolume.value) / 100;
 
       this.audio?.setRadioVolume?.(volume);
-
       radioVolumeValue.textContent = `${Math.round(volume * 100)}%`;
     });
+  }
+
+  _bindRadioKeyboardShortcuts() {
+    this._radioKeyHandler = (event) => {
+      if (
+        event.repeat ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey
+      ) {
+        return;
+      }
+
+      const target = event.target;
+
+      if (
+        target instanceof HTMLElement &&
+        (
+          target.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+        )
+      ) {
+        return;
+      }
+
+      switch (event.key.toLowerCase()) {
+        case "r":
+          event.preventDefault();
+          this._toggleRadioPlayback();
+          break;
+
+        case "n":
+          event.preventDefault();
+          this._changeRadioStation(1);
+          break;
+
+        case "b":
+          event.preventDefault();
+          this._changeRadioStation(-1);
+          break;
+
+        case "m":
+          event.preventDefault();
+          this._toggleRadioMute();
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", this._radioKeyHandler);
+  }
+
+  _toggleRadioPlayback() {
+    if (!this.audio) {
+      this._showNotification("Radio audio is unavailable", 2.5, "urgent");
+      return;
+    }
+
+    if (this.radioPlaying) {
+      this.audio.stopRadio?.();
+      this.radioPlaying = false;
+      this._updateRadioUI();
+      return;
+    }
+
+    const station = this.radioStations[this.radioIndex];
+
+    if (!station) {
+      this._showNotification("No radio stations configured", 2.5, "urgent");
+      return;
+    }
+
+    try {
+      const started = this.audio.startRadio?.(station.id);
+
+      this.radioPlaying = started !== false;
+
+      if (!this.radioPlaying) {
+        this._showNotification(
+          "Radio unavailable. Check audio initialization.",
+          3,
+          "urgent"
+        );
+      }
+    } catch (error) {
+      this.radioPlaying = false;
+      console.warn("[Kano Run] Radio playback failed:", error);
+
+      this._showNotification("Unable to start radio", 2.5, "urgent");
+    }
+
+    this._updateRadioUI();
+  }
+
+  _toggleRadioMute() {
+    if (!this.audio?.toggleMute) {
+      this._showNotification("Radio mute is unavailable", 2, "urgent");
+      return;
+    }
+
+    try {
+      this.audio.toggleMute();
+      this.radioMuted = Boolean(this.audio.isMuted);
+
+      this._updateRadioUI();
+
+      this._showNotification(
+        this.radioMuted ? "Radio muted" : "Radio unmuted",
+        1.5
+      );
+    } catch (error) {
+      console.warn("[Kano Run] Radio mute failed:", error);
+      this._showNotification("Unable to toggle radio mute", 2, "urgent");
+    }
   }
 
   _changeRadioStation(direction) {
@@ -472,8 +526,7 @@ export default class HUDSystem {
 
     const count = this.radioStations.length;
 
-    this.radioIndex =
-      (this.radioIndex + direction + count) % count;
+    this.radioIndex = (this.radioIndex + direction + count) % count;
 
     const station = this.radioStations[this.radioIndex];
 
@@ -488,11 +541,7 @@ export default class HUDSystem {
     }
 
     this._updateRadioUI();
-
-    this._showNotification(
-      `Radio: ${station.name}`,
-      1.8
-    );
+    this._showNotification(`Radio: ${station.name}`, 1.8);
   }
 
   _updateRadioUI() {
@@ -504,13 +553,18 @@ export default class HUDSystem {
     }
 
     if (this.elements.radioStatus) {
-      this.elements.radioStatus.textContent = this.radioPlaying
-        ? "● ON AIR"
-        : "● STANDBY";
+      if (this.radioMuted) {
+        this.elements.radioStatus.textContent = "● MUTED";
+        this.elements.radioStatus.style.color = "#fbbf24";
+      } else {
+        this.elements.radioStatus.textContent = this.radioPlaying
+          ? "● ON AIR"
+          : "● STANDBY";
 
-      this.elements.radioStatus.style.color = this.radioPlaying
-        ? "#4ade80"
-        : "#9ca3af";
+        this.elements.radioStatus.style.color = this.radioPlaying
+          ? "#4ade80"
+          : "#9ca3af";
+      }
     }
 
     if (this.elements.radioToggle) {
@@ -519,14 +573,11 @@ export default class HUDSystem {
         : "▶ PLAY";
     }
 
-    const unavailable =
-      !this.audio || this.radioStations.length === 0;
+    const unavailable = !this.audio || this.radioStations.length === 0;
 
     if (this.elements.radioToggle) {
       this.elements.radioToggle.disabled = unavailable;
-      this.elements.radioToggle.style.opacity = unavailable
-        ? "0.5"
-        : "1";
+      this.elements.radioToggle.style.opacity = unavailable ? "0.5" : "1";
     }
   }
 
@@ -544,24 +595,20 @@ export default class HUDSystem {
   }
 
   update(deltaTime) {
-    if (this.gameState) {
-      const run = this.gameState.getRunState?.();
+    if (!this.gameState) return;
 
-      if (run && this.elements.speed) {
-        this.elements.speed.textContent = Math.floor(
-          Number(run.speed) || 0
-        );
-      }
+    const run = this.gameState.getRunState?.();
 
-      if (this.elements.money) {
-        this.elements.money.textContent =
-          `₦${this.gameState.profile?.money ?? 0}`;
-      }
+    if (run && this.elements.speed) {
+      this.elements.speed.textContent = Math.floor(Number(run.speed) || 0);
+    }
 
-      if (this.elements.level) {
-        this.elements.level.textContent =
-          this.gameState.profile?.level ?? 1;
-      }
+    if (this.elements.money) {
+      this.elements.money.textContent = `₦${this.gameState.profile?.money ?? 0}`;
+    }
+
+    if (this.elements.level) {
+      this.elements.level.textContent = this.gameState.profile?.level ?? 1;
     }
   }
 
@@ -653,6 +700,11 @@ export default class HUDSystem {
 
   dispose() {
     clearTimeout(this.timers.notification);
+
+    if (this._radioKeyHandler) {
+      window.removeEventListener("keydown", this._radioKeyHandler);
+      this._radioKeyHandler = null;
+    }
 
     this.elements.container?.remove();
 
