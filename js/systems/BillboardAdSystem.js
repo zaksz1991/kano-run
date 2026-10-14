@@ -4,6 +4,29 @@
  * - In-game interstitial panel with "Visit" / "Close"
  * Monetization: ruffneck-entertainment.vercel.app & ruffneck-lms.vercel.app
  */
+const DAILY_AD_CAP = 12;
+const STORAGE_KEY = "kano-run-ad-stats";
+
+function loadAdStats() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { date: new Date().toDateString(), impressions: 0, clicks: 0 };
+    const data = JSON.parse(raw);
+    if (data.date !== new Date().toDateString()) {
+      return { date: new Date().toDateString(), impressions: 0, clicks: 0 };
+    }
+    return data;
+  } catch {
+    return { date: new Date().toDateString(), impressions: 0, clicks: 0 };
+  }
+}
+
+function saveAdStats(stats) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
+  } catch {}
+}
+
 const ADS = [
   {
     id: "entertainment",
@@ -30,6 +53,7 @@ export default class BillboardAdSystem {
     this._panel = null;
     this._disposers = [];
     this._cooldown = 0;
+    this._stats = loadAdStats();
 
     this._subscribe("game:started", () => {
       this.enabled = true;
@@ -82,8 +106,19 @@ export default class BillboardAdSystem {
 
   _prompt({ ad } = {}) {
     const chosen = ad || ADS[Math.floor(Math.random() * ADS.length)];
+    this._stats = loadAdStats();
+    if (this._stats.impressions >= DAILY_AD_CAP) {
+      return; // daily cap
+    }
+    this._stats.impressions += 1;
+    saveAdStats(this._stats);
     this._showPanel(chosen);
-    this.eventBus?.emit?.("ad:shown", { id: chosen.id, url: chosen.url });
+    this.eventBus?.emit?.("ad:shown", {
+      id: chosen.id,
+      url: chosen.url,
+      impressions: this._stats.impressions,
+      dailyCap: DAILY_AD_CAP,
+    });
   }
 
   _showPanel(ad) {
@@ -120,7 +155,14 @@ export default class BillboardAdSystem {
       try {
         window.open(ad.url, "_blank", "noopener,noreferrer");
       } catch {}
-      this.eventBus?.emit?.("ad:clicked", { id: ad.id, url: ad.url });
+      this._stats = loadAdStats();
+      this._stats.clicks = (this._stats.clicks || 0) + 1;
+      saveAdStats(this._stats);
+      this.eventBus?.emit?.("ad:clicked", {
+        id: ad.id,
+        url: ad.url,
+        clicks: this._stats.clicks,
+      });
       this._hidePanel();
     });
     panel.querySelector('[data-act="close"]').addEventListener("click", () => {

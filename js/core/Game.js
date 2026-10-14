@@ -406,6 +406,8 @@ export default class Game {
       ["minimap", () => import("../systems/MinimapSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
       ["lifeSaver", () => import("../systems/LifeSaverSystem.js")],
+      ["damage", () => import("../systems/DamageSystem.js")],
+      ["shareRun", () => import("../systems/ShareRunSystem.js")],
       ["billboardAds", () => import("../systems/BillboardAdSystem.js")],
       ["touchControls", () => import("../systems/TouchControlsSystem.js")],
       ["pause", () => import("../systems/PauseSystem.js")],
@@ -585,6 +587,8 @@ export default class Game {
             case "chase":
             case "landmarks":
             case "weather":
+            case "damage":
+            case "billboardAds":
               system.update?.(delta, playerZ, speed);
               break;
 

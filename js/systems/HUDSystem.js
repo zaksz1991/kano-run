@@ -143,6 +143,13 @@ export default class HUDSystem {
       );
     });
 
+    this._subscribe("damage:status", (p) => {
+      if (this.elements.condition) {
+        const c = Math.round(Number(p?.condition) || 0);
+        this.elements.condition.textContent = `${c}%`;
+      }
+    });
+
     this._subscribe("hud:notify", (p) => {
       this._showNotification(p?.text || "", 2.2, p?.type || "normal");
     });
