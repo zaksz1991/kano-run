@@ -30,8 +30,11 @@ const MODEL_YAW = {
   van: "normal", suv: "normal", pickup: "normal", delivery: "normal",
 };
 function facingYaw(type) {
-  // flip = nose +Z with yaw 0; normal = nose +Z with yaw PI
-  return MODEL_YAW[type] === "flip" ? 0 : Math.PI;
+  const t = String(type || "");
+  // Traffic travels +Z. Keke/motorcycle still appeared reverse at yaw 0 — use PI.
+  // Cars/buses use 0 (their GLBs already face +Z in this pack).
+  if (t === "keke" || t.startsWith("keke") || t === "motorcycle") return Math.PI;
+  return 0;
 }
 
 const MODEL_CHILD_FLIP = new Set([
@@ -359,8 +362,7 @@ export default class VehicleSystem {
       const dz = vehicle.z - prevZ;
       if (Math.abs(dz) > 1e-5) {
         const base = dz >= 0 ? Math.PI : 0;
-        const yaw = base + (MODEL_YAW[vehicle.type] ?? 0);
-        vehicle.group.rotation.y = facingYaw(vehicleType);
+        vehicle.group.rotation.y = facingYaw(vehicle.type);
       }
 
       this._avoidVehicleAhead(vehicle, dt);
@@ -553,7 +555,8 @@ export default class VehicleSystem {
     // Extra 180° on child for bike/keke packs whose forward axis
     // is opposite car-kit even after parent yaw.
     if (MODEL_CHILD_FLIP.has(type)) {
-      model.rotation.y += Math.PI;
+      // child yaw removed — parent facingYaw handles direction
+    // model.rotation.y += Math.PI;
     }
 
     root.add(model);

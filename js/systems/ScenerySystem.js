@@ -15,16 +15,16 @@ export default class ScenerySystem {
     this.eventBus = eventBus;
     this.config = {
       segmentLength: 48,
-      segmentsAhead: 8,
+      segmentsAhead: 10,
       segmentsBehind: 2,
-      buildingDensity: 0.8,
-      propDensity: 0.55,
+      buildingDensity: 0.92,
+      propDensity: 0.75,
       sideOffset: 15,
       ...config,
     };
     this.segments = [];
     this.initialized = false;
-    this.currentTheme = "city";
+    this.currentTheme = "market";
     this.disposers = [];
     this._mat = {
       road: new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 0.95 }),
@@ -142,7 +142,7 @@ export default class ScenerySystem {
     group.add(dirt);
 
     const buildings = this._buildingPaths();
-    const slots = 4;
+    const slots = 5;
     for (let i = 0; i < slots; i++) {
       const lz =
         -this.config.segmentLength / 2 +

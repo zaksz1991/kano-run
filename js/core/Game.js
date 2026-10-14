@@ -417,6 +417,8 @@ export default class Game {
       ["checkpoint", () => import("../systems/CheckpointSystem.js")],
       ["chase", () => import("../systems/ChaseSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
+      ["gameControls", () => import("../systems/GameControlsSystem.js")],
+      ["pedestrianCrowd", () => import("../systems/PedestrianCrowdSystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
       ["dayNight", () => import("../systems/DayNightSystem.js")],
       ["weather", () => import("../systems/WeatherSystem.js")],
