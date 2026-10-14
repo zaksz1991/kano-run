@@ -84,22 +84,30 @@
   async _loadAssets() {
     this.isLoading = true;
 
-    const assets = [
-      "engine",
-      "horn",
-      "whistle",
-      ...this.radioStations.map((station) => station.id),
-    ];
+    // Fast path: engine + short SFX only — radio streams after first frame
+    const priority = ["engine", "horn", "whistle"];
 
     try {
       await Promise.all(
-        assets.map((name) =>
+        priority.map((name) =>
           this._loadBuffer(`/assets/models/audio/${name}.mp3`, name)
         )
       );
     } finally {
       this.isLoading = false;
     }
+
+    // Background radio (large mp3s) — do not block game start
+    const radioIds = this.radioStations.map((station) => station.id);
+    Promise.allSettled(
+      radioIds.map((name) =>
+        this._loadBuffer(`/assets/models/audio/${name}.mp3`, name)
+      )
+    ).then(() => {
+      console.info(
+        `[AudioManager] Radio buffers ready: ${radioIds.filter((id) => this.buffers[id]).length}/${radioIds.length}`
+      );
+    });
   }
 
   async _loadBuffer(url, name) {

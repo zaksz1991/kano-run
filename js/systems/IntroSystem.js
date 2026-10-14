@@ -1,12 +1,21 @@
 import * as THREE from "three";
 import { GAME_CONFIG } from "../core/config.js";
 
+/**
+ * Opening sequence:
+ * 1. Driver stands behind keke
+ * 2. Walks to the keke
+ * 3. Enters cabin
+ * 4. Engine starts
+ * 5. Controls unlock
+ */
 export default class IntroSystem {
   constructor({
     scene,
     eventBus = null,
     cameraSystem = null,
     playerVehicleSystem = null,
+    audio = null,
     config = {},
   } = {}) {
     if (!scene) throw new Error("IntroSystem requires a scene.");
@@ -15,17 +24,16 @@ export default class IntroSystem {
     this.eventBus = eventBus;
     this.cameraSystem = cameraSystem;
     this.playerVehicle = playerVehicleSystem;
-    this.config = { ...GAME_CONFIG?.intro ?? {}, ...config };
+    this.audio = audio;
+    this.config = { ...(GAME_CONFIG?.intro ?? {}), ...config };
 
     this.active = false;
-    this.phase = "idle"; // idle, walking, entering, starting, finished
+    this.phase = "idle";
     this.timer = 0;
-    this.duration = 6.0; // Total intro length in seconds
-
     this.driver = null;
-    this.kekePosition = new THREE.Vector3(0, 0, 0);
-    this.startPosition = new THREE.Vector3(0, 0, -8); // Start 8 units behind keke
-
+    this.kekePosition = new THREE.Vector3();
+    this.startPosition = new THREE.Vector3();
+    this._overlay = null;
     this._disposers = [];
   }
 
@@ -33,119 +41,219 @@ export default class IntroSystem {
     this._createDriverModel();
     this._subscribe("game:started", () => this.startSequence());
     this._subscribe("game:reset", () => this.reset());
+    this._subscribe("game:intro-complete", () => {
+      // Game.js also listens; keep player enabled as safety
+      if (this.playerVehicle) this.playerVehicle.enabled = true;
+    });
+    return this;
   }
 
   _createDriverModel() {
-    // Placeholder procedural driver (Capsule-like shape)
-    // In the future, replace this with GLTFLoader to load a real character model
     const group = new THREE.Group();
     group.name = "intro-driver";
 
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2c3e50, roughness: 0.8, flatShading: true });
-    const headMat = new THREE.MeshStandardMaterial({ color: 0x8d5524, roughness: 0.8, flatShading: true });
-    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x34495e, roughness: 0.8, flatShading: true });
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x1e3a5f,
+      roughness: 0.85,
+      flatShading: true,
+    });
+    const headMat = new THREE.MeshStandardMaterial({
+      color: 0x8d5524,
+      roughness: 0.8,
+      flatShading: true,
+    });
+    const pantsMat = new THREE.MeshStandardMaterial({
+      color: 0x1f2937,
+      roughness: 0.9,
+      flatShading: true,
+    });
 
-    // Legs
-    const legGeo = new THREE.BoxGeometry(0.3, 0.8, 0.3);
+    const legGeo = new THREE.BoxGeometry(0.22, 0.7, 0.22);
     const leftLeg = new THREE.Mesh(legGeo, pantsMat);
-    leftLeg.position.set(-0.15, 0.4, 0);
+    leftLeg.position.set(-0.12, 0.35, 0);
     leftLeg.castShadow = true;
     const rightLeg = new THREE.Mesh(legGeo, pantsMat);
-    rightLeg.position.set(0.15, 0.4, 0);
+    rightLeg.position.set(0.12, 0.35, 0);
     rightLeg.castShadow = true;
     group.add(leftLeg, rightLeg);
 
-    // Torso
-    const torsoGeo = new THREE.BoxGeometry(0.5, 0.7, 0.3);
-    const torso = new THREE.Mesh(torsoGeo, bodyMat);
-    torso.position.set(0, 1.15, 0);
+    const torso = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.55, 0.28),
+      bodyMat,
+    );
+    torso.position.set(0, 0.95, 0);
     torso.castShadow = true;
     group.add(torso);
 
-    // Head
-    const headGeo = new THREE.SphereGeometry(0.2, 8, 6);
-    const head = new THREE.Mesh(headGeo, headMat);
-    head.position.set(0, 1.7, 0);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), headMat);
+    head.position.set(0, 1.4, 0);
     head.castShadow = true;
     group.add(head);
+
+    // Simple cap (Northern style hint)
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.17, 0.17, 0.08, 12),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.7 }),
+    );
+    cap.position.set(0, 1.55, 0);
+    group.add(cap);
 
     group.visible = false;
     this.scene.add(group);
     this.driver = group;
   }
 
-  startSequence() {
-    if (!this.playerVehicle || !this.playerVehicle.vehicle) return;
+  _showTitle(text) {
+    document.getElementById("kano-intro-title")?.remove();
+    const el = document.createElement("div");
+    el.id = "kano-intro-title";
+    Object.assign(el.style, {
+      position: "fixed",
+      left: "50%",
+      top: "18%",
+      transform: "translateX(-50%)",
+      zIndex: "1500",
+      color: "#f8fafc",
+      fontFamily: "system-ui, Arial, sans-serif",
+      fontSize: "20px",
+      fontWeight: "700",
+      letterSpacing: "1px",
+      textShadow: "0 2px 12px rgba(0,0,0,0.8)",
+      pointerEvents: "none",
+      textAlign: "center",
+    });
+    el.textContent = text;
+    document.body.appendChild(el);
+    this._overlay = el;
+  }
 
+  _hideTitle() {
+    this._overlay?.remove();
+    this._overlay = null;
+  }
+
+  startSequence() {
+    this.playerVehicle =
+      this.playerVehicle ??
+      this.eventBus?.game?.systems?.get?.("playerVehicle") ??
+      null;
+
+    // Resolve vehicle if system was injected late
+    if (!this.playerVehicle?.vehicle && !this.playerVehicle?.position) {
+      // Retry briefly — vehicle may still be loading GLB
+      this._pendingStart = true;
+      return;
+    }
+
+    this._pendingStart = false;
     this.active = true;
     this.phase = "walking";
     this.timer = 0;
 
-    // Get Keke position
-    this.kekePosition.copy(this.playerVehicle.position);
-    this.startPosition.set(this.kekePosition.x, 0, this.kekePosition.z - 8);
+    const pos = this.playerVehicle.position ?? new THREE.Vector3();
+    this.kekePosition.set(Number(pos.x) || 0, 0, Number(pos.z) || 0);
+    this.startPosition.set(
+      this.kekePosition.x - 1.2,
+      0,
+      this.kekePosition.z - 7,
+    );
 
-    // Setup Driver
     this.driver.position.copy(this.startPosition);
     this.driver.visible = true;
-    this.driver.rotation.y = 0; // Face forward (+Z)
+    this.driver.rotation.y = 0;
 
-    // Disable player controls during intro
-    if (this.playerVehicle) this.playerVehicle.enabled = false;
+    if (this.playerVehicle) {
+      this.playerVehicle.enabled = false;
+      if (this.playerVehicle.vehicle) {
+        this.playerVehicle.vehicle.visible = true;
+      }
+    }
 
+    this._showTitle("Driver approaching Adaidaita Sahu…");
     this.eventBus?.emit?.("intro:started");
+    this.eventBus?.emit?.("audio:sfx", "whistle");
   }
 
   update(deltaTime) {
+    if (this._pendingStart) {
+      this.playerVehicle =
+        this.playerVehicle ??
+        null;
+      if (this.playerVehicle?.vehicle || this.playerVehicle?.position) {
+        this.startSequence();
+      }
+      return;
+    }
+
     if (!this.active) return;
 
-    this.timer += deltaTime;
+    const dt = Math.min(Number(deltaTime) || 0, 0.05);
+    this.timer += dt;
 
-    if (this.phase === "walking") {
-      this._updateWalking(deltaTime);
-    } else if (this.phase === "entering") {
-      this._updateEntering(deltaTime);
-    } else if (this.phase === "starting") {
-      this._updateStarting(deltaTime);
-    }
+    if (this.phase === "walking") this._updateWalking(dt);
+    else if (this.phase === "entering") this._updateEntering(dt);
+    else if (this.phase === "starting") this._updateStarting(dt);
   }
 
   _updateWalking(dt) {
-    // Move driver towards keke
-    const speed = 2.5; // Walking speed
-    this.driver.position.z += speed * dt;
+    const target = this.kekePosition;
+    const dir = new THREE.Vector3().subVectors(target, this.driver.position);
+    dir.y = 0;
+    const dist = dir.length();
 
-    // Simple bobbing animation for walking
-    this.driver.position.y = Math.abs(Math.sin(this.timer * 10)) * 0.05;
+    if (dist > 0.01) {
+      dir.normalize();
+      this.driver.position.addScaledVector(dir, 2.8 * dt);
+      this.driver.rotation.y = Math.atan2(dir.x, dir.z);
+    }
 
-    // Camera follows driver from behind/side
-    if (this.cameraSystem && this.cameraSystem.setIntroCamera) {
+    // Walk bob
+    this.driver.position.y = Math.abs(Math.sin(this.timer * 12)) * 0.06;
+
+    if (this.cameraSystem?.setIntroCamera) {
       this.cameraSystem.setIntroCamera(this.driver.position);
     }
 
-    // Transition to entering when close to keke
-    if (this.driver.position.z >= this.kekePosition.z - 1.5) {
+    if (dist < 1.6 || this.timer > 5) {
       this.phase = "entering";
       this.timer = 0;
       this.driver.position.y = 0;
+      this._showTitle("Entering keke…");
     }
   }
 
   _updateEntering(dt) {
-    // Fade out driver or play "enter" animation
-    if (this.timer > 0.5) {
+    // Slide toward cabin center
+    const u = Math.min(1, this.timer / 0.9);
+    this.driver.position.x = THREE.MathUtils.lerp(
+      this.driver.position.x,
+      this.kekePosition.x,
+      u,
+    );
+    this.driver.position.z = THREE.MathUtils.lerp(
+      this.driver.position.z,
+      this.kekePosition.z,
+      u,
+    );
+    this.driver.position.y = THREE.MathUtils.lerp(0, 0.4, u);
+    this.driver.scale.setScalar(1 - u * 0.35);
+
+    if (u >= 1) {
       this.driver.visible = false;
       this.phase = "starting";
       this.timer = 0;
-      
-      // Play engine start sound
+      this._showTitle("Engine starting…");
       this.eventBus?.emit?.("audio:engine-start");
+      this.eventBus?.emit?.("audio:sfx", "horn");
+      // Nudge engine audio if available
+      try {
+        this.audio?.updateEngine?.(4, 34);
+      } catch {}
     }
   }
 
   _updateStarting(dt) {
-    // Camera shakes slightly or zooms in on Keke
-    if (this.timer > 1.5) {
+    if (this.timer > 1.2) {
       this.finishIntro();
     }
   }
@@ -154,21 +262,27 @@ export default class IntroSystem {
     this.active = false;
     this.phase = "finished";
     this.driver.visible = false;
+    this.driver.scale.setScalar(1);
+    this._hideTitle();
 
-    // Re-enable player controls
-    if (this.playerVehicle) this.playerVehicle.enabled = true;
+    if (this.playerVehicle) {
+      this.playerVehicle.enabled = true;
+    }
 
-    // Signal Game.js to start the actual gameplay loop
     this.eventBus?.emit?.("game:intro-complete");
-    
-    console.log("[IntroSystem] Sequence finished. Gameplay started.");
+    console.info("[IntroSystem] Sequence finished — controls enabled.");
   }
 
   reset() {
     this.active = false;
     this.phase = "idle";
     this.timer = 0;
-    if (this.driver) this.driver.visible = false;
+    this._pendingStart = false;
+    if (this.driver) {
+      this.driver.visible = false;
+      this.driver.scale.setScalar(1);
+    }
+    this._hideTitle();
   }
 
   _subscribe(eventName, handler) {
@@ -183,12 +297,16 @@ export default class IntroSystem {
       this.scene.remove(this.driver);
       this.driver.traverse((child) => {
         if (child.isMesh) {
-          child.geometry.dispose();
-          child.material.dispose();
+          child.geometry?.dispose();
+          child.material?.dispose();
         }
       });
     }
-    for (const unsub of this._disposers) unsub();
+    for (const unsub of this._disposers) {
+      try {
+        unsub();
+      } catch {}
+    }
     this._disposers = [];
   }
 }

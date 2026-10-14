@@ -1,125 +1,231 @@
 import { GAME_CONFIG } from "../core/config.js";
 
+const TITLES = [
+  "Oga",
+  "Mai Gida",
+  "Mallam",
+  "Yallabai",
+  "Dan uwa",
+  "Driver",
+  "Baba",
+  "Mama",
+  "Hajiya",
+  "Aboki",
+];
+
 const GREETINGS = [
-  "Sannu Oga! Ina neman {destination}.",
-  "Mallam, ka kai ni {destination}.",
-  "Aboki, ina so in je {destination}.",
-  "Yallabai, {destination} jiran mu.",
-  "Baba, ka dauke ni zuwa {destination}."
+  "Sannu {title}! Ina neman {destination}.",
+  "{title}, ka kai ni {destination} lafiya.",
+  "Ina so in je {destination}, {title}.",
+  "{title}, {destination} jiran mu yau.",
+  "Don Allah {title}, kai ni {destination}.",
+  "{title}, fare ɗin {destination} nawa?",
 ];
 
-const RESPONSES_ACCEPT = [
-  "To, oya!",
-  "Akwai, mun yarda.",
-  "Oga ne kai!"
-];
-
-const RESPONSES_REJECT = [
-  "Kuɗin ba su da yawa, mallam.",
+const COUNTER_LINES = [
+  "Kuɗin ya yi yawa, {title}. Ka rage.",
+  "Ba haka ba ne a Kano, {title}.",
+  "Ka rage kaɗan, mun yarda.",
   "Ya yi tsada sosai!",
-  "Ba haka ba ne, aboki."
 ];
+
+const ACCEPT_LINES = [
+  "To, oya mu tafi!",
+  "Akwai, mun yarda.",
+  "Nagode {title}!",
+  "Sai an jima — mu tafi.",
+];
+
+const REJECT_LINES = [
+  "Bai yiwu ba yau, {title}.",
+  "Kuɗin ba ya isa.",
+  "Sai wani lokaci.",
+];
+
+function pick(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function fill(template, map) {
+  return template.replace(/\{(\w+)\}/g, (_, key) => map[key] ?? "");
+}
 
 export default class NegotiationSystem {
   constructor({ eventBus = null, gameState = null, config = {} } = {}) {
     this.eventBus = eventBus;
     this.gameState = gameState;
-    this.config = { ...GAME_CONFIG?.negotiation ?? {}, ...config };
-    
+    this.config = { ...(GAME_CONFIG?.negotiation ?? {}), ...config };
+
     this.activeNegotiation = null;
-    this.timer = 0;
     this.enabled = false;
     this._disposers = [];
 
-    this._subscribe("passenger:boarded", (payload) => this.startNegotiation(payload));
-    this._subscribe("game:started", () => { this.enabled = true; });
-    this._subscribe("game:stopped", () => { this.enabled = false; this.cancelNegotiation(); });
+    this._subscribe("passenger:boarded", (payload) =>
+      this.startNegotiation(payload),
+    );
+    this._subscribe("game:started", () => {
+      this.enabled = true;
+    });
+    this._subscribe("game:stopped", () => {
+      this.enabled = false;
+      this.cancelNegotiation();
+    });
+    this._subscribe("game:over", () => {
+      this.enabled = false;
+      this.cancelNegotiation();
+    });
+
+    // Wired from HUD buttons / keys
+    this._subscribe("negotiation:accept", () => this.acceptFare());
+    this._subscribe("negotiation:counter", () => this.counterFare());
   }
 
-  startNegotiation(payload) {
+  startNegotiation(payload = {}) {
     if (!this.enabled) return;
-    
-    const baseFare = this.config.baseFare || 300;
-    const distanceFare = Math.floor(Math.random() * 500) + 200;
-    const totalFare = baseFare + distanceFare;
-    
+
+    // Avoid stacking if already negotiating
+    if (this.activeNegotiation) return;
+
+    const destination = payload.destination || "Sabon Gari";
+    const title = pick(TITLES);
+    const baseFare = Number(this.config.baseFare) || 250;
+    const distanceFare = 150 + Math.floor(Math.random() * 400);
+    const requestedFare = baseFare + distanceFare;
+    const passengerOffer = Math.max(
+      100,
+      Math.floor(requestedFare * (0.55 + Math.random() * 0.2)),
+    );
+
     this.activeNegotiation = {
-      destination: payload.destination || "Sabon Gari",
-      requestedFare: totalFare,
-      currentOffer: Math.floor(totalFare * 0.7), // Passenger starts low
-      state: "REQUESTING", // REQUESTING, COUNTERING, AGREED, REFUSED
-      timer: 5.0 // 5 seconds to respond
+      destination,
+      title,
+      requestedFare,
+      currentOffer: passengerOffer,
+      round: 0,
+      state: "REQUESTING",
+      timer: 8,
     };
 
-    const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)].replace("{destination}", this.activeNegotiation.destination);
-    
+    const dialogue = fill(pick(GREETINGS), { title, destination });
+
     this.eventBus?.emit?.("negotiation:started", {
-      dialogue: greeting,
-      fare: this.activeNegotiation.requestedFare,
-      timeLimit: this.activeNegotiation.timer
+      dialogue: `${dialogue} (₦${passengerOffer})`,
+      fare: requestedFare,
+      offer: passengerOffer,
+      timeLimit: this.activeNegotiation.timer,
+      destination,
+      title,
     });
   }
 
   update(deltaTime) {
-    if (!this.activeNegotiation || this.activeNegotiation.state === "AGREED" || this.activeNegotiation.state === "REFUSED") return;
+    if (!this.activeNegotiation) return;
+    if (
+      this.activeNegotiation.state === "AGREED" ||
+      this.activeNegotiation.state === "REFUSED"
+    ) {
+      return;
+    }
 
-    this.activeNegotiation.timer -= deltaTime;
+    this.activeNegotiation.timer -= Math.min(Number(deltaTime) || 0, 0.1);
 
     if (this.activeNegotiation.timer <= 0) {
-      this.forceAccept(); // Time out = auto accept at current offer
+      this.forceAccept();
     } else {
-      this.eventBus?.emit?.("negotiation:timer-update", { timeLeft: this.activeNegotiation.timer });
+      this.eventBus?.emit?.("negotiation:timer-update", {
+        timeLeft: this.activeNegotiation.timer,
+      });
     }
   }
 
-  // Call this from InputSystem when player presses 'Accept' (e.g., E key)
   acceptFare() {
-    if (!this.activeNegotiation || this.activeNegotiation.state !== "REQUESTING") return;
-    
-    this.activeNegotiation.state = "AGREED";
-    const response = RESPONSES_ACCEPT[Math.floor(Math.random() * RESPONSES_ACCEPT.length)];
-    
+    const n = this.activeNegotiation;
+    if (!n || (n.state !== "REQUESTING" && n.state !== "COUNTERING")) return;
+
+    n.state = "AGREED";
+    const finalFare = n.currentOffer;
+    const dialogue = fill(pick(ACCEPT_LINES), { title: n.title });
+
     this.eventBus?.emit?.("negotiation:finished", {
-      dialogue: response,
-      finalFare: this.activeNegotiation.requestedFare,
-      success: true
+      dialogue,
+      finalFare,
+      success: true,
+      destination: n.destination,
     });
-    
+
+    this.eventBus?.emit?.("economy:fare-agreed", {
+      amount: finalFare,
+      fare: finalFare,
+    });
+
     this.activeNegotiation = null;
   }
 
-  // Call this from InputSystem when player presses 'Counter' (e.g., Q key)
   counterFare() {
-    if (!this.activeNegotiation || this.activeNegotiation.state !== "REQUESTING") return;
-    
-    // Simple logic: 50% chance they accept the counter, 50% they refuse
-    if (Math.random() > 0.5) {
-      this.activeNegotiation.state = "AGREED";
-      const response = RESPONSES_ACCEPT[Math.floor(Math.random() * RESPONSES_ACCEPT.length)];
+    const n = this.activeNegotiation;
+    if (!n || n.state !== "REQUESTING") return;
+
+    n.round += 1;
+    // Driver counters upward toward requested fare
+    const mid = Math.floor((n.currentOffer + n.requestedFare) / 2);
+    n.currentOffer = Math.min(n.requestedFare, mid + Math.floor(Math.random() * 40));
+
+    // Passenger accepts counter often after first push
+    const acceptChance = 0.45 + n.round * 0.2;
+
+    if (Math.random() < acceptChance) {
+      n.state = "AGREED";
+      const dialogue = fill(pick(ACCEPT_LINES), { title: n.title });
       this.eventBus?.emit?.("negotiation:finished", {
-        dialogue: response,
-        finalFare: this.activeNegotiation.currentOffer,
-        success: true
+        dialogue: `${dialogue} ₦${n.currentOffer}`,
+        finalFare: n.currentOffer,
+        success: true,
+        destination: n.destination,
       });
-    } else {
-      this.activeNegotiation.state = "REFUSED";
-      const response = RESPONSES_REJECT[Math.floor(Math.random() * RESPONSES_REJECT.length)];
-      this.eventBus?.emit?.("negotiation:finished", {
-        dialogue: response,
-        finalFare: 0,
-        success: false
+      this.eventBus?.emit?.("economy:fare-agreed", {
+        amount: n.currentOffer,
+        fare: n.currentOffer,
       });
+      this.activeNegotiation = null;
+      return;
     }
-    this.activeNegotiation = null;
+
+    if (n.round >= 2 && Math.random() < 0.35) {
+      n.state = "REFUSED";
+      const dialogue = fill(pick(REJECT_LINES), { title: n.title });
+      this.eventBus?.emit?.("negotiation:finished", {
+        dialogue,
+        finalFare: 0,
+        success: false,
+      });
+      this.activeNegotiation = null;
+      return;
+    }
+
+    n.state = "REQUESTING";
+    n.timer = 6;
+    const dialogue = fill(pick(COUNTER_LINES), { title: n.title });
+    this.eventBus?.emit?.("negotiation:started", {
+      dialogue: `${dialogue} (₦${n.currentOffer})`,
+      fare: n.requestedFare,
+      offer: n.currentOffer,
+      timeLimit: n.timer,
+    });
   }
 
   forceAccept() {
-    if (!this.activeNegotiation) return;
-    this.activeNegotiation.state = "AGREED";
+    const n = this.activeNegotiation;
+    if (!n) return;
+    n.state = "AGREED";
     this.eventBus?.emit?.("negotiation:finished", {
-      dialogue: "To, mun yarda. (Time out)",
-      finalFare: this.activeNegotiation.currentOffer,
-      success: true
+      dialogue: `To, mun yarda. ₦${n.currentOffer}`,
+      finalFare: n.currentOffer,
+      success: true,
+      destination: n.destination,
+    });
+    this.eventBus?.emit?.("economy:fare-agreed", {
+      amount: n.currentOffer,
+      fare: n.currentOffer,
     });
     this.activeNegotiation = null;
   }
@@ -135,7 +241,11 @@ export default class NegotiationSystem {
   }
 
   dispose() {
-    for (const unsub of this._disposers) unsub();
+    for (const unsub of this._disposers) {
+      try {
+        unsub();
+      } catch {}
+    }
     this._disposers = [];
   }
 }
