@@ -461,6 +461,8 @@ export default class PassengerSystem {
     // Exit animation: detach from keke and walk to roadside
     this._startExitAnimation(player, trip.destination);
 
+    this._emit("passenger:dropping", { fare, distance });
+
     this.activePassenger = null;
     this.totalDroppedOff += 1;
     this.totalFares += fare;

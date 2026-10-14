@@ -1,33 +1,31 @@
-# Kano Run upgrade pack 12 — major gameplay pass
+# Kano Run upgrade pack 13 — faster load + assets
 
-## Fixes & features
-1. **Vehicles face travel direction** (yaw follows +Z / velocity)
-2. **Mobile responsive** title + safe-area + on-screen pads (◀▶▲▼)
-3. **Keke stops** during board / negotiate / drop (`PassengerHoldSystem`)
-4. **Walking pedestrians** on roadside
-5. **Denser scenery** (if ScenerySystem included)
-6. **Naija Challenge** — Hausa / Yoruba / Igbo Top 3 + regional + national index (🇳🇬)
-7. **Physics tuning** — accel / brake / steer feel from garage stats
-8. **3D title screen** — lightweight Three.js keke + road (loads before full game)
-9. **Faster feel** — title does not load full GLB set; use Performance ⚙ → Low on phones
+## Features
+1. **BootLoader** — priority GLBs first, rest in background
+2. **AssetCatalog** — city-kit / city-pack / character paths
+3. **PassengerSystem** — 1 model first; `boarding` / `dropping` events for hold
+4. Pack 12 systems included: orientation, hold, pedestrians, Naija, mobile title
 
 ## Install
 ```bat
 cd C:\Users\DELL\Documents\GitHub\kano-run
-copy /Y path\to\kano-upgrade12\index.html index.html
-copy /Y path\to\kano-upgrade12\js\systems\*.js js\systems\
-copy /Y path\to\kano-upgrade12\js\core\Game.js js\core\Game.js
+copy /Y path\to\kano-upgrade13\index.html index.html
+copy /Y path\to\kano-upgrade13\js\core\*.js js\core\
+copy /Y path\to\kano-upgrade13\js\systems\*.js js\systems\
 npm.cmd run build
 npm.cmd run dev
 ```
 
-## Test checklist
-- [ ] Traffic cars/bikes face forward
-- [ ] Phone: pads steer/gas/brake
-- [ ] Passenger stop freezes keke until negotiate ends
-- [ ] Pedestrians walk on sides
-- [ ] 🇳🇬 set tribe → finish run → Top 3 updates
-- [ ] Title shows 3D keke before START
+### Wire BootLoader in Main.js (recommended)
+```js
+import BootLoader from "./BootLoader.js";
+import { attachTitleBridge } from "./TitleBridge.js";
 
-## Loading tip
-On mobile set **⚙ → Low**. Full GLB world still loads on START — that is separate from the title scene.
+const boot = new BootLoader({ eventBus });
+const bar = document.getElementById("loading-progress");
+await boot.loadPriority((p) => { if (bar) bar.style.width = Math.round(p * 55) + "%"; });
+boot.loadBackground((p) => { if (bar) bar.style.width = Math.round(55 + p * 45) + "%"; });
+attachTitleBridge(eventBus);
+```
+
+Match GLB filenames under public/assets/models/ to AssetCatalog if any 404.
