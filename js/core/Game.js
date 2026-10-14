@@ -416,6 +416,8 @@ export default class Game {
       ["marketDensity", () => import("../systems/MarketDensitySystem.js")],
       ["negotiationVoice", () => import("../systems/NegotiationVoiceSystem.js")],
       ["titleMusic", () => import("../systems/TitleMusicSystem.js")],
+      ["fpsMeter", () => import("../systems/FpsMeterSystem.js")],
+      ["dailyMissions", () => import("../systems/DailyMissionSystem.js")],
       ["physicsTuning", () => import("../systems/PhysicsTuningSystem.js")],
       ["naijaChallenge", () => import("../systems/NaijaChallengeSystem.js")],
       ["pedestrians", () => import("../systems/PedestrianSystem.js")],
@@ -608,6 +610,7 @@ export default class Game {
             case "streetlights":
             case "pedestrians":
             case "passengerHold":
+            case "fpsMeter":
             case "radioAudio":
             case "landmarkBillboards":
               system.update?.(delta, playerZ, speed);
