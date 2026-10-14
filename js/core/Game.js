@@ -541,6 +541,14 @@ export default class Game {
               break;
 
             case "traffic":
+              system.update?.(delta, {
+                z: playerZ,
+                speed,
+                lane: playerLane,
+                position: { z: playerZ },
+              });
+              break;
+
             case "passengers":
             case "checkpoint":
               system.update?.(delta, playerZ, speed);

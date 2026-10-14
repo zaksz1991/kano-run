@@ -1,9 +1,16 @@
-﻿import { GAME_CONFIG } from "../core/config.js";
+import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
   updateInterval: 0.1,
   fadeDuration: 2.0,
 };
+
+function safeText(value, fallback = "") {
+  if (value === undefined || value === null) return fallback;
+  const text = String(value);
+  if (text === "undefined" || text === "null" || text === "NaN") return fallback;
+  return text;
+}
 
 export default class HUDSystem {
   constructor({
@@ -50,20 +57,27 @@ export default class HUDSystem {
 
   _bindEvents() {
     this._subscribe("passenger:spotted", (p) => {
-      this._showNotification(`"${p.text}"`, 2.0);
+      const text = safeText(
+        p?.text || p?.message,
+        "Passenger waiting by the road",
+      );
+      this._showNotification(`"${text}"`, 2.0);
     });
 
     this._subscribe("passenger:boarded", (p) => {
-      this._showNotification(`Destination: ${p.destination}`, 3.0);
-      this._updateTripUI(p.destination);
+      const destination = safeText(p?.destination || p?.dest, "Nearby stop");
+      this._showNotification(`Destination: ${destination}`, 3.0);
+      this._updateTripUI(destination);
     });
 
-    this._subscribe("passenger:shout", () => {
-      this._showNotification("AKWAI! (Stop here!)", 2.0, "urgent");
+    this._subscribe("passenger:shout", (p) => {
+      const message = safeText(p?.message, "AKWAI! (Stop here!)");
+      this._showNotification(message, 2.0, "urgent");
     });
 
     this._subscribe("passenger:dropped", (p) => {
-      this._showNotification(`Fare: &#8358;${p.fare}`, 3.0, "success");
+      const fare = Number.isFinite(p?.fare) ? p.fare : 0;
+      this._showNotification(`Fare: ₦${fare}`, 3.0, "success");
       this._clearTripUI();
     });
 
@@ -80,7 +94,8 @@ export default class HUDSystem {
     });
 
     this._subscribe("checkpoint:fined", (p) => {
-      this._showNotification(`KAROTA Fine: &#8358;${p.amount}`, 3.0, "urgent");
+      const amount = Number.isFinite(p?.amount) ? p.amount : 0;
+      this._showNotification(`KAROTA Fine: ₦${amount}`, 3.0, "urgent");
     });
 
     this._subscribe("checkpoint:cleared", () => {
@@ -88,7 +103,8 @@ export default class HUDSystem {
     });
 
     this._subscribe("radio:changed", (p) => {
-      this._showNotification(`Radio: ${p.station}`, 2.0);
+      const station = safeText(p?.station, "Radio");
+      this._showNotification(`Radio: ${station}`, 2.0);
     });
 
     this._subscribe("game:started", () => {
@@ -137,13 +153,11 @@ export default class HUDSystem {
         <br>
         <b id="hud-speed">0</b> km/h
       </div>
-
       <div>
         <span style="color:#00b4d8;font-size:11px">WALLET</span>
         <br>
-        <b id="hud-money">&#8358;0</b>
+        <b id="hud-money">₦0</b>
       </div>
-
       <div>
         <span style="color:#00b4d8;font-size:11px">LEVEL</span>
         <br>
@@ -168,9 +182,7 @@ export default class HUDSystem {
     });
 
     tripInfo.innerHTML = `
-      <div style="font-size:11px;letter-spacing:2px">
-        CURRENT TRIP
-      </div>
+      <div style="font-size:11px;letter-spacing:2px">CURRENT TRIP</div>
       <b id="hud-destination" style="font-size:18px">---</b>
     `;
 
@@ -211,21 +223,10 @@ export default class HUDSystem {
     });
 
     negotiation.innerHTML = `
-      <div
-        id="neg-dialogue"
-        style="font-size:18px;margin-bottom:12px"
-      >...</div>
-
+      <div id="neg-dialogue" style="font-size:18px;margin-bottom:12px">...</div>
       <div style="display:flex;gap:10px;justify-content:center">
-        <button
-          id="btn-accept"
-          style="padding:10px 20px;background:#16803d;color:#fff;border:0;border-radius:6px;cursor:pointer"
-        >Accept (E)</button>
-
-        <button
-          id="btn-counter"
-          style="padding:10px 20px;background:#fbbf24;color:#111;border:0;border-radius:6px;cursor:pointer"
-        >Counter (Q)</button>
+        <button id="btn-accept" style="padding:10px 20px;background:#16803d;color:#fff;border:0;border-radius:6px;cursor:pointer">Accept (E)</button>
+        <button id="btn-counter" style="padding:10px 20px;background:#fbbf24;color:#111;border:0;border-radius:6px;cursor:pointer">Counter (Q)</button>
       </div>
     `;
 
@@ -247,80 +248,22 @@ export default class HUDSystem {
     });
 
     radio.innerHTML = `
-      <div style="
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        margin-bottom:10px
-      ">
-        <span style="
-          color:#00b4d8;
-          font-size:11px;
-          font-weight:bold;
-          letter-spacing:2px
-        ">KANO RADIO</span>
-
-        <span id="hud-radio-status" style="
-          color:#9ca3af;
-          font-size:10px
-        ">READY</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="color:#00b4d8;font-size:11px;font-weight:bold;letter-spacing:2px">KANO RADIO</span>
+        <span id="hud-radio-status" style="color:#9ca3af;font-size:10px">READY</span>
       </div>
-
-      <div id="hud-radio-station" style="
-        font-size:17px;
-        font-weight:bold;
-        overflow:hidden;
-        text-overflow:ellipsis;
-        white-space:nowrap;
-        margin-bottom:12px
-      ">Radio Kano</div>
-
-      <div style="
-        display:flex;
-        gap:8px;
-        align-items:center;
-        justify-content:center;
-        margin-bottom:12px
-      ">
-        <button id="hud-radio-prev" aria-label="Previous station"
-          style="flex:1">< PREV</button>
-
-        <button id="hud-radio-toggle" aria-label="Play or pause radio"
-          style="flex:1.3;background:#00b4d8;color:#071220">PLAY PLAY</button>
-
-        <button id="hud-radio-next" aria-label="Next station"
-          style="flex:1">NEXT ></button>
+      <div id="hud-radio-station" style="font-size:17px;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:12px">Radio Kano</div>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-bottom:12px">
+        <button id="hud-radio-prev" aria-label="Previous station" style="flex:1">◀ PREV</button>
+        <button id="hud-radio-toggle" aria-label="Play or pause radio" style="flex:1.3;background:#00b4d8;color:#071220">▶ PLAY</button>
+        <button id="hud-radio-next" aria-label="Next station" style="flex:1">NEXT ▶</button>
       </div>
-
-      <div style="
-        display:flex;
-        gap:10px;
-        align-items:center;
-        font-size:11px;
-        color:#cbd5e1
-      ">
+      <div style="display:flex;gap:10px;align-items:center;font-size:11px;color:#cbd5e1">
         <label for="hud-radio-volume">VOL</label>
-
-        <input
-          id="hud-radio-volume"
-          type="range"
-          min="0"
-          max="100"
-          value="40"
-          aria-label="Radio volume"
-          style="flex:1;min-width:0;accent-color:#00b4d8;cursor:pointer"
-        >
-
+        <input id="hud-radio-volume" type="range" min="0" max="100" value="40" aria-label="Radio volume" style="flex:1;min-width:0;accent-color:#00b4d8;cursor:pointer">
         <span id="hud-radio-volume-value">40%</span>
       </div>
-
-      <div style="
-        margin-top:9px;
-        color:#94a3b8;
-        font-size:10px;
-        text-align:center;
-        letter-spacing:0.5px
-      ">R PLAY/PAUSE | N NEXT | B PREVIOUS | M MUTE</div>
+      <div style="margin-top:9px;color:#94a3b8;font-size:10px;text-align:center;letter-spacing:0.5px">R PLAY/PAUSE · N NEXT · B PREVIOUS · M MUTE</div>
     `;
 
     const buttonStyle = {
@@ -336,18 +279,15 @@ export default class HUDSystem {
 
     radio.querySelectorAll("button").forEach((button) => {
       Object.assign(button.style, buttonStyle);
-
       button.addEventListener("mouseenter", () => {
         button.style.filter = "brightness(1.2)";
       });
-
       button.addEventListener("mouseleave", () => {
         button.style.filter = "none";
       });
     });
 
     container.appendChild(radio);
-
     document.body.appendChild(container);
 
     this.elements = {
@@ -366,9 +306,7 @@ export default class HUDSystem {
       radioPrev: container.querySelector("#hud-radio-prev"),
       radioNext: container.querySelector("#hud-radio-next"),
       radioVolume: container.querySelector("#hud-radio-volume"),
-      radioVolumeValue: container.querySelector(
-        "#hud-radio-volume-value"
-      ),
+      radioVolumeValue: container.querySelector("#hud-radio-volume-value"),
     };
 
     this._bindRadioControls();
@@ -376,13 +314,8 @@ export default class HUDSystem {
   }
 
   _bindRadioControls() {
-    const {
-      radioToggle,
-      radioPrev,
-      radioNext,
-      radioVolume,
-      radioVolumeValue,
-    } = this.elements;
+    const { radioToggle, radioPrev, radioNext, radioVolume, radioVolumeValue } =
+      this.elements;
 
     if (radioPrev) {
       radioPrev.addEventListener("click", () => {
@@ -405,12 +338,9 @@ export default class HUDSystem {
     if (radioVolume) {
       radioVolume.addEventListener("input", () => {
         const volume = Number(radioVolume.value) / 100;
-
         this.audio?.setRadioVolume?.(volume);
-
         if (radioVolumeValue) {
-          radioVolumeValue.textContent =
-            `${Math.round(volume * 100)}%`;
+          radioVolumeValue.textContent = `${Math.round(volume * 100)}%`;
         }
       });
     }
@@ -418,23 +348,15 @@ export default class HUDSystem {
 
   _bindRadioKeyboardShortcuts() {
     this._radioKeyHandler = (event) => {
-      if (
-        event.repeat ||
-        event.ctrlKey ||
-        event.altKey ||
-        event.metaKey
-      ) {
+      if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) {
         return;
       }
 
       const target = event.target;
-
       if (
         target instanceof HTMLElement &&
-        (
-          target.isContentEditable ||
-          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-        )
+        (target.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
       ) {
         return;
       }
@@ -444,22 +366,18 @@ export default class HUDSystem {
           event.preventDefault();
           this._toggleRadioPlayback();
           break;
-
         case "n":
           event.preventDefault();
           this._changeRadioStation(1);
           break;
-
         case "b":
           event.preventDefault();
           this._changeRadioStation(-1);
           break;
-
         case "m":
           event.preventDefault();
           this._toggleRadioMute();
           break;
-
         default:
           break;
       }
@@ -482,7 +400,6 @@ export default class HUDSystem {
     }
 
     const station = this.radioStations[this.radioIndex];
-
     if (!station) {
       this._showNotification("No radio stations configured", 2.5, "urgent");
       return;
@@ -490,20 +407,17 @@ export default class HUDSystem {
 
     try {
       const started = this.audio.startRadio?.(station.id);
-
       this.radioPlaying = started !== false;
-
       if (!this.radioPlaying) {
         this._showNotification(
           "Radio unavailable. Check audio initialization.",
           3,
-          "urgent"
+          "urgent",
         );
       }
     } catch (error) {
       this.radioPlaying = false;
       console.warn("[Kano Run] Radio playback failed:", error);
-
       this._showNotification("Unable to start radio", 2.5, "urgent");
     }
 
@@ -519,12 +433,10 @@ export default class HUDSystem {
     try {
       this.audio.toggleMute();
       this.radioMuted = Boolean(this.audio.isMuted);
-
       this._updateRadioUI();
-
       this._showNotification(
         this.radioMuted ? "Radio muted" : "Radio unmuted",
-        1.5
+        1.5,
       );
     } catch (error) {
       console.warn("[Kano Run] Radio mute failed:", error);
@@ -539,9 +451,7 @@ export default class HUDSystem {
     }
 
     const count = this.radioStations.length;
-
     this.radioIndex = (this.radioIndex + direction + count) % count;
-
     const station = this.radioStations[this.radioIndex];
 
     if (this.radioPlaying && this.audio) {
@@ -555,26 +465,30 @@ export default class HUDSystem {
     }
 
     this._updateRadioUI();
-    this._showNotification(`Radio: ${station.name}`, 1.8);
+    this._showNotification(
+      `Radio: ${safeText(station?.name, "Station")}`,
+      1.8,
+    );
   }
 
   _updateRadioUI() {
     const station = this.radioStations[this.radioIndex];
 
     if (this.elements.radioStation) {
-      this.elements.radioStation.textContent =
-        station?.name ?? "Radio unavailable";
+      this.elements.radioStation.textContent = safeText(
+        station?.name,
+        "Radio unavailable",
+      );
     }
 
     if (this.elements.radioStatus) {
       if (this.radioMuted) {
-        this.elements.radioStatus.textContent = "â— MUTED";
+        this.elements.radioStatus.textContent = "● MUTED";
         this.elements.radioStatus.style.color = "#fbbf24";
       } else {
         this.elements.radioStatus.textContent = this.radioPlaying
-          ? "â— ON AIR"
-          : "â— STANDBY";
-
+          ? "● ON AIR"
+          : "● STANDBY";
         this.elements.radioStatus.style.color = this.radioPlaying
           ? "#4ade80"
           : "#9ca3af";
@@ -583,11 +497,9 @@ export default class HUDSystem {
 
     if (this.elements.radioToggle) {
       this.elements.radioToggle.textContent = this.radioPlaying
-        ? "PAUSE"
-        : "PLAY PLAY";
-
+        ? "Ⅱ PAUSE"
+        : "▶ PLAY";
       const unavailable = !this.audio || this.radioStations.length === 0;
-
       this.elements.radioToggle.disabled = unavailable;
       this.elements.radioToggle.style.opacity = unavailable ? "0.5" : "1";
     }
@@ -612,26 +524,32 @@ export default class HUDSystem {
     const run = this.gameState.getRunState?.();
 
     if (run && this.elements.speed) {
-      this.elements.speed.textContent = Math.floor(Number(run.speed) || 0);
+      this.elements.speed.textContent = String(
+        Math.floor(Number(run.speed) || 0),
+      );
     }
 
     if (this.elements.money) {
-      this.elements.money.textContent =
-        `&#8358;${this.gameState.profile?.money ?? 0}`;
+      const money = Number(this.gameState.profile?.money);
+      this.elements.money.textContent = `₦${Number.isFinite(money) ? money : 0}`;
     }
 
     if (this.elements.level) {
-      this.elements.level.textContent =
-        this.gameState.profile?.level ?? 1;
+      const level = Number(this.gameState.profile?.level);
+      this.elements.level.textContent = String(
+        Number.isFinite(level) ? level : 1,
+      );
     }
   }
 
   _showNotification(text, duration = 2, type = "normal") {
     const el = this.elements.notification;
-
     if (!el) return;
 
-    el.textContent = text;
+    const safe = safeText(text, "");
+    if (!safe.trim()) return;
+
+    el.textContent = safe;
 
     const colors = {
       urgent: "#ff6464",
@@ -656,7 +574,7 @@ export default class HUDSystem {
     }
 
     if (this.elements.destination) {
-      this.elements.destination.textContent = destination ?? "---";
+      this.elements.destination.textContent = safeText(destination, "---");
     }
   }
 
@@ -672,9 +590,11 @@ export default class HUDSystem {
     this.elements.negotiation.style.display = "block";
 
     const dialogue = this.elements.container?.querySelector("#neg-dialogue");
-
     if (dialogue) {
-      dialogue.textContent = payload.dialogue ?? "Negotiate the fare";
+      dialogue.textContent = safeText(
+        payload.dialogue,
+        "Negotiate the fare",
+      );
     }
   }
 
@@ -734,6 +654,3 @@ export default class HUDSystem {
     this.elements = {};
   }
 }
-
-
-
