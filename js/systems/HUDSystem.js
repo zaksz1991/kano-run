@@ -6,15 +6,33 @@ const DEFAULTS = {
 };
 
 export default class HUDSystem {
-  constructor({ eventBus = null, gameState = null, garageSystem = null, config = {} } = {}) {
+  constructor({
+    eventBus = null,
+    gameState = null,
+    garageSystem = null,
+    audio = null,
+    config = {},
+  } = {}) {
     this.eventBus = eventBus;
     this.gameState = gameState;
     this.garageSystem = garageSystem;
-    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.hud ?? {}), ...config };
+    this.audio = audio;
+
+    this.config = {
+      ...DEFAULTS,
+      ...(GAME_CONFIG?.hud ?? {}),
+      ...config,
+    };
 
     this.elements = {};
     this.timers = {};
     this._disposers = [];
+
+    this.radioIndex = 0;
+    this.radioPlaying = false;
+    this.radioStations = Array.isArray(this.audio?.radioStations)
+      ? this.audio.radioStations
+      : [];
 
     this._bindEvents();
   }
@@ -22,142 +40,597 @@ export default class HUDSystem {
   initialize() {
     this._createUI();
     this._updateGarageUI();
+    this._updateRadioUI();
   }
 
   _bindEvents() {
-    // Listen for gameplay events to update UI
-    this._subscribe("passenger:spotted", (p) => this._showNotification(`"${p.text}"`, 2.0));
+    this._subscribe("passenger:spotted", (p) => {
+      this._showNotification(`"${p.text}"`, 2.0);
+    });
+
     this._subscribe("passenger:boarded", (p) => {
       this._showNotification(`Destination: ${p.destination}`, 3.0);
       this._updateTripUI(p.destination);
     });
-    this._subscribe("passenger:shout", () => this._showNotification("AKWAI! (Stop here!)", 2.0, "urgent"));
+
+    this._subscribe("passenger:shout", () => {
+      this._showNotification(
+        "AKWAI! (Stop here!)",
+        2.0,
+        "urgent"
+      );
+    });
+
     this._subscribe("passenger:dropped", (p) => {
-      this._showNotification(`Fare: ${p.fare}`, 3.0, "success");
+      this._showNotification(
+        `Fare: ₦${p.fare}`,
+        3.0,
+        "success"
+      );
       this._clearTripUI();
     });
 
-    this._subscribe("negotiation:started", (p) => this._showNegotiation(p));
-    this._subscribe("negotiation:finished", (p) => this._hideNegotiation());
+    this._subscribe("negotiation:started", (p) => {
+      this._showNegotiation(p);
+    });
 
-    this._subscribe("checkpoint:approaching", () => this._showNotification("KAROTA Checkpoint Ahead", 3.0, "warning"));
-    this._subscribe("checkpoint:fined", (p) => this._showNotification(`KAROTA Fine: ₦${p.amount}`, 3.0, "urgent"));
-    this._subscribe("checkpoint:cleared", () => this._showNotification("Checkpoint Cleared", 2.0, "success"));
+    this._subscribe("negotiation:finished", () => {
+      this._hideNegotiation();
+    });
 
-    this._subscribe("radio:changed", (p) => this._showNotification(`Radio: ${p.station}`, 2.0));
+    this._subscribe("checkpoint:approaching", () => {
+      this._showNotification(
+        "KAROTA Checkpoint Ahead",
+        3.0,
+        "warning"
+      );
+    });
 
-    this._subscribe("game:started", () => this._toggleUI(true));
-    this._subscribe("game:over", () => this._toggleUI(false));
+    this._subscribe("checkpoint:fined", (p) => {
+      this._showNotification(
+        `KAROTA Fine: ₦${p.amount}`,
+        3.0,
+        "urgent"
+      );
+    });
+
+    this._subscribe("checkpoint:cleared", () => {
+      this._showNotification(
+        "Checkpoint Cleared",
+        2.0,
+        "success"
+      );
+    });
+
+    this._subscribe("radio:changed", (p) => {
+      this._showNotification(`Radio: ${p.station}`, 2.0);
+    });
+
+    this._subscribe("game:started", () => {
+      this._toggleUI(true);
+    });
+
+    this._subscribe("game:over", () => {
+      this._toggleUI(false);
+    });
   }
 
   _createUI() {
-    // Create a clean, modern HUD container
+    document.getElementById("kano-hud")?.remove();
+
     const container = document.createElement("div");
     container.id = "kano-hud";
+
     Object.assign(container.style, {
-      position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
-      pointerEvents: "none", fontFamily: "Arial, sans-serif", zIndex: 1000
+      position: "fixed",
+      inset: "0",
+      width: "100%",
+      height: "100%",
+      pointerEvents: "none",
+      fontFamily: "Arial, sans-serif",
+      zIndex: "1000",
+      color: "#fff",
     });
 
-    // Top Bar: Stats
+    // TOP BAR: SPEED, WALLET AND LEVEL
+
     const topBar = this._createElement("div", {
-      position: "absolute", top: "20px", left: "20px", display: "flex", gap: "20px",
-      background: "rgba(0,0,0,0.6)", padding: "10px 20px", borderRadius: "8px", color: "#fff"
+      position: "absolute",
+      top: "20px",
+      left: "20px",
+      display: "flex",
+      gap: "20px",
+      background: "rgba(7, 18, 32, 0.88)",
+      padding: "12px 20px",
+      border: "1px solid rgba(0, 180, 216, 0.45)",
+      borderRadius: "10px",
+      color: "#fff",
+      backdropFilter: "blur(8px)",
     });
+
     topBar.innerHTML = `
-      <div><span style="color:#aaa">SPEED</span><br><b id="hud-speed">0</b> km/h</div>
-      <div><span style="color:#aaa">WALLET</span><br><b id="hud-money">₦0</b></div>
-      <div><span style="color:#aaa">LEVEL</span><br><b id="hud-level">1</b></div>
-    `;
-    container.appendChild(topBar);
+      <div>
+        <span style="color:#00b4d8;font-size:11px">SPEED</span>
+        <br>
+        <b id="hud-speed">0</b> km/h
+      </div>
 
-    // Trip Info (Center Top)
-    const tripInfo = this._createElement("div", {
-      position: "absolute", top: "20px", left: "50%", transform: "translateX(-50%)",
-      background: "rgba(0,180,216,0.8)", padding: "10px 30px", borderRadius: "8px",
-      color: "#fff", textAlign: "center", display: "none"
-    });
-    tripInfo.innerHTML = `<div style="font-size:12px">CURRENT TRIP</div><b id="hud-destination" style="font-size:18px">---</b>`;
-    container.appendChild(tripInfo);
+      <div>
+        <span style="color:#00b4d8;font-size:11px">WALLET</span>
+        <br>
+        <b id="hud-money">₦0</b>
+      </div>
 
-    // Notification Area (Center)
-    const notification = this._createElement("div", {
-      position: "absolute", top: "40%", left: "50%", transform: "translate(-50%, -50%)",
-      background: "rgba(0,0,0,0.8)", padding: "15px 40px", borderRadius: "12px",
-      color: "#fff", fontSize: "24px", fontWeight: "bold", textAlign: "center",
-      opacity: 0, transition: "opacity 0.3s ease"
-    });
-    container.appendChild(notification);
-
-    // Negotiation UI (Bottom Center)
-    const negotiation = this._createElement("div", {
-      position: "absolute", bottom: "100px", left: "50%", transform: "translateX(-50%)",
-      background: "rgba(255,255,255,0.9)", padding: "20px", borderRadius: "12px",
-      color: "#000", textAlign: "center", display: "none", pointerEvents: "auto"
-    });
-    negotiation.innerHTML = `
-      <div id="neg-dialogue" style="font-size:18px; margin-bottom:10px">...</div>
-      <div style="display:flex; gap:10px; justify-content:center">
-        <button id="btn-accept" style="padding:10px 20px; background:#28a745; color:#fff; border:none; border-radius:6px; cursor:pointer">Accept (E)</button>
-        <button id="btn-counter" style="padding:10px 20px; background:#ffc107; color:#000; border:none; border-radius:6px; cursor:pointer">Counter (Q)</button>
+      <div>
+        <span style="color:#00b4d8;font-size:11px">LEVEL</span>
+        <br>
+        <b id="hud-level">1</b>
       </div>
     `;
+
+    container.appendChild(topBar);
+
+    // CURRENT TRIP
+
+    const tripInfo = this._createElement("div", {
+      position: "absolute",
+      top: "20px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: "rgba(0, 120, 150, 0.94)",
+      padding: "10px 30px",
+      borderRadius: "8px",
+      border: "1px solid rgba(255,255,255,0.2)",
+      color: "#fff",
+      textAlign: "center",
+      display: "none",
+    });
+
+    tripInfo.innerHTML = `
+      <div style="font-size:11px;letter-spacing:2px">
+        CURRENT TRIP
+      </div>
+      <b id="hud-destination" style="font-size:18px">
+        ---
+      </b>
+    `;
+
+    container.appendChild(tripInfo);
+
+    // CENTER NOTIFICATIONS
+
+    const notification = this._createElement("div", {
+      position: "absolute",
+      top: "40%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      background: "rgba(7, 18, 32, 0.94)",
+      padding: "15px 30px",
+      border: "1px solid rgba(0, 180, 216, 0.5)",
+      borderRadius: "12px",
+      color: "#fff",
+      fontSize: "22px",
+      fontWeight: "bold",
+      textAlign: "center",
+      opacity: "0",
+      transition: "opacity 0.3s ease",
+    });
+
+    container.appendChild(notification);
+
+    // NEGOTIATION PANEL
+
+    const negotiation = this._createElement("div", {
+      position: "absolute",
+      bottom: "100px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: "rgba(255,255,255,0.96)",
+      padding: "20px",
+      borderRadius: "12px",
+      color: "#111",
+      textAlign: "center",
+      display: "none",
+      pointerEvents: "auto",
+      minWidth: "260px",
+    });
+
+    negotiation.innerHTML = `
+      <div
+        id="neg-dialogue"
+        style="font-size:18px;margin-bottom:12px"
+      >...</div>
+
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button
+          id="btn-accept"
+          style="padding:10px 20px;background:#16803d;color:#fff;border:0;border-radius:6px;cursor:pointer"
+        >Accept (E)</button>
+
+        <button
+          id="btn-counter"
+          style="padding:10px 20px;background:#fbbf24;color:#111;border:0;border-radius:6px;cursor:pointer"
+        >Counter (Q)</button>
+      </div>
+    `;
+
     container.appendChild(negotiation);
 
+    // RADIO PLAYER
+
+    const radio = this._createElement("div", {
+      position: "absolute",
+      right: "20px",
+      bottom: "20px",
+      width: "min(300px, calc(100vw - 40px))",
+      boxSizing: "border-box",
+      padding: "14px",
+      background: "rgba(7, 18, 32, 0.94)",
+      border: "1px solid rgba(0, 180, 216, 0.6)",
+      borderRadius: "12px",
+      boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+      pointerEvents: "auto",
+      backdropFilter: "blur(10px)",
+    });
+
+    radio.innerHTML = `
+      <div style="
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        margin-bottom:10px
+      ">
+        <span style="
+          color:#00b4d8;
+          font-size:11px;
+          font-weight:bold;
+          letter-spacing:2px
+        ">KANO RADIO</span>
+
+        <span id="hud-radio-status" style="
+          color:#9ca3af;
+          font-size:10px
+        ">READY</span>
+      </div>
+
+      <div id="hud-radio-station" style="
+        font-size:17px;
+        font-weight:bold;
+        overflow:hidden;
+        text-overflow:ellipsis;
+        white-space:nowrap;
+        margin-bottom:12px
+      ">Radio Kano</div>
+
+      <div style="
+        display:flex;
+        gap:8px;
+        align-items:center;
+        justify-content:center;
+        margin-bottom:12px
+      ">
+        <button id="hud-radio-prev" aria-label="Previous station"
+          style="flex:1">◀ PREV</button>
+
+        <button id="hud-radio-toggle" aria-label="Play or pause radio"
+          style="flex:1.3;background:#00b4d8;color:#071220">▶ PLAY</button>
+
+        <button id="hud-radio-next" aria-label="Next station"
+          style="flex:1">NEXT ▶</button>
+      </div>
+
+      <div style="
+        display:flex;
+        gap:10px;
+        align-items:center;
+        font-size:11px;
+        color:#cbd5e1
+      ">
+        <label for="hud-radio-volume">VOL</label>
+        <input
+          id="hud-radio-volume"
+          type="range"
+          min="0"
+          max="100"
+          value="40"
+          aria-label="Radio volume"
+          style="flex:1;min-width:0;accent-color:#00b4d8;cursor:pointer"
+        >
+        <span id="hud-radio-volume-value">40%</span>
+      </div>
+    `;
+
+    const buttonStyle = {
+      padding: "9px 5px",
+      background: "#172b42",
+      color: "#fff",
+      border: "1px solid #31506c",
+      borderRadius: "6px",
+      fontSize: "10px",
+      fontWeight: "bold",
+      cursor: "pointer",
+    };
+
+    radio.querySelectorAll("button").forEach((button) => {
+      Object.assign(button.style, buttonStyle);
+
+      button.addEventListener("mouseenter", () => {
+        button.style.filter = "brightness(1.2)";
+      });
+
+      button.addEventListener("mouseleave", () => {
+        button.style.filter = "none";
+      });
+    });
+
+    container.appendChild(radio);
     document.body.appendChild(container);
-    this.elements = { speed: document.getElementById("hud-speed"), money: document.getElementById("hud-money"), level: document.getElementById("hud-level"), trip: tripInfo, destination: document.getElementById("hud-destination"), notification, negotiation };
+
+    this.elements = {
+      container,
+      speed: container.querySelector("#hud-speed"),
+      money: container.querySelector("#hud-money"),
+      level: container.querySelector("#hud-level"),
+      trip: tripInfo,
+      destination: container.querySelector("#hud-destination"),
+      notification,
+      negotiation,
+
+      radio,
+      radioStation: container.querySelector("#hud-radio-station"),
+      radioStatus: container.querySelector("#hud-radio-status"),
+      radioToggle: container.querySelector("#hud-radio-toggle"),
+      radioVolume: container.querySelector("#hud-radio-volume"),
+      radioVolumeValue: container.querySelector(
+        "#hud-radio-volume-value"
+      ),
+    };
+
+    this._bindRadioControls();
+    this._bindNegotiationControls();
   }
 
-  update(deltaTime) {
-    // Update dynamic stats
-    if (this.gameState) {
-      const run = this.gameState.getRunState();
-      if (this.elements.speed) this.elements.speed.textContent = Math.floor(run.speed);
-      if (this.elements.money) this.elements.money.textContent = `₦${this.gameState.profile.money}`;
-      if (this.elements.level) this.elements.level.textContent = this.gameState.profile.level;
+  _bindRadioControls() {
+    const {
+      radioToggle,
+      radioVolume,
+      radioVolumeValue,
+    } = this.elements;
+
+    this.elements.radioPrev = this.elements.container.querySelector(
+      "#hud-radio-prev"
+    );
+
+    this.elements.radioNext = this.elements.container.querySelector(
+      "#hud-radio-next"
+    );
+
+    this.elements.radioPrev.addEventListener("click", () => {
+      this._changeRadioStation(-1);
+    });
+
+    this.elements.radioNext.addEventListener("click", () => {
+      this._changeRadioStation(1);
+    });
+
+    radioToggle.addEventListener("click", async () => {
+      if (!this.audio) {
+        this._showNotification("Radio audio is unavailable", 2.5, "urgent");
+        return;
+      }
+
+      if (this.radioPlaying) {
+        this.audio.stopRadio?.();
+        this.radioPlaying = false;
+        this._updateRadioUI();
+        return;
+      }
+
+      const station = this.radioStations[this.radioIndex];
+
+      if (!station) {
+        this._showNotification("No radio stations configured", 2.5, "urgent");
+        return;
+      }
+
+      try {
+        const started = this.audio.startRadio?.(station.id);
+
+        this.radioPlaying = started !== false;
+
+        if (!this.radioPlaying) {
+          this._showNotification(
+            "Radio unavailable. Check audio initialization.",
+            3,
+            "urgent"
+          );
+        }
+      } catch (error) {
+        this.radioPlaying = false;
+        console.warn("[Kano Run] Radio playback failed:", error);
+
+        this._showNotification("Unable to start radio", 2.5, "urgent");
+      }
+
+      this._updateRadioUI();
+    });
+
+    radioVolume.addEventListener("input", () => {
+      const volume = Number(radioVolume.value) / 100;
+
+      this.audio?.setRadioVolume?.(volume);
+
+      radioVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+    });
+  }
+
+  _changeRadioStation(direction) {
+    if (!this.radioStations.length) {
+      this._showNotification("No radio stations configured", 2.5, "urgent");
+      return;
+    }
+
+    const count = this.radioStations.length;
+
+    this.radioIndex =
+      (this.radioIndex + direction + count) % count;
+
+    const station = this.radioStations[this.radioIndex];
+
+    if (this.radioPlaying && this.audio) {
+      try {
+        const started = this.audio.startRadio?.(station.id);
+        this.radioPlaying = started !== false;
+      } catch (error) {
+        this.radioPlaying = false;
+        console.warn("[Kano Run] Station change failed:", error);
+      }
+    }
+
+    this._updateRadioUI();
+
+    this._showNotification(
+      `Radio: ${station.name}`,
+      1.8
+    );
+  }
+
+  _updateRadioUI() {
+    const station = this.radioStations[this.radioIndex];
+
+    if (this.elements.radioStation) {
+      this.elements.radioStation.textContent =
+        station?.name ?? "Radio unavailable";
+    }
+
+    if (this.elements.radioStatus) {
+      this.elements.radioStatus.textContent = this.radioPlaying
+        ? "● ON AIR"
+        : "● STANDBY";
+
+      this.elements.radioStatus.style.color = this.radioPlaying
+        ? "#4ade80"
+        : "#9ca3af";
+    }
+
+    if (this.elements.radioToggle) {
+      this.elements.radioToggle.textContent = this.radioPlaying
+        ? "Ⅱ PAUSE"
+        : "▶ PLAY";
+    }
+
+    const unavailable =
+      !this.audio || this.radioStations.length === 0;
+
+    if (this.elements.radioToggle) {
+      this.elements.radioToggle.disabled = unavailable;
+      this.elements.radioToggle.style.opacity = unavailable
+        ? "0.5"
+        : "1";
     }
   }
 
-  _showNotification(text, duration, type = "normal") {
+  _bindNegotiationControls() {
+    const accept = this.elements.container.querySelector("#btn-accept");
+    const counter = this.elements.container.querySelector("#btn-counter");
+
+    accept.addEventListener("click", () => {
+      this.eventBus?.emit?.("negotiation:accept");
+    });
+
+    counter.addEventListener("click", () => {
+      this.eventBus?.emit?.("negotiation:counter");
+    });
+  }
+
+  update(deltaTime) {
+    if (this.gameState) {
+      const run = this.gameState.getRunState?.();
+
+      if (run && this.elements.speed) {
+        this.elements.speed.textContent = Math.floor(
+          Number(run.speed) || 0
+        );
+      }
+
+      if (this.elements.money) {
+        this.elements.money.textContent =
+          `₦${this.gameState.profile?.money ?? 0}`;
+      }
+
+      if (this.elements.level) {
+        this.elements.level.textContent =
+          this.gameState.profile?.level ?? 1;
+      }
+    }
+  }
+
+  _showNotification(text, duration = 2, type = "normal") {
     const el = this.elements.notification;
+
     if (!el) return;
+
     el.textContent = text;
-    el.style.color = type === "urgent" ? "#ff4444" : type === "success" ? "#44ff44" : "#fff";
-    el.style.opacity = 1;
+
+    const colors = {
+      urgent: "#ff6464",
+      success: "#4ade80",
+      warning: "#fbbf24",
+      normal: "#ffffff",
+    };
+
+    el.style.color = colors[type] ?? colors.normal;
+    el.style.opacity = "1";
+
     clearTimeout(this.timers.notification);
-    this.timers.notification = setTimeout(() => { el.style.opacity = 0; }, duration * 1000);
+
+    this.timers.notification = setTimeout(() => {
+      el.style.opacity = "0";
+    }, Math.max(0.1, duration) * 1000);
   }
 
   _updateTripUI(destination) {
-    if (this.elements.trip) this.elements.trip.style.display = "block";
-    if (this.elements.destination) this.elements.destination.textContent = destination;
+    if (this.elements.trip) {
+      this.elements.trip.style.display = "block";
+    }
+
+    if (this.elements.destination) {
+      this.elements.destination.textContent = destination ?? "---";
+    }
   }
 
   _clearTripUI() {
-    if (this.elements.trip) this.elements.trip.style.display = "none";
+    if (this.elements.trip) {
+      this.elements.trip.style.display = "none";
+    }
   }
 
-  _showNegotiation(payload) {
+  _showNegotiation(payload = {}) {
     if (!this.elements.negotiation) return;
+
     this.elements.negotiation.style.display = "block";
-    document.getElementById("neg-dialogue").textContent = payload.dialogue;
-    
-    // Bind buttons (simplified for this example)
-    document.getElementById("btn-accept").onclick = () => this.eventBus?.emit?.("negotiation:accept");
-    document.getElementById("btn-counter").onclick = () => this.eventBus?.emit?.("negotiation:counter");
+
+    const dialogue = this.elements.container.querySelector("#neg-dialogue");
+
+    if (dialogue) {
+      dialogue.textContent = payload.dialogue ?? "Negotiate the fare";
+    }
   }
 
   _hideNegotiation() {
-    if (this.elements.negotiation) this.elements.negotiation.style.display = "none";
+    if (this.elements.negotiation) {
+      this.elements.negotiation.style.display = "none";
+    }
   }
 
   _toggleUI(visible) {
-    const container = document.getElementById("kano-hud");
-    if (container) container.style.display = visible ? "block" : "none";
+    if (this.elements.container) {
+      this.elements.container.style.display = visible ? "block" : "none";
+    }
   }
 
   _updateGarageUI() {
-    // This would populate the garage screen if you have one
+    // Reserved for existing garage UI integration.
   }
 
   _createElement(tag, styles) {
@@ -168,13 +641,30 @@ export default class HUDSystem {
 
   _subscribe(event, handler) {
     if (!this.eventBus?.on) return;
-    const unsub = this.eventBus.on(event, handler);
-    if (typeof unsub === "function") this._disposers.push(unsub);
+
+    const unsubscribe = this.eventBus.on(event, handler);
+
+    if (typeof unsubscribe === "function") {
+      this._disposers.push(unsubscribe);
+    } else if (typeof this.eventBus.off === "function") {
+      this._disposers.push(() => this.eventBus.off(event, handler));
+    }
   }
 
   dispose() {
-    document.getElementById("kano-hud")?.remove();
-    for (const unsub of this._disposers) unsub();
+    clearTimeout(this.timers.notification);
+
+    this.elements.container?.remove();
+
+    for (const unsubscribe of this._disposers) {
+      try {
+        unsubscribe();
+      } catch {
+        // Ignore already-removed listeners.
+      }
+    }
+
     this._disposers = [];
+    this.elements = {};
   }
 }
