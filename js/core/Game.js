@@ -8,6 +8,11 @@ import SceneManager from "./SceneManager.js";
 import AudioManager from "./AudioManager.js";
 import SettingsManager from "./SettingsManager.js";
 
+// Static imports — avoid mobile "Failed to fetch dynamically imported module"
+import RouteSystem from "../systems/RouteSystem.js";
+import ProgressionSystem from "../systems/ProgressionSystem.js";
+import EconomySystem from "../systems/EconomySystem.js";
+
 export default class Game {
   constructor(options = {}) {
     this.options = options;
@@ -302,7 +307,20 @@ export default class Game {
     const startedAt = performance.now();
 
     try {
-      const module = await loadModule();
+      let module;
+      try {
+        module = await loadModule();
+      } catch (fetchErr) {
+        console.warn(`[Kano Run] Chunk fetch failed for "${name}", retrying…`, fetchErr);
+        await new Promise((r) => setTimeout(r, 500));
+        try {
+          module = await loadModule();
+        } catch (retryErr) {
+          if (required) throw retryErr;
+          console.warn(`[Kano Run] Skipping optional "${name}" after chunk failure`);
+          return null;
+        }
+      }
       const SystemClass = module.default;
 
       if (typeof SystemClass !== "function") {
@@ -362,9 +380,9 @@ export default class Game {
      * because each dynamic import waited on a blocked main thread.
      */
     const wave1 = [
-      ["progression", () => import("../systems/ProgressionSystem.js")],
-      ["routes", () => import("../systems/RouteSystem.js")],
-      ["economy", () => import("../systems/EconomySystem.js")],
+      ["progression", () => Promise.resolve({ default: ProgressionSystem })],
+      ["routes", () => Promise.resolve({ default: RouteSystem })],
+      ["economy", () => Promise.resolve({ default: EconomySystem })],
     ];
     await Promise.all(
       wave1.map(([name, load]) =>
@@ -417,8 +435,7 @@ export default class Game {
       ["checkpoint", () => import("../systems/CheckpointSystem.js")],
       ["chase", () => import("../systems/ChaseSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
-      ["gameControls", () => import("../systems/GameControlsSystem.js")],
-      ["pedestrianCrowd", () => import("../systems/PedestrianCrowdSystem.js")],
+      ["mobileUI", () => import("../systems/MobileUISystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
       ["dayNight", () => import("../systems/DayNightSystem.js")],
       ["weather", () => import("../systems/WeatherSystem.js")],

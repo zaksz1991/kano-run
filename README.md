@@ -1,18 +1,21 @@
-# Kano Run fix pack 16
+# Mobile: Failed to fetch RouteSystem-*.js
 
-1. **Keke facing** — flip yaw for keke/motorcycle so they face travel direction
-2. **Better fallbacks** — tricycle/bike/car shapes instead of plain boxes when GLB fails
-3. **No snow** — harmattan dust only (beige); fewer particles
-4. **Simple title** — no 3D hero keke; clean navy/gold UI
-5. **New users ₦30,000** — EconomySystem + config startingMoney
+## Cause
+Phone cached old HTML → requests old chunk hash after new deploy → 404.
 
-## Install
+## Fix
+- RouteSystem, Progression, Economy = **static imports** (main bundle)
+- loadSystem retries once on chunk failure
+- vercel.json: no-cache HTML
+
+## Install + redeploy
 ```bat
-cd C:\Users\DELL\Documents\GitHub\kano-run
-copy /Y path\to\kano-fix16\index.html index.html
-copy /Y path\to\kano-fix16\js\core\*.js js\core\
-copy /Y path\to\kano-fix16\js\systems\*.js js\systems\
+copy /Y path\to\kano-mobilefix\js\core\Game.js js\core\
+copy /Y path\to\kano-mobilefix\js\systems\RouteSystem.js js\systems\
+copy /Y path\to\kano-mobilefix\vercel.json vercel.json
 npm.cmd run build
+git add -A && git commit -m "Mobile: static RouteSystem, no-cache HTML" && git push
 ```
 
-Clear localStorage once to get ₦30k as a new profile, or set money manually.
+## On phone
+Close tab fully → reopen kano-run.vercel.app (or clear site cache).
