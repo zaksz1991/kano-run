@@ -24,6 +24,10 @@ export default class MobileUISystem {
     // Hide old panels immediately
     this._hideOldDesktopPanels();
 
+    this._missionsCache = [];
+    this._subscribe("missions:updated", (p) => {
+      this._missionsCache = Array.isArray(p?.missions) ? p.missions : [];
+    });
     this._subscribe("game:started", () => {
       document.body.classList.remove("kano-lobby", "kano-loading");
       document.body.classList.add("kano-playing");
@@ -325,17 +329,38 @@ export default class MobileUISystem {
   }
 
   _openMissions() {
-    this.eventBus?.emit?.("daily:open");
-    if (!document.getElementById("kano-daily-ui")) {
-      this._sheetHtml(
-        "Daily Missions",
-        `<p style="color:#94a3b8;font-size:14px;line-height:1.5;margin-bottom:16px">
-          Complete trips, visit districts, pass KAROTA without fines.
-          Progress saves on this device.
-        </p>
-        <button type="button" id="sheet-close" style="width:100%;height:44px;border:0;border-radius:10px;background:#fbbf24;color:#1c1917;font-weight:900;font-size:16px">Close</button>`,
-      );
+    const list = this._missionsCache || [];
+    let body = "";
+    if (!list.length) {
+      body = '<p style="color:#94a3b8;font-size:14px">No active missions yet. Keep driving.</p>';
+    } else {
+      body = list
+        .map((m) => {
+          const pct = m.progressPct ?? 0;
+          const prog = Math.floor(Math.min(Number(m.progress) || 0, Number(m.target) || 1));
+          const claim =
+            m.completed && !m.claimed
+              ? `<button type="button" data-claim="${m.id}" style="width:100%;margin-top:8px;padding:10px;border:0;border-radius:8px;background:#22c55e;color:#052e16;font-weight:900">Claim ₦${m.moneyReward}</button>`
+              : "";
+          return `<div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:12px;margin-bottom:10px">
+            <div style="font-size:11px;color:#38bdf8;font-weight:800">${m.icon || ""} ${m.type || ""}</div>
+            <div style="font-size:14px;font-weight:700;margin:4px 0">${m.description || m.title}</div>
+            <div style="font-size:11px;color:#94a3b8">${prog} / ${m.target}</div>
+            <div style="height:6px;background:#1e293b;border-radius:4px;margin-top:4px"><div style="height:100%;width:${pct}%;background:#38bdf8"></div></div>
+            <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:#fbbf24;font-weight:700"><span>₦${m.moneyReward}</span><span>${m.xpReward} XP</span></div>
+            ${claim}
+          </div>`;
+        })
+        .join("");
     }
+    body += '<button type="button" id="sheet-close" style="width:100%;height:44px;margin-top:8px;border:0;border-radius:10px;background:#334155;color:#fff;font-weight:800">Close</button>';
+    if (typeof this._sheetHtml === "function") this._sheetHtml("Daily Missions", body);
+    this._sheet?.querySelectorAll("[data-claim]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this.eventBus?.emit?.("mission:claim", { id: btn.getAttribute("data-claim") });
+        setTimeout(() => this._openMissions(), 250);
+      });
+    });
   }
 
   _openRadio() {

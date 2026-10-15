@@ -1,105 +1,188 @@
-import { GAME_CONFIG } from "../core/config.js";
+/**
+ * Phase 8 — Kano mission overhaul
+ * Richer objectives, mobile-safe (no road-covering cards on phone).
+ * Desktop: compact side cards. Mobile: dock sheet via MobileUISystem.
+ */
 
 const DEFAULTS = {
   maxActiveMissions: 3,
-  dailyResetInterval: 86400000, // 24 hours in ms
-  baseXPReward: 100,
-  baseMoneyReward: 500,
+  dailyResetInterval: 86400000,
 };
 
-// Mission templates with Kano-specific flavor
 const MISSION_TEMPLATES = [
   {
-    id: "deliver_passengers",
+    id: "drop_passengers",
     type: "delivery",
-    description: "Deliver {count} passengers to their destinations",
-    target: 5,
-    xpReward: 150,
-    moneyReward: 750,
-    icon: "passenger",
+    title: "Passenger runs",
+    description: "Drop {count} passengers at the roadside",
+    target: 8,
+    xpReward: 160,
+    moneyReward: 800,
+    icon: "👤",
+    track: "passenger:dropped",
+  },
+  {
+    id: "sabon_gari_runs",
+    type: "delivery",
+    title: "Sabon Gari shuttle",
+    description: "Complete {count} drop-offs bound for Sabon Gari",
+    target: 3,
+    xpReward: 220,
+    moneyReward: 1100,
+    icon: "🏪",
+    track: "passenger:dropped",
+    filter: { destinationIncludes: "Sabon Gari" },
   },
   {
     id: "earn_fares",
     type: "economy",
-    description: "Earn ₦{amount} in fares",
-    target: 3000,
+    title: "Fare collector",
+    description: "Earn ₦{amount} in fares this shift",
+    target: 4000,
     xpReward: 200,
     moneyReward: 1000,
-    icon: "money",
+    icon: "₦",
+    track: "passenger:dropped",
+    accumulate: "fare",
   },
   {
-    id: "avoid_collisions",
+    id: "clean_shift",
     type: "driving",
-    description: "Complete {count} trips without collisions",
-    target: 3,
-    xpReward: 250,
-    moneyReward: 1200,
-    icon: "shield",
+    title: "Clean shift",
+    description: "Drop {count} passengers with no collisions",
+    target: 5,
+    xpReward: 280,
+    moneyReward: 1400,
+    icon: "🛡️",
+    track: "passenger:dropped",
+    failOn: ["collision:player", "player:crashed"],
   },
   {
     id: "near_misses",
     type: "driving",
-    description: "Perform {count} near-misses",
-    target: 10,
-    xpReward: 100,
-    moneyReward: 500,
-    icon: "zap",
+    title: "Close calls",
+    description: "Score {count} near-misses in traffic",
+    target: 8,
+    xpReward: 120,
+    moneyReward: 600,
+    icon: "⚡",
+    track: "collision:near-miss",
+    alsoTrack: ["traffic:near-miss"],
   },
   {
     id: "distance_traveled",
     type: "driving",
-    description: "Drive {distance}km in total",
-    target: 15,
+    title: "Long corridor",
+    description: "Cover {distance} km on Kano roads",
+    target: 12,
     xpReward: 180,
     moneyReward: 900,
-    icon: "route",
+    icon: "🛣️",
+    track: "player:distance",
+    accumulate: "km",
   },
   {
     id: "visit_districts",
     type: "exploration",
+    title: "District hopper",
     description: "Visit {count} different districts",
     target: 4,
     xpReward: 300,
     moneyReward: 1500,
-    icon: "map",
+    icon: "🗺️",
+    track: "route:district",
+    unique: true,
   },
   {
-    id: "karota_checkpoints",
+    id: "karota_clean",
     type: "special",
-    description: "Pass {count} KAROTA checkpoints without fines",
-    target: 5,
+    title: "KAROTA clean pass",
+    description: "Clear {count} KAROTA stops without paying a full fine",
+    target: 3,
+    xpReward: 240,
+    moneyReward: 1200,
+    icon: "🚓",
+    track: "checkpoint:cleared",
+    failOn: ["checkpoint:fined"],
+  },
+  {
+    id: "night_shift",
+    type: "special",
+    title: "Night shift",
+    description: "Complete {count} drop-offs after dark",
+    target: 4,
+    xpReward: 260,
+    moneyReward: 1300,
+    icon: "🌙",
+    track: "passenger:dropped",
+    requireNight: true,
+  },
+  {
+    id: "fuel_economy",
+    type: "economy",
+    title: "Fuel economy",
+    description: "Keep fuel above 40% while dropping {count} passengers",
+    target: 4,
     xpReward: 200,
     moneyReward: 1000,
-    icon: "badge",
+    icon: "⛽",
+    track: "passenger:dropped",
+    requireFuelAbove: 40,
   },
   {
-    id: "night_driving",
-    type: "special",
-    description: "Complete {count} trips during night time",
-    target: 2,
-    xpReward: 250,
-    moneyReward: 1250,
-    icon: "moon",
-  },
-  {
-    id: "visit_landmarks",
-    type: "exploration",
-    description: "Pass {count} Kano landmarks on your route",
-    target: 4,
-    xpReward: 220,
-    moneyReward: 1100,
-    icon: "map",
+    id: "vip_passenger",
+    type: "delivery",
+    title: "VIP fare",
+    description: "Collect a single fare of ₦{amount} or more",
+    target: 1,
+    xpReward: 180,
+    moneyReward: 900,
+    icon: "⭐",
+    track: "passenger:dropped",
+    minFare: 500,
   },
   {
     id: "escape_chase",
     type: "special",
+    title: "Outrun the chase",
     description: "Escape {count} police chase",
     target: 1,
-    xpReward: 300,
-    moneyReward: 1500,
-    icon: "zap",
+    xpReward: 320,
+    moneyReward: 1600,
+    icon: "🚨",
+    track: "chase:escaped",
+  },
+  {
+    id: "no_yandaba_loss",
+    type: "special",
+    title: "Street wise",
+    description: "Survive {count} Yan Daba encounters without full robbery",
+    target: 2,
+    xpReward: 250,
+    moneyReward: 1250,
+    icon: "🕶️",
+    track: "yandaba:survived",
+  },
+  {
+    id: "kurmi_market",
+    type: "delivery",
+    title: "Kurmi market run",
+    description: "Drop {count} passengers near Kurmi / Kofar Wambai",
+    target: 3,
+    xpReward: 230,
+    moneyReward: 1150,
+    icon: "🛕",
+    track: "passenger:dropped",
+    filter: { destinationIncludesAny: ["Kurmi", "Kofar Wambai", "Wambai"] },
   },
 ];
+
+function formatDesc(template, target) {
+  return String(template.description)
+    .replace("{count}", String(target))
+    .replace("{amount}", String(target))
+    .replace("{distance}", String(target));
+}
 
 export default class MissionSystem {
   constructor({
@@ -109,306 +192,232 @@ export default class MissionSystem {
     config = {},
   } = {}) {
     if (!gameState) throw new Error("MissionSystem requires gameState.");
-
     this.eventBus = eventBus;
     this.gameState = gameState;
     this.saveManager = saveManager;
-    this.config = { ...DEFAULTS, ...(GAME_CONFIG?.missions ?? {}), ...config };
-
+    this.config = { ...DEFAULTS, ...config };
     this.activeMissions = [];
-    this.completedMissions = [];
-    this.missionHistory = [];
-    this.lastDailyReset = 0;
+    this.completedToday = [];
     this.enabled = false;
-
+    this.isNight = false;
+    this.fuelPercent = 100;
     this.uiContainer = null;
     this._disposers = [];
+    this._visitedDistricts = new Set();
     this._bindEvents();
+  }
+
+  async initialize() {
+    this._loadDaily();
+    this._ensureActiveMissions();
+    this.enabled = true;
+    this._renderUI();
+    this._emitList();
+    return this;
   }
 
   _bindEvents() {
     this._subscribe("game:started", () => {
       this.enabled = true;
-      this._checkDailyReset();
-      if (this.activeMissions.length === 0) {
-        this.generateDailyMissions();
-      }
+      this._ensureActiveMissions();
       this._renderUI();
+      this._emitList();
     });
-
     this._subscribe("game:stopped", () => {
       this.enabled = false;
       this._destroyUI();
     });
-
-    this._subscribe("passenger:dropped", (payload = {}) => {
-      this._updateMissions("deliver_passengers", 1);
-      this._updateMissions("earn_fares", Number(payload.fare) || 0);
+    this._subscribe("daynight:changed", (p) => {
+      this.isNight = Boolean(p?.isNight || p?.phase === "night");
+    });
+    this._subscribe("playerVehicle:fuel", (p) => {
+      const cap = Number(p?.capacity) || 100;
+      const fuel = Number(p?.fuel);
+      if (Number.isFinite(fuel)) this.fuelPercent = (fuel / cap) * 100;
+    });
+    this._subscribe("player:fuel", (p) => {
+      if (Number.isFinite(p?.percent)) this.fuelPercent = p.percent;
     });
 
-    this._subscribe("traffic:near-miss", () => {
-      this._updateMissions("near_misses", 1);
-    });
-
-    this._subscribe("run:finished", (payload) => {
-      if (payload.reason === "completed") {
-        this._updateMissions("avoid_collisions", 1);
-      }
-      this._updateMissions("distance_traveled", (payload.distance || 0) / 1000);
-    });
-
-    this._subscribe("scenery:districtChanged", (payload) => {
-      this._trackDistrictVisit(payload.district);
-    });
-
-    this._subscribe("checkpoint:cleared", () => {
-      this._updateMissions("karota_checkpoints", 1);
-    });
-
-    this._subscribe("time:period-changed", (payload) => {
-      if (payload.period === "night") {
-        this._updateMissions("night_driving", 1);
-      }
-    });
-
-    this._subscribe("landmark:reached", () => {
-      this._updateMissions("visit_landmarks", 1);
-    });
-
-    this._subscribe("chase:escaped", () => {
-      this._updateMissions("escape_chase", 1);
-    });
-
-    this._subscribe("collision:near-miss", () => {
-      this._updateMissions("near_misses", 1);
-    });
-  }
-
-  initialize() {
-    this._loadMissions();
-    this._checkDailyReset();
-    if (this.activeMissions.length === 0) {
-      this.generateDailyMissions();
+    const tracks = new Set();
+    for (const t of MISSION_TEMPLATES) {
+      tracks.add(t.track);
+      (t.alsoTrack || []).forEach((e) => tracks.add(e));
+      (t.failOn || []).forEach((e) => tracks.add(e));
     }
-    this._emitUpdate();
-  }
-
-  generateDailyMissions() {
-    if (this.activeMissions.length >= this.config.maxActiveMissions) {
-      return;
+    for (const ev of tracks) {
+      this._subscribe(ev, (payload) => this._onEvent(ev, payload || {}));
     }
-
-    const available = MISSION_TEMPLATES.filter(
-      (t) => !this.activeMissions.find((m) => m.templateId === t.id)
-    );
-
-    const shuffled = available.sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, this.config.maxActiveMissions - this.activeMissions.length);
-
-    for (const template of selected) {
-      const mission = this._createMission(template);
-      this.activeMissions.push(mission);
-    }
-
-    this.lastDailyReset = Date.now();
-    this._saveMissions();
-    this._emitUpdate();
-
-    this.eventBus?.emit?.("missions:generated", {
-      missions: this.activeMissions,
-    });
   }
 
-  _createMission(template) {
-    const difficulty = this.gameState.profile?.level || 1;
-    const multiplier = 1 + (difficulty - 1) * 0.2;
+  _onEvent(eventName, payload) {
+    if (!this.enabled) return;
 
-    return {
-      id: `mission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      templateId: template.id,
-      type: template.type,
-      description: template.description
-        .replace("{count}", Math.ceil(template.target * multiplier))
-        .replace("{amount}", Math.ceil(template.target * multiplier))
-        .replace("{distance}", Math.ceil(template.target * multiplier)),
-      target: Math.ceil(template.target * multiplier),
-      progress: 0,
-      xpReward: Math.ceil(template.xpReward * multiplier),
-      moneyReward: Math.ceil(template.moneyReward * multiplier),
-      icon: template.icon,
-      completed: false,
-      claimed: false,
-      createdAt: Date.now(),
-    };
-  }
-
-  _updateMissions(templateId, amount) {
-    let updated = false;
-
-    for (const mission of this.activeMissions) {
-      if (mission.templateId === templateId && !mission.completed) {
-        mission.progress += amount;
-
-        if (mission.progress >= mission.target) {
-          mission.progress = mission.target;
-          mission.completed = true;
-          this.eventBus?.emit?.("mission:completed", {
-            mission: this._serializeMission(mission),
+    // Fail handlers
+    for (const mission of [...this.activeMissions]) {
+      if (mission.completed || mission.failed) continue;
+      const tpl = mission.template;
+      if (tpl.failOn?.includes(eventName)) {
+        if (eventName === "checkpoint:fined" && payload?.paid === false) {
+          // negotiated/reduced — allow
+        } else {
+          mission.failed = true;
+          mission.progress = 0;
+          this.eventBus?.emit?.("hud:notify", {
+            text: `Mission failed: ${mission.title}`,
+            type: "warn",
           });
         }
-
-        updated = true;
       }
     }
 
-    if (updated) {
-      this._saveMissions();
-      this._emitUpdate();
-    }
-  }
-
-  _trackDistrictVisit(district) {
-    if (!district) return;
-
-    const mission = this.activeMissions.find(
-      (m) => m.templateId === "visit_districts" && !m.completed
-    );
-
-    if (mission) {
-      const visited = mission.visitedDistricts || [];
-      if (!visited.includes(district)) {
-        visited.push(district);
-        mission.visitedDistricts = visited;
-        this._updateMissions("visit_districts", 1);
-      }
-    }
-  }
-
-  claimMission(missionId) {
-    const mission = this.activeMissions.find((m) => m.id === missionId);
-
-    if (!mission || !mission.completed || mission.claimed) {
-      return { success: false, reason: "Mission not available for claiming." };
-    }
-
-    mission.claimed = true;
-    this.completedMissions.push(mission);
-
-    // Award rewards
-    this.gameState.addXP?.(mission.xpReward, "mission_completion");
-    this.gameState.addMoney?.(mission.moneyReward, "mission_reward");
-
-    // Remove from active
-    this.activeMissions = this.activeMissions.filter((m) => m.id !== missionId);
-
-    this._saveMissions();
-    this._emitUpdate();
-
-    this.eventBus?.emit?.("mission:claimed", {
-      mission: this._serializeMission(mission),
-      xpReward: mission.xpReward,
-      moneyReward: mission.moneyReward,
-    });
-
-    return {
-      success: true,
-      xpReward: mission.xpReward,
-      moneyReward: mission.moneyReward,
-    };
-  }
-
-  getActiveMissions() {
-    return this.activeMissions.map((m) => this._serializeMission(m));
-  }
-
-  getCompletedMissions() {
-    return this.completedMissions.map((m) => this._serializeMission(m));
-  }
-
-  getMissionProgress() {
-    return {
-      active: this.activeMissions.length,
-      completed: this.completedMissions.length,
-      total: this.missionHistory.length,
-    };
-  }
-
-  _checkDailyReset() {
-    const now = Date.now();
-    const timeSinceReset = now - this.lastDailyReset;
-
-    if (timeSinceReset >= this.config.dailyResetInterval) {
-      this._resetDailyMissions();
-    }
-  }
-
-  _resetDailyMissions() {
     for (const mission of this.activeMissions) {
-      if (!mission.completed) {
-        this.missionHistory.push({
-          ...mission,
-          failed: true,
-          completedAt: Date.now(),
+      if (mission.completed || mission.failed) continue;
+      const tpl = mission.template;
+      const events = [tpl.track, ...(tpl.alsoTrack || [])];
+      if (!events.includes(eventName)) continue;
+
+      if (tpl.requireNight && !this.isNight) continue;
+      if (
+        Number.isFinite(tpl.requireFuelAbove) &&
+        this.fuelPercent < tpl.requireFuelAbove
+      ) {
+        continue;
+      }
+
+      if (tpl.filter?.destinationIncludes) {
+        const dest = String(payload.destination || "");
+        if (!dest.includes(tpl.filter.destinationIncludes)) continue;
+      }
+      if (tpl.filter?.destinationIncludesAny) {
+        const dest = String(payload.destination || "");
+        if (!tpl.filter.destinationIncludesAny.some((s) => dest.includes(s)))
+          continue;
+      }
+      if (Number.isFinite(tpl.minFare)) {
+        const fare = Number(payload.fare ?? payload.amount) || 0;
+        if (fare < tpl.minFare) continue;
+      }
+
+      if (tpl.unique && eventName.includes("district")) {
+        const id = String(payload.district || payload.id || payload.name || "");
+        if (!id || this._visitedDistricts.has(id)) continue;
+        this._visitedDistricts.add(id);
+        mission.progress += 1;
+      } else if (tpl.accumulate === "fare") {
+        mission.progress += Number(payload.fare ?? payload.amount) || 0;
+      } else if (tpl.accumulate === "km") {
+        const km =
+          Number(payload.km) ||
+          Number(payload.distanceKm) ||
+          (Number(payload.meters) || 0) / 1000 ||
+          0.05;
+        mission.progress += km;
+      } else {
+        mission.progress += 1;
+      }
+
+      if (mission.progress >= mission.target) {
+        mission.progress = mission.target;
+        mission.completed = true;
+        this.eventBus?.emit?.("mission:completed", {
+          id: mission.id,
+          title: mission.title,
+          moneyReward: mission.moneyReward,
+          xpReward: mission.xpReward,
+        });
+        this.eventBus?.emit?.("hud:notify", {
+          text: `Mission done: ${mission.title} — claim reward`,
+          type: "ok",
         });
       }
     }
 
-    this.activeMissions = [];
-    this.lastDailyReset = Date.now();
-
-    this._saveMissions();
-    this._emitUpdate();
-
-    this.eventBus?.emit?.("missions:reset", {
-      reason: "daily_reset",
-    });
+    this._renderUI();
+    this._emitList();
+    this._saveDaily();
   }
 
-  _serializeMission(mission) {
+  _ensureActiveMissions() {
+    while (this.activeMissions.filter((m) => !m.completed && !m.failed).length <
+      this.config.maxActiveMissions) {
+      const used = new Set(this.activeMissions.map((m) => m.templateId));
+      const pool = MISSION_TEMPLATES.filter((t) => !used.has(t.id));
+      if (!pool.length) break;
+      const tpl = pool[Math.floor(Math.random() * pool.length)];
+      this.activeMissions.push(this._instantiate(tpl));
+    }
+  }
+
+  _instantiate(tpl) {
+    let target = tpl.target;
+    if (tpl.id === "earn_fares") target = tpl.target;
+    if (tpl.id === "vip_passenger") target = 1;
     return {
-      id: mission.id,
-      templateId: mission.templateId,
-      type: mission.type,
-      description: mission.description,
-      target: mission.target,
-      progress: Math.min(mission.progress, mission.target),
-      xpReward: mission.xpReward,
-      moneyReward: mission.moneyReward,
-      icon: mission.icon,
-      completed: mission.completed,
-      claimed: mission.claimed,
-      progressPercent: Math.min(100, (mission.progress / mission.target) * 100),
+      id: `m_${tpl.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      templateId: tpl.id,
+      template: tpl,
+      title: tpl.title,
+      description: formatDesc(tpl, target),
+      target,
+      progress: 0,
+      xpReward: tpl.xpReward,
+      moneyReward: tpl.moneyReward,
+      icon: tpl.icon,
+      type: tpl.type,
+      completed: false,
+      failed: false,
+      claimed: false,
     };
   }
 
-  _emitUpdate() {
-    this.eventBus?.emit?.("missions:updated", {
-      active: this.getActiveMissions(),
-      completed: this.getCompletedMissions(),
-      progress: this.getMissionProgress(),
+  claimReward(missionId) {
+    const mission = this.activeMissions.find((m) => m.id === missionId);
+    if (!mission || !mission.completed || mission.claimed) return false;
+    mission.claimed = true;
+    this.eventBus?.emit?.("economy:fare-earned", {
+      amount: mission.moneyReward,
+      fare: mission.moneyReward,
+      source: "mission_reward",
     });
+    this.eventBus?.emit?.("progression:xp", { amount: mission.xpReward });
+    this.eventBus?.emit?.("mission:claimed", {
+      id: mission.id,
+      money: mission.moneyReward,
+      xp: mission.xpReward,
+    });
+    this.activeMissions = this.activeMissions.filter((m) => m.id !== missionId);
+    this._ensureActiveMissions();
     this._renderUI();
+    this._emitList();
+    this._saveDaily();
+    return true;
   }
 
-  _saveMissions() {
-    if (this.saveManager) {
-      this.saveManager.setValue?.("missions.active", this.activeMissions);
-      this.saveManager.setValue?.("missions.completed", this.completedMissions);
-      this.saveManager.setValue?.("missions.history", this.missionHistory);
-      this.saveManager.setValue?.("missions.lastDailyReset", this.lastDailyReset);
-    }
+  getActiveMissions() {
+    return this.activeMissions.map((m) => ({
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      progress: Math.min(m.progress, m.target),
+      target: m.target,
+      xpReward: m.xpReward,
+      moneyReward: m.moneyReward,
+      icon: m.icon,
+      type: m.type,
+      completed: m.completed,
+      failed: m.failed,
+      claimed: m.claimed,
+      progressPct: Math.min(100, Math.round((m.progress / m.target) * 100)),
+    }));
   }
 
-  _loadMissions() {
-    if (this.saveManager) {
-      this.activeMissions = this.saveManager.getValue?.("missions.active") || [];
-      this.completedMissions = this.saveManager.getValue?.("missions.completed") || [];
-      this.missionHistory = this.saveManager.getValue?.("missions.history") || [];
-      this.lastDailyReset = this.saveManager.getValue?.("missions.lastDailyReset") || 0;
-    }
+  _emitList() {
+    this.eventBus?.emit?.("missions:updated", {
+      missions: this.getActiveMissions(),
+    });
   }
 
-  // 🔥 PHASE 1: Mission UI Rendering (FIXED POSITIONING)
   _isMobile() {
     if (typeof window === "undefined") return false;
     return window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches;
@@ -417,212 +426,114 @@ export default class MissionSystem {
   _renderUI() {
     this._destroyUI();
     if (!this.enabled || this.activeMissions.length === 0) return;
-    // Mobile: missions only via dock sheet — do not cover the road
+    // Mobile: dock sheet only
     if (this._isMobile()) return;
 
     this.uiContainer = document.createElement("div");
     this.uiContainer.id = "kano-mission-ui";
-
     if (!document.getElementById("kano-mission-css")) {
       const style = document.createElement("style");
       style.id = "kano-mission-css";
       style.textContent = `
         #kano-mission-ui {
-          position: fixed; 
-          top: calc(110px + env(safe-area-inset-top, 0px)); /* 🔥 Pushed down below the top HUD */
-          right: 12px; 
-          z-index: 6700; 
-          width: 260px; /* 🔥 Slightly narrower for mobile */
+          position: fixed;
+          top: calc(100px + env(safe-area-inset-top, 0px));
+          right: 12px;
+          z-index: 6600;
+          width: 250px;
           pointer-events: none;
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-family: system-ui, Arial, sans-serif;
         }
         .mission-card {
-          background: rgba(15, 23, 42, 0.85); 
-          backdrop-filter: blur(12px);
-          border: 1px solid rgba(56, 189, 248, 0.3); 
+          background: rgba(15,23,42,0.9);
+          border: 1px solid rgba(56,189,248,0.35);
           border-radius: 12px;
-          padding: 14px; 
-          margin-bottom: 10px; 
+          padding: 12px;
+          margin-bottom: 8px;
           pointer-events: auto;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-          animation: slideInRight 0.3s ease-out;
         }
-        @keyframes slideInRight { 
-          from { transform: translateX(20px); opacity: 0; } 
-          to { transform: translateX(0); opacity: 1; } 
-        }
-        .mission-header { 
-          display: flex; 
-          align-items: center; 
-          gap: 10px; 
-          margin-bottom: 8px; 
-        }
-        .mission-icon { 
-          font-size: 20px; 
-          width: 32px; 
-          height: 32px; 
-          display: flex; 
-          align-items: center; 
-          justify-content: center;
-          background: rgba(56, 189, 248, 0.15);
-          border-radius: 8px;
-        }
-        .mission-title { 
-          font-size: 12px; 
-          font-weight: 800; 
-          color: #38bdf8; 
-          text-transform: uppercase; 
-          letter-spacing: 0.5px; 
-        }
-        .mission-desc { 
-          font-size: 13px; 
-          color: #e2e8f0; 
-          line-height: 1.4; 
-          margin-bottom: 12px; 
-        }
-        .progress-container { margin-bottom: 10px; }
-        .progress-text {
-          display: flex;
-          justify-content: space-between;
-          font-size: 11px;
-          color: #94a3b8;
-          margin-bottom: 4px;
-          font-weight: 600;
-        }
-        .progress-bar-bg { 
-          width: 100%; 
-          height: 8px; 
-          background: rgba(255,255,255,0.1); 
-          border-radius: 4px; 
-          overflow: hidden; 
-        }
-        .progress-bar-fill { 
-          height: 100%; 
-          background: linear-gradient(90deg, #38bdf8, #22c55e); 
-          border-radius: 4px; 
-          transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
-        }
-        .mission-rewards { 
-          display: flex; 
-          justify-content: space-between; 
-          align-items: center;
-          padding-top: 10px;
-          border-top: 1px solid rgba(255,255,255,0.1);
-        }
-        .reward-item { 
-          display: flex; 
-          align-items: center; 
-          gap: 6px; 
-          font-size: 12px; 
-          font-weight: 700; 
-        }
-        .reward-item.money { color: #fbbf24; }
-        .reward-item.xp { color: #a78bfa; }
+        .mission-title { font-size: 11px; font-weight: 800; color: #38bdf8; text-transform: uppercase; }
+        .mission-desc { font-size: 13px; color: #e2e8f0; margin: 6px 0 10px; line-height: 1.35; }
+        .progress-bar-bg { height: 6px; background: #1e293b; border-radius: 4px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg,#22d3ee,#38bdf8); }
+        .mission-rewards { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #fbbf24; font-weight: 700; }
         .claim-btn {
-          width: 100%;
-          margin-top: 10px;
-          padding: 10px;
-          border: none;
-          border-radius: 8px;
-          background: #22c55e;
-          color: #fff;
-          font-weight: 800;
-          font-size: 13px;
-          cursor: pointer;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          transition: background 0.2s, transform 0.1s;
-        }
-        .claim-btn:active {
-          background: #16a34a;
-          transform: scale(0.96);
-        }
-        
-        /* 🔥 Responsive adjustments for small screens */
-        @media (max-width: 400px) {
-          #kano-mission-ui { 
-            width: 220px; 
-            right: 8px; 
-            top: calc(100px + env(safe-area-inset-top, 0px)); 
-          }
-          .mission-title { font-size: 11px; }
-          .mission-desc { font-size: 12px; }
-          .reward-item { font-size: 11px; }
+          width: 100%; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px;
+          background: #22c55e; color: #052e16; font-weight: 900; cursor: pointer;
         }
       `;
       document.head.appendChild(style);
     }
 
-    // Render max 2 active missions to prevent mobile screen clutter
-    this.activeMissions.slice(0, 2).forEach((mission) => {
+    for (const mission of this.activeMissions) {
+      if (mission.failed) continue;
+      const pct = Math.min(100, Math.round((mission.progress / mission.target) * 100));
       const card = document.createElement("div");
       card.className = "mission-card";
-      
-      const progressPct = Math.min(100, (mission.progress / mission.target) * 100);
-      const isCompleted = mission.progress >= mission.target;
-      
-      let icon = "📋";
-      if (mission.icon === "passenger") icon = "🧍";
-      else if (mission.icon === "money") icon = "💰";
-      else if (mission.icon === "shield") icon = "🛡️";
-      else if (mission.icon === "zap") icon = "⚡";
-      else if (mission.icon === "route") icon = "🛣️";
-      else if (mission.icon === "map") icon = "📍";
-      else if (mission.icon === "badge") icon = "👮";
-      else if (mission.icon === "moon") icon = "🌙";
-
       card.innerHTML = `
-        <div class="mission-header">
-          <div class="mission-icon">${icon}</div>
-          <div class="mission-title">${mission.type.replace("_", " ").toUpperCase()}</div>
+        <div class="mission-header" style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:18px">${mission.icon}</span>
+          <span class="mission-title">${mission.type}</span>
         </div>
         <div class="mission-desc">${mission.description}</div>
-        <div class="progress-container">
-          <div class="progress-text">
-            <span>Progress</span>
-            <span>${Math.floor(mission.progress)} / ${mission.target}</span>
-          </div>
-          <div class="progress-bar-bg">
-            <div class="progress-bar-fill" style="width: ${progressPct}%"></div>
-          </div>
+        <div class="progress-text" style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-bottom:4px">
+          <span>Progress</span><span>${Math.min(mission.progress, mission.target).toFixed?.(0) ?? Math.floor(Math.min(mission.progress, mission.target))} / ${mission.target}</span>
         </div>
-        <div class="mission-rewards">
-          <div class="reward-item money">💰 ₦${mission.moneyReward.toLocaleString()}</div>
-          <div class="reward-item xp">⭐ ${mission.xpReward} XP</div>
-        </div>
-        ${isCompleted && !mission.claimed ? `<button class="claim-btn" data-mission-id="${mission.id}">CLAIM REWARD</button>` : ""}
+        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+        <div class="mission-rewards"><span>₦${mission.moneyReward}</span><span>${mission.xpReward} XP</span></div>
+        ${
+          mission.completed && !mission.claimed
+            ? `<button class="claim-btn" data-id="${mission.id}">CLAIM</button>`
+            : ""
+        }
       `;
-      
-      this.uiContainer.appendChild(card);
-    });
-
-    // Bind claim buttons
-    this.uiContainer.querySelectorAll(".claim-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        const missionId = e.target.dataset.missionId;
-        this.claimMission(missionId);
+      card.querySelector(".claim-btn")?.addEventListener("click", () => {
+        this.claimReward(mission.id);
       });
-    });
-
+      this.uiContainer.appendChild(card);
+    }
     document.body.appendChild(this.uiContainer);
   }
 
   _destroyUI() {
-    if (this.uiContainer) {
-      this.uiContainer.remove();
-      this.uiContainer = null;
-    }
+    this.uiContainer?.remove();
+    this.uiContainer = null;
   }
 
-  _subscribe(event, handler) {
+  _loadDaily() {
+    try {
+      const raw = localStorage.getItem("kano_missions_daily");
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (Date.now() - (data.savedAt || 0) > this.config.dailyResetInterval) return;
+      if (Array.isArray(data.active)) this.activeMissions = data.active;
+    } catch {}
+  }
+
+  _saveDaily() {
+    try {
+      localStorage.setItem(
+        "kano_missions_daily",
+        JSON.stringify({
+          savedAt: Date.now(),
+          active: this.activeMissions,
+        }),
+      );
+    } catch {}
+  }
+
+  _subscribe(name, h) {
     if (!this.eventBus?.on) return;
-    const unsub = this.eventBus.on(event, handler);
-    if (typeof unsub === "function") this._disposers.push(unsub);
+    const u = this.eventBus.on(name, h);
+    if (typeof u === "function") this._disposers.push(u);
   }
 
   dispose() {
     this._destroyUI();
-    for (const unsub of this._disposers) unsub();
-    this._disposers = [];
+    for (const u of this._disposers) {
+      try {
+        u();
+      } catch {}
+    }
   }
 }
