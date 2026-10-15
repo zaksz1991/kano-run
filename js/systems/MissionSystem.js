@@ -408,7 +408,7 @@ export default class MissionSystem {
     }
   }
 
-  // 🔥 PHASE 1: Mission UI Rendering
+  // 🔥 PHASE 1: Mission UI Rendering (FIXED POSITIONING)
   _renderUI() {
     this._destroyUI();
     if (!this.enabled || this.activeMissions.length === 0) return;
@@ -422,10 +422,10 @@ export default class MissionSystem {
       style.textContent = `
         #kano-mission-ui {
           position: fixed; 
-          top: calc(60px + env(safe-area-inset-top, 0px)); 
+          top: calc(110px + env(safe-area-inset-top, 0px)); /* 🔥 Pushed down below the top HUD */
           right: 12px; 
           z-index: 6700; 
-          width: 280px; 
+          width: 260px; /* 🔥 Slightly narrower for mobile */
           pointer-events: none;
           font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
@@ -530,10 +530,17 @@ export default class MissionSystem {
           background: #16a34a;
           transform: scale(0.96);
         }
-        @media (max-width: 360px) {
-          #kano-mission-ui { width: 240px; right: 8px; }
-          .mission-card { padding: 10px; }
+        
+        /* 🔥 Responsive adjustments for small screens */
+        @media (max-width: 400px) {
+          #kano-mission-ui { 
+            width: 220px; 
+            right: 8px; 
+            top: calc(100px + env(safe-area-inset-top, 0px)); 
+          }
+          .mission-title { font-size: 11px; }
           .mission-desc { font-size: 12px; }
+          .reward-item { font-size: 11px; }
         }
       `;
       document.head.appendChild(style);
