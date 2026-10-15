@@ -2,87 +2,90 @@ import * as THREE from "three";
 import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
-  sunIntensity: 2.5,
-  sunColor: 0xfff4e6, // Warm, hot sun color
+  sunIntensity: 1.8,
   ambientIntensity: 0.6,
-  skyColor: 0x87ceeb,
-  groundColor: 0xc2b280, // Sandy beige for Kano ground bounce
-  fogColor: 0xd4c4a8, // Dusty haze color
-  fogDensity: 0.015,
-  shadowMapSize: 2048,
+  hemiIntensity: 0.8,
+  shadowMapSize: 1024, // 🔥 Mobile optimized: 1024 is sharp enough and saves VRAM
   shadowCameraNear: 0.5,
-  shadowCameraFar: 150,
-  shadowCameraSize: 60,
+  shadowCameraFar: 120,
+  shadowCameraSize: 50,
+  // Kano-specific palette
+  daySkyColor: 0x87ceeb,
+  dayGroundColor: 0xc2b280,
+  sunsetSkyColor: 0xfd5e5e,
+  sunsetGroundColor: 0x8b7355,
+  nightSkyColor: 0x0a0e27,
+  nightGroundColor: 0x1a1f3a,
+  harmattanSkyColor: 0xd4c4a8,
+  harmattanGroundColor: 0xb8a888,
 };
 
 export default class LightingSystem {
-  constructor({
-    scene,
-    camera,
-    eventBus = null,
-    config = {},
-  } = {}) {
+  constructor({ scene, camera, renderer, eventBus = null, config = {} } = {}) {
     if (!scene) throw new Error("LightingSystem requires a scene.");
+    if (!renderer) throw new Error("LightingSystem requires a renderer.");
 
     this.scene = scene;
     this.camera = camera;
+    this.renderer = renderer;
     this.eventBus = eventBus;
     this.config = { ...DEFAULTS, ...(GAME_CONFIG?.lighting ?? {}), ...config };
 
     this.sun = null;
     this.ambient = null;
     this.hemi = null;
+    this.moon = null;
     this.enabled = false;
-    this.timeOfDay = 0.5;
-    this.isNight = false;
-    this.streetlights = [];
-    this.playerHeadlights = null;
-    this.maxStreetlights = 16;
-    this._subscribe("performance:quality", (p) => {
-      if (p?.maxStreetlights) this.maxStreetlights = p.maxStreetlights;
-      if (p?.lowPower) {
-        this.maxStreetlights = Math.min(this.maxStreetlights, 10);
-        for (const lamp of this.streetlights || []) {
-          if (lamp.light) lamp.light.distance = 16;
-        }
-      }
-    });
+    this.timeOfDay = 0.5; // 0 to 1 (0.5 is noon)
+    this.currentPhase = "day";
+    
+    this.targetExposure = 1.2;
+    this.currentExposure = 1.2;
 
     this._disposers = [];
   }
 
   initialize() {
     this._createLights();
+    this._setupRenderer();
+    this._bindEvents();
     this.enabled = true;
     this.eventBus?.emit?.("lighting:initialized");
-    this._subscribe("daynight:changed", (p) => this.setNightMode(Boolean(p?.isNight || p?.phase === "night" || p?.phase === "evening")));
-    this._subscribe("time:period-changed", (p) => {
-      const cur = p?.current || p?.period;
-      this.setNightMode(cur === "night" || cur === "evening");
+  }
+
+  _setupRenderer() {
+    // 🔥 CRITICAL: Proper tone mapping for realistic, bright mobile lighting
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = this.targetExposure;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
+
+  _bindEvents() {
+    this._subscribe("daynight:timeUpdate", (payload) => {
+      this.timeOfDay = payload.dayProgress;
+      this._updateLightingForTime();
     });
-    this._subscribe("player:moved", (p) => this._followPlayer(p));
-    this._subscribe("game:started", () => this._ensureStreetlights());
+
+    this._subscribe("weather:changed", (payload) => {
+      this.setWeather(payload.type || "clear");
+    });
   }
 
   _createLights() {
     // 1. Hemisphere Light (Sky/Ground bounce - crucial for outdoor feel)
     this.hemi = new THREE.HemisphereLight(
-      this.config.skyColor,
-      this.config.groundColor,
-      this.config.ambientIntensity
+      this.config.daySkyColor,
+      this.config.dayGroundColor,
+      this.config.hemiIntensity
     );
     this.scene.add(this.hemi);
 
     // 2. Directional Light (The Sun)
-    this.sun = new THREE.DirectionalLight(
-      this.config.sunColor,
-      this.config.sunIntensity
-    );
+    this.sun = new THREE.DirectionalLight(0xfff4e6, this.config.sunIntensity);
+    this.sun.position.set(50, 100, 30);
     
-    // Position sun high and slightly angled for dramatic shadows
-    this.sun.position.set(50, 80, 30);
-    
-    // Shadow Configuration
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.width = this.config.shadowMapSize;
     this.sun.shadow.mapSize.height = this.config.shadowMapSize;
@@ -93,157 +96,139 @@ export default class LightingSystem {
     this.sun.shadow.camera.top = this.config.shadowCameraSize;
     this.sun.shadow.camera.bottom = -this.config.shadowCameraSize;
     
-    // Bias to prevent "shadow acne" on flat surfaces
+    // Softer, artifact-free shadows
     this.sun.shadow.bias = -0.0005;
     this.sun.shadow.normalBias = 0.02;
 
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
 
-    // 3. Atmospheric Fog (Harmattan Dust)
-    this.scene.fog = new THREE.FogExp2(
-      this.config.fogColor,
-      this.config.fogDensity
-    );
-    
-    // Ensure background matches fog for seamless horizon
-    this.scene.background = new THREE.Color(this.config.fogColor);
+    // 3. Ambient Light (fill light for shadows)
+    this.ambient = new THREE.AmbientLight(0x404040, this.config.ambientIntensity);
+    this.scene.add(this.ambient);
+
+    // 4. Moon (for night)
+    this.moon = new THREE.DirectionalLight(0x6688cc, 0.3);
+    this.moon.position.set(-50, 80, -30);
+    this.moon.castShadow = false;
+    this.moon.visible = false;
+    this.scene.add(this.moon);
+
+    // 5. Atmospheric Fog
+    this.scene.fog = new THREE.FogExp2(this.config.daySkyColor, 0.012);
+    this.scene.background = new THREE.Color(this.config.daySkyColor);
   }
 
   update(deltaTime, playerZ = 0) {
-    if (!this.enabled || !this.sun) return;
+    if (!this.enabled) return;
 
-    // Move sun and shadows to follow the player (infinite world illusion)
-    // This keeps shadow resolution high near the player
-    this.sun.position.x = playerZ + 50;
-    this.sun.target.position.set(playerZ, 0, 0);
-    this.sun.target.updateMatrixWorld();
+    // Move sun and shadows to follow the player (keeps shadow resolution high)
+    if (this.sun) {
+      this.sun.position.x = playerZ + 50;
+      this.sun.target.position.set(playerZ, 0, 0);
+      this.sun.target.updateMatrixWorld();
+    }
 
-    // Optional: Slowly rotate sun for day/night cycle
-    // this.timeOfDay += deltaTime * 0.01;
-    // this._updateSunPosition();
+    // Smooth exposure transitions
+    if (Math.abs(this.currentExposure - this.targetExposure) > 0.001) {
+      this.currentExposure += (this.targetExposure - this.currentExposure) * 5 * deltaTime;
+      this.renderer.toneMappingExposure = this.currentExposure;
+    }
   }
 
-  _updateSunPosition() {
-    const angle = this.timeOfDay * Math.PI;
-    const radius = 100;
-    this.sun.position.y = Math.sin(angle) * radius;
-    this.sun.position.z = Math.cos(angle) * radius;
+  _updateLightingForTime() {
+    const t = this.timeOfDay;
+    let skyColor, groundColor, sunIntensity, exposure, phase;
+
+    if (t < 0.2 || t > 0.8) {
+      // Night (8 PM - 6 AM)
+      skyColor = new THREE.Color(this.config.nightSkyColor);
+      groundColor = new THREE.Color(this.config.nightGroundColor);
+      sunIntensity = 0;
+      exposure = 0.5;
+      phase = "night";
+      if (this.moon) { this.moon.visible = true; this.moon.intensity = 0.4; }
+    } else if (t < 0.3 || t > 0.7) {
+      // Sunset/Sunrise
+      skyColor = new THREE.Color(this.config.sunsetSkyColor);
+      groundColor = new THREE.Color(this.config.sunsetGroundColor);
+      sunIntensity = 0.8;
+      exposure = 0.9;
+      phase = "sunset";
+      if (this.moon) this.moon.visible = false;
+    } else {
+      // Day (8 AM - 6 PM)
+      skyColor = new THREE.Color(this.config.daySkyColor);
+      groundColor = new THREE.Color(this.config.dayGroundColor);
+      sunIntensity = this.config.sunIntensity;
+      exposure = 1.2; // 🔥 BRIGHT for daytime
+      phase = "day";
+      if (this.moon) this.moon.visible = false;
+    }
+
+    // Smooth interpolation
+    if (this.hemi) {
+      this.hemi.color.lerp(skyColor, 0.05);
+      this.hemi.groundColor.lerp(groundColor, 0.05);
+    }
+    if (this.sun) {
+      this.sun.intensity = THREE.MathUtils.lerp(this.sun.intensity, sunIntensity, 0.05);
+      const angle = (t - 0.5) * Math.PI;
+      this.sun.position.y = Math.sin(angle) * 100;
+      this.sun.position.z = Math.cos(angle) * 50;
+    }
+    if (this.ambient) {
+      const ambInt = phase === "night" ? 0.2 : this.config.ambientIntensity;
+      this.ambient.intensity = THREE.MathUtils.lerp(this.ambient.intensity, ambInt, 0.05);
+    }
+    if (this.scene.fog) {
+      const fogColor = phase === "night" ? this.config.nightSkyColor : phase === "sunset" ? this.config.sunsetSkyColor : this.config.daySkyColor;
+      this.scene.fog.color.lerp(new THREE.Color(fogColor), 0.05);
+    }
+    if (this.scene.background && this.scene.background.isColor) {
+      this.scene.background.lerp(skyColor, 0.05);
+    }
+
+    this.targetExposure = exposure;
+
+    if (phase !== this.currentPhase) {
+      this.currentPhase = phase;
+      this.eventBus?.emit?.("lighting:phaseChanged", { phase, timeOfDay: t });
+      this.eventBus?.emit?.("daynight:changed", { isNight: phase === "night", phase, timeOfDay: t });
+    }
   }
 
   setWeather(type = "clear") {
     if (type === "harmattan") {
-      this.scene.fog.density = 0.035; // Thicker dust
-      this.scene.fog.color.setHex(0xe6d5b8);
-      this.scene.background.setHex(0xe6d5b8);
-      this.sun.intensity = 1.8; // Dimmer sun through dust
+      if (this.scene.fog) { this.scene.fog.density = 0.025; this.scene.fog.color.setHex(this.config.harmattanSkyColor); }
+      if (this.scene.background) this.scene.background.setHex(this.config.harmattanSkyColor);
+      if (this.sun) this.sun.intensity = 1.2;
+      this.targetExposure = 0.9;
     } else if (type === "rain") {
-      this.scene.fog.density = 0.025;
-      this.scene.fog.color.setHex(0x8899a6);
-      this.scene.background.setHex(0x8899a6);
-      this.sun.intensity = 1.2;
+      if (this.scene.fog) { this.scene.fog.density = 0.018; this.scene.fog.color.setHex(0x667788); }
+      if (this.scene.background) this.scene.background.setHex(0x667788);
+      if (this.sun) this.sun.intensity = 0.6;
+      this.targetExposure = 0.6;
     } else {
-      // Clear/Default
-      this.scene.fog.density = this.config.fogDensity;
-      this.scene.fog.color.setHex(this.config.fogColor);
-      this.scene.background.setHex(this.config.fogColor);
-      this.sun.intensity = this.config.sunIntensity;
+      if (this.scene.fog) { this.scene.fog.density = 0.012; this.scene.fog.color.setHex(this.config.daySkyColor); }
+      if (this.scene.background) this.scene.background.setHex(this.config.daySkyColor);
+      if (this.sun) this.sun.intensity = this.config.sunIntensity;
+      this.targetExposure = 1.2;
     }
   }
 
-  _subscribe(name, h) {
+  _subscribe(event, handler) {
     if (!this.eventBus?.on) return;
-    const u = this.eventBus.on(name, h);
-    if (typeof u === "function") this._disposers.push(u);
+    const unsub = this.eventBus.on(event, handler);
+    if (typeof unsub === "function") this._disposers.push(unsub);
   }
-
-  setNightMode(night) {
-    this.isNight = Boolean(night);
-    if (this.sun) {
-      this.sun.intensity = this.isNight ? 0.08 : (this.config.sunIntensity || 2.2);
-      this.sun.color.setHex(this.isNight ? 0x8899bb : (this.config.sunColor || 0xfff4e6));
-    }
-    if (this.hemi) {
-      this.hemi.intensity = this.isNight ? 0.12 : (this.config.ambientIntensity || 0.6);
-    }
-    if (this.ambient) {
-      this.ambient.intensity = this.isNight ? 0.15 : 0.5;
-    }
-    if (this.scene?.fog) {
-      this.scene.fog.color.setHex(this.isNight ? 0x1a2233 : 0xd4c4a8);
-      if ("density" in this.scene.fog) {
-        this.scene.fog.density = this.isNight ? 0.028 : 0.015;
-      }
-    }
-    this._ensureStreetlights();
-    for (const lamp of this.streetlights) {
-      if (lamp.light) lamp.light.visible = this.isNight;
-      if (lamp.bulb) lamp.bulb.material.emissiveIntensity = this.isNight ? 1.2 : 0;
-    }
-    this.eventBus?.emit?.("lighting:night", { isNight: this.isNight });
-  }
-
-  _ensureStreetlights() {
-    if (!this.scene || this.streetlights.length >= this.maxStreetlights) return;
-    while (this.streetlights.length < this.maxStreetlights) {
-      const group = new THREE.Group();
-      const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.1, 5.5, 6),
-        new THREE.MeshStandardMaterial({ color: 0x374151, flatShading: true }),
-      );
-      pole.position.y = 2.75;
-      group.add(pole);
-      const arm = new THREE.Mesh(
-        new THREE.BoxGeometry(1.2, 0.08, 0.08),
-        new THREE.MeshStandardMaterial({ color: 0x4b5563, flatShading: true }),
-      );
-      arm.position.set(0.5, 5.3, 0);
-      group.add(arm);
-      const bulb = new THREE.Mesh(
-        new THREE.SphereGeometry(0.15, 6, 6),
-        new THREE.MeshStandardMaterial({
-          color: 0xfbbf24,
-          emissive: 0xf59e0b,
-          emissiveIntensity: 0,
-        }),
-      );
-      bulb.position.set(1.0, 5.2, 0);
-      group.add(bulb);
-      const light = new THREE.PointLight(0xffd9a0, 1.4, 22, 2);
-      light.position.set(1.0, 5.0, 0);
-      light.visible = false;
-      group.add(light);
-      group.visible = true;
-      this.scene.add(group);
-      this.streetlights.push({ group, light, bulb, side: this.streetlights.length % 2 === 0 ? -1 : 1 });
-    }
-  }
-
-  _followPlayer(payload = {}) {
-    const z = Number(payload.z ?? payload.playerZ) || 0;
-    const spacing = 28;
-    for (let i = 0; i < this.streetlights.length; i++) {
-      const lamp = this.streetlights[i];
-      const base = Math.floor(z / spacing) * spacing;
-      const lz = base + (i - this.streetlights.length / 2) * spacing;
-      lamp.group.position.set(lamp.side * 7.5, 0, lz);
-    }
-  }
-
-  update(dt = 0, playerZ = 0) {
-    if (!this.enabled) return;
-    this._updateSunPosition?.(dt);
-    if (Number.isFinite(playerZ)) {
-      this._followPlayer({ z: playerZ });
-    }
-  }
-
 
   dispose() {
     this.scene.remove(this.sun);
     this.scene.remove(this.hemi);
-    this.sun.dispose();
-    this.hemi.dispose();
+    this.scene.remove(this.ambient);
+    this.scene.remove(this.moon);
+    this.sun?.dispose(); this.hemi?.dispose(); this.ambient?.dispose(); this.moon?.dispose();
     for (const unsub of this._disposers) unsub();
     this._disposers = [];
   }
