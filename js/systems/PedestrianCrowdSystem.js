@@ -11,9 +11,9 @@ export default class PedestrianCrowdSystem {
     this.scene = scene;
     this.eventBus = eventBus;
     this.config = {
-      maxWalkers: 18,
+      maxWalkers: 28,
       sideOffset: 9.5,
-      spawnAhead: 100,
+      spawnAhead: 120,
       ...config,
     };
     this.walkers = [];
@@ -50,7 +50,7 @@ export default class PedestrianCrowdSystem {
       this._nextZ < z + this.config.spawnAhead
     ) {
       this._spawn(this._nextZ);
-      this._nextZ += 8 + Math.random() * 14;
+      this._nextZ += 5 + Math.random() * 10;
     }
 
     for (let i = this.walkers.length - 1; i >= 0; i--) {

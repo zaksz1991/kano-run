@@ -458,6 +458,7 @@ export default class Game {
       ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["routeGeneration", () => import("../systems/RouteGenerationSystem.js")],
       ["missions", () => import("../systems/MissionSystem.js")],
+      ["yanDaba", () => import("../systems/YanDabaSystem.js")],
       ["garage", () => import("../systems/GarageSystem.js")],
       ["customization", () => import("../systems/CustomizationSystem.js")],
       ["particles", () => import("../systems/ParticleSystem.js")],

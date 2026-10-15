@@ -183,6 +183,17 @@ export default class PlayerVehicleSystem {
     this.weatherSystem = weatherSystem;
     this.roadSystem = roadSystem;
     this.eventBus = eventBus;
+    this._held = false;
+    if (this.eventBus?.on) {
+      this.eventBus.on("vehicle:hold", (p) => {
+        this._held = Boolean(p?.hold);
+        if (this._held) {
+          this.speed = 0;
+          this.isAccelerating = false;
+        }
+      });
+    }
+
 
     this.config = {
       ...DEFAULTS,
@@ -352,7 +363,9 @@ export default class PlayerVehicleSystem {
     this.initialized = true;
   }
 
-  update(deltaTime, state = {}) {
+  update(deltaTime, state = {
+    if (this._held) { this.speed = 0; return; }
+}) {
     if (
       !this.initialized ||
       !this.enabled ||

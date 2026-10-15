@@ -55,26 +55,20 @@ const KEKES = [
 const ROUTES = [
   { id: "city-centre", name: "City Centre → Emir Palace", district: "Kano City Centre" },
   { id: "sabon-gari", name: "Sabon Gari Market Loop", district: "Sabon Gari" },
-  { id: "zoo-road", name: "Zoo Road → Hotoro", district: "Zoo Road" },
-  { id: "panshekara", name: "Panshekara → Kumbotso", district: "Panshekara" },
   { id: "kurmi", name: "Kurmi Market → Kofar Wambai", district: "Kurmi Market" },
-  { id: "farm-centre", name: "Farm Centre → Tarauni", district: "Farm Centre" },
-  { id: "sharada", name: "Sharada Industrial", district: "Sharada" },
-  { id: "naibawa", name: "Naibawa → Yankaba", district: "Naibawa" },
+  { id: "kwari", name: "Kantin Kwari Traders", district: "Kantin Kwari" },
+  { id: "fagge", name: "Fagge → Airport Road", district: "Fagge" },
+  { id: "tarauni", name: "Tarauni Circuit", district: "Tarauni" },
+  { id: "hotoro", name: "Zoo Road → Hotoro", district: "Hotoro" },
+  { id: "bompai", name: "Bompai Industrial", district: "Bompai" },
+  { id: "nassarawa", name: "Nassarawa GRA", district: "Nassarawa" },
+  { id: "wambai", name: "Kofar Wambai Gate", district: "Kofar Wambai" },
 ];
 
 export default class MenuSystem {
   constructor({ eventBus = null, gameState = null } = {}) {
     this.eventBus = eventBus;
     this.gameState = gameState;
-    if (eventBus?.on) {
-      eventBus.on("menu:open", () => this.open());
-      eventBus.on("game:initialized", () => {
-        setTimeout(() => {
-          if (!this._root || !document.body.contains(this._root)) this.open();
-        }, 150);
-      });
-    }
     this.root = null;
     this.selection = {
       driverId: "ruffneck",

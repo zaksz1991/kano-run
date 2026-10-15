@@ -1,251 +1,113 @@
-import { GAME_CONFIG } from "../core/config.js";
-
-const TITLES = [
-  "Oga",
-  "Mai Gida",
-  "Mallam",
-  "Yallabai",
-  "Dan uwa",
-  "Driver",
-  "Baba",
-  "Mama",
-  "Hajiya",
-  "Aboki",
-];
-
-const GREETINGS = [
-  "Sannu {title}! Ina neman {destination}.",
-  "{title}, ka kai ni {destination} lafiya.",
-  "Ina so in je {destination}, {title}.",
-  "{title}, {destination} jiran mu yau.",
-  "Don Allah {title}, kai ni {destination}.",
-  "{title}, fare ɗin {destination} nawa?",
-];
-
-const COUNTER_LINES = [
-  "Kuɗin ya yi yawa, {title}. Ka rage.",
-  "Ba haka ba ne a Kano, {title}.",
-  "Ka rage kaɗan, mun yarda.",
-  "Ya yi tsada sosai!",
-];
-
-const ACCEPT_LINES = [
-  "To, oya mu tafi!",
-  "Akwai, mun yarda.",
-  "Nagode {title}!",
-  "Sai an jima — mu tafi.",
-];
-
-const REJECT_LINES = [
-  "Bai yiwu ba yau, {title}.",
-  "Kuɗin ba ya isa.",
-  "Sai wani lokaci.",
-];
-
-function pick(list) {
-  return list[Math.floor(Math.random() * list.length)];
-}
-
-function fill(template, map) {
-  return template.replace(/\{(\w+)\}/g, (_, key) => map[key] ?? "");
-}
+/**
+ * Phase 2 — Fare negotiation UI
+ * Passenger names destination; driver picks Low / Fair / High.
+ */
 
 export default class NegotiationSystem {
-  constructor({ eventBus = null, gameState = null, config = {} } = {}) {
+  constructor({ eventBus = null } = {}) {
     this.eventBus = eventBus;
-    this.gameState = gameState;
-    this.config = { ...(GAME_CONFIG?.negotiation ?? {}), ...config };
-
-    this.activeNegotiation = null;
-    this.enabled = false;
+    this.panel = null;
     this._disposers = [];
-
-    this._subscribe("passenger:boarded", (payload) =>
-      this.startNegotiation(payload),
-    );
-    this._subscribe("game:started", () => {
-      this.enabled = true;
-    });
-    this._subscribe("game:stopped", () => {
-      this.enabled = false;
-      this.cancelNegotiation();
-    });
-    this._subscribe("game:over", () => {
-      this.enabled = false;
-      this.cancelNegotiation();
-    });
-
-    // Wired from HUD buttons / keys
-    this._subscribe("negotiation:accept", () => this.acceptFare());
-    this._subscribe("negotiation:counter", () => this.counterFare());
+    this._subscribe("negotiation:started", (p) => this.open(p));
+    this._subscribe("game:stopped", () => this.close());
+    this._subscribe("game:over", () => this.close());
   }
 
-  startNegotiation(payload = {}) {
-    if (!this.enabled) return;
+  open(payload = {}) {
+    this.close();
+    const dest = payload.destination || "Kano";
+    const low = Math.round(Number(payload.lowFare) || 120);
+    const mid = Math.round(Number(payload.midFare) || 200);
+    const high = Math.round(Number(payload.highFare) || 300);
+    const msg =
+      payload.message ||
+      `Sannu Oga! Ina neman ${dest}.`;
 
-    // Avoid stacking if already negotiating
-    if (this.activeNegotiation) return;
-
-    const destination = payload.destination || "Sabon Gari";
-    const title = pick(TITLES);
-    const baseFare = Number(this.config.baseFare) || 250;
-    const distanceFare = 150 + Math.floor(Math.random() * 400);
-    const requestedFare = baseFare + distanceFare;
-    const passengerOffer = Math.max(
-      100,
-      Math.floor(requestedFare * (0.55 + Math.random() * 0.2)),
-    );
-
-    this.activeNegotiation = {
-      destination,
-      title,
-      requestedFare,
-      currentOffer: passengerOffer,
-      round: 0,
-      state: "REQUESTING",
-      timer: 8,
+    const root = document.createElement("div");
+    root.id = "kano-negotiate-panel";
+    Object.assign(root.style, {
+      position: "fixed",
+      left: "50%",
+      bottom: "max(100px, calc(env(safe-area-inset-bottom) + 90px))",
+      transform: "translateX(-50%)",
+      zIndex: "7500",
+      width: "min(360px, 94vw)",
+      padding: "14px",
+      borderRadius: "14px",
+      background: "rgba(15,23,42,0.96)",
+      border: "1px solid rgba(56,189,248,0.45)",
+      color: "#f8fafc",
+      fontFamily: "system-ui, Arial, sans-serif",
+      boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+    });
+    root.innerHTML = `
+      <div style="font-size:12px;color:#38bdf8;font-weight:800;letter-spacing:1px">PASSENGER</div>
+      <div style="font-size:15px;font-weight:700;margin:6px 0 12px;line-height:1.35">${msg}</div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:8px">Choose your fare to ${dest}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <button data-fare="${low}" data-tier="low" style="padding:12px 6px;border:0;border-radius:10px;background:#334155;color:#e2e8f0;font-weight:800;cursor:pointer">Low<br>₦${low}</button>
+        <button data-fare="${mid}" data-tier="mid" style="padding:12px 6px;border:0;border-radius:10px;background:#0ea5e9;color:#0f172a;font-weight:900;cursor:pointer">Fair<br>₦${mid}</button>
+        <button data-fare="${high}" data-tier="high" style="padding:12px 6px;border:0;border-radius:10px;background:#fbbf24;color:#1c1917;font-weight:900;cursor:pointer">High<br>₦${high}</button>
+      </div>
+      <button data-reject style="width:100%;margin-top:8px;padding:10px;border:1px solid #64748b;border-radius:10px;background:transparent;color:#94a3b8;font-weight:700;cursor:pointer">No deal</button>
+    `;
+    root.querySelectorAll("[data-fare]").forEach((btn) => {
+      btn.onclick = () => {
+        const fare = Number(btn.getAttribute("data-fare"));
+        const tier = btn.getAttribute("data-tier");
+        // Low fare: 55% accept, mid 90%, high 100% but passenger may grumble
+        const roll = Math.random();
+        const accept =
+          tier === "high" ? true : tier === "mid" ? roll < 0.9 : roll < 0.55;
+        if (accept) {
+          this.eventBus?.emit?.("negotiation:finished", {
+            accepted: true,
+            fare,
+            tier,
+            destination: dest,
+          });
+          this.eventBus?.emit?.("negotiation:accepted", { fare, tier });
+        } else {
+          this.eventBus?.emit?.("hud:notify", {
+            text: "Passenger: Kai! Add small money",
+            type: "warn",
+          });
+          this.eventBus?.emit?.("negotiation:finished", {
+            accepted: false,
+            fare,
+            tier,
+          });
+          this.eventBus?.emit?.("negotiation:rejected", { fare, tier });
+        }
+        this.close();
+      };
+    });
+    root.querySelector("[data-reject]").onclick = () => {
+      this.eventBus?.emit?.("negotiation:finished", { accepted: false });
+      this.eventBus?.emit?.("negotiation:rejected", {});
+      this.close();
     };
-
-    const dialogue = fill(pick(GREETINGS), { title, destination });
-
-    this.eventBus?.emit?.("negotiation:started", {
-      dialogue: `${dialogue} (₦${passengerOffer})`,
-      fare: requestedFare,
-      offer: passengerOffer,
-      timeLimit: this.activeNegotiation.timer,
-      destination,
-      title,
-    });
+    document.body.appendChild(root);
+    this.panel = root;
   }
 
-  update(deltaTime) {
-    if (!this.activeNegotiation) return;
-    if (
-      this.activeNegotiation.state === "AGREED" ||
-      this.activeNegotiation.state === "REFUSED"
-    ) {
-      return;
-    }
-
-    this.activeNegotiation.timer -= Math.min(Number(deltaTime) || 0, 0.1);
-
-    if (this.activeNegotiation.timer <= 0) {
-      this.forceAccept();
-    } else {
-      this.eventBus?.emit?.("negotiation:timer-update", {
-        timeLeft: this.activeNegotiation.timer,
-      });
-    }
+  close() {
+    this.panel?.remove();
+    this.panel = null;
   }
 
-  acceptFare() {
-    const n = this.activeNegotiation;
-    if (!n || (n.state !== "REQUESTING" && n.state !== "COUNTERING")) return;
-
-    n.state = "AGREED";
-    const finalFare = n.currentOffer;
-    const dialogue = fill(pick(ACCEPT_LINES), { title: n.title });
-
-    this.eventBus?.emit?.("negotiation:finished", {
-      dialogue,
-      finalFare,
-      success: true,
-      destination: n.destination,
-    });
-
-    this.eventBus?.emit?.("economy:fare-agreed", {
-      amount: finalFare,
-      fare: finalFare,
-    });
-
-    this.activeNegotiation = null;
-  }
-
-  counterFare() {
-    const n = this.activeNegotiation;
-    if (!n || n.state !== "REQUESTING") return;
-
-    n.round += 1;
-    // Driver counters upward toward requested fare
-    const mid = Math.floor((n.currentOffer + n.requestedFare) / 2);
-    n.currentOffer = Math.min(n.requestedFare, mid + Math.floor(Math.random() * 40));
-
-    // Passenger accepts counter often after first push
-    const acceptChance = 0.45 + n.round * 0.2;
-
-    if (Math.random() < acceptChance) {
-      n.state = "AGREED";
-      const dialogue = fill(pick(ACCEPT_LINES), { title: n.title });
-      this.eventBus?.emit?.("negotiation:finished", {
-        dialogue: `${dialogue} ₦${n.currentOffer}`,
-        finalFare: n.currentOffer,
-        success: true,
-        destination: n.destination,
-      });
-      this.eventBus?.emit?.("economy:fare-agreed", {
-        amount: n.currentOffer,
-        fare: n.currentOffer,
-      });
-      this.activeNegotiation = null;
-      return;
-    }
-
-    if (n.round >= 2 && Math.random() < 0.35) {
-      n.state = "REFUSED";
-      const dialogue = fill(pick(REJECT_LINES), { title: n.title });
-      this.eventBus?.emit?.("negotiation:finished", {
-        dialogue,
-        finalFare: 0,
-        success: false,
-      });
-      this.activeNegotiation = null;
-      return;
-    }
-
-    n.state = "REQUESTING";
-    n.timer = 6;
-    const dialogue = fill(pick(COUNTER_LINES), { title: n.title });
-    this.eventBus?.emit?.("negotiation:started", {
-      dialogue: `${dialogue} (₦${n.currentOffer})`,
-      fare: n.requestedFare,
-      offer: n.currentOffer,
-      timeLimit: n.timer,
-    });
-  }
-
-  forceAccept() {
-    const n = this.activeNegotiation;
-    if (!n) return;
-    n.state = "AGREED";
-    this.eventBus?.emit?.("negotiation:finished", {
-      dialogue: `To, mun yarda. ₦${n.currentOffer}`,
-      finalFare: n.currentOffer,
-      success: true,
-      destination: n.destination,
-    });
-    this.eventBus?.emit?.("economy:fare-agreed", {
-      amount: n.currentOffer,
-      fare: n.currentOffer,
-    });
-    this.activeNegotiation = null;
-  }
-
-  cancelNegotiation() {
-    this.activeNegotiation = null;
-  }
-
-  _subscribe(event, handler) {
+  _subscribe(name, h) {
     if (!this.eventBus?.on) return;
-    const unsub = this.eventBus.on(event, handler);
-    if (typeof unsub === "function") this._disposers.push(unsub);
+    const u = this.eventBus.on(name, h);
+    if (typeof u === "function") this._disposers.push(u);
   }
 
   dispose() {
-    for (const unsub of this._disposers) {
+    this.close();
+    for (const u of this._disposers) {
       try {
-        unsub();
+        u();
       } catch {}
     }
-    this._disposers = [];
   }
 }
