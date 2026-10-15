@@ -3,6 +3,8 @@ import { GAME_CONFIG } from "../core/config.js";
 
 const WEATHER_TYPES = {
   CLEAR: "clear",
+  SUNNY: "sunny",
+  CLOUDY: "cloudy",
   HARMATTAN: "harmattan",
   RAIN: "rain",
   STORM: "storm"
@@ -11,13 +13,31 @@ const WEATHER_TYPES = {
 // Kano-specific weather presets
 const WEATHER_PRESETS = {
   [WEATHER_TYPES.CLEAR]: {
-    fogColor: 0xc5d4c8, // Light blue/grey
+    fogColor: 0xc5d4c8,
     fogDensity: 0.015,
     sunIntensity: 2.2,
     sunColor: 0xfff4e6,
     ambientIntensity: 0.6,
     gripMultiplier: 1.0,
     skyColor: 0x87ceeb
+  },
+  [WEATHER_TYPES.SUNNY]: {
+    fogColor: 0xdce9f2,
+    fogDensity: 0.01,
+    sunIntensity: 2.5,
+    sunColor: 0xfff8e7,
+    ambientIntensity: 0.7,
+    gripMultiplier: 1.0,
+    skyColor: 0x5dade2
+  },
+  [WEATHER_TYPES.CLOUDY]: {
+    fogColor: 0xa8b4bc,
+    fogDensity: 0.02,
+    sunIntensity: 1.2,
+    sunColor: 0xd0d8e0,
+    ambientIntensity: 0.5,
+    gripMultiplier: 0.98,
+    skyColor: 0x8a9aaa
   },
   [WEATHER_TYPES.HARMATTAN]: {
     fogColor: 0xd4c4a8, // Dusty beige/orange
@@ -85,6 +105,7 @@ export default class WeatherSystem {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     const mat = new THREE.PointsMaterial({
+      color: 0xc4a574,
       color: 0xd4c4a8,
       size: 0.35,
       transparent: true,

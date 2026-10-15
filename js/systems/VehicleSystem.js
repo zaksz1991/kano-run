@@ -147,6 +147,14 @@ export default class VehicleSystem {
 
     this.vehicles = new Map();
     this.isNight = false;
+    this._subscribe("lighting:night", (p) => {
+      this.isNight = Boolean(p?.isNight);
+      this._syncTrafficLights();
+    });
+    this._subscribe("daynight:changed", (p) => {
+      this.isNight = Boolean(p?.isNight || p?.phase === "night");
+      this._syncTrafficLights();
+    });
     this.isRushHour = false;
     this.densityMult = 1;
     this.spawnAccumulator = 0;
@@ -287,6 +295,8 @@ export default class VehicleSystem {
     // Per-type yaw — do not use Math.PI for every model
     vehicle.group.rotation.y = facingYaw(vehicleType);
 
+    this._attachTrafficHeadlights(vehicle);
+    if (this.isNight) this._syncTrafficLights();
     this.vehicles.set(vehicle.id, vehicle);
     this.scene.add(vehicle.group);
 

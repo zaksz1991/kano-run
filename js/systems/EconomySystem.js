@@ -7,8 +7,39 @@ const DEFAULTS = {
   fuelPricePerLiter: 120,
   repairCostPerCondition: 50,
   karotaFineBase: 200,
-  dailyExpenses: 0, // set >0 only if you want rank fee every run
+  dailyExpenses: 0,
   startingMoney: 30000,
+  // Phase 4 — period & weather multipliers
+  periodFareMult: {
+    dawn: 1.05,
+    morning: 1.1,
+    afternoon: 1.0,
+    evening: 1.25,
+    night: 1.5,
+  },
+  periodDemandMult: {
+    dawn: 0.7,
+    morning: 1.35,
+    afternoon: 1.15,
+    evening: 1.2,
+    night: 0.95,
+  },
+  weatherFareMult: {
+    clear: 1,
+    sunny: 1,
+    cloudy: 1.02,
+    harmattan: 1.08,
+    rain: 1.2,
+    storm: 1.35,
+  },
+  weatherDemandMult: {
+    clear: 1,
+    sunny: 1.05,
+    cloudy: 1,
+    harmattan: 0.9,
+    rain: 1.25,
+    storm: 0.75,
+  },
 };
 
 /**
@@ -29,6 +60,13 @@ export default class EconomySystem {
     this.saveManager = saveManager;
     this.config = { ...DEFAULTS, ...(GAME_CONFIG?.economy ?? {}), ...config };
     this._disposers = [];
+    this.period = "morning";
+    this.weather = "clear";
+    this.fareMultiplier = 1;
+    this.demandMultiplier = 1;
+    this.shiftFares = 0;
+    this.shiftTrips = 0;
+    this.reputation = 50;
     this._bindEvents();
   }
 
@@ -53,9 +91,29 @@ export default class EconomySystem {
 
   _bindEvents() {
     // Passenger drop — amount already computed by PassengerSystem
+    this._subscribe("economy:period", (payload = {}) => {
+      this.period = payload.period || this.period;
+      this._recomputeMultipliers();
+      this.eventBus?.emit?.("economy:demand-changed", this.getDemandSnapshot());
+    });
+    this._subscribe("time:period-changed", (payload = {}) => {
+      this.period = payload.current || payload.period || this.period;
+      this._recomputeMultipliers();
+    });
+    this._subscribe("weather:changed", (payload = {}) => {
+      this.weather = String(payload.weather || payload.type || payload.id || this.weather).toLowerCase();
+      this._recomputeMultipliers();
+      this.eventBus?.emit?.("economy:demand-changed", this.getDemandSnapshot());
+    });
     this._subscribe("passenger:dropped", (payload = {}) => {
       const amount = Number(payload.fare ?? payload.amount) || 0;
-      if (amount > 0) this.addMoney(amount, "passenger_fare");
+      if (amount > 0) {
+        const boosted = Math.round(amount * (this.fareMultiplier || 1));
+        this.addMoney(boosted, "passenger_fare");
+        this.shiftFares += boosted;
+        this.shiftTrips += 1;
+        this.reputation = Math.min(100, (this.reputation || 50) + 0.5);
+      }
     });
 
     this._subscribe("economy:fare-earned", (payload = {}) => {

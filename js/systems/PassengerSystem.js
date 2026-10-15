@@ -70,6 +70,9 @@ export default class PassengerSystem {
     this.totalDroppedOff = 0;
     this.totalFares = 0;
     this.isNight = false;
+    this.period = "morning";
+    this.demandMultiplier = 1;
+    this.fareMultiplier = 1;
     this._disposers = [];
     this._clock = 0;
 
@@ -88,6 +91,16 @@ export default class PassengerSystem {
     });
     this._subscribe("daynight:changed", (p) => {
       this.isNight = Boolean(p?.isNight || p?.phase === "night");
+      this.period = p?.period || p?.phase || this.period;
+    });
+    this._subscribe("economy:demand-changed", (p) => {
+      this.demandMultiplier = Number(p?.demandMultiplier) || 1;
+      this.fareMultiplier = Number(p?.fareMultiplier) || 1;
+      this.period = p?.period || this.period;
+    });
+    this._subscribe("economy:period", (p) => {
+      this.period = p?.period || this.period;
+      this.isNight = Boolean(p?.isNight);
     });
     this._subscribe("weather:changed", (p) => {
       this.isNight = this.isNight; // keep
@@ -127,8 +140,9 @@ export default class PassengerSystem {
       } else {
         this._spawnBusStop(this.nextStopZ);
       }
-      this.nextStopZ +=
-        this.config.stopInterval + Math.random() * this.config.stopInterval * 0.5;
+      const dem = Math.max(0.55, Math.min(1.8, this.demandMultiplier || 1));
+      const interval = this.config.stopInterval / dem;
+      this.nextStopZ += interval + Math.random() * interval * 0.45;
     }
 
     // Animate waiting people
@@ -294,7 +308,7 @@ export default class PassengerSystem {
       this.config.baseFare +
       Math.round(Math.random() * 120) +
       (this.isNight ? 80 : 0);
-    const fareMult = this.isNight ? this.config.nightFareMult : 1;
+    const fareMult = (this.isNight ? this.config.nightFareMult : 1) * (this.fareMultiplier || 1);
     const askedFare = Math.round(base * fareMult);
 
     this.scene.add(group);
@@ -305,9 +319,7 @@ export default class PassengerSystem {
       destination,
       askedFare,
       atStop,
-      callLine: this.isNight
-        ? `Ina so in je ${destination}, Mama — night fare ₦${askedFare}`
-        : `Sannu! ${destination}? (₦${askedFare})`,
+      callLine: this._callLineFor(destination, askedFare),
     };
     this.passengers.push(passenger);
     this.eventBus?.emit?.("passenger:spotted", {
@@ -315,6 +327,22 @@ export default class PassengerSystem {
       fare: askedFare,
       atStop,
     });
+  }
+
+  _callLineFor(destination, askedFare) {
+    if (this.period === "morning" || this.period === "dawn") {
+      return `Good morning — ${destination}? Workers rate ₦${askedFare}`;
+    }
+    if (this.period === "afternoon") {
+      return `Market run to ${destination}? ₦${askedFare}`;
+    }
+    if (this.period === "evening") {
+      return `Heading to ${destination} after work — ₦${askedFare}`;
+    }
+    if (this.isNight || this.period === "night") {
+      return `Ina so in je ${destination}, night ₦${askedFare}`;
+    }
+    return `Sannu! ${destination}? (₦${askedFare})`;
   }
 
   _beginNegotiation(passenger) {

@@ -33,7 +33,11 @@ export default class LightingSystem {
     this.ambient = null;
     this.hemi = null;
     this.enabled = false;
-    this.timeOfDay = 0.5; // 0 to 1 (0.5 is noon)
+    this.timeOfDay = 0.5;
+    this.isNight = false;
+    this.streetlights = [];
+    this.playerHeadlights = null;
+    this.maxStreetlights = 16;
 
     this._disposers = [];
   }
@@ -42,6 +46,13 @@ export default class LightingSystem {
     this._createLights();
     this.enabled = true;
     this.eventBus?.emit?.("lighting:initialized");
+    this._subscribe("daynight:changed", (p) => this.setNightMode(Boolean(p?.isNight || p?.phase === "night" || p?.phase === "evening")));
+    this._subscribe("time:period-changed", (p) => {
+      const cur = p?.current || p?.period;
+      this.setNightMode(cur === "night" || cur === "evening");
+    });
+    this._subscribe("player:moved", (p) => this._followPlayer(p));
+    this._subscribe("game:started", () => this._ensureStreetlights());
   }
 
   _createLights() {
@@ -130,6 +141,94 @@ export default class LightingSystem {
       this.sun.intensity = this.config.sunIntensity;
     }
   }
+
+  _subscribe(name, h) {
+    if (!this.eventBus?.on) return;
+    const u = this.eventBus.on(name, h);
+    if (typeof u === "function") this._disposers.push(u);
+  }
+
+  setNightMode(night) {
+    this.isNight = Boolean(night);
+    if (this.sun) {
+      this.sun.intensity = this.isNight ? 0.08 : (this.config.sunIntensity || 2.2);
+      this.sun.color.setHex(this.isNight ? 0x8899bb : (this.config.sunColor || 0xfff4e6));
+    }
+    if (this.hemi) {
+      this.hemi.intensity = this.isNight ? 0.12 : (this.config.ambientIntensity || 0.6);
+    }
+    if (this.ambient) {
+      this.ambient.intensity = this.isNight ? 0.15 : 0.5;
+    }
+    if (this.scene?.fog) {
+      this.scene.fog.color.setHex(this.isNight ? 0x1a2233 : 0xd4c4a8);
+      if ("density" in this.scene.fog) {
+        this.scene.fog.density = this.isNight ? 0.028 : 0.015;
+      }
+    }
+    this._ensureStreetlights();
+    for (const lamp of this.streetlights) {
+      if (lamp.light) lamp.light.visible = this.isNight;
+      if (lamp.bulb) lamp.bulb.material.emissiveIntensity = this.isNight ? 1.2 : 0;
+    }
+    this.eventBus?.emit?.("lighting:night", { isNight: this.isNight });
+  }
+
+  _ensureStreetlights() {
+    if (!this.scene || this.streetlights.length >= this.maxStreetlights) return;
+    while (this.streetlights.length < this.maxStreetlights) {
+      const group = new THREE.Group();
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.1, 5.5, 6),
+        new THREE.MeshStandardMaterial({ color: 0x374151, flatShading: true }),
+      );
+      pole.position.y = 2.75;
+      group.add(pole);
+      const arm = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.08, 0.08),
+        new THREE.MeshStandardMaterial({ color: 0x4b5563, flatShading: true }),
+      );
+      arm.position.set(0.5, 5.3, 0);
+      group.add(arm);
+      const bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.15, 6, 6),
+        new THREE.MeshStandardMaterial({
+          color: 0xfbbf24,
+          emissive: 0xf59e0b,
+          emissiveIntensity: 0,
+        }),
+      );
+      bulb.position.set(1.0, 5.2, 0);
+      group.add(bulb);
+      const light = new THREE.PointLight(0xffd9a0, 1.4, 22, 2);
+      light.position.set(1.0, 5.0, 0);
+      light.visible = false;
+      group.add(light);
+      group.visible = true;
+      this.scene.add(group);
+      this.streetlights.push({ group, light, bulb, side: this.streetlights.length % 2 === 0 ? -1 : 1 });
+    }
+  }
+
+  _followPlayer(payload = {}) {
+    const z = Number(payload.z ?? payload.playerZ) || 0;
+    const spacing = 28;
+    for (let i = 0; i < this.streetlights.length; i++) {
+      const lamp = this.streetlights[i];
+      const base = Math.floor(z / spacing) * spacing;
+      const lz = base + (i - this.streetlights.length / 2) * spacing;
+      lamp.group.position.set(lamp.side * 7.5, 0, lz);
+    }
+  }
+
+  update(dt = 0, playerZ = 0) {
+    if (!this.enabled) return;
+    this._updateSunPosition?.(dt);
+    if (Number.isFinite(playerZ)) {
+      this._followPlayer({ z: playerZ });
+    }
+  }
+
 
   dispose() {
     this.scene.remove(this.sun);

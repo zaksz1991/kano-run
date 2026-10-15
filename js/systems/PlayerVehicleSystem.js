@@ -183,6 +183,15 @@ export default class PlayerVehicleSystem {
     this.weatherSystem = weatherSystem;
     this.roadSystem = roadSystem;
     this.eventBus = eventBus;
+    this._headlights = [];
+    this._nightLightsOn = false;
+    if (this.eventBus?.on) {
+      this.eventBus.on("lighting:night", (p) => this._setHeadlights(Boolean(p?.isNight)));
+      this.eventBus.on("daynight:changed", (p) =>
+        this._setHeadlights(Boolean(p?.isNight || p?.phase === "night" || p?.phase === "evening")),
+      );
+    }
+
     this._held = false;
     if (this.eventBus?.on) {
       this.eventBus.on("vehicle:hold", (p) => {
@@ -363,9 +372,11 @@ export default class PlayerVehicleSystem {
     this.initialized = true;
   }
 
-  update(deltaTime, state = {
-    if (this._held) { this.speed = 0; return; }
-}) {
+  update(deltaTime, state = {}) {
+    if (this._held) {
+      this.speed = 0;
+      return;
+    }
     if (
       !this.initialized ||
       !this.enabled ||
@@ -1092,6 +1103,39 @@ export default class PlayerVehicleSystem {
 
     return this;
   }
+
+  _setHeadlights(on) {
+    this._nightLightsOn = Boolean(on);
+    if (!this._headlights.length) this._attachHeadlights();
+    for (const l of this._headlights) {
+      l.visible = this._nightLightsOn;
+      if (l.isLight) l.intensity = this._nightLightsOn ? 1.6 : 0;
+    }
+  }
+
+  _attachHeadlights() {
+    const root = this.group || this.vehicle?.group || this.mesh;
+    if (!root || this._headlights.length) return;
+    for (const x of [-0.35, 0.35]) {
+      const light = new THREE.SpotLight(0xfff2d6, 0, 28, Math.PI / 7, 0.4, 1);
+      light.position.set(x, 1.05, 1.35);
+      light.target.position.set(x * 0.2, 0.4, 12);
+      root.add(light);
+      root.add(light.target);
+      const lens = new THREE.Mesh(
+        new THREE.CircleGeometry(0.08, 8),
+        new THREE.MeshStandardMaterial({
+          color: 0xffe4a3,
+          emissive: 0xffc04d,
+          emissiveIntensity: 0.2,
+        }),
+      );
+      lens.position.set(x, 1.0, 1.25);
+      root.add(lens);
+      this._headlights.push(light, lens);
+    }
+  }
+
 
   dispose() {
     ++this._vehicleRequest;

@@ -138,12 +138,38 @@ export default class DayNightSystem {
       const previous = this.period;
       this.period = nextPeriod;
 
+      const isNight = nextPeriod === "night";
+      const isEvening = nextPeriod === "evening";
+      this.emit("daynight:changed", {
+        isNight: isNight || isEvening,
+        phase: nextPeriod,
+        period: nextPeriod,
+        hour: this.hour,
+      });
+      this.emit("economy:period", {
+        period: nextPeriod,
+        hour: this.hour,
+        isNight,
+        isMorning: nextPeriod === "morning" || nextPeriod === "dawn",
+        isAfternoon: nextPeriod === "afternoon",
+        isEvening,
+        isRush:
+          (this.hour >= 7 && this.hour <= 9.5) ||
+          (this.hour >= 16.5 && this.hour <= 19),
+      });
       this.emit("time:period-changed", {
         previous,
         current: this.period,
         hour: this.hour,
       });
     }
+
+    // Continuous time tick for demand systems
+    this.emit("time:tick", {
+      hour: this.hour,
+      period: this.period,
+      isNight: this.period === "night" || this.period === "evening",
+    });
 
     this.applyLighting();
   }
@@ -160,6 +186,23 @@ export default class DayNightSystem {
 
     this.applyLighting();
 
+    this.emit("daynight:changed", {
+      isNight: this.period === "night" || this.period === "evening",
+      phase: this.period,
+      period: this.period,
+      hour: this.hour,
+    });
+    this.emit("economy:period", {
+      period: this.period,
+      hour: this.hour,
+      isNight: this.period === "night",
+      isMorning: this.period === "morning" || this.period === "dawn",
+      isAfternoon: this.period === "afternoon",
+      isEvening: this.period === "evening",
+      isRush:
+        (this.hour >= 7 && this.hour <= 9.5) ||
+        (this.hour >= 16.5 && this.hour <= 19),
+    });
     this.emit("time:changed", {
       hour: this.hour,
       period: this.period,
