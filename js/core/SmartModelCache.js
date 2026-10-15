@@ -2,15 +2,22 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
 /**
- * Shared GLB cache — load each path once, clone for instances.
- * Critical for realistic look without re-downloading every spawn.
+ * Shared GLB cache + clone pool (Phase 6).
+ * Load once, reuse clones to avoid GC spikes on mobile.
  */
 class SmartModelCache {
   constructor() {
     this.loader = new GLTFLoader();
-    this.cache = new Map(); // path -> { scene, animations }
+    this.cache = new Map();
     this.failed = new Set();
     this.inflight = new Map();
+    this.pools = new Map(); // path -> THREE.Object3D[]
+    this.lowPower = false;
+    this.maxPoolPerPath = 12;
+  }
+
+  setLowPower(on) {
+    this.lowPower = Boolean(on);
   }
 
   encode(path) {
@@ -21,9 +28,6 @@ class SmartModelCache {
     return this.cache.has(path);
   }
 
-  /**
-   * Load once; concurrent callers share the same promise.
-   */
   load(path) {
     if (this.failed.has(path)) return Promise.resolve(null);
     if (this.cache.has(path)) return Promise.resolve(this.cache.get(path));
@@ -34,6 +38,21 @@ class SmartModelCache {
         this.encode(path),
         (gltf) => {
           const entry = { scene: gltf.scene, animations: gltf.animations || [] };
+          // Freeze materials lightly
+          entry.scene.traverse((c) => {
+            if (c.isMesh) {
+              c.castShadow = !this.lowPower;
+              c.receiveShadow = !this.lowPower;
+              if (c.material) {
+                const mats = Array.isArray(c.material) ? c.material : [c.material];
+                for (const m of mats) {
+                  if (m) {
+                    m.precision = this.lowPower ? "lowp" : "mediump";
+                  }
+                }
+              }
+            }
+          });
           this.cache.set(path, entry);
           this.inflight.delete(path);
           resolve(entry);
@@ -50,32 +69,53 @@ class SmartModelCache {
     return p;
   }
 
-  /**
-   * Clone a cached model, scaled to target height (meters).
-   */
   clone(path, targetHeight = 0) {
+    const pool = this.pools.get(path);
+    if (pool && pool.length) {
+      const root = pool.pop();
+      root.visible = true;
+      if (targetHeight > 0) this._fitHeight(root, targetHeight);
+      return root;
+    }
     const entry = this.cache.get(path);
     if (!entry) return null;
     const root = entry.scene.clone(true);
-    if (targetHeight > 0) {
-      const box = new THREE.Box3().setFromObject(root);
-      const size = box.getSize(new THREE.Vector3());
-      if (size.y > 0.01) root.scale.setScalar(targetHeight / size.y);
-      const box2 = new THREE.Box3().setFromObject(root);
-      root.position.y -= box2.min.y;
-    }
     root.traverse((c) => {
       if (c.isMesh) {
-        c.castShadow = true;
-        c.receiveShadow = true;
+        c.castShadow = !this.lowPower;
+        c.receiveShadow = !this.lowPower;
       }
     });
+    if (targetHeight > 0) this._fitHeight(root, targetHeight);
     return root;
   }
 
-  /**
-   * Warm a short priority list (does not block game start if you don't await all).
-   */
+  release(path, object) {
+    if (!path || !object) return;
+    object.visible = false;
+    if (object.parent) object.parent.remove(object);
+    let pool = this.pools.get(path);
+    if (!pool) {
+      pool = [];
+      this.pools.set(path, pool);
+    }
+    if (pool.length < this.maxPoolPerPath) {
+      pool.push(object);
+    } else {
+      object.traverse((c) => {
+        if (c.geometry) c.geometry.dispose?.();
+      });
+    }
+  }
+
+  _fitHeight(root, targetHeight) {
+    const box = new THREE.Box3().setFromObject(root);
+    const size = box.getSize(new THREE.Vector3());
+    if (size.y > 0.01) root.scale.setScalar(targetHeight / size.y);
+    const box2 = new THREE.Box3().setFromObject(root);
+    root.position.y -= box2.min.y;
+  }
+
   async warm(paths, onOne) {
     const list = paths.filter(Boolean);
     await Promise.all(
@@ -86,7 +126,6 @@ class SmartModelCache {
     );
   }
 
-  /** Background queue — loads after start without blocking */
   warmBackground(paths, concurrency = 2) {
     const q = paths.filter((p) => p && !this.cache.has(p) && !this.failed.has(p));
     let i = 0;
@@ -96,10 +135,25 @@ class SmartModelCache {
         await this.load(path);
       }
     };
-    const workers = Array.from({ length: concurrency }, () => run());
+    const workers = [];
+    for (let w = 0; w < Math.max(1, concurrency); w++) workers.push(run());
     return Promise.all(workers);
+  }
+
+  dispose() {
+    for (const pool of this.pools.values()) {
+      for (const o of pool) {
+        o.traverse((c) => {
+          if (c.geometry) c.geometry.dispose?.();
+        });
+      }
+    }
+    this.pools.clear();
+    this.cache.clear();
+    this.failed.clear();
+    this.inflight.clear();
   }
 }
 
 export const modelCache = new SmartModelCache();
-export default modelCache;
+export default SmartModelCache;

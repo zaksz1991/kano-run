@@ -38,6 +38,15 @@ export default class LightingSystem {
     this.streetlights = [];
     this.playerHeadlights = null;
     this.maxStreetlights = 16;
+    this._subscribe("performance:quality", (p) => {
+      if (p?.maxStreetlights) this.maxStreetlights = p.maxStreetlights;
+      if (p?.lowPower) {
+        this.maxStreetlights = Math.min(this.maxStreetlights, 10);
+        for (const lamp of this.streetlights || []) {
+          if (lamp.light) lamp.light.distance = 16;
+        }
+      }
+    });
 
     this._disposers = [];
   }

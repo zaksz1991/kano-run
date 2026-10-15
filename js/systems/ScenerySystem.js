@@ -23,6 +23,8 @@ export default class ScenerySystem {
       ...config,
     };
     this.segments = [];
+    this.segmentPool = [];
+    this.lowPower = false;
     this.initialized = false;
     this.currentTheme = "market";
     this.disposers = [];
@@ -35,6 +37,15 @@ export default class ScenerySystem {
       dirt: new THREE.PlaneGeometry(40, this.config.segmentLength),
     };
 
+    this._subscribe("performance:quality", (p) => {
+      this.lowPower = Boolean(p?.lowPower || p?.tier === "low");
+      if (this.lowPower) {
+        this.config.segmentsAhead = 6;
+        this.config.segmentsBehind = 1;
+        this.config.buildingDensity = 0.55;
+        this.config.propDensity = 0.4;
+      }
+    });
     this._subscribe("game:started", () => {
       // Background: expand variety without blocking
       modelCache.warmBackground(
@@ -81,6 +92,8 @@ export default class ScenerySystem {
   clear() {
     for (const s of this.segments) this.scene.remove(s.group);
     this.segments = [];
+    this.segmentPool = [];
+    this.lowPower = false;
   }
 
   _buildingPaths() {

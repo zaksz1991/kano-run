@@ -146,6 +146,10 @@ export default class VehicleSystem {
     this.config = { ...DEFAULTS, ...(GAME_CONFIG?.traffic ?? {}), ...config };
 
     this.vehicles = new Map();
+    this._subscribe("performance:quality", (p) => {
+      if (p?.maxVehicles) this.config.maxVehicles = p.maxVehicles;
+      if (p?.lowPower) this.config.maxVehicles = Math.min(this.config.maxVehicles || 28, 18);
+    });
     this.isNight = false;
     this._subscribe("lighting:night", (p) => {
       this.isNight = Boolean(p?.isNight);

@@ -395,6 +395,7 @@ export default class Game {
     );
 
     const wave2 = [
+      ["performance", () => import("../systems/PerformanceSystem.js")],
       ["world", () => import("../systems/WorldSystem.js")],
       ["road", () => import("../systems/RoadSystem.js")],
       ["scenery", () => import("../systems/ScenerySystem.js")],
