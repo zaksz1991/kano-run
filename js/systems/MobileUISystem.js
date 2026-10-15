@@ -1,12 +1,12 @@
 /**
  * Mobile-first chrome: compact top bar + bottom driving dock.
+ * Aggressively hides all old desktop panels to prevent overlap.
  * Direct InputManager integration for zero-latency touch controls.
- * 100% Event-driven (no polling) for optimal mobile battery life.
  */
 export default class MobileUISystem {
   constructor({ eventBus = null, input = null, gameState = null, audio = null } = {}) {
     this.eventBus = eventBus;
-    this.input = input; // Direct access to InputManager for seamless physics integration
+    this.input = input;
     this.gameState = gameState;
     this.audio = audio;
     
@@ -20,11 +20,13 @@ export default class MobileUISystem {
     this._buildUI();
     this._bindEvents();
     this._bindTouchControls();
+    this._hideOldDesktopPanels();
 
     this._subscribe("game:started", () => {
       document.body.classList.remove("kano-lobby", "kano-loading");
       document.body.classList.add("kano-playing");
       this.show();
+      this._hideOldDesktopPanels();
     });
     this._subscribe("menu:open", () => {
       document.body.classList.add("kano-lobby");
@@ -54,6 +56,7 @@ export default class MobileUISystem {
       /* Top Bar */
       .ui-top {
         display: flex; justify-content: space-between; align-items: flex-start; padding: 8px;
+        gap: 8px;
       }
       .ui-panel {
         background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px);
@@ -94,9 +97,9 @@ export default class MobileUISystem {
         width: 80px; height: 80px; font-size: 32px;
       }
 
-      /* Meta Dock (Missions, Radio, Pause) */
+      /* Meta Dock (Missions, Radio, Pause) - positioned ABOVE driving controls */
       .meta-dock {
-        display: flex; gap: 8px; pointer-events: auto; margin-bottom: 8px;
+        display: flex; gap: 8px; pointer-events: auto; margin-bottom: 12px;
       }
       .meta-btn {
         min-width: 56px; height: 40px; border-radius: 8px;
@@ -119,17 +122,27 @@ export default class MobileUISystem {
         border-top: 2px solid #38bdf8;
       }
 
+      /* 🔥 AGGRESSIVELY HIDE OLD DESKTOP PANELS ON MOBILE */
+      @media (pointer: coarse), (max-width: 900px) {
+        #hud-radio, .hud-radio-panel, #kano-daily-fab,
+        #kano-daily-ui, .daily-missions-panel,
+        #hud-top-left, #hud-top-right,
+        .hud-panel, .hud-radio-panel,
+        #kano-game-controls,
+        [class*="daily"], [class*="mission-popup"],
+        [id*="daily"], [id*="radio-panel"] {
+          display: none !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
+      }
+
       /* Responsive adjustments for very small screens (320px - 360px) */
       @media (max-width: 360px) {
         .control-btn { width: 60px; height: 60px; font-size: 22px; }
         .control-btn.accel, .control-btn.brake { width: 72px; height: 72px; font-size: 28px; }
         .ui-panel { min-width: 85px; padding: 6px 8px; }
         .ui-row { font-size: 11px; }
-      }
-      
-      /* Hide overlapping desktop panels on mobile */
-      @media (pointer: coarse) {
-        #hud-radio, .hud-radio-panel, #kano-daily-fab { display: none !important; }
       }
     `;
     document.head.appendChild(st);
@@ -159,7 +172,7 @@ export default class MobileUISystem {
     topRight.innerHTML = `
       <div class="ui-row" style="justify-content:flex-end;"><span id="m-speed" class="ui-value" style="margin-left:0; font-size:18px; font-weight:800;">0</span> <span style="font-size:11px; opacity:0.8; margin-top:2px;">km/h</span></div>
       <div class="ui-row" style="justify-content:flex-end;"><span class="ui-icon">🕒</span> <span id="m-time" class="ui-value">12:00</span></div>
-      <div class="ui-row" style="justify-content:flex-end;"><span class="ui-icon" id="m-weather-icon">☀️</span> <span id="m-weather" class="ui-value">Sunny</span></div>
+      <div class="ui-row" style="justify-content:flex-end;"><span class="ui-icon" id="m-weather-icon">️</span> <span id="m-weather" class="ui-value">Sunny</span></div>
     `;
 
     const topBar = document.createElement("div");
@@ -179,7 +192,7 @@ export default class MobileUISystem {
       <div class="control-btn" data-action="right">▶</div>
     `;
 
-    // Right: Horn, Brake, Accelerate
+    // Right: Horn, Brake, Accelerate + Meta buttons ABOVE
     const actionGroup = document.createElement("div");
     actionGroup.className = "control-group";
     actionGroup.style.flexDirection = "column";
@@ -193,7 +206,7 @@ export default class MobileUISystem {
       <div class="control-group">
         <div class="control-btn horn" data-action="horn">📢</div>
         <div class="control-btn brake" data-action="brake">🛑</div>
-        <div class="control-btn accel" data-action="accelerate">🚀</div>
+        <div class="control-btn accel" data-action="accelerate"></div>
       </div>
     `;
 
@@ -229,16 +242,13 @@ export default class MobileUISystem {
       if (!action) return;
 
       const startAction = (e) => {
-        e.preventDefault(); // Prevents scrolling/zooming on touch
+        e.preventDefault();
         btn.classList.add("active");
-        
-        // 🔥 Direct integration with InputManager ensures PlayerVehicleSystem works flawlessly
         if (this.input && typeof this.input.setKey === "function") {
           this.input.setKey(action, true);
         } else {
           this.eventBus?.emit?.(`input:${action}`, { active: true });
         }
-
         if (action === "horn") {
           this.eventBus?.emit?.("audio:horn");
           setTimeout(() => btn.classList.remove("active"), 150);
@@ -257,12 +267,9 @@ export default class MobileUISystem {
         }
       };
 
-      // Touch events (Mobile)
       btn.addEventListener("touchstart", startAction, { passive: false });
       btn.addEventListener("touchend", endAction, { passive: false });
       btn.addEventListener("touchcancel", endAction, { passive: false });
-      
-      // Mouse events (Desktop testing)
       btn.addEventListener("mousedown", startAction);
       btn.addEventListener("mouseup", endAction);
       btn.addEventListener("mouseleave", endAction);
@@ -294,12 +301,11 @@ export default class MobileUISystem {
     this._subscribe("weather:changed", (p) => {
       if (this.elements.weather) this.elements.weather.textContent = (p.type || "Clear").charAt(0).toUpperCase() + (p.type || "Clear").slice(1);
       if (this.elements.weatherIcon) {
-        const icons = { clear: "☀️", harmattan: "🌫️", rain: "🌧️", storm: "⛈️", night: "🌙" };
+        const icons = { clear: "☀️", sunny: "☀️", cloudy: "", harmattan: "🌫️", rain: "🌧️", storm: "️", night: "🌙" };
         this.elements.weatherIcon.textContent = icons[p.type] || "☀️";
       }
     });
     
-    // Fallback for initial state if events already fired
     if (this.gameState?.profile) {
       if (this.elements.money) this.elements.money.textContent = `₦${(this.gameState.profile.money || 0).toLocaleString()}`;
       if (this.elements.rep) this.elements.rep.textContent = `Lvl ${this.gameState.profile.level || 1}`;
@@ -308,6 +314,7 @@ export default class MobileUISystem {
 
   show() {
     if (this.container) this.container.style.display = this.isMobile ? "flex" : "none";
+    this._hideOldDesktopPanels();
   }
 
   hide() {
@@ -369,6 +376,35 @@ export default class MobileUISystem {
   _closeSheet() {
     this._sheet?.remove();
     this._sheet = null;
+  }
+
+  // 🔥 CRITICAL: Hide all old desktop panels that cause overlap
+  _hideOldDesktopPanels() {
+    if (typeof document === "undefined") return;
+    
+    const selectorsToHide = [
+      "#hud-radio", ".hud-radio-panel", "#kano-daily-fab",
+      "#kano-daily-ui", ".daily-missions-panel",
+      "#hud-top-left", "#hud-top-right",
+      ".hud-panel",
+      "#kano-game-controls",
+      "[class*='daily']", "[class*='mission-popup']",
+      "[id*='daily']", "[id*='radio-panel']",
+      "#radio-kano-panel", ".radio-panel",
+    ];
+
+    selectorsToHide.forEach(selector => {
+      try {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(el => {
+          if (el && !el.id?.includes("kano-mobile")) {
+            el.style.display = "none";
+            el.style.opacity = "0";
+            el.style.pointerEvents = "none";
+          }
+        });
+      } catch {}
+    });
   }
 
   _subscribe(name, h) {
