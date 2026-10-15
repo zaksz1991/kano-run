@@ -1,4 +1,4 @@
-﻿import { GAME_CONFIG } from "../core/config.js";
+import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
   maxActiveMissions: 3,
@@ -21,7 +21,7 @@ const MISSION_TEMPLATES = [
   {
     id: "earn_fares",
     type: "economy",
-    description: "Earn N{amount} in fares",
+    description: "Earn ₦{amount} in fares",
     target: 3000,
     xpReward: 200,
     moneyReward: 1000,
@@ -121,6 +121,7 @@ export default class MissionSystem {
     this.lastDailyReset = 0;
     this.enabled = false;
 
+    this.uiContainer = null;
     this._disposers = [];
     this._bindEvents();
   }
@@ -132,10 +133,12 @@ export default class MissionSystem {
       if (this.activeMissions.length === 0) {
         this.generateDailyMissions();
       }
+      this._renderUI();
     });
 
     this._subscribe("game:stopped", () => {
       this.enabled = false;
+      this._destroyUI();
     });
 
     this._subscribe("passenger:dropped", (payload = {}) => {
@@ -224,7 +227,10 @@ export default class MissionSystem {
       id: `mission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       templateId: template.id,
       type: template.type,
-      description: template.description.replace("{count}", Math.ceil(template.target * multiplier)).replace("{amount}", Math.ceil(template.target * multiplier)).replace("{distance}", Math.ceil(template.target * multiplier)),
+      description: template.description
+        .replace("{count}", Math.ceil(template.target * multiplier))
+        .replace("{amount}", Math.ceil(template.target * multiplier))
+        .replace("{distance}", Math.ceil(template.target * multiplier)),
       target: Math.ceil(template.target * multiplier),
       progress: 0,
       xpReward: Math.ceil(template.xpReward * multiplier),
@@ -337,7 +343,6 @@ export default class MissionSystem {
   }
 
   _resetDailyMissions() {
-    // Move uncompleted missions to history
     for (const mission of this.activeMissions) {
       if (!mission.completed) {
         this.missionHistory.push({
@@ -382,6 +387,7 @@ export default class MissionSystem {
       completed: this.getCompletedMissions(),
       progress: this.getMissionProgress(),
     });
+    this._renderUI();
   }
 
   _saveMissions() {
@@ -402,6 +408,198 @@ export default class MissionSystem {
     }
   }
 
+  // 🔥 PHASE 1: Mission UI Rendering
+  _renderUI() {
+    this._destroyUI();
+    if (!this.enabled || this.activeMissions.length === 0) return;
+
+    this.uiContainer = document.createElement("div");
+    this.uiContainer.id = "kano-mission-ui";
+
+    if (!document.getElementById("kano-mission-css")) {
+      const style = document.createElement("style");
+      style.id = "kano-mission-css";
+      style.textContent = `
+        #kano-mission-ui {
+          position: fixed; 
+          top: calc(60px + env(safe-area-inset-top, 0px)); 
+          right: 12px; 
+          z-index: 6700; 
+          width: 280px; 
+          pointer-events: none;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .mission-card {
+          background: rgba(15, 23, 42, 0.85); 
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(56, 189, 248, 0.3); 
+          border-radius: 12px;
+          padding: 14px; 
+          margin-bottom: 10px; 
+          pointer-events: auto;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+          animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight { 
+          from { transform: translateX(20px); opacity: 0; } 
+          to { transform: translateX(0); opacity: 1; } 
+        }
+        .mission-header { 
+          display: flex; 
+          align-items: center; 
+          gap: 10px; 
+          margin-bottom: 8px; 
+        }
+        .mission-icon { 
+          font-size: 20px; 
+          width: 32px; 
+          height: 32px; 
+          display: flex; 
+          align-items: center; 
+          justify-content: center;
+          background: rgba(56, 189, 248, 0.15);
+          border-radius: 8px;
+        }
+        .mission-title { 
+          font-size: 12px; 
+          font-weight: 800; 
+          color: #38bdf8; 
+          text-transform: uppercase; 
+          letter-spacing: 0.5px; 
+        }
+        .mission-desc { 
+          font-size: 13px; 
+          color: #e2e8f0; 
+          line-height: 1.4; 
+          margin-bottom: 12px; 
+        }
+        .progress-container { margin-bottom: 10px; }
+        .progress-text {
+          display: flex;
+          justify-content: space-between;
+          font-size: 11px;
+          color: #94a3b8;
+          margin-bottom: 4px;
+          font-weight: 600;
+        }
+        .progress-bar-bg { 
+          width: 100%; 
+          height: 8px; 
+          background: rgba(255,255,255,0.1); 
+          border-radius: 4px; 
+          overflow: hidden; 
+        }
+        .progress-bar-fill { 
+          height: 100%; 
+          background: linear-gradient(90deg, #38bdf8, #22c55e); 
+          border-radius: 4px; 
+          transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
+        .mission-rewards { 
+          display: flex; 
+          justify-content: space-between; 
+          align-items: center;
+          padding-top: 10px;
+          border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .reward-item { 
+          display: flex; 
+          align-items: center; 
+          gap: 6px; 
+          font-size: 12px; 
+          font-weight: 700; 
+        }
+        .reward-item.money { color: #fbbf24; }
+        .reward-item.xp { color: #a78bfa; }
+        .claim-btn {
+          width: 100%;
+          margin-top: 10px;
+          padding: 10px;
+          border: none;
+          border-radius: 8px;
+          background: #22c55e;
+          color: #fff;
+          font-weight: 800;
+          font-size: 13px;
+          cursor: pointer;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          transition: background 0.2s, transform 0.1s;
+        }
+        .claim-btn:active {
+          background: #16a34a;
+          transform: scale(0.96);
+        }
+        @media (max-width: 360px) {
+          #kano-mission-ui { width: 240px; right: 8px; }
+          .mission-card { padding: 10px; }
+          .mission-desc { font-size: 12px; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // Render max 2 active missions to prevent mobile screen clutter
+    this.activeMissions.slice(0, 2).forEach((mission) => {
+      const card = document.createElement("div");
+      card.className = "mission-card";
+      
+      const progressPct = Math.min(100, (mission.progress / mission.target) * 100);
+      const isCompleted = mission.progress >= mission.target;
+      
+      let icon = "📋";
+      if (mission.icon === "passenger") icon = "🧍";
+      else if (mission.icon === "money") icon = "💰";
+      else if (mission.icon === "shield") icon = "🛡️";
+      else if (mission.icon === "zap") icon = "⚡";
+      else if (mission.icon === "route") icon = "🛣️";
+      else if (mission.icon === "map") icon = "📍";
+      else if (mission.icon === "badge") icon = "👮";
+      else if (mission.icon === "moon") icon = "🌙";
+
+      card.innerHTML = `
+        <div class="mission-header">
+          <div class="mission-icon">${icon}</div>
+          <div class="mission-title">${mission.type.replace("_", " ").toUpperCase()}</div>
+        </div>
+        <div class="mission-desc">${mission.description}</div>
+        <div class="progress-container">
+          <div class="progress-text">
+            <span>Progress</span>
+            <span>${Math.floor(mission.progress)} / ${mission.target}</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: ${progressPct}%"></div>
+          </div>
+        </div>
+        <div class="mission-rewards">
+          <div class="reward-item money">💰 ₦${mission.moneyReward.toLocaleString()}</div>
+          <div class="reward-item xp">⭐ ${mission.xpReward} XP</div>
+        </div>
+        ${isCompleted && !mission.claimed ? `<button class="claim-btn" data-mission-id="${mission.id}">CLAIM REWARD</button>` : ""}
+      `;
+      
+      this.uiContainer.appendChild(card);
+    });
+
+    // Bind claim buttons
+    this.uiContainer.querySelectorAll(".claim-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const missionId = e.target.dataset.missionId;
+        this.claimMission(missionId);
+      });
+    });
+
+    document.body.appendChild(this.uiContainer);
+  }
+
+  _destroyUI() {
+    if (this.uiContainer) {
+      this.uiContainer.remove();
+      this.uiContainer = null;
+    }
+  }
+
   _subscribe(event, handler) {
     if (!this.eventBus?.on) return;
     const unsub = this.eventBus.on(event, handler);
@@ -409,6 +607,7 @@ export default class MissionSystem {
   }
 
   dispose() {
+    this._destroyUI();
     for (const unsub of this._disposers) unsub();
     this._disposers = [];
   }
