@@ -22,9 +22,9 @@ export default class CheckpointSystem {
     this.player = playerVehicleSystem;
     this.config = {
       speedLimit: 12,
-      spawnStart: 220,
-      spawnGapMin: 420,
-      spawnGapMax: 620,
+      spawnStart: 550,
+      spawnGapMin: 900,
+      spawnGapMax: 1400,
       approachDistance: 55,
       stopDistance: 6,
       fineBase: 200,
@@ -198,50 +198,48 @@ export default class CheckpointSystem {
 
   _showPanel({ fine, speed, limit, overSpeed }) {
     this._hidePanel();
-
     const panel = document.createElement("div");
-    panel.id = "karota-stop-panel";
+    panel.id = "kano-karota-panel";
     Object.assign(panel.style, {
       position: "fixed",
-      left: "50%",
-      top: "50%",
-      transform: "translate(-50%, -50%)",
-      zIndex: "2200",
-      width: "min(360px, 92vw)",
-      background: "rgba(15, 23, 42, 0.97)",
-      border: "2px solid #fbbf24",
-      borderRadius: "14px",
-      padding: "20px",
-      color: "#f8fafc",
+      inset: "0",
+      zIndex: "8000",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "16px",
+      background: "rgba(3,9,18,0.82)",
       fontFamily: "system-ui, Arial, sans-serif",
-      textAlign: "center",
-      boxShadow: "0 16px 40px rgba(0,0,0,0.5)",
+      color: "#f8fafc",
     });
-
     panel.innerHTML = `
-      <div style="font-size:12px;letter-spacing:2px;color:#fbbf24;margin-bottom:6px">KAROTA CHECKPOINT</div>
-      <div style="font-size:18px;font-weight:700;margin-bottom:8px">Stop for inspection</div>
-      <div style="font-size:13px;color:#94a3b8;margin-bottom:14px">
-        Your speed: <b style="color:#fff">${speed}</b> · Limit: <b>${limit}</b>
-        ${overSpeed ? '<br><span style="color:#f87171">Over speed — fine applies</span>' : '<br><span style="color:#4ade80">Within limit</span>'}
-      </div>
-      <div style="font-size:22px;font-weight:800;margin-bottom:16px">Fine: ₦${fine}</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button data-act="pay" style="padding:12px;border:0;border-radius:8px;background:#22c55e;color:#052e16;font-weight:700;cursor:pointer">Pay fine</button>
-        <button data-act="negotiate" style="padding:12px;border:0;border-radius:8px;background:#fbbf24;color:#422006;font-weight:700;cursor:pointer">Negotiate</button>
-        <button data-act="run" style="padding:12px;border:0;border-radius:8px;background:#ef4444;color:#fff;font-weight:700;cursor:pointer">Run (chase risk)</button>
-      </div>
-    `;
-
-    panel.querySelectorAll("button").forEach((btn) => {
+      <div style="width:min(360px,100%);background:linear-gradient(160deg,#1e293b,#0f172a);border:2px solid #f59e0b;border-radius:16px;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,0.5)">
+        <div style="font-size:11px;letter-spacing:2px;color:#fbbf24;font-weight:800">KAROTA CHECKPOINT</div>
+        <div style="font-size:22px;font-weight:900;margin:8px 0 4px">Official stop</div>
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:14px;line-height:1.4">
+          Vehicle inspection · License check · Road worthiness
+          ${overSpeed ? '<br><span style="color:#f87171">Speed limit exceeded ('+speed+' / '+limit+' km/h)</span>' : '<br><span style="color:#4ade80">Within speed limit</span>'}
+        </div>
+        <div style="background:rgba(0,0,0,0.25);border-radius:10px;padding:12px;margin-bottom:14px">
+          <div style="font-size:12px;color:#94a3b8">Assessed fine</div>
+          <div style="font-size:28px;font-weight:900;color:#fbbf24">₦${fine}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px">Paying preserves reputation. Running risks chase.</div>
+        </div>
+        <div style="display:grid;gap:8px">
+          <button data-act="pay" style="padding:14px;border:0;border-radius:10px;background:#22c55e;color:#052e16;font-weight:900;font-size:15px;cursor:pointer">Pay fine ₦${fine}</button>
+          <button data-act="negotiate" style="padding:12px;border:1px solid #38bdf8;border-radius:10px;background:transparent;color:#e0f2fe;font-weight:700;cursor:pointer">Negotiate (may reduce)</button>
+          <button data-act="run" style="padding:12px;border:1px solid #f87171;border-radius:10px;background:transparent;color:#fecaca;font-weight:700;cursor:pointer">Drive off (risk chase)</button>
+        </div>
+      </div>`;
+    document.body.appendChild(panel);
+    panel.querySelectorAll("[data-act]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const act = btn.getAttribute("data-act");
         this._resolveStop(act, fine);
       });
     });
-
-    document.body.appendChild(panel);
     this._panel = panel;
+    this.eventBus?.emit?.("game:pause");
   }
 
   _resolveStop(action, fine) {

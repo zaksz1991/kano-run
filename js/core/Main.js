@@ -169,14 +169,14 @@ class KanoRunApp {
       clearInterval(pulse);
       clearTimeout(warn);
       this.setProgress(92);
-      this.setStatus("Starting run…");
-      console.log("[Kano Run] game.initialize() finished. Calling game.start()...");
+      this.setStatus("Select driver & route");
+      console.log("[Kano Run] game.initialize() finished. Opening lobby...");
 
       if (this.destroyed) return;
 
-      await this.game.start();
+      // PHASE1: simulation starts only after lobby START RUN
       this.setProgress(100);
-      console.log("[Kano Run] game.start() finished successfully.");
+      console.log("[Kano Run] Lobby open — call START RUN to begin driving.");
 
       if (this.destroyed) return;
 
@@ -187,8 +187,14 @@ class KanoRunApp {
         this.loadingScreen.classList.add("hidden");
       }
 
-      document.dispatchEvent(new CustomEvent("kanorun:started"));
-      console.log("[Kano Run] Game started! Loading screen hidden.");
+      try {
+        this.game.events?.emit?.("menu:open");
+        this.game.systems?.get?.("menu")?.open?.();
+      } catch (e) {
+        console.warn("[Kano Run] menu open", e);
+      }
+      document.dispatchEvent(new CustomEvent("kanorun:lobby"));
+      console.log("[Kano Run] Lobby ready — world paused until START RUN.");
     } catch (error) {
       console.error("[Kano Run] Start failed with error:", error);
 

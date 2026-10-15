@@ -95,6 +95,10 @@ export default class Game {
       this.resize();
 
       this.isInitialized = true;
+      try {
+        this.audio?.stopRadio?.();
+        this.audio?.mute?.();
+      } catch (e) {}
 
       this.events.emit("game:initialized", {
         game: this,

@@ -67,6 +67,14 @@ export default class MenuSystem {
   constructor({ eventBus = null, gameState = null } = {}) {
     this.eventBus = eventBus;
     this.gameState = gameState;
+    if (eventBus?.on) {
+      eventBus.on("menu:open", () => this.open());
+      eventBus.on("game:initialized", () => {
+        setTimeout(() => {
+          if (!this._root || !document.body.contains(this._root)) this.open();
+        }, 150);
+      });
+    }
     this.root = null;
     this.selection = {
       driverId: "ruffneck",

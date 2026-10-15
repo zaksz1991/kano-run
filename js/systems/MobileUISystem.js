@@ -11,7 +11,19 @@ export default class MobileUISystem {
     this._sheet = null;
     this._injectCss();
     this._buildChrome();
-    this._subscribe("game:started", () => this.show());
+    this._subscribe("game:started", () => {
+      document.body.classList.remove("kano-lobby", "kano-loading");
+      document.body.classList.add("kano-playing");
+      this.show();
+    });
+    this._subscribe("menu:open", () => {
+      document.body.classList.add("kano-lobby");
+      document.body.classList.remove("kano-playing");
+      this.hide();
+    });
+    this._subscribe("game:initialized", () => {
+      document.body.classList.remove("kano-loading");
+    });
     this._subscribe("game:stopped", () => this.hide());
     this._subscribe("game:over", () => this.hide());
     this._subscribe("economy:balance-changed", (p) => {

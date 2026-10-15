@@ -14,7 +14,7 @@ const DEFAULTS = {
   laneChangeSpeed: 8,
   lateralGrip: 12,
   handbrakeGrip: 3,
-  fuelConsumption: 0.0015,
+  fuelConsumption: 0.0004,
   offRoadDrag: 0.55,
   offRoadDamage: 2,
   maximumSteeringAngle: 0.35,
