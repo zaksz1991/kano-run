@@ -1,4 +1,9 @@
-﻿export default class AudioManager {
+/**
+ * Kano Run Audio Manager
+ * Handles dynamic engine pitch, localized SFX, and the Kano Radio network.
+ * Optimized for mobile Web Audio API (no DOM <audio> elements).
+ */
+export default class AudioManager {
   constructor() {
     this.context = null;
     this.masterGain = null;
@@ -20,6 +25,11 @@
     this._engineMaxSpeed = 34;
     this._radioVolume = 0.4;
 
+    // Procedural siren properties (saves downloading a siren.mp3)
+    this.sirenOsc = null;
+    this.sirenGain = null;
+    this.sirenInterval = null;
+
     this.radioStations = Object.freeze([
       { id: "radio-kano", name: "Radio Kano" },
       { id: "arewa", name: "Arewa Radio" },
@@ -37,8 +47,7 @@
     if (this.isInitialized) return;
 
     try {
-      const AudioContextClass =
-        window.AudioContext || window.webkitAudioContext;
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 
       if (!AudioContextClass) {
         throw new Error("Web Audio API is not supported.");
@@ -66,8 +75,8 @@
 
       this.isInitialized = true;
 
-      document.addEventListener("click", this._boundUnlock);
-      document.addEventListener("touchstart", this._boundUnlock);
+      document.addEventListener("click", this._boundUnlock, { once: true });
+      document.addEventListener("touchstart", this._boundUnlock, { once: true });
 
       if (this.context.state === "running") {
         console.log("[AudioManager] Audio context ready.");
@@ -90,7 +99,8 @@
     try {
       await Promise.all(
         priority.map((name) =>
-          this._loadBuffer(`/assets/models/audio/${name}.mp3`, name)
+          // NOTE: Based on your repo tree, 'audio' is a sibling to 'assets', so the path is /audio/
+          this._loadBuffer(`/audio/${name}.mp3`, name)
         )
       );
     } finally {
@@ -101,7 +111,7 @@
     const radioIds = this.radioStations.map((station) => station.id);
     Promise.allSettled(
       radioIds.map((name) =>
-        this._loadBuffer(`/assets/models/audio/${name}.mp3`, name)
+        this._loadBuffer(`/audio/${name}.mp3`, name)
       )
     ).then(() => {
       console.info(
@@ -326,6 +336,41 @@
   playSFX(type) {
     if (!this.isInitialized || this.isMuted || !this.context) return;
 
+    // 🔥 Procedural Police Siren (No MP3 needed, saves bandwidth!)
+    if (type === "siren_on" && !this.sirenOsc) {
+      this.sirenOsc = this.context.createOscillator();
+      this.sirenGain = this.context.createGain();
+      this.sirenOsc.type = "sawtooth";
+      this.sirenOsc.frequency.value = 600;
+      this.sirenGain.gain.value = 0.12;
+      this.sirenOsc.connect(this.sirenGain);
+      this.sirenGain.connect(this.masterGain);
+      this.sirenOsc.start();
+      
+      let isHigh = false;
+      this.sirenInterval = setInterval(() => {
+        if (!this.sirenOsc) return;
+        const now = this.context.currentTime;
+        this.sirenOsc.frequency.linearRampToValueAtTime(isHigh ? 600 : 900, now + 0.6);
+        isHigh = !isHigh;
+      }, 600);
+      return;
+    }
+
+    if (type === "siren_off" && this.sirenOsc) {
+      clearInterval(this.sirenInterval);
+      try { 
+        this.sirenOsc.stop(); 
+        this.sirenOsc.disconnect(); 
+        this.sirenGain.disconnect(); 
+      } catch(e) {}
+      this.sirenOsc = null; 
+      this.sirenGain = null; 
+      this.sirenInterval = null;
+      return;
+    }
+
+    // Standard SFX
     const aliases = {
       pickup: "coin",
       coin: "coin",
@@ -374,6 +419,7 @@
     if (this.isMuted) {
       this._stopEngineNode();
       this.stopRadio();
+      this.playSFX("siren_off");
     } else if (this._engineSpeed > 0) {
       this._startEngineNode();
     }
@@ -384,6 +430,19 @@
   destroy() {
     this._stopEngineNode();
     this.stopRadio();
+    
+    // Clean up procedural siren
+    if (this.sirenOsc) {
+      clearInterval(this.sirenInterval);
+      try {
+        this.sirenOsc.stop();
+        this.sirenOsc.disconnect();
+        this.sirenGain.disconnect();
+      } catch {}
+      this.sirenOsc = null;
+      this.sirenGain = null;
+      this.sirenInterval = null;
+    }
 
     document.removeEventListener("click", this._boundUnlock);
     document.removeEventListener("touchstart", this._boundUnlock);
