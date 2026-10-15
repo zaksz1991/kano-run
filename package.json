@@ -1,12 +1,12 @@
 {
   "name": "kano-run",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "node ./node_modules/vite/bin/vite.js",
+    "build": "node ./node_modules/vite/bin/vite.js build",
+    "preview": "node ./node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
     "three": "^0.170.0",
@@ -14,5 +14,8 @@
   },
   "devDependencies": {
     "vite": "^5.4.21"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
