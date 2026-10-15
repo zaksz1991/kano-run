@@ -4,15 +4,8 @@ import { GAME_CONFIG } from "../core/config.js";
 import { MODEL_PATHS, MODEL_SCALES } from "../core/AssetCatalog.js";
 
 const DEFAULTS = {
-  laneWidth: 3.8, // 🔥 Increased for more breathing room
+  laneWidth: 3.8,
   roadWidth: 14,
-  acceleration: 12,
-  braking: 20,
-  maxSpeed: 34,
-  reverseSpeed: 5,
-  steeringSpeed: 8,
-  steeringSmoothing: 10,
-  offRoadDrag: 0.55,
   fuelCapacity: 100,
   fuelConsumption: 0.028,
   initialCondition: 100,
@@ -83,7 +76,7 @@ function disposeMaterial(material) {
 
 export default class PlayerVehicleSystem {
   constructor(ctx = {}) {
-    const { scene, camera = null, inputManager = null, input = null, gameState = null, drivingSystem = null, collisionSystem = null, weatherSystem = null, roadSystem = null, eventBus = null, config = {} } = ctx;
+    const { scene, camera = null, inputManager = null, input = null, gameState = null, eventBus = null, config = {} } = ctx;
 
     if (!scene) throw new Error("PlayerVehicleSystem requires a Three.js scene.");
 
@@ -91,39 +84,29 @@ export default class PlayerVehicleSystem {
     this.camera = camera;
     this.inputManager = inputManager || input || null;
     this.gameState = gameState;
-    this.drivingSystem = drivingSystem;
-    this.collisionSystem = collisionSystem;
-    this.weatherSystem = weatherSystem;
-    this.roadSystem = roadSystem;
     this.eventBus = eventBus;
     
-    this.physicsRoll = 0;
-    this.usePhysicsAssist = true;
-    this._weatherGrip = 1;
     this._headlights = [];
     this._nightLightsOn = false;
     this._held = false;
     this._speedCap = 0;
     this.limpMode = false;
 
+    // 🔥 Physics State Sync
+    this.physicsState = { 
+      x: 0, z: 0, y: 0, speed: 0, speedKmh: 0, 
+      roll: 0, quaternion: new THREE.Quaternion() 
+    };
+
     if (this.eventBus?.on) {
       this.eventBus.on("physics:state", (p) => {
-        if (!this.usePhysicsAssist) return;
-        this.physicsRoll = Number(p?.roll) || 0;
-        if (this.vehicle) this.vehicle.rotation.z = this.physicsRoll;
-        if (Number.isFinite(p?.speedKmh) && p.speedKmh > 1) {
-          this.speed = this.speed * 0.7 + (p.speedKmh / 3.6) * 0.3;
-        }
-      });
-      this.eventBus.on("weather:changed", (p) => {
-        const g = Number(p?.gripMultiplier);
-        if (Number.isFinite(g)) this._weatherGrip = g;
+        this.physicsState = p;
+        this.speed = p.speed; // m/s
       });
       this.eventBus.on("lighting:night", (p) => this._setHeadlights(Boolean(p?.isNight)));
       this.eventBus.on("daynight:changed", (p) => this._setHeadlights(Boolean(p?.isNight || p?.phase === "night" || p?.phase === "evening")));
       this.eventBus.on("vehicle:hold", (p) => {
         this._held = Boolean(p?.hold);
-        if (this._held) { this.speed = 0; this.isAccelerating = false; }
       });
       this.eventBus.on("player:force-speed-cap", (p) => { this._speedCap = Number(p.maxSpeed) || 0; });
       this.eventBus.on("player:limp-mode", (p) => { this.limpMode = Boolean(p.active); });
@@ -131,7 +114,6 @@ export default class PlayerVehicleSystem {
         this.isDestroyed = false; this.enabled = true;
         this.condition = Math.max(35, this.condition || 40);
         this.damage = Math.min(this.damage, 55);
-        this.speed = Math.min(this.speed, 8);
         this.collisionTimer = Number(p.invulnSeconds) || 2.5;
         if (this.vehicle) this.vehicle.visible = true;
         this.eventBus?.emit?.("playerVehicle:revived", { condition: this.condition });
@@ -145,10 +127,7 @@ export default class PlayerVehicleSystem {
     this.preset = VEHICLE_PRESETS.standard;
 
     this.position = new THREE.Vector3(0, 0, 0);
-    this.velocity = 0;
-    this.speed = 0;
     this.targetX = 0;
-    this.steering = 0;
     this.steeringInput = 0;
     this.lane = 1;
     this.distance = 0;
@@ -166,7 +145,6 @@ export default class PlayerVehicleSystem {
     this.enabled = true;
 
     this.paintColor = this.preset.color;
-    this.accessories = [];
     this._disposers = [];
     this._glbLoader = new GLTFLoader();
     this._modelLoaded = false;
@@ -198,7 +176,6 @@ export default class PlayerVehicleSystem {
     this.lane = clamp(lane, 0, 2);
     this.position.set(this._laneX(this.lane), 0, z);
     this.targetX = this.position.x;
-    this.speed = 0;
 
     await this.setVehicleType(vehicleType, { reset: true });
 
@@ -228,33 +205,48 @@ export default class PlayerVehicleSystem {
   }
 
   update(deltaTime, state = {}) {
-    if (this._held) { this.speed = 0; return; }
+    if (this._held) return;
     if (!this.initialized || !this.enabled || this.isDestroyed || !this.vehicle) return;
 
     const dt = clamp(deltaTime || 0, 0, 0.05);
     this.collisionTimer = Math.max(0, this.collisionTimer - dt);
 
     this._readInput(state);
-    this._pushPhysicsInput();
-    this._updateSpeed(dt);
-    this._updateSteering(dt);
+    this._pushPhysicsInput(); // 🔥 Sends inputs to PhysicsSystem
+    
     this._updateFuel(dt);
     this._updateCondition();
 
-    this.position.x = damp(this.position.x, this.targetX, this.config.steeringSmoothing * this.preset.handling, dt);
-    this.position.z += this.speed * dt;
+    // 🔥 VISUAL SYNC: Apply physics position and rotation to the mesh
+    this.vehicle.position.set(this.physicsState.x, this.physicsState.y, this.physicsState.z);
+    this.vehicle.quaternion.copy(this.physicsState.quaternion);
+
+    // Update distance based on physics speed
     this.distance += Math.abs(this.speed) * dt;
 
-    this.vehicle.position.set(this.position.x, 0, this.position.z);
-    this._updateVehicleVisuals(dt);
+    // Calculate off-road based on physics X position
+    this.isOffRoad = Math.abs(this.physicsState.x) > this.config.roadWidth / 2 - this.preset.width * 0.35;
+
+    // Update approximate lane for UI
+    this.lane = clamp(Math.round((this.physicsState.x + this.config.laneWidth) / this.config.laneWidth), 0, 2);
+
+    // Update Camera to follow physics position
     this._updateCamera(dt);
 
-    this.gameState?.setSpeed?.(this.speed);
+    // Update Game State
+    this.gameState?.setSpeed?.(this.physicsState.speedKmh);
     this.gameState?.setDistance?.(this.distance);
 
     this.eventBus?.emit?.("playerVehicle:updated", {
-      type: this.vehicleType, speed: this.speed, lane: this.lane, x: this.position.x, z: this.position.z,
-      fuel: this.fuel, condition: this.condition, distance: this.distance, offRoad: this.isOffRoad,
+      type: this.vehicleType,
+      speed: this.physicsState.speedKmh,
+      lane: this.lane,
+      x: this.physicsState.x,
+      z: this.physicsState.z,
+      fuel: this.fuel,
+      condition: this.condition,
+      distance: this.distance,
+      offRoad: this.isOffRoad,
     });
   }
 
@@ -271,34 +263,6 @@ export default class PlayerVehicleSystem {
     this.steeringInput = clamp(steeringAxis, -1, 1);
   }
 
-  _updateSpeed(dt) {
-    const maxSpeed = Math.min(this.config.maxSpeed, this.preset.maxSpeed);
-    const acceleration = this.preset.acceleration * (this.condition / 100);
-    const cruise = 14;
-
-    if (this.isBraking) this.speed -= this.config.braking * dt;
-    else if (this.isAccelerating && this.fuel > 0) this.speed += acceleration * dt;
-    else if (this.fuel > 0) this.speed = damp(this.speed, cruise, 1.2, dt);
-    else this.speed = damp(this.speed, 0, 0.12, dt);
-
-    this.speed = Math.max(0, this.speed);
-
-    const grip = this.roadSystem?.getGripMultiplier?.() ?? this.weatherSystem?.getGripMultiplier?.() ?? this._weatherGrip ?? 1;
-    this.speed = clamp(this.speed, 0, maxSpeed * clamp(grip, 0.45, 1));
-
-    this.isOffRoad = Math.abs(this.position.x) > this.config.roadWidth / 2 - this.preset.width * 0.35;
-    if (this.isOffRoad) this.speed *= Math.max(0, 1 - this.config.offRoadDrag * dt);
-  }
-
-  _updateSteering(dt) {
-    const steeringLimit = this.config.laneWidth * 1.25;
-    this.steering = damp(this.steering, this.steeringInput, this.config.steeringSpeed, dt);
-    const steeringEffect = this.steering * this.preset.handling * (0.55 + Math.min(Math.abs(this.speed) / 18, 0.7));
-    this.targetX += steeringEffect * dt * 4;
-    this.targetX = clamp(this.targetX, -steeringLimit, steeringLimit);
-    this.lane = clamp(Math.round((this.targetX + this.config.laneWidth) / this.config.laneWidth), 0, 2);
-  }
-
   _updateFuel(dt) {
     if (!this.isAccelerating || this.speed <= 0) return;
     const consumption = this.config.fuelConsumption * this.preset.fuelConsumption * Math.max(0.4, this.speed / 10);
@@ -313,29 +277,19 @@ export default class PlayerVehicleSystem {
     this.condition = clamp(this.condition, 0, 100);
     if (this.condition <= 0 && !this.isDestroyed) {
       this.isDestroyed = true;
-      this.speed = 0;
       this.eventBus?.emit?.("playerVehicle:destroyed", { condition: this.condition, damage: this.damage });
       this.eventBus?.emit?.("lives:request-continue", { reason: "destroyed" });
     }
   }
 
-  _updateVehicleVisuals(dt) {
-    if (!this.vehicle) return;
-    // Smooth body roll during steering
-    this.vehicle.rotation.z = damp(this.vehicle.rotation.z, -this.steering * 0.08, 8, dt);
-    // 🔥 FIX: Consistently face forward (+Z) with slight steering lean
-    this.vehicle.rotation.y = damp(this.vehicle.rotation.y, Math.PI + (this.steering * 0.035), 6, dt);
-    
-    this.vehicle.position.y = this.collisionTimer > 0 ? Math.abs(Math.sin(this.collisionTimer * 35)) * 0.06 : 0;
-  }
-
   _updateCamera(dt) {
     if (!this.camera) return;
-    const targetPosition = new THREE.Vector3(this.position.x * 0.35, 4.2, this.position.z - 9.5);
+    // Camera smoothly follows the physics position
+    const targetPosition = new THREE.Vector3(this.physicsState.x * 0.35, 4.2, this.physicsState.z - 9.5);
     this.camera.position.x = damp(this.camera.position.x, targetPosition.x, 4, dt);
     this.camera.position.y = damp(this.camera.position.y, targetPosition.y, 3, dt);
     this.camera.position.z = damp(this.camera.position.z, targetPosition.z, 4, dt);
-    this.camera.lookAt(this.position.x * 0.25, 0.4, this.position.z + 12);
+    this.camera.lookAt(this.physicsState.x * 0.25, 0.4, this.physicsState.z + 12);
   }
 
   async setVehicleType(type, { reset = false } = {}) {
@@ -379,9 +333,7 @@ export default class PlayerVehicleSystem {
       this._applyPaintToVehicle(this.vehicle, this.paintColor);
     }
 
-    // 🔥 FIX: Force forward facing (+Z) immediately on load to prevent reverse movement
-    this.vehicle.rotation.y = Math.PI; 
-    this.vehicle.position.set(this.position.x, 0, this.position.z);
+    this.vehicle.position.set(this.physicsState.x || 0, 0, this.physicsState.z || 0);
     this.vehicle.visible = true;
     this.vehicle.frustumCulled = false;
     this.scene.add(this.vehicle);
@@ -408,14 +360,12 @@ export default class PlayerVehicleSystem {
 
       if (preset.modelScale) model.scale.multiplyScalar(preset.modelScale);
 
-      // Guarantee visible player keke size
       const box = new THREE.Box3().setFromObject(model);
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
       if (maxDim > 0.01 && maxDim < 1.8) model.scale.multiplyScalar(2.2 / maxDim);
       else if (maxDim > 6) model.scale.multiplyScalar(2.8 / maxDim);
 
-      // Ground the model
       const box2 = new THREE.Box3().setFromObject(model);
       model.position.y -= box2.min.y;
 
@@ -432,11 +382,9 @@ export default class PlayerVehicleSystem {
 
   _loadGLBScene(path) {
     return new Promise((resolve, reject) => {
-      console.log(`[PlayerVehicle] Attempting to load: ${path}`);
       this._glbLoader.load(
         path,
         (gltf) => {
-          console.log(`[PlayerVehicle] ✅ Successfully loaded: ${path}`);
           resolve(gltf.scene);
         },
         undefined,
@@ -535,10 +483,11 @@ export default class PlayerVehicleSystem {
     const damage = this.config.damagePerCollision * impact;
     this.damage = clamp(this.damage + damage, 0, 100);
     this.condition = clamp(this.condition - damage, 0, 100);
-    this.speed *= 0.45;
-    if (payload.direction === "left") this.targetX += 0.4;
-    else if (payload.direction === "right") this.targetX -= 0.4;
-    this.eventBus?.emit?.("playerVehicle:damaged", { damage, totalDamage: this.damage, condition: this.condition, speed: this.speed });
+    
+    // Push the vehicle back slightly on collision
+    this.eventBus?.emit?.("physics:pushback", { force: impact * 5 });
+    
+    this.eventBus?.emit?.("playerVehicle:damaged", { damage, totalDamage: this.damage, condition: this.condition, speed: this.physicsState.speedKmh });
   }
 
   refuel(amount = 25) {
@@ -565,7 +514,7 @@ export default class PlayerVehicleSystem {
   getSnapshot() {
     return {
       initialized: this.initialized, enabled: this.enabled, vehicleType: this.vehicleType, vehicleName: this.preset.name,
-      speed: this.speed, lane: this.lane, position: { x: this.position.x, y: this.position.y, z: this.position.z },
+      speed: this.physicsState.speedKmh, lane: this.lane, position: { x: this.physicsState.x, y: this.physicsState.y, z: this.physicsState.z },
       distance: this.distance, fuel: this.fuel, fuelCapacity: this.preset.fuelCapacity, condition: this.condition,
       damage: this.damage, isOffRoad: this.isOffRoad, isDestroyed: this.isDestroyed, accelerating: this.isAccelerating,
       braking: this.isBraking, paintColor: this.paintColor,
@@ -574,20 +523,28 @@ export default class PlayerVehicleSystem {
 
   reset({ lane = 1, z = 0, fuel = null, condition = 100 } = {}) {
     this.lane = clamp(lane, 0, 2);
-    this.position.set(this._laneX(this.lane), 0, z);
-    this.targetX = this.position.x;
-    this.speed = 0; this.velocity = 0; this.steering = 0; this.steeringInput = 0;
-    this.distance = 0; this.damage = 0;
+    const startX = this._laneX(this.lane);
+    
+    this.speed = 0;
+    this.distance = 0;
+    this.damage = 0;
     this.condition = clamp(condition, 0, 100);
     this.fuel = clamp(fuel ?? this.preset.fuelCapacity, 0, this.preset.fuelCapacity);
-    this.collisionTimer = 0; this.isDestroyed = false; this.isOffRoad = false;
-    this.isAccelerating = false; this.isBraking = false;
+    this.collisionTimer = 0;
+    this.isDestroyed = false;
+    this.isOffRoad = false;
+    this.isAccelerating = false;
+    this.isBraking = false;
+    this.steeringInput = 0;
+
+    // 🔥 Tell PhysicsSystem to reset
+    this.eventBus?.emit?.("physics:reset", { x: startX, z });
 
     if (this.vehicle) {
-      this.vehicle.position.set(this.position.x, 0, this.position.z);
-      // 🔥 FIX: Keep facing forward on reset
+      this.vehicle.position.set(startX, 0, z);
       this.vehicle.rotation.set(0, Math.PI, 0); 
     }
+    
     this.eventBus?.emit?.("playerVehicle:reset", this.getSnapshot());
     return this;
   }
@@ -602,7 +559,7 @@ export default class PlayerVehicleSystem {
   }
 
   _attachHeadlights() {
-    const root = this.group || this.vehicle?.group || this.vehicle;
+    const root = this.vehicle;
     if (!root || this._headlights.length) return;
     for (const x of [-0.35, 0.35]) {
       const light = new THREE.SpotLight(0xfff2d6, 0, 28, Math.PI / 7, 0.4, 1);
@@ -620,14 +577,9 @@ export default class PlayerVehicleSystem {
   _pushPhysicsInput() {
     const throttle = this.isAccelerating ? 1 : 0;
     const brake = this.isBraking ? 1 : 0;
-    // 🔥 FIX: Use the already calculated steeringInput instead of undefined steerDir
     const steer = this.steeringInput; 
     
     this.eventBus?.emit?.("physics:input", { steer, throttle, brake });
-    
-    // Safely access physics system if it exists globally
-    const phys = typeof window !== 'undefined' ? window.kanoRun?.game?.systems?.get?.("physics") : null;
-    if (phys?.setInput) phys.setInput({ steer, throttle, brake });
   }
 
   dispose() {
