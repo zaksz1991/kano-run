@@ -428,6 +428,7 @@ export default class Game {
       ["negotiation", () => import("../systems/NegotiationSystem.js")],
       ["checkpoint", () => import("../systems/CheckpointSystem.js")],
       ["chase", () => import("../systems/ChaseSystem.js")],
+      ["immersion", () => import("../systems/ImmersionSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
       ["mobileUI", () => import("../systems/MobileUISystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],

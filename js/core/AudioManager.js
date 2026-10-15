@@ -100,7 +100,7 @@ export default class AudioManager {
       await Promise.all(
         priority.map((name) =>
           // NOTE: Based on your repo tree, 'audio' is a sibling to 'assets', so the path is /audio/
-          this._loadBuffer(`/audio/${name}.mp3`, name)
+          this._loadBufferWithFallback(name)
         )
       );
     } finally {
@@ -111,7 +111,7 @@ export default class AudioManager {
     const radioIds = this.radioStations.map((station) => station.id);
     Promise.allSettled(
       radioIds.map((name) =>
-        this._loadBuffer(`/audio/${name}.mp3`, name)
+        this._loadBufferWithFallback(name)
       )
     ).then(() => {
       console.info(
@@ -427,9 +427,128 @@ export default class AudioManager {
     return this.isMuted;
   }
 
+  async _loadBufferWithFallback(name) {
+    const paths = [
+      `/assets/models/audio/${name}.mp3`,
+      `/audio/${name}.mp3`,
+      `/assets/audio/${name}.mp3`,
+    ];
+    for (const url of paths) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) continue;
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
+        this.buffers[name] = audioBuffer;
+        console.log(`[AudioManager] Loaded ${name}`);
+        return;
+      } catch {}
+    }
+    console.warn(`[AudioManager] Missing asset: ${name}`);
+  }
+
+  startAmbientBed() {
+    if (!this.context || this._ambientNoise) return;
+    const ctx = this.context;
+    const bufferSize = 2 * ctx.sampleRate;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * 0.12;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 650;
+    const gain = ctx.createGain();
+    gain.gain.value = this.isMuted ? 0 : 0.07;
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    noise.start();
+    this._ambientNoise = noise;
+    this._ambientGain = gain;
+    this._ambientFilter = filter;
+  }
+
+  stopAmbientBed() {
+    try {
+      this._ambientNoise?.stop?.();
+    } catch {}
+    this._ambientNoise = null;
+  }
+
+  setAmbientNight(isNight) {
+    if (this._ambientFilter) {
+      this._ambientFilter.frequency.setTargetAtTime(
+        isNight ? 380 : 700,
+        this.context.currentTime,
+        0.5,
+      );
+    }
+    if (this._ambientGain) {
+      this._ambientGain.gain.setTargetAtTime(
+        this.isMuted ? 0 : isNight ? 0.04 : 0.07,
+        this.context.currentTime,
+        0.5,
+      );
+    }
+  }
+
+  announce(text) {
+    this.speak(text);
+  }
+
+  playTone(freq = 440, dur = 0.15, type = "sine") {
+    if (!this.context || this.isMuted) return;
+    const osc = this.context.createOscillator();
+    const gain = this.context.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.value = 0.0001;
+    gain.gain.exponentialRampToValueAtTime(0.1, this.context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, this.context.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start();
+    osc.stop(this.context.currentTime + dur + 0.03);
+  }
+
+  mosque(text) {
+    if (this.isMuted || !text || typeof window === "undefined") return;
+    if (!window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text));
+      u.rate = 1.02;
+      u.volume = 0.85;
+      // dip radio
+      if (this.radioGain) {
+        this.radioGain.gain.setTargetAtTime(
+          this._radioVolume * 0.2,
+          this.context.currentTime,
+          0.1,
+        );
+      }
+      u.onend = () => {
+        if (this.radioGain && this.radioSource && !this.isMuted) {
+          this.radioGain.gain.setTargetAtTime(
+            this._radioVolume,
+            this.context.currentTime,
+            0.2,
+          );
+        }
+      };
+      window.speechSynthesis.speak(u);
+    } catch {}
+  }
+
+
   destroy() {
     this._stopEngineNode();
     this.stopRadio();
+    this.stopAmbientBed();
+    try { window.speechSynthesis?.cancel?.(); } catch {}
     
     // Clean up procedural siren
     if (this.sirenOsc) {
