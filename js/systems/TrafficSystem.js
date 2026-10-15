@@ -44,6 +44,9 @@ export class TrafficSystem {
     this.elapsed = 0;
     this.spawnTimer = 0;
     this.enabled = false;
+    this.isNight = false;
+    this.isRushHour = false;
+    this.timeHours = 12;
 
     this.weights = { ...DEFAULT_TRAFFIC_WEIGHTS, ...(options.weights ?? {}) };
     this.difficulty = 1;
@@ -89,11 +92,14 @@ export class TrafficSystem {
     this.difficulty = 1 + Math.min(1.5, this.elapsed / 180);
 
     this.updateVehicles(dt, player);
+    this.timeHours = (this.timeHours + dt * 0.025) % 24;
+    this.isRushHour = (this.timeHours >= 7 && this.timeHours <= 9.5) || (this.timeHours >= 16.5 && this.timeHours <= 19.5);
+    const dens = (this.isRushHour ? 1.4 : 1) * (this.isNight ? 0.55 : 1);
     this.spawnTimer -= dt;
 
     if (this.spawnTimer <= 0) {
       this.trySpawnTraffic(player);
-      this.spawnTimer = randomBetween(0.8, 1.5) / this.difficulty;
+      this.spawnTimer = randomBetween(0.8, 1.5) / (this.difficulty * dens);
     }
 
     this.removeDistantVehicles(player);

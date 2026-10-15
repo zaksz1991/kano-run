@@ -1,10 +1,12 @@
+
+    this._bindPhase3Events();
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
 import { MODEL_PATHS, MODEL_SCALES } from "../core/AssetCatalog.js";
 
 const DEFAULTS = {
-  maxVehicles: 40,
+  maxVehicles: 28,
   spawnDistance: 150,
   despawnDistance: 65,
   laneWidth: 3.2,
@@ -144,6 +146,12 @@ export default class VehicleSystem {
     this.config = { ...DEFAULTS, ...(GAME_CONFIG?.traffic ?? {}), ...config };
 
     this.vehicles = new Map();
+    this.isNight = false;
+    this.isRushHour = false;
+    this.densityMult = 1;
+    this.spawnAccumulator = 0;
+    this.gameTimeHours = 12;
+    this.districtTheme = "city";
     this.nextVehicleId = 1;
     this.playerZ = 0;
     this.playerLane = 1;
@@ -235,6 +243,7 @@ export default class VehicleSystem {
 
     this._updateVehicles(dt);
     this._removeDistantVehicles();
+    this._updateTrafficClock(dt);
     this._spawnTraffic(dt);
   }
 
@@ -366,6 +375,15 @@ export default class VehicleSystem {
       }
 
       this._avoidVehicleAhead(vehicle, dt);
+      // Honk if nearly stopped behind someone
+      if (vehicle.speed < 2.5 && (vehicle.cruiseSpeed || 10) > 6) {
+        vehicle._honkCd = (vehicle._honkCd || 0) - dt;
+        if (vehicle._honkCd <= 0) {
+          vehicle._honkCd = 3;
+          this.eventBus?.emit?.("traffic:honk", { id: vehicle.id, type: vehicle.type });
+          this.eventBus?.emit?.("audio:horn", { id: vehicle.id });
+        }
+      }
       this._checkPlayerProximity(vehicle);
     }
   }
@@ -463,6 +481,14 @@ export default class VehicleSystem {
   }
 
   _spawnTraffic(dt) {
+    const baseInterval = this.isRushHour ? 0.55 : this.isNight ? 1.35 : 0.9;
+    const interval = baseInterval / Math.max(0.5, this.densityMult || 1);
+    this.spawnAccumulator = (this.spawnAccumulator || 0) + dt;
+    if (this.spawnAccumulator < interval) return;
+    this.spawnAccumulator = 0;
+    const cap = Math.round((this.isNight ? 20 : this.isRushHour ? 36 : 28) * (this.districtTheme === "market" ? 1.15 : 1));
+    if (this.vehicles.size >= Math.min(this.config.maxVehicles, cap)) return;
+
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0 || this.vehicles.size >= this.config.maxVehicles) return;
 
@@ -712,6 +738,37 @@ export default class VehicleSystem {
       this.removeVehicle(id, "cleared");
     }
   }
+
+  _updateTrafficClock(dt) {
+    this.gameTimeHours = (this.gameTimeHours + dt * 0.02) % 24;
+    const h = this.gameTimeHours;
+    this.isRushHour = (h >= 7 && h <= 9.5) || (h >= 16.5 && h <= 19.5);
+    this._refreshDensity();
+  }
+
+  _refreshDensity() {
+    let m = 1;
+    if (this.isRushHour) m *= 1.45;
+    if (this.isNight) m *= 0.55;
+    if (this.districtTheme === "market") m *= 1.25;
+    if (this.districtTheme === "industrial") m *= 1.1;
+    this.densityMult = m;
+  }
+
+  _onCheckpointApproach(payload = {}) {
+    const z = Number(payload.z) || 0;
+    for (const vehicle of this.vehicles.values()) {
+      if (Math.abs(vehicle.z - z) < 40) {
+        vehicle.cruiseSpeed = Math.min(vehicle.cruiseSpeed || 10, 6);
+        vehicle.speed = Math.min(vehicle.speed, 7);
+        if (Math.abs(vehicle.z - z) < 12) {
+          vehicle.stopped = true;
+          vehicle.speed = 0;
+        }
+      }
+    }
+  }
+
 
   dispose() {
     this.clear();
