@@ -13,6 +13,11 @@ function safeText(value, fallback = "") {
 }
 
 export default class HUDSystem {
+  _isMobileHud() {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches;
+  }
+
   constructor({
     eventBus = null,
     gameState = null,
@@ -365,7 +370,12 @@ export default class HUDSystem {
       });
     });
 
-    container.appendChild(radio);
+    if (!this._isMobileHud()) container.appendChild(radio);
+    else {
+      // radio available via MobileUISystem sheet only
+      this.elements = this.elements || {};
+      this.elements.radio = radio;
+    }
 
     // Mission panel
     const missions = this._createElement("div", {
@@ -385,7 +395,7 @@ export default class HUDSystem {
       <div style="color:#00b4d8;font-size:11px;font-weight:bold;letter-spacing:2px;margin-bottom:8px">DAILY MISSIONS</div>
       <div id="hud-missions-list" style="font-size:12px;color:#cbd5e1"></div>
     `;
-    container.appendChild(missions);
+    if (!this._isMobileHud()) container.appendChild(missions);
 
     // Life savers badge
     const lives = this._createElement("div", {

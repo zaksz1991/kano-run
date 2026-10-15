@@ -409,9 +409,16 @@ export default class MissionSystem {
   }
 
   // 🔥 PHASE 1: Mission UI Rendering (FIXED POSITIONING)
+  _isMobile() {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches;
+  }
+
   _renderUI() {
     this._destroyUI();
     if (!this.enabled || this.activeMissions.length === 0) return;
+    // Mobile: missions only via dock sheet — do not cover the road
+    if (this._isMobile()) return;
 
     this.uiContainer = document.createElement("div");
     this.uiContainer.id = "kano-mission-ui";

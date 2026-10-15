@@ -1,62 +1,107 @@
-/* Phase1 mobile HUD — no overlapping desktop panels */
+/* Kano Run — mobile-first in-run HUD (phones = primary players) */
+
+:root {
+  --kano-safe-top: env(safe-area-inset-top, 0px);
+  --kano-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 @media (max-width: 900px), (pointer: coarse) {
-  /* Hide desktop HUD stacks that cover the road */
+  /* Kill desktop stacks that cover the road */
+  #kano-mission-ui,
+  #kano-mission-ui .mission-card,
   #hud-radio,
+  [id="hud-radio"],
   .hud-radio-panel,
-  #hud-root .hud-panel:not(.kano-keep),
-  [id*="daily-mission"],
-  .daily-missions-panel,
+  #hud-missions,
+  #hud-missions-list,
   #kano-daily-fab,
-  #hud-speed-panel,
-  #hud-wallet-panel,
-  #hud-life-panel,
-  .hud-top-left,
-  .hud-top-right {
+  .daily-missions-panel {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  /* HUD root: don't block touches on the canvas */
+  #hud-root,
+  #hud-container {
+    pointer-events: none !important;
+  }
+  #hud-root button,
+  #hud-root input,
+  #hud-container button,
+  #hud-container input {
+    pointer-events: auto !important;
+  }
+
+  /* Compact top chips only — hide giant overlapping wallet/level clones if duplicated */
+  .hud-panel {
+    max-width: 42vw !important;
+    font-size: 11px !important;
+    padding: 6px 8px !important;
+  }
+
+  /* Negotiation sits above control dock */
+  #neg-dialogue,
+  [id*="negotiat"],
+  .negotiation-panel {
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    bottom: calc(140px + var(--kano-safe-bottom)) !important;
+    top: auto !important;
+    width: min(92vw, 340px) !important;
+    max-width: 92vw !important;
+    z-index: 7200 !important;
+  }
+
+  /* Mobile dock + drive controls clear of each other */
+  #kano-mobile-dock {
+    display: flex !important;
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: calc(72px + var(--kano-safe-bottom)) !important;
+    z-index: 7100 !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    padding: 0 8px !important;
+    pointer-events: none !important;
+  }
+  #kano-mobile-dock button {
+    pointer-events: auto !important;
+  }
+
+  #kano-mobile-topbar {
+    display: flex !important;
+    position: fixed !important;
+    top: var(--kano-safe-top) !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 7100 !important;
+    pointer-events: none !important;
+  }
+
+  /* Hide duplicate Pause from GameControls if dock has pause */
+  #kano-game-controls {
     display: none !important;
   }
 
-  /* Hide empty cyan boxes often used as spacers */
-  .hud-panel:empty { display: none !important; }
-
-  /* Mobile chrome from MobileUISystem stays */
-  #kano-mobile-topbar,
-  #kano-mobile-dock {
-    display: flex !important;
+  /* Touch drive buttons stay at bottom */
+  #controls {
     z-index: 7000 !important;
-  }
-
-  /* Lobby modal full width on phone */
-  #kano-lobby,
-  [id*="lobby"] {
-    max-width: 100vw !important;
-    max-height: 100dvh !important;
-    overflow: auto !important;
-  }
-
-  /* Passenger quotes — above dock, not full cover */
-  #kano-voice-bubble,
-  .passenger-prompt {
-    bottom: 100px !important;
-    top: auto !important;
-    max-width: 90vw !important;
-    z-index: 6500 !important;
-  }
-
-  /* KAROTA full screen is intentional */
-  #kano-karota-panel { z-index: 9000 !important; }
-
-  /* Pause controls smaller */
-  #kano-game-controls {
-    top: calc(52px + env(safe-area-inset-top, 0px)) !important;
-    right: 8px !important;
-    left: auto !important;
-    transform: none !important;
+    bottom: var(--kano-safe-bottom) !important;
   }
 }
 
-/* While loading / lobby: hide in-run HUD chrome */
+/* Lobby / loading: no in-run chrome */
+body.kano-lobby #kano-mission-ui,
 body.kano-lobby #kano-mobile-dock,
-body.kano-lobby #kano-game-controls,
-body.kano-loading #hud-radio {
+body.kano-loading #kano-mission-ui {
   display: none !important;
+}
+
+@media (min-width: 901px) and (pointer: fine) {
+  #kano-mobile-topbar,
+  #kano-mobile-dock {
+    display: none !important;
+  }
 }

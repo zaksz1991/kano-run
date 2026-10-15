@@ -1,21 +1,23 @@
-# Mobile: Failed to fetch RouteSystem-*.js
+# Mobile HUD fix 2
 
-## Cause
-Phone cached old HTML → requests old chunk hash after new deploy → 404.
+## Problem (your screenshot)
+Mission cards + wallet clones + radio + daily missions + dock + drive buttons all stacked.
 
 ## Fix
-- RouteSystem, Progression, Economy = **static imports** (main bundle)
-- loadSystem retries once on chunk failure
-- vercel.json: no-cache HTML
+1. index.html loads mobile-hud.css
+2. CSS hides #kano-mission-ui, radio, daily on phone
+3. MissionSystem does not render floating cards on mobile
+4. HUDSystem does not mount radio/missions panels on mobile
+5. Missions/Radio only via bottom dock sheets
 
-## Install + redeploy
+## Install
 ```bat
-copy /Y path\to\kano-mobilefix\js\core\Game.js js\core\
-copy /Y path\to\kano-mobilefix\js\systems\RouteSystem.js js\systems\
-copy /Y path\to\kano-mobilefix\vercel.json vercel.json
+copy index.html
+copy css\mobile-hud.css css\
+copy js\systems\MissionSystem.js js\systems\
+copy js\systems\HUDSystem.js js\systems\
+copy js\systems\MobileUISystem.js js\systems\
 npm.cmd run build
-git add -A && git commit -m "Mobile: static RouteSystem, no-cache HTML" && git push
+git push
 ```
-
-## On phone
-Close tab fully → reopen kano-run.vercel.app (or clear site cache).
+Close phone tab fully after deploy.
