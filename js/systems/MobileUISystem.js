@@ -20,6 +20,8 @@ export default class MobileUISystem {
     this._buildUI();
     this._bindEvents();
     this._bindTouchControls();
+    
+    // Hide old panels immediately
     this._hideOldDesktopPanels();
 
     this._subscribe("game:started", () => {
@@ -171,8 +173,8 @@ export default class MobileUISystem {
     topRight.style.textAlign = "right";
     topRight.innerHTML = `
       <div class="ui-row" style="justify-content:flex-end;"><span id="m-speed" class="ui-value" style="margin-left:0; font-size:18px; font-weight:800;">0</span> <span style="font-size:11px; opacity:0.8; margin-top:2px;">km/h</span></div>
-      <div class="ui-row" style="justify-content:flex-end;"><span class="ui-icon">🕒</span> <span id="m-time" class="ui-value">12:00</span></div>
-      <div class="ui-row" style="justify-content:flex-end;"><span class="ui-icon" id="m-weather-icon">️</span> <span id="m-weather" class="ui-value">Sunny</span></div>
+      <div class="ui-row" style="justify-content:flex-end;"><span class="ui-icon"></span> <span id="m-time" class="ui-value">12:00</span></div>
+      <div class="ui-row" style="justify-content:flex-end;"><span class="ui-icon" id="m-weather-icon">☀️</span> <span id="m-weather" class="ui-value">Sunny</span></div>
     `;
 
     const topBar = document.createElement("div");
@@ -301,13 +303,13 @@ export default class MobileUISystem {
     this._subscribe("weather:changed", (p) => {
       if (this.elements.weather) this.elements.weather.textContent = (p.type || "Clear").charAt(0).toUpperCase() + (p.type || "Clear").slice(1);
       if (this.elements.weatherIcon) {
-        const icons = { clear: "☀️", sunny: "☀️", cloudy: "", harmattan: "🌫️", rain: "🌧️", storm: "️", night: "🌙" };
+        const icons = { clear: "☀️", sunny: "☀️", cloudy: "☁️", harmattan: "🌫️", rain: "🌧️", storm: "⛈️", night: "🌙" };
         this.elements.weatherIcon.textContent = icons[p.type] || "☀️";
       }
     });
     
     if (this.gameState?.profile) {
-      if (this.elements.money) this.elements.money.textContent = `₦${(this.gameState.profile.money || 0).toLocaleString()}`;
+      if (this.elements.money) this.elements.money.textContent = `${(this.gameState.profile.money || 0).toLocaleString()}`;
       if (this.elements.rep) this.elements.rep.textContent = `Lvl ${this.gameState.profile.level || 1}`;
     }
   }
@@ -391,6 +393,8 @@ export default class MobileUISystem {
       "[class*='daily']", "[class*='mission-popup']",
       "[id*='daily']", "[id*='radio-panel']",
       "#radio-kano-panel", ".radio-panel",
+      "#wallet", "#level", "#life",
+      "[id*='wallet']", "[id*='level']", "[id*='life']",
     ];
 
     selectorsToHide.forEach(selector => {
