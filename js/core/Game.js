@@ -395,7 +395,6 @@ export default class Game {
     );
 
     const wave2 = [
-      ["performance", () => import("../systems/PerformanceSystem.js")],
       ["world", () => import("../systems/WorldSystem.js")],
       ["road", () => import("../systems/RoadSystem.js")],
       ["scenery", () => import("../systems/ScenerySystem.js")],
@@ -425,6 +424,7 @@ export default class Game {
       ["traffic", () => import("../systems/TrafficSystem.js")],
       ["collision", () => import("../systems/CollisionSystem.js")],
       ["passengers", () => import("../systems/PassengerSystem.js")],
+      ["physics", () => import("../systems/PhysicsSystem.js")],
       ["driving", () => import("../systems/DrivingSystem.js")],
       ["vehicles", () => import("../systems/VehicleSystem.js")],
     ];

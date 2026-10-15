@@ -183,6 +183,29 @@ export default class PlayerVehicleSystem {
     this.weatherSystem = weatherSystem;
     this.roadSystem = roadSystem;
     this.eventBus = eventBus;
+    this.physicsRoll = 0;
+    this.usePhysicsAssist = true;
+    if (this.eventBus?.on) {
+      this.eventBus.on("physics:state", (p) => {
+        if (!this.usePhysicsAssist) return;
+        // Blend physics lateral feel into visual roll / slight x
+        this.physicsRoll = Number(p?.roll) || 0;
+        if (this.vehicle) {
+          this.vehicle.rotation.z = this.physicsRoll;
+        }
+        // Soft speed authority from physics when moving
+        if (Number.isFinite(p?.speedKmh) && p.speedKmh > 1) {
+          // blend toward physics speed (arcade still drives target)
+          this.speed = this.speed * 0.7 + (p.speedKmh / 3.6) * 0.3;
+        }
+      });
+      this.eventBus.on("weather:changed", (p) => {
+        const g = Number(p?.gripMultiplier);
+        if (Number.isFinite(g)) this._weatherGrip = g;
+      });
+    }
+    this._weatherGrip = 1;
+
     this._headlights = [];
     this._nightLightsOn = false;
     if (this.eventBus?.on) {
@@ -391,6 +414,7 @@ export default class PlayerVehicleSystem {
     this.collisionTimer = Math.max(0, this.collisionTimer - dt);
 
     this._readInput(state);
+    this._pushPhysicsInput();
     this._updateSpeed(dt);
     this._updateSteering(dt);
     this._updateFuel(dt);
@@ -1134,6 +1158,23 @@ export default class PlayerVehicleSystem {
       root.add(lens);
       this._headlights.push(light, lens);
     }
+  }
+
+
+  _pushPhysicsInput() {
+    const throttle = this.isAccelerating ? 1 : 0;
+    const brake = this.isBraking ? 1 : 0;
+    let steer = 0;
+    if (this.input?.left || this.steerDir < 0) steer = -1;
+    if (this.input?.right || this.steerDir > 0) steer = 1;
+    // lane-based: steer toward targetX
+    if (Number.isFinite(this.targetX) && Number.isFinite(this.position?.x)) {
+      const dx = this.targetX - this.position.x;
+      if (Math.abs(dx) > 0.15) steer = Math.max(-1, Math.min(1, dx * 0.5));
+    }
+    this.eventBus?.emit?.("physics:input", { steer, throttle, brake });
+    const phys = this.game?.systems?.get?.("physics");
+    phys?.setInput?.({ steer, throttle, brake });
   }
 
 

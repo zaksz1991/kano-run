@@ -84,6 +84,7 @@ export default class WeatherSystem {
     this.transitionTimer = 0.0;
     
     this.gripMultiplier = 1.0;
+    this._emitGrip?.();
     this.enabled = false;
     this._disposers = [];
     this._dust = null;
@@ -239,6 +240,7 @@ export default class WeatherSystem {
 
     // Interpolate grip
     this.gripMultiplier = currentPreset.gripMultiplier + (targetPreset.gripMultiplier - currentPreset.gripMultiplier) * t;
+    this._emitGrip?.();
 
     // Update lighting system if available
     if (this.lightingSystem) {
@@ -261,6 +263,7 @@ export default class WeatherSystem {
       this.scene.background.setHex(preset.skyColor);
     }
     this.gripMultiplier = preset.gripMultiplier;
+    this._emitGrip?.();
 
     if (this.lightingSystem) {
       this.lightingSystem.setLighting?.({
@@ -283,6 +286,18 @@ export default class WeatherSystem {
     const unsub = this.eventBus.on(event, handler);
     if (typeof unsub === "function") this._disposers.push(unsub);
   }
+
+  _emitGrip() {
+    this.eventBus?.emit?.("weather:changed", {
+      type: this.currentWeather,
+      weather: this.currentWeather,
+      gripMultiplier: this.gripMultiplier ?? 1,
+    });
+    this.eventBus?.emit?.("driving:grip", {
+      multiplier: this.gripMultiplier ?? 1,
+    });
+  }
+
 
   dispose() {
     for (const unsub of this._disposers) unsub();
