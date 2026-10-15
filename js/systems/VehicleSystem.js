@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
-import { MODEL_PATHS, MODEL_SCALES } from "../core/AssetCatalog.js";
 
 const DEFAULTS = {
   maxVehicles: 24,
@@ -15,74 +14,75 @@ const DEFAULTS = {
   maxSpawnAttempts: 12,
 };
 
-const MODEL_YAW = {
-  motorcycle: "flip",
-  keke: "flip",
-  car: "normal", car1: "normal", car2: "normal", taxi: "normal",
-  bus: "normal", truck: "normal", police: "normal", karota: "normal",
-  van: "normal", suv: "normal", pickup: "normal", delivery: "normal",
+// 🔥 Direct model paths - update these to match your actual files
+const MODEL_PATHS = {
+  keke: "/models/keke3.glb",
+  keke1: "/models/keke4.glb",
+  keke2: "/models/keke5.glb",
+  car: "/models/Car.glb",
+  car1: "/models/Car5.glb",
+  car2: "/models/Car6.glb",
+  taxi: "/models/RedCar.glb",
+  bus: "/models/Car5.glb",
+  motorcycle: "/models/Bike.glb",
+  truck: "/models/PickupTruck.glb",
+  vespa: "/models/VespaBike.glb",
 };
 
-function facingYaw(type) {
-  const t = String(type || "");
-  if (t === "keke" || t.startsWith("keke") || t === "motorcycle") return Math.PI;
-  return 0;
-}
-
-const MODEL_CHILD_FLIP = new Set([
-  "motorcycle", "keke", "keke1", "keke2", "keke3", "keke4", "keke5",
-]);
+const MODEL_SCALES = {
+  keke: 1.2,
+  keke1: 1.2,
+  keke2: 1.2,
+  car: 1.0,
+  car1: 1.0,
+  car2: 1.0,
+  taxi: 1.0,
+  bus: 1.8,
+  motorcycle: 0.9,
+  truck: 1.2,
+  vespa: 0.9,
+};
 
 const VEHICLE_SPECS = {
   car: {
     width: 1.8, height: 1.45, length: 4.1, maxSpeed: 23, acceleration: 2.2, weight: 1.2,
     color: [0xc0392b, 0x2471a3, 0xf4d03f, 0xecf0f1, 0x273746],
-    modelPath: MODEL_PATHS.traffic.car, modelScale: MODEL_SCALES.traffic.car,
+    modelPath: MODEL_PATHS.car, modelScale: MODEL_SCALES.car,
   },
   car1: {
     width: 1.8, height: 1.45, length: 4.1, maxSpeed: 22, acceleration: 2.0, weight: 1.2,
     color: [0x2980b9, 0x8e44ad, 0x16a085],
-    modelPath: MODEL_PATHS.traffic.car1, modelScale: MODEL_SCALES.traffic.car1,
+    modelPath: MODEL_PATHS.car1, modelScale: MODEL_SCALES.car1,
   },
   car2: {
     width: 1.8, height: 1.45, length: 4.1, maxSpeed: 21, acceleration: 1.9, weight: 1.3,
     color: [0xe74c3c, 0xf39c12, 0x2c3e50],
-    modelPath: MODEL_PATHS.traffic.car2, modelScale: MODEL_SCALES.traffic.car2,
+    modelPath: MODEL_PATHS.car2, modelScale: MODEL_SCALES.car2,
   },
   taxi: {
     width: 1.85, height: 1.5, length: 4.3, maxSpeed: 19, acceleration: 1.8, weight: 1.3,
     color: [0xf4d03f, 0xf7dc6f, 0xfdfefe],
-    modelPath: MODEL_PATHS.traffic.taxi, modelScale: MODEL_SCALES.traffic.taxi,
+    modelPath: MODEL_PATHS.taxi, modelScale: MODEL_SCALES.taxi,
   },
   bus: {
     width: 2.35, height: 2.8, length: 7.4, maxSpeed: 15, acceleration: 1.1, weight: 3.8,
     color: [0xf39c12, 0x2471a3, 0x1e8449, 0xf4d03f],
-    modelPath: MODEL_PATHS.traffic.bus, modelScale: MODEL_SCALES.traffic.bus,
+    modelPath: MODEL_PATHS.bus, modelScale: MODEL_SCALES.bus,
   },
   motorcycle: {
     width: 0.8, height: 1.4, length: 2, maxSpeed: 24, acceleration: 3.4, weight: 0.4,
     color: [0x17202a, 0xc0392b, 0xf4d03f],
-    modelPath: MODEL_PATHS.traffic.motorcycle, modelScale: MODEL_SCALES.traffic.motorcycle,
+    modelPath: MODEL_PATHS.motorcycle, modelScale: MODEL_SCALES.motorcycle,
   },
   keke: {
     width: 1.25, height: 1.6, length: 2.4, maxSpeed: 16, acceleration: 2.4, weight: 0.7,
     color: [0xfbbf24, 0xeab308, 0x22c55e],
-    modelPath: MODEL_PATHS.traffic.keke, modelScale: MODEL_SCALES.traffic.keke,
+    modelPath: MODEL_PATHS.keke, modelScale: MODEL_SCALES.keke,
   },
   truck: {
     width: 2.5, height: 3, length: 8, maxSpeed: 13, acceleration: 0.8, weight: 5,
     color: [0x95a5a6, 0xd35400, 0x566573],
-    modelPath: MODEL_PATHS.traffic.truck, modelScale: MODEL_SCALES.traffic.truck,
-  },
-  police: {
-    width: 1.9, height: 1.6, length: 4.4, maxSpeed: 25, acceleration: 2.8, weight: 1.5,
-    color: [0xfdfefe, 0x2471a3],
-    modelPath: MODEL_PATHS.traffic.car3, modelScale: MODEL_SCALES.traffic.car3,
-  },
-  karota: {
-    width: 1.9, height: 1.6, length: 4.3, maxSpeed: 20, acceleration: 2.1, weight: 1.4,
-    color: [0xf39c12, 0xfdfefe],
-    modelPath: MODEL_PATHS.traffic.car4, modelScale: MODEL_SCALES.traffic.car4,
+    modelPath: MODEL_PATHS.truck, modelScale: MODEL_SCALES.truck,
   },
 };
 
@@ -121,8 +121,6 @@ export default class VehicleSystem {
 
     this.config = { ...DEFAULTS, ...(GAME_CONFIG?.traffic ?? {}), ...config };
     this.vehicles = new Map();
-    
-    // 🔥 CRITICAL FIX: Initialize _disposers BEFORE any _subscribe calls
     this._disposers = [];
 
     this._subscribe("performance:quality", (p) => {
@@ -131,15 +129,6 @@ export default class VehicleSystem {
     });
     
     this.isNight = false;
-    this._subscribe("lighting:night", (p) => {
-      this.isNight = Boolean(p?.isNight);
-      this._syncTrafficLights();
-    });
-    this._subscribe("daynight:changed", (p) => {
-      this.isNight = Boolean(p?.isNight || p?.phase === "night");
-      this._syncTrafficLights();
-    });
-    
     this.isRushHour = false;
     this.densityMult = 1;
     this.spawnAccumulator = 0;
@@ -155,7 +144,7 @@ export default class VehicleSystem {
 
     this.spawnWeights = {
       car: 18, car1: 8, car2: 8, taxi: 14, bus: 7,
-      motorcycle: 12, keke: 14, truck: 5, police: 3, karota: 3,
+      motorcycle: 12, keke: 14, truck: 5,
     };
 
     this._cachedWeightEntries = Object.entries(this.spawnWeights);
@@ -177,10 +166,7 @@ export default class VehicleSystem {
 
   _subscribe(eventName, handler) {
     if (!this.eventBus?.on) return;
-    
-    // 🔥 CRITICAL FIX: Ensure _disposers exists before pushing
     this._disposers ??= [];
-
     const result = this.eventBus.on(eventName, handler);
     if (typeof result === "function") {
       this._disposers.push(result);
@@ -233,8 +219,10 @@ export default class VehicleSystem {
     let vehicle;
     try {
       vehicle = await this._createVehicle(vehicleType);
+      console.log(`[VehicleSystem] Successfully loaded ${vehicleType} from ${spec.modelPath}`);
     } catch (error) {
-      console.warn(`Failed to load model for ${vehicleType}:`, error);
+      console.error(`[VehicleSystem] Failed to load model for ${vehicleType}:`, error);
+      console.log(`[VehicleSystem] Using fallback box for ${vehicleType}`);
       vehicle = this._createFallbackVehicle(vehicleType, spec);
     }
 
@@ -251,12 +239,12 @@ export default class VehicleSystem {
     vehicle.changeLaneTimer = randomBetween(3, 8);
     vehicle.stopped = false;
 
+    // 🔥 FIX: Set position and rotation BEFORE adding to scene
     vehicle.group.position.set(this._laneX(lane), 0, z);
-    vehicle.group.rotation.y = facingYaw(vehicleType);
-
-    this._attachTrafficHeadlights(vehicle);
-    if (this.isNight) this._syncTrafficLights();
     
+    //  FIX: All traffic faces forward (+Z direction)
+    vehicle.group.rotation.y = Math.PI;
+
     this.vehicles.set(vehicle.id, vehicle);
     this.scene.add(vehicle.group);
 
@@ -313,10 +301,8 @@ export default class VehicleSystem {
       );
       vehicle.group.position.z = vehicle.z;
       
-      const dz = vehicle.z - prevZ;
-      if (Math.abs(dz) > 1e-5) {
-        vehicle.group.rotation.y = facingYaw(vehicle.type);
-      }
+      // 🔥 FIX: Keep vehicles facing forward while moving
+      vehicle.group.rotation.y = Math.PI;
 
       this._avoidVehicleAhead(vehicle, dt);
       
@@ -444,17 +430,33 @@ export default class VehicleSystem {
     const cacheKey = spec.modelPath;
     let gltf;
 
-    if (this._loadAttempts.has(cacheKey)) throw new Error(`Model ${cacheKey} previously failed to load`);
+    if (this._loadAttempts.has(cacheKey)) {
+      throw new Error(`Model ${cacheKey} previously failed to load`);
+    }
 
     if (this._modelCache.has(cacheKey)) {
       gltf = this._modelCache.get(cacheKey);
+      console.log(`[VehicleSystem] Using cached model: ${cacheKey}`);
     } else {
+      console.log(`[VehicleSystem] Loading model: ${cacheKey}`);
       try {
         gltf = await new Promise((resolve, reject) => {
-          this._glbLoader.load(cacheKey, (loaded) => {
-            this._modelCache.set(cacheKey, loaded);
-            resolve(loaded);
-          }, undefined, reject);
+          this._glbLoader.load(
+            cacheKey,
+            (loaded) => {
+              console.log(`[VehicleSystem] ✅ Loaded: ${cacheKey}`);
+              this._modelCache.set(cacheKey, loaded);
+              resolve(loaded);
+            },
+            (progress) => {
+              const percent = Math.round((progress.loaded / progress.total) * 100);
+              console.log(`[VehicleSystem] Loading ${cacheKey}: ${percent}%`);
+            },
+            (error) => {
+              console.error(`[VehicleSystem]  Failed to load ${cacheKey}:`, error);
+              reject(error);
+            }
+          );
         });
       } catch (error) {
         this._loadAttempts.set(cacheKey, true);
@@ -466,6 +468,7 @@ export default class VehicleSystem {
     root.name = `traffic-${type}`;
     const model = gltf.scene.clone(true);
 
+    // 🔥 FIX: Auto-scale and center the model
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
 
@@ -474,14 +477,17 @@ export default class VehicleSystem {
     if (maxDim > 10 || maxDim < 0.5) {
       const targetSize = type === "bus" || type === "truck" ? 4.0 : 2.5;
       finalScale = (targetSize / maxDim) * (spec.modelScale || 1.0);
+      console.log(`[VehicleSystem] Auto-scaled ${type} from ${maxDim.toFixed(2)} to target ${targetSize}`);
     }
     model.scale.setScalar(finalScale);
 
+    // Center the model
     const scaledBox = new THREE.Box3().setFromObject(model);
     model.position.x = -scaledBox.getCenter(new THREE.Vector3()).x;
     model.position.y = -scaledBox.min.y;
     model.position.z = -scaledBox.getCenter(new THREE.Vector3()).z;
 
+    // Apply color and materials
     const color = choose(spec.color);
     model.traverse((child) => {
       if (child.isMesh) {
@@ -504,6 +510,7 @@ export default class VehicleSystem {
   }
 
   _createFallbackVehicle(type, spec) {
+    console.log(`[VehicleSystem] Creating fallback box for ${type}`);
     const group = new THREE.Group();
     const color = Array.isArray(spec.color) ? spec.color[Math.floor(Math.random() * spec.color.length)] : (spec.color || 0x888888);
     const mat = new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.8 });
@@ -641,35 +648,6 @@ export default class VehicleSystem {
     this.densityMult = m;
   }
 
-  _onCheckpointApproach(payload = {}) {
-    const z = Number(payload.z) || 0;
-    for (const vehicle of this.vehicles.values()) {
-      if (Math.abs(vehicle.z - z) < 40) {
-        vehicle.cruiseSpeed = Math.min(vehicle.cruiseSpeed || 10, 6);
-        vehicle.speed = Math.min(vehicle.speed, 7);
-        if (Math.abs(vehicle.z - z) < 12) {
-          vehicle.stopped = true;
-          vehicle.speed = 0;
-        }
-      }
-    }
-  }
-
-  // 🔥 FIX: Added missing methods to prevent TypeError crashes
-  _attachTrafficHeadlights(vehicle) {
-    if (!vehicle.group.userData.lightsAttached) {
-      vehicle.group.userData.lightsAttached = true;
-      // Headlights logic can be expanded here later
-    }
-  }
-
-  _syncTrafficLights() {
-    // Sync headlights based on isNight state
-    // vehicle.group.traverse(child => {
-    //   if (child.isLight) child.intensity = this.isNight ? 1.5 : 0;
-    // });
-  }
-
   dispose() {
     this.clear();
     for (const dispose of this._disposers ?? []) {
@@ -682,4 +660,4 @@ export default class VehicleSystem {
   }
 }
 
-export { VEHICLE_SPECS, VEHICLE_TYPES, MODEL_YAW };
+export { VEHICLE_SPECS, VEHICLE_TYPES };
