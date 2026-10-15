@@ -1,5 +1,4 @@
 
-    this._bindPhase3Events();
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GAME_CONFIG } from "../core/config.js";
