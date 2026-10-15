@@ -273,13 +273,9 @@ export default class Game {
 
     switch (name) {
       case "world":
-        // WorldSystem.initialize expects a district, not the
-        // entire system context.
         return undefined;
-
       case "road":
         return { playerZ };
-
       case "scenery":
         return {
           playerZ,
@@ -288,20 +284,17 @@ export default class Game {
           weatherSystem: this.systems.get("weather") ?? null,
           eventBus: this.events,
         };
-
       case "playerVehicle":
         return {
           lane: playerLane,
           z: playerZ,
         };
-
       case "vehicles":
         return {
           playerZ,
           playerLane,
           initialVehicles: 8,
         };
-
       default:
         return this.getSystemContext();
     }
@@ -379,10 +372,6 @@ export default class Game {
   }
 
   async initializeSystems() {
-    /**
-     * Parallel critical boot — sequential was ~90s on routes alone
-     * because each dynamic import waited on a blocked main thread.
-     */
     const wave1 = [
       ["progression", () => Promise.resolve({ default: ProgressionSystem })],
       ["routes", () => Promise.resolve({ default: RouteSystem })],
@@ -464,9 +453,9 @@ export default class Game {
       ["customization", () => import("../systems/CustomizationSystem.js")],
       ["particles", () => import("../systems/ParticleSystem.js")],
       ["minimap", () => import("../systems/MinimapSystem.js")],
+      ["instancedCrowd", () => import("../systems/InstancedCrowdSystem.js")], // 🔥 ADDED
     ];
 
-    // Fire and forget — game can start without these
     this._deferredBoot = Promise.all(
       deferred.map(([name, load]) =>
         this.loadSystem(name, load, { required: false }).catch((e) => {
@@ -474,13 +463,12 @@ export default class Game {
         }),
       ),
     );
-    // Soft wait max 2s then continue
+    
     await Promise.race([
       this._deferredBoot,
       new Promise((r) => setTimeout(r, 2000)),
     ]);
   }
-
 
   async start() {
     if (this.isDestroyed) {
@@ -503,9 +491,7 @@ export default class Game {
 
       this.events.on("collision:near-miss", () => {
         this.targetTimeScale = 0.35;
-
         clearTimeout(this._slowMoTimer);
-
         this._slowMoTimer = setTimeout(() => {
           this.targetTimeScale = 1;
         }, 220);
@@ -513,9 +499,7 @@ export default class Game {
 
       this.events.on("traffic:near-miss", () => {
         this.targetTimeScale = 0.4;
-
         clearTimeout(this._slowMoTimer);
-
         this._slowMoTimer = setTimeout(() => {
           this.targetTimeScale = 1;
         }, 180);
@@ -601,8 +585,7 @@ export default class Game {
 
         this.state.setSpeed?.(speed);
       } catch {
-        // Keep the frame running if a state implementation
-        // does not expose a speed setter.
+        // Keep the frame running if a state implementation does not expose a speed setter.
       }
 
       for (const [name, system] of this.systems) {
@@ -639,6 +622,7 @@ export default class Game {
               });
               break;
 
+            // 🔥 ADDED "instancedCrowd" to this group so it receives playerZ
             case "passengers":
             case "checkpoint":
             case "chase":
@@ -653,10 +637,12 @@ export default class Game {
             case "fpsMeter":
             case "radioAudio":
             case "landmarkBillboards":
+            case "instancedCrowd": 
               system.update?.(delta, playerZ, speed);
               break;
 
             default:
+              // PhysicsSystem, MissionSystem, etc., fall here and just get `delta`
               system.update?.(delta);
               break;
           }
@@ -832,38 +818,19 @@ export default class Game {
 
     this.systems.clear();
 
-    try {
-      this.input.destroy?.();
-    } catch {}
-
-    try {
-      this.audio.destroy?.();
-    } catch {}
-
-    try {
-      this.sceneManager?.destroy?.();
-    } catch {}
-
-    try {
-      this.saveManager.destroy?.();
-    } catch {}
-
-    try {
-      this.state.destroy?.();
-    } catch {}
-
-    try {
-      this.services.destroy?.();
-    } catch {}
+    try { this.input.destroy?.(); } catch {}
+    try { this.audio.destroy?.(); } catch {}
+    try { this.sceneManager?.destroy?.(); } catch {}
+    try { this.saveManager.destroy?.(); } catch {}
+    try { this.state.destroy?.(); } catch {}
+    try { this.services.destroy?.(); } catch {}
 
     try {
       this.events?.safeEmit?.("game:destroyed") ??
         this.events?.emit?.("game:destroyed");
     } catch {}
 
-    try {
-      this.events?.destroy?.();
-    } catch {}
+    try { this.events?.destroy?.(); } catch {}
 
     this.sceneManager = null;
     this.isInitialized = false;
