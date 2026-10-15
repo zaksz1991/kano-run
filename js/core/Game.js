@@ -12,6 +12,7 @@ import SettingsManager from "./SettingsManager.js";
 import RouteSystem from "../systems/RouteSystem.js";
 import ProgressionSystem from "../systems/ProgressionSystem.js";
 import EconomySystem from "../systems/EconomySystem.js";
+import PerformanceSystem from "../systems/PerformanceSystem.js";
 
 export default class Game {
   constructor(options = {}) {
@@ -373,6 +374,7 @@ export default class Game {
 
   async initializeSystems() {
     const wave1 = [
+      ["performance", () => Promise.resolve({ default: PerformanceSystem })],
       ["progression", () => Promise.resolve({ default: ProgressionSystem })],
       ["routes", () => Promise.resolve({ default: RouteSystem })],
       ["economy", () => Promise.resolve({ default: EconomySystem })],
@@ -428,7 +430,6 @@ export default class Game {
       ["negotiation", () => import("../systems/NegotiationSystem.js")],
       ["checkpoint", () => import("../systems/CheckpointSystem.js")],
       ["chase", () => import("../systems/ChaseSystem.js")],
-      ["immersion", () => import("../systems/ImmersionSystem.js")],
       ["hud", () => import("../systems/HUDSystem.js")],
       ["mobileUI", () => import("../systems/MobileUISystem.js")],
       ["lighting", () => import("../systems/LightingSystem.js")],
@@ -449,6 +450,9 @@ export default class Game {
       ["environment", () => import("../systems/EnvironmentSystem.js")],
       ["routeGeneration", () => import("../systems/RouteGenerationSystem.js")],
       ["missions", () => import("../systems/MissionSystem.js")],
+      ["lifeSaver", () => import("../systems/LifeSaverSystem.js")],
+      ["immersion", () => import("../systems/ImmersionSystem.js")],
+      ["naijaChallenge", () => import("../systems/NaijaChallengeSystem.js")],
       ["yanDaba", () => import("../systems/YanDabaSystem.js")],
       ["garage", () => import("../systems/GarageSystem.js")],
       ["customization", () => import("../systems/CustomizationSystem.js")],
