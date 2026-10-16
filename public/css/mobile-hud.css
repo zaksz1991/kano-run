@@ -1,0 +1,27 @@
+/* Mobile in-run HUD — also copied to /css for index link */
+@media (max-width: 900px), (pointer: coarse) {
+  #kano-mission-ui,
+  #kano-mission-ui .mission-card,
+  #hud-radio,
+  .hud-radio-panel,
+  #hud-missions,
+  #hud-missions-list,
+  #kano-daily-fab,
+  .daily-missions-panel {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  #hud-root, #hud-container { pointer-events: none !important; }
+  #hud-root button, #hud-container button { pointer-events: auto !important; }
+  #kano-mobile-dock, #kano-mobile-topbar { display: flex !important; z-index: 7100 !important; }
+  #kano-game-controls { display: none !important; }
+  [id*="negotiat"], #neg-dialogue, .negotiation-panel {
+    bottom: calc(140px + env(safe-area-inset-bottom, 0px)) !important;
+    top: auto !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    max-width: 92vw !important;
+    z-index: 7200 !important;
+  }
+}

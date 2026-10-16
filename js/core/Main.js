@@ -16,7 +16,24 @@ class KanoRunApp {
     this.handleRestartEvent = this.handleRestartEvent.bind(this);
   }
 
+  
+  injectMobileHudCss() {
+    if (typeof document === "undefined") return;
+    if (document.getElementById("kano-mobile-hud-css")) return;
+    const link = document.createElement("link");
+    link.id = "kano-mobile-hud-css";
+    link.rel = "stylesheet";
+    link.href = "/css/mobile-hud.css";
+    document.head.appendChild(link);
+    // Inline fallback if file 404s
+    const style = document.createElement("style");
+    style.id = "kano-mobile-hud-inline";
+    style.textContent = `@media (max-width:900px),(pointer:coarse){#kano-mission-ui,#hud-radio,#hud-missions,#kano-daily-fab,.daily-missions-panel{display:none!important}#kano-game-controls{display:none!important}}`;
+    document.head.appendChild(style);
+  }
+
   async initialize() {
+    this.injectMobileHudCss();
     if (this.destroyed) return;
 
     const canvas = document.getElementById("c");
