@@ -1,29 +1,29 @@
 import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULT_DRIVERS = [
-  { id: "ruffneck", name: "RuffNeck", bonus: { speed: 1.08, handling: 1.05, fare: 1.1 }, unlocked: true },
-  { id: "baba", name: "Baba", bonus: { speed: 0.92, handling: 1.2, fare: 1.05 }, unlocked: true },
-  { id: "mama", name: "Mama", bonus: { speed: 0.95, handling: 1.15, fare: 1.12 }, unlocked: true },
-  { id: "mayen_mata", name: "Mayen Mata", bonus: { speed: 1.05, handling: 1.0, fare: 1.15 }, unlocked: false },
-  { id: "uztaz", name: "Uztaz", bonus: { speed: 0.9, handling: 1.25, fare: 1.0 }, unlocked: false },
-  { id: "area_boy", name: "Area Boy", bonus: { speed: 1.18, handling: 0.88, fare: 0.95 }, unlocked: false },
+  { id: "ruffneck", name: "RuffNeck", bonus: { speed: 1.08, handling: 1.05, fare: 1.1 }, unlocked: true, price: 0 },
+  { id: "baba", name: "Baba", bonus: { speed: 0.92, handling: 1.2, fare: 1.05 }, unlocked: true, price: 0 },
+  { id: "mama", name: "Mama", bonus: { speed: 0.95, handling: 1.15, fare: 1.12 }, unlocked: true, price: 0 },
+  { id: "mayen_mata", name: "Mayen Mata", bonus: { speed: 1.05, handling: 1.0, fare: 1.15 }, unlocked: false, price: 8000 },
+  { id: "uztaz", name: "Uztaz", bonus: { speed: 0.9, handling: 1.25, fare: 1.0 }, unlocked: false, price: 6500 },
+  { id: "area_boy", name: "Area Boy", bonus: { speed: 1.18, handling: 0.88, fare: 0.95 }, unlocked: false, price: 12000 },
 ];
 
 const DEFAULT_KEKES = [
-  { id: "standard", name: "Standard Adaidaita", stats: { maxSpeed: 25, acceleration: 10, handling: 1.0, fuelCapacity: 100 }, unlocked: true },
-  { id: "luxury", name: "Luxury Adaidaita", stats: { maxSpeed: 29, acceleration: 12, handling: 1.12, fuelCapacity: 115 }, unlocked: false },
-  { id: "cargo", name: "Cargo Adaidaita", stats: { maxSpeed: 22, acceleration: 8, handling: 0.85, fuelCapacity: 120 }, unlocked: false },
-  { id: "open", name: "Open Top", stats: { maxSpeed: 27, acceleration: 11, handling: 1.05, fuelCapacity: 95 }, unlocked: false },
+  { id: "standard", name: "Standard Adaidaita", stats: { maxSpeed: 25, acceleration: 10, handling: 1.0, fuelCapacity: 100 }, unlocked: true, price: 0 },
+  { id: "luxury", name: "Luxury Adaidaita", stats: { maxSpeed: 29, acceleration: 12, handling: 1.12, fuelCapacity: 115 }, unlocked: false, price: 15000 },
+  { id: "cargo", name: "Cargo Adaidaita", stats: { maxSpeed: 22, acceleration: 8, handling: 0.85, fuelCapacity: 120 }, unlocked: false, price: 10000 },
+  { id: "open", name: "Open Top", stats: { maxSpeed: 27, acceleration: 11, handling: 1.05, fuelCapacity: 95 }, unlocked: false, price: 9000 },
 ];
 
 const DEFAULT_PAINTS = [
-  { id: "classic", name: "Napep Yellow", color: 0xfbbf24, unlocked: true },
-  { id: "green", name: "Kano Green", color: 0x16a34a, unlocked: true },
-  { id: "blue", name: "Union Blue", color: 0x2563eb, unlocked: false },
-  { id: "red", name: "Challenge Red", color: 0xdc2626, unlocked: false },
-  { id: "white", name: "Clean White", color: 0xf8fafc, unlocked: false },
-  { id: "black", name: "Night Black", color: 0x1e293b, unlocked: false },
-  { id: "orange", name: "Harmattan Orange", color: 0xea580c, unlocked: false },
+  { id: "classic", name: "Napep Yellow", color: 0xfbbf24, unlocked: true, price: 0 },
+  { id: "green", name: "Kano Green", color: 0x16a34a, unlocked: true, price: 0 },
+  { id: "blue", name: "Union Blue", color: 0x2563eb, unlocked: false, price: 2500 },
+  { id: "red", name: "Challenge Red", color: 0xdc2626, unlocked: false, price: 2500 },
+  { id: "white", name: "Clean White", color: 0xf8fafc, unlocked: false, price: 3000 },
+  { id: "black", name: "Night Black", color: 0x1e293b, unlocked: false, price: 3500 },
+  { id: "orange", name: "Harmattan Orange", color: 0xea580c, unlocked: false, price: 2800 },
 ];
 
 function hexCss(n) {
@@ -150,7 +150,7 @@ export default class GarageSystem {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <div>
           <div style="font-size:12px;letter-spacing:2px;color:#00b4d8">GARAGE</div>
-          <div style="font-size:22px;font-weight:900">Adaidaita Sahu</div>
+          <div style="font-size:22px;font-weight:900">Adaidaita Sahu</div><div style="font-size:13px;color:#fbbf24;font-weight:800" data-wallet>₦0</div>
         </div>
         <button data-close style="padding:8px 14px;border:0;border-radius:8px;background:#334155;color:#fff;font-weight:700;cursor:pointer">Close</button>
       </div>
@@ -172,6 +172,8 @@ export default class GarageSystem {
       <div data-vehicles style="display:flex;flex-direction:column;gap:6px"></div>
     `;
 
+    const walletEl = panel.querySelector("[data-wallet]");
+    if (walletEl) walletEl.textContent = "Wallet ₦" + this._wallet().toLocaleString();
     const paintsEl = panel.querySelector("[data-paints]");
     for (const p of this.paints) {
       const btn = document.createElement("button");
@@ -183,8 +185,8 @@ export default class GarageSystem {
         borderRadius: "8px",
         border: p.id === this.selectedPaint ? "2px solid #fff" : "2px solid transparent",
         background: hexCss(p.color),
-        cursor: p.unlocked ? "pointer" : "not-allowed",
-        opacity: p.unlocked ? "1" : "0.35",
+        cursor: "pointer",
+        opacity: p.unlocked ? "1" : "0.45",
       });
       if (p.unlocked) {
         btn.addEventListener("click", () => {
@@ -206,8 +208,10 @@ export default class GarageSystem {
     for (const d of this.drivers) {
       const row = document.createElement("button");
       row.type = "button";
-      row.disabled = !d.unlocked;
-      row.textContent = `${d.name}${d.id === this.selectedDriver ? " ✓" : ""}${d.unlocked ? "" : " 🔒"}`;
+      const price = Number(d.price) || 0;
+      row.textContent = d.unlocked
+        ? `${d.name}${d.id === this.selectedDriver ? " ✓" : ""}`
+        : `${d.name} 🔒 ₦${price.toLocaleString()}`;
       Object.assign(row.style, {
         textAlign: "left",
         padding: "10px 12px",
@@ -215,15 +219,17 @@ export default class GarageSystem {
         border: d.id === this.selectedDriver ? "1px solid #00b4d8" : "1px solid #334155",
         background: d.id === this.selectedDriver ? "rgba(0,180,216,0.15)" : "rgba(255,255,255,0.04)",
         color: "#f8fafc",
-        cursor: d.unlocked ? "pointer" : "not-allowed",
+        cursor: "pointer",
         fontWeight: "600",
       });
-      if (d.unlocked) {
-        row.addEventListener("click", () => {
+      row.addEventListener("click", () => {
+        if (d.unlocked) {
           this.selectDriver(d.id);
           this.openUI();
-        });
-      }
+        } else if (this.purchaseDriver(d.id)) {
+          this.openUI();
+        }
+      });
       driversEl.appendChild(row);
     }
 
@@ -231,8 +237,10 @@ export default class GarageSystem {
     for (const v of this.vehicles) {
       const row = document.createElement("button");
       row.type = "button";
-      row.disabled = !v.unlocked;
-      row.textContent = `${v.name}${v.id === this.selectedVehicle ? " ✓" : ""}${v.unlocked ? "" : " 🔒"}`;
+      const price = Number(v.price) || 0;
+      row.textContent = v.unlocked
+        ? `${v.name}${v.id === this.selectedVehicle ? " ✓" : ""}`
+        : `${v.name} 🔒 ₦${price.toLocaleString()}`;
       Object.assign(row.style, {
         textAlign: "left",
         padding: "10px 12px",
@@ -240,22 +248,20 @@ export default class GarageSystem {
         border: v.id === this.selectedVehicle ? "1px solid #00b4d8" : "1px solid #334155",
         background: v.id === this.selectedVehicle ? "rgba(0,180,216,0.15)" : "rgba(255,255,255,0.04)",
         color: "#f8fafc",
-        cursor: v.unlocked ? "pointer" : "not-allowed",
+        cursor: "pointer",
         fontWeight: "600",
       });
-      if (v.unlocked) {
-        row.addEventListener("click", () => {
+      row.addEventListener("click", () => {
+        if (v.unlocked) {
           this.selectVehicle(v.id);
           this.openUI();
-        });
-      }
+        } else if (this.purchaseVehicle(v.id)) {
+          this.openUI();
+        }
+      });
       vehiclesEl.appendChild(row);
     }
 
-    panel.querySelector("[data-close]").addEventListener("click", () => this.closeUI());
-    root.addEventListener("click", (e) => {
-      if (e.target === root) this.closeUI();
-    });
     root.appendChild(panel);
     document.body.appendChild(root);
     this._panel = root;
@@ -293,6 +299,66 @@ export default class GarageSystem {
     this.eventBus?.emit?.("garage:paint-preview", { color: paint.color, id });
     return true;
   }
+
+  _wallet() {
+    const p = this.gameState?.profile || {};
+    const n = Number(p.money ?? p.wallet);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  _spend(amount, reason) {
+    const cost = Math.max(0, Math.round(amount));
+    if (cost <= 0) return true;
+    if (this._wallet() < cost) {
+      this.eventBus?.emit?.("hud:notify", {
+        text: `Need ₦${cost.toLocaleString()} (balance ₦${this._wallet().toLocaleString()})`,
+        type: "warn",
+      });
+      return false;
+    }
+    this.eventBus?.emit?.("economy:spend", { amount: cost, reason });
+    if (this.gameState?.profile) {
+      const p = this.gameState.profile;
+      p.money = Math.max(0, (Number(p.money) || 0) - cost);
+      p.wallet = p.money;
+    }
+    this.eventBus?.emit?.("economy:balance-changed", {
+      money: this._wallet(),
+      change: -cost,
+    });
+    return true;
+  }
+
+  purchaseDriver(id) {
+    const driver = this.drivers.find((d) => d.id === id);
+    if (!driver || driver.unlocked) return false;
+    if (!this._spend(Number(driver.price) || 0, `unlock_driver_${id}`)) return false;
+    this.unlockDriver(id);
+    this.selectDriver(id);
+    this.eventBus?.emit?.("hud:notify", { text: `Hired ${driver.name}`, type: "ok" });
+    return true;
+  }
+
+  purchaseVehicle(id) {
+    const vehicle = this.vehicles.find((v) => v.id === id);
+    if (!vehicle || vehicle.unlocked) return false;
+    if (!this._spend(Number(vehicle.price) || 0, `unlock_vehicle_${id}`)) return false;
+    this.unlockVehicle(id);
+    this.selectVehicle(id);
+    this.eventBus?.emit?.("hud:notify", { text: `Unlocked ${vehicle.name}`, type: "ok" });
+    return true;
+  }
+
+  purchasePaint(id) {
+    const paint = this.paints.find((p) => p.id === id);
+    if (!paint || paint.unlocked) return false;
+    if (!this._spend(Number(paint.price) || 0, `unlock_paint_${id}`)) return false;
+    this.unlockPaint(id);
+    this.selectPaint(id);
+    this.eventBus?.emit?.("hud:notify", { text: `Paint: ${paint.name}`, type: "ok" });
+    return true;
+  }
+
 
   unlockDriver(id) {
     const driver = this.drivers.find((d) => d.id === id);
