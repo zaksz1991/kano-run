@@ -93,7 +93,6 @@ export default class PlayerVehicleSystem {
     this._speedCap = 0;
     this.limpMode = false;
 
-    // 🔥 Physics State Sync
     this.physicsState = { 
       x: 0, z: 0, y: 0, speed: 0, speedKmh: 0, 
       roll: 0, quaternion: new THREE.Quaternion() 
@@ -102,7 +101,7 @@ export default class PlayerVehicleSystem {
     if (this.eventBus?.on) {
       this.eventBus.on("physics:state", (p) => {
         this.physicsState = p;
-        this.speed = p.speed; // m/s
+        this.speed = p.speed;
       });
       this.eventBus.on("lighting:night", (p) => this._setHeadlights(Boolean(p?.isNight)));
       this.eventBus.on("daynight:changed", (p) => this._setHeadlights(Boolean(p?.isNight || p?.phase === "night" || p?.phase === "evening")));
@@ -112,10 +111,7 @@ export default class PlayerVehicleSystem {
       this.eventBus.on("input:right", (p) => { this._touch.right = Boolean(p?.active); });
       this.eventBus.on("vehicle:hold", (p) => {
         this._held = Boolean(p?.hold);
-        if (this._held) {
-          this.speed = 0;
-          this.velocity = 0;
-        }
+        if (this._held) { this.speed = 0; this.velocity = 0; }
       });
       this.eventBus.on("player:force-speed-cap", (p) => { this._speedCap = Number(p.maxSpeed) || 0; });
       this.eventBus.on("player:limp-mode", (p) => { this.limpMode = Boolean(p.active); });
@@ -217,9 +213,6 @@ export default class PlayerVehicleSystem {
     if (this._held) {
       this.speed = 0;
       this.velocity = 0;
-      if (this.vehicle) {
-        // keep visual planted while negotiating / boarding
-      }
       return;
     }
     if (!this.initialized || !this.enabled || this.isDestroyed || !this.vehicle) return;
@@ -228,28 +221,20 @@ export default class PlayerVehicleSystem {
     this.collisionTimer = Math.max(0, this.collisionTimer - dt);
 
     this._readInput(state);
-    this._pushPhysicsInput(); // 🔥 Sends inputs to PhysicsSystem
+    this._pushPhysicsInput();
     
     this._updateFuel(dt);
     this._updateCondition();
 
-    // 🔥 VISUAL SYNC: Apply physics position and rotation to the mesh
     this.vehicle.position.set(this.physicsState.x, this.physicsState.y, this.physicsState.z);
     this.vehicle.quaternion.copy(this.physicsState.quaternion);
 
-    // Update distance based on physics speed
     this.distance += Math.abs(this.speed) * dt;
-
-    // Calculate off-road based on physics X position
     this.isOffRoad = Math.abs(this.physicsState.x) > this.config.roadWidth / 2 - this.preset.width * 0.35;
-
-    // Update approximate lane for UI
     this.lane = clamp(Math.round((this.physicsState.x + this.config.laneWidth) / this.config.laneWidth), 0, 2);
 
-    // Update Camera to follow physics position
     this._updateCamera(dt);
 
-    // Update Game State
     this.gameState?.setSpeed?.(this.physicsState.speedKmh);
     this.gameState?.setDistance?.(this.distance);
 
@@ -300,7 +285,6 @@ export default class PlayerVehicleSystem {
 
   _updateCamera(dt) {
     if (!this.camera) return;
-    // Camera smoothly follows the physics position
     const targetPosition = new THREE.Vector3(this.physicsState.x * 0.35, 4.2, this.physicsState.z - 9.5);
     this.camera.position.x = damp(this.camera.position.x, targetPosition.x, 4, dt);
     this.camera.position.y = damp(this.camera.position.y, targetPosition.y, 3, dt);
@@ -325,12 +309,8 @@ export default class PlayerVehicleSystem {
     let modelLoaded = false;
 
     try {
-      const mobile =
-        typeof window !== "undefined" &&
-        (window.innerWidth <= 900 ||
-          (window.matchMedia && matchMedia("(pointer: coarse)").matches));
+      const mobile = typeof window !== "undefined" && (window.innerWidth <= 900 || (window.matchMedia && matchMedia("(pointer: coarse)").matches));
       if (mobile) {
-        // Skip GLB on phone: avoids black screen stalls + giant driver meshes
         nextVehicle = this._createFallbackVehicle(preset);
         modelLoaded = false;
       } else {
@@ -369,6 +349,7 @@ export default class PlayerVehicleSystem {
     return this;
   }
 
+  // 🔥 FIXED: Aggressively hide drivers and scale based ONLY on the keke body
   _loadGLBModel(preset) {
     if (!preset.modelPath) return Promise.reject(new Error("No GLB model path was configured."));
 
@@ -385,49 +366,62 @@ export default class PlayerVehicleSystem {
       const model = sourceScene.clone(true);
       model.name = `player-${preset.style || "vehicle"}`;
 
-      if (preset.modelScale) model.scale.multiplyScalar(preset.modelScale);
-
-      // Normalize keke body size; shrink/hide oversized embedded human meshes
-      let box = new THREE.Box3().setFromObject(model);
-      let size = box.getSize(new THREE.Vector3());
-      let maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 0.01) {
-        model.scale.multiplyScalar(1.85 / maxDim);
-      }
-
-      // Hide/shrink tall human-like meshes (many GLBs have unnamed drivers)
-      model.updateMatrixWorld(true);
-      const humanRe = /(driver|rider|person|character|human|man|woman|body|head|arm|leg)/i;
+      // 1. Aggressively hide any mesh that looks like a driver/rider BEFORE scaling
+      const humanRe = /(driver|rider|person|character|human|man|woman|body|head|arm|leg|pilot|npc|male|female)/i;
       model.traverse((child) => {
-        if (!child.isMesh || !child.geometry) return;
-        const n = `${child.name || ""} ${child.parent?.name || ""}`;
-        child.geometry.computeBoundingBox?.();
-        const bb = child.geometry.boundingBox;
-        if (!bb) return;
-        const sx = Math.max(0.001, bb.max.x - bb.min.x);
-        const sy = Math.max(0.001, bb.max.y - bb.min.y);
-        const sz = Math.max(0.001, bb.max.z - bb.min.z);
-        const tall = sy > sx * 1.35 && sy > sz * 1.35 && sy > 0.9;
-        const namedHuman = humanRe.test(n);
-        if (namedHuman || tall) {
-          child.visible = false; // remove giant standing driver from cabin view
+        if (!child.isMesh) return;
+        const name = (child.name || "").toLowerCase();
+        const parentName = (child.parent?.name || "").toLowerCase();
+        
+        if (humanRe.test(name) || humanRe.test(parentName)) {
+          child.visible = false;
+          return;
+        }
+
+        // Hide tall, thin meshes positioned above the base (catches unnamed drivers)
+        if (child.geometry) {
+          child.geometry.computeBoundingBox();
+          const bb = child.geometry.boundingBox;
+          if (bb) {
+            const height = bb.max.y - bb.min.y;
+            const width = bb.max.x - bb.min.x;
+            const depth = bb.max.z - bb.min.z;
+            if (height > width * 1.2 && height > depth * 1.2 && bb.min.y > 0.3) {
+              child.visible = false;
+            }
+          }
         }
       });
 
-      // Final clamp: total height should not exceed ~1.7
-      box = new THREE.Box3().setFromObject(model);
-      size = box.getSize(new THREE.Vector3());
-      if (size.y > 1.75) {
-        model.scale.multiplyScalar(1.7 / size.y);
-        box = new THREE.Box3().setFromObject(model);
+      // 2. Calculate bounding box of ONLY the visible keke parts
+      const visibleBox = new THREE.Box3();
+      let hasVisible = false;
+      model.traverse((child) => {
+        if (child.isMesh && child.visible) {
+          child.updateMatrixWorld(true);
+          const box = new THREE.Box3().setFromObject(child);
+          visibleBox.union(box);
+          hasVisible = true;
+        }
+      });
+
+      // 3. Scale the keke to the correct size (~1.85 units)
+      if (hasVisible) {
+        const size = visibleBox.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        if (maxDim > 0.01) {
+          model.scale.setScalar(1.85 / maxDim);
+        }
       }
-      const center = box.getCenter(new THREE.Vector3());
+
+      // 4. Center and ground the model
+      model.updateMatrixWorld(true);
+      const finalBox = new THREE.Box3().setFromObject(model);
+      const center = finalBox.getCenter(new THREE.Vector3());
+      
       model.position.x -= center.x;
       model.position.z -= center.z;
-      model.position.y -= box.min.y;
-
-      const box2 = new THREE.Box3().setFromObject(model);
-      model.position.y -= box2.min.y;
+      model.position.y -= finalBox.min.y; // Ground it
 
       model.traverse((child) => {
         if (!child.isMesh) return;
@@ -444,9 +438,7 @@ export default class PlayerVehicleSystem {
     return new Promise((resolve, reject) => {
       this._glbLoader.load(
         path,
-        (gltf) => {
-          resolve(gltf.scene);
-        },
+        (gltf) => { resolve(gltf.scene); },
         undefined,
         (error) => {
           console.error(`[PlayerVehicle] ❌ Failed to load: ${path}`, error);
@@ -543,10 +535,7 @@ export default class PlayerVehicleSystem {
     const damage = this.config.damagePerCollision * impact;
     this.damage = clamp(this.damage + damage, 0, 100);
     this.condition = clamp(this.condition - damage, 0, 100);
-    
-    // Push the vehicle back slightly on collision
     this.eventBus?.emit?.("physics:pushback", { force: impact * 5 });
-    
     this.eventBus?.emit?.("playerVehicle:damaged", { damage, totalDamage: this.damage, condition: this.condition, speed: this.physicsState.speedKmh });
   }
 
@@ -584,27 +573,18 @@ export default class PlayerVehicleSystem {
   reset({ lane = 1, z = 0, fuel = null, condition = 100 } = {}) {
     this.lane = clamp(lane, 0, 2);
     const startX = this._laneX(this.lane);
-    
-    this.speed = 0;
-    this.distance = 0;
-    this.damage = 0;
+    this.speed = 0; this.distance = 0; this.damage = 0;
     this.condition = clamp(condition, 0, 100);
     this.fuel = clamp(fuel ?? this.preset.fuelCapacity, 0, this.preset.fuelCapacity);
-    this.collisionTimer = 0;
-    this.isDestroyed = false;
-    this.isOffRoad = false;
-    this.isAccelerating = false;
-    this.isBraking = false;
-    this.steeringInput = 0;
+    this.collisionTimer = 0; this.isDestroyed = false; this.isOffRoad = false;
+    this.isAccelerating = false; this.isBraking = false; this.steeringInput = 0;
 
-    // 🔥 Tell PhysicsSystem to reset
     this.eventBus?.emit?.("physics:reset", { x: startX, z });
 
     if (this.vehicle) {
       this.vehicle.position.set(startX, 0, z);
       this.vehicle.rotation.set(0, Math.PI, 0); 
     }
-    
     this.eventBus?.emit?.("playerVehicle:reset", this.getSnapshot());
     return this;
   }
@@ -638,7 +618,6 @@ export default class PlayerVehicleSystem {
     const throttle = this.isAccelerating ? 1 : 0;
     const brake = this.isBraking ? 1 : 0;
     const steer = this.steeringInput; 
-    
     this.eventBus?.emit?.("physics:input", { steer, throttle, brake });
   }
 
