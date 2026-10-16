@@ -371,11 +371,20 @@ export default class PlayerVehicleSystem {
 
       if (preset.modelScale) model.scale.multiplyScalar(preset.modelScale);
 
-      const box = new THREE.Box3().setFromObject(model);
-      const size = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 0.01 && maxDim < 1.8) model.scale.multiplyScalar(2.2 / maxDim);
-      else if (maxDim > 6) model.scale.multiplyScalar(2.8 / maxDim);
+      // Normalize size: target ~2.0m tall keke (stops giant embedded driver meshes)
+      let box = new THREE.Box3().setFromObject(model);
+      let size = box.getSize(new THREE.Vector3());
+      let maxDim = Math.max(size.x, size.y, size.z);
+      if (maxDim > 0.01) {
+        const target = 2.15; // metres-ish
+        model.scale.multiplyScalar(target / maxDim);
+      }
+      // Re-center on ground
+      box = new THREE.Box3().setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      model.position.x -= center.x;
+      model.position.z -= center.z;
+      model.position.y -= box.min.y;
 
       const box2 = new THREE.Box3().setFromObject(model);
       model.position.y -= box2.min.y;

@@ -97,14 +97,14 @@ export default class MobileUISystem {
 
       /* Bottom Dock (Driving Controls) */
       .ui-bottom {
-        display: flex; justify-content: space-between; align-items: flex-end; padding: 12px; gap: 16px;
+        display: flex; justify-content: space-between; align-items: flex-end; padding: 8px 10px; gap: 10px;
       }
-      .control-group { display: flex; gap: 12px; pointer-events: auto; }
+      .control-group { display: flex; gap: 8px; pointer-events: auto; align-items: center; }
       .control-btn {
-        width: 68px; height: 68px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25);
+        width: 52px; height: 52px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25);
         background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px);
         display: flex; align-items: center; justify-content: center;
-        font-size: 26px; color: #fff; user-select: none; touch-action: none;
+        font-size: 18px; color: #fff; user-select: none; touch-action: none;
         transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease;
         -webkit-tap-highlight-color: transparent;
       }
@@ -112,12 +112,12 @@ export default class MobileUISystem {
         background: rgba(255, 255, 255, 0.35); transform: scale(0.90); border-color: #fff;
       }
       .control-btn.horn { 
-        width: 56px; height: 56px; font-size: 22px; 
+        width: 44px; height: 44px; font-size: 16px; 
         background: rgba(251, 191, 36, 0.3); border-color: rgba(251, 191, 36, 0.6); 
       }
       .control-btn.accel { 
         background: rgba(46, 204, 113, 0.35); border-color: rgba(46, 204, 113, 0.7); 
-        width: 80px; height: 80px; font-size: 32px;
+        width: 58px; height: 58px; font-size: 20px;
       }
       .control-btn.brake { 
         background: rgba(231, 76, 60, 0.35); border-color: rgba(231, 76, 60, 0.7); 
@@ -166,8 +166,8 @@ export default class MobileUISystem {
 
       /* Responsive adjustments for very small screens (320px - 360px) */
       @media (max-width: 360px) {
-        .control-btn { width: 60px; height: 60px; font-size: 22px; }
-        .control-btn.accel, .control-btn.brake { width: 72px; height: 72px; font-size: 28px; }
+        .control-btn { width: 46px; height: 46px; font-size: 16px; }
+        .control-btn.accel, .control-btn.brake { width: 52px; height: 52px; font-size: 18px; }
         .ui-panel { min-width: 85px; padding: 6px 8px; }
         .ui-row { font-size: 11px; }
       }
@@ -271,8 +271,9 @@ export default class MobileUISystem {
       const startAction = (e) => {
         e.preventDefault();
         btn.classList.add("active");
-        if (this.input && typeof this.input.setKey === "function") {
-          this.input.setKey(action, true);
+        if (this.input && (typeof this.input.setInput === "function" || typeof this.input.setButton === "function")) {
+          if (typeof this.input.setInput === "function") this.input.setInput(action, true);
+          else this.input.setButton(action, true);
         } else {
           this.eventBus?.emit?.(`input:${action}`, { active: true });
         }
@@ -286,8 +287,9 @@ export default class MobileUISystem {
         e.preventDefault();
         btn.classList.remove("active");
         if (action !== "horn") {
-          if (this.input && typeof this.input.setKey === "function") {
-            this.input.setKey(action, false);
+          if (this.input && (typeof this.input.setInput === "function" || typeof this.input.setButton === "function")) {
+            if (typeof this.input.setInput === "function") this.input.setInput(action, false);
+            else this.input.setButton(action, false);
           } else {
             this.eventBus?.emit?.(`input:${action}`, { active: false });
           }

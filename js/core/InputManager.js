@@ -245,6 +245,11 @@ export class InputManager {
     this.setButton(action, pressed, `ui-${action}`);
   }
 
+  /** Alias used by mobile UI */
+  setKey(action, pressed) {
+    this.setInput(action, pressed);
+  }
+
   bindPointer(action, pointerId) {
     this.assertActive();
 
