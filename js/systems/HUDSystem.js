@@ -201,6 +201,30 @@ export default class HUDSystem {
 
   _createUI() {
     document.getElementById("kano-hud")?.remove();
+    // On mobile, MobileUISystem owns chrome — only keep notifications/negotiation hooks
+    if (this._isMobileHud()) {
+      const container = document.createElement("div");
+      container.id = "kano-hud";
+      container.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:1000;display:none;";
+      document.body.appendChild(container);
+      // minimal notification host (centered, temporary)
+      const notification = document.createElement("div");
+      notification.id = "hud-notification";
+      Object.assign(notification.style, {
+        position: "absolute", top: "28%", left: "50%", transform: "translate(-50%,-50%)",
+        background: "rgba(7,18,32,0.94)", padding: "12px 20px", borderRadius: "12px",
+        color: "#fff", fontSize: "16px", fontWeight: "700", textAlign: "center",
+        opacity: "0", transition: "opacity 0.25s ease", maxWidth: "90vw", pointerEvents: "none",
+      });
+      container.appendChild(notification);
+      this.elements = {
+        container,
+        notification,
+        money: null, speed: null, level: null, fuelBar: null, lives: null,
+      };
+      return;
+    }
+
 
     const container = document.createElement("div");
     container.id = "kano-hud";

@@ -33,6 +33,9 @@ export default class MobileUISystem {
       document.body.classList.add("kano-playing");
       this.show();
       this._hideOldDesktopPanels();
+      clearInterval(this._hideTimer);
+      this._hideTimer = setInterval(() => this._hideOldDesktopPanels(), 800);
+      setTimeout(() => clearInterval(this._hideTimer), 8000);
     });
     this._subscribe("menu:open", () => {
       document.body.classList.add("kano-lobby");
@@ -58,6 +61,24 @@ export default class MobileUISystem {
         display: none; flex-direction: column; justify-content: space-between;
       }
       .kano-playing #kano-mobile-ui { display: flex !important; }
+
+      /* Kill desktop HUD on phone — was stacking on top of mobile chrome */
+      @media (max-width: 900px), (pointer: coarse) {
+        body.kano-playing #kano-hud,
+        body.kano-playing #kano-hud * {
+          display: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
+        body.kano-playing #kano-mission-ui,
+        body.kano-playing #kano-radio-fab,
+        body.kano-playing #kano-garage-fab,
+        body.kano-playing #kano-naija-fab,
+        body.kano-playing #kano-daily-fab {
+          display: none !important;
+        }
+      }
 
       /* Top Bar */
       .ui-top {
@@ -410,6 +431,8 @@ export default class MobileUISystem {
     if (typeof document === "undefined") return;
     
     const selectorsToHide = [
+      "#kano-hud",
+      "#kano-hud > *",
       "#hud-radio", ".hud-radio-panel", "#kano-daily-fab",
       "#kano-daily-ui", ".daily-missions-panel",
       "#hud-top-left", "#hud-top-right",
@@ -420,6 +443,10 @@ export default class MobileUISystem {
       "#radio-kano-panel", ".radio-panel",
       "#wallet", "#level", "#life",
       "[id*='wallet']", "[id*='level']", "[id*='life']",
+      "#kano-mission-ui",
+      "#kano-radio-fab",
+      "#kano-garage-fab",
+      "#kano-naija-fab",
     ];
 
     selectorsToHide.forEach(selector => {

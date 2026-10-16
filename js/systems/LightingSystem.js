@@ -2,9 +2,9 @@ import * as THREE from "three";
 import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
-  sunIntensity: 1.8,
-  ambientIntensity: 0.6,
-  hemiIntensity: 0.8,
+  sunIntensity: 2.4,
+  ambientIntensity: 1.05,
+  hemiIntensity: 1.15,
   shadowMapSize: 1024, // 🔥 Mobile optimized: 1024 is sharp enough and saves VRAM
   shadowCameraNear: 0.5,
   shadowCameraFar: 120,
@@ -39,8 +39,8 @@ export default class LightingSystem {
     this.timeOfDay = 0.5; // 0 to 1 (0.5 is noon)
     this.currentPhase = "day";
     
-    this.targetExposure = 1.2;
-    this.currentExposure = 1.2;
+    this.targetExposure = 1.55;
+    this.currentExposure = 1.55;
 
     this._disposers = [];
   }
@@ -213,7 +213,7 @@ export default class LightingSystem {
       if (this.scene.fog) { this.scene.fog.density = 0.012; this.scene.fog.color.setHex(this.config.daySkyColor); }
       if (this.scene.background) this.scene.background.setHex(this.config.daySkyColor);
       if (this.sun) this.sun.intensity = this.config.sunIntensity;
-      this.targetExposure = 1.2;
+      this.targetExposure = 1.55;
     }
   }
 
