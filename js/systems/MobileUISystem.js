@@ -272,12 +272,12 @@ export default class MobileUISystem {
       const startAction = (e) => {
         e.preventDefault();
         btn.classList.add("active");
-        if (this.input && (typeof this.input.setInput === "function" || typeof this.input.setButton === "function")) {
-          if (typeof this.input.setInput === "function") this.input.setInput(action, true);
-          else this.input.setButton(action, true);
-        } else {
-          this.eventBus?.emit?.(`input:${action}`, { active: true });
-        }
+        // Always drive both paths — InputManager + eventBus backup
+        try {
+          if (typeof this.input?.setInput === "function") this.input.setInput(action, true);
+          else if (typeof this.input?.setButton === "function") this.input.setButton(action, true);
+        } catch {}
+        this.eventBus?.emit?.(`input:${action}`, { active: true });
         if (action === "horn") {
           this.eventBus?.emit?.("audio:horn");
           setTimeout(() => btn.classList.remove("active"), 150);

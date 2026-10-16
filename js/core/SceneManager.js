@@ -127,6 +127,10 @@ export default class SceneManager {
     this.resizeHandler = () => this.resize();
     window.addEventListener("resize", this.resizeHandler);
     window.addEventListener("orientationchange", this.resizeHandler);
+    if (typeof window !== "undefined" && (window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches)) {
+      this.post = null; // mobile: disable post pipeline entirely
+      this.renderer.shadowMap.enabled = false;
+    }
     window.visualViewport?.addEventListener?.("resize", this.resizeHandler);
     window.visualViewport?.addEventListener?.("scroll", this.resizeHandler);
     // One more resize after layout settles (Android URL bar)
@@ -251,13 +255,25 @@ export default class SceneManager {
     if (this.destroyed || !this.scene || !this.camera || !this.renderer) {
       return;
     }
-
-    // Use post-processing if available, otherwise fallback to standard render
-    if (this.post) {
-      this.post.render(delta);
-    } else {
+    // Mobile: never use post-processing (black screen / failed composer on many Androids)
+    const mobile =
+      typeof window !== "undefined" &&
+      (window.innerWidth <= 900 ||
+        (window.matchMedia && matchMedia("(pointer: coarse)").matches));
+    if (mobile) {
+      this.renderer.setClearColor(this.backgroundColor, 1);
       this.renderer.render(this.scene, this.camera);
+      return;
     }
+    if (this.post?.composer || this.post?.ready) {
+      try {
+        this.post.render(delta);
+        return;
+      } catch (e) {
+        console.warn("[SceneManager] post failed, fallback render", e);
+      }
+    }
+    this.renderer.render(this.scene, this.camera);
   }
 
   getContext() {

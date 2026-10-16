@@ -89,6 +89,7 @@ export default class PlayerVehicleSystem {
     this._headlights = [];
     this._nightLightsOn = false;
     this._held = false;
+    this._touch = { accelerate: false, brake: false, left: false, right: false };
     this._speedCap = 0;
     this.limpMode = false;
 
@@ -105,6 +106,10 @@ export default class PlayerVehicleSystem {
       });
       this.eventBus.on("lighting:night", (p) => this._setHeadlights(Boolean(p?.isNight)));
       this.eventBus.on("daynight:changed", (p) => this._setHeadlights(Boolean(p?.isNight || p?.phase === "night" || p?.phase === "evening")));
+      this.eventBus.on("input:accelerate", (p) => { this._touch.accelerate = Boolean(p?.active); });
+      this.eventBus.on("input:brake", (p) => { this._touch.brake = Boolean(p?.active); });
+      this.eventBus.on("input:left", (p) => { this._touch.left = Boolean(p?.active); });
+      this.eventBus.on("input:right", (p) => { this._touch.right = Boolean(p?.active); });
       this.eventBus.on("vehicle:hold", (p) => {
         this._held = Boolean(p?.hold);
         if (this._held) {
@@ -263,10 +268,10 @@ export default class PlayerVehicleSystem {
 
   _readInput(state) {
     const input = this.inputManager;
-    const accelerate = state.accelerate ?? input?.isDown?.("accelerate") ?? input?.isDown?.("gas") ?? false;
-    const brake = state.brake ?? input?.isDown?.("brake") ?? false;
-    const left = state.left ?? input?.isDown?.("left") ?? false;
-    const right = state.right ?? input?.isDown?.("right") ?? false;
+    const accelerate = state.accelerate ?? input?.isDown?.("accelerate") ?? input?.isDown?.("gas") ?? this._touch?.accelerate ?? false;
+    const brake = state.brake ?? input?.isDown?.("brake") ?? this._touch?.brake ?? false;
+    const left = state.left ?? input?.isDown?.("left") ?? this._touch?.left ?? false;
+    const right = state.right ?? input?.isDown?.("right") ?? this._touch?.right ?? false;
     const steeringAxis = Number(state.steeringAxis) || (left ? 1 : 0) - (right ? 1 : 0);
 
     this.isAccelerating = Boolean(accelerate);
@@ -320,11 +325,22 @@ export default class PlayerVehicleSystem {
     let modelLoaded = false;
 
     try {
-      nextVehicle = await this._loadGLBModel(preset);
-      modelLoaded = true;
+      const mobile =
+        typeof window !== "undefined" &&
+        (window.innerWidth <= 900 ||
+          (window.matchMedia && matchMedia("(pointer: coarse)").matches));
+      if (mobile) {
+        // Skip GLB on phone: avoids black screen stalls + giant driver meshes
+        nextVehicle = this._createFallbackVehicle(preset);
+        modelLoaded = false;
+      } else {
+        nextVehicle = await this._loadGLBModel(preset);
+        modelLoaded = true;
+      }
     } catch (error) {
       console.warn(`[PlayerVehicle] Could not load ${preset.modelPath}. Using fallback.`, error);
       nextVehicle = this._createFallbackVehicle(preset);
+      modelLoaded = false;
     }
 
     if (requestId !== this._vehicleRequest) {
@@ -379,16 +395,23 @@ export default class PlayerVehicleSystem {
         model.scale.multiplyScalar(1.85 / maxDim);
       }
 
-      // Detect and shrink human-like child meshes (driver standing on roof)
-      const humanRe = /(driver|rider|person|character|human|man|woman|body|head|arm|leg)/i;
+      // Hide/shrink tall human-like meshes (many GLBs have unnamed drivers)
       model.updateMatrixWorld(true);
+      const humanRe = /(driver|rider|person|character|human|man|woman|body|head|arm|leg)/i;
       model.traverse((child) => {
-        if (!child.isMesh) return;
+        if (!child.isMesh || !child.geometry) return;
         const n = `${child.name || ""} ${child.parent?.name || ""}`;
-        if (!humanRe.test(n)) return;
-        // Scale local mesh down toward seat size
-        child.scale.multiplyScalar(0.42);
-        child.position.y *= 0.35;
+        child.geometry.computeBoundingBox?.();
+        const bb = child.geometry.boundingBox;
+        if (!bb) return;
+        const sx = Math.max(0.001, bb.max.x - bb.min.x);
+        const sy = Math.max(0.001, bb.max.y - bb.min.y);
+        const sz = Math.max(0.001, bb.max.z - bb.min.z);
+        const tall = sy > sx * 1.35 && sy > sz * 1.35 && sy > 0.9;
+        const namedHuman = humanRe.test(n);
+        if (namedHuman || tall) {
+          child.visible = false; // remove giant standing driver from cabin view
+        }
       });
 
       // Final clamp: total height should not exceed ~1.7
