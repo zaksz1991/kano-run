@@ -107,6 +107,10 @@ export default class PlayerVehicleSystem {
       this.eventBus.on("daynight:changed", (p) => this._setHeadlights(Boolean(p?.isNight || p?.phase === "night" || p?.phase === "evening")));
       this.eventBus.on("vehicle:hold", (p) => {
         this._held = Boolean(p?.hold);
+        if (this._held) {
+          this.speed = 0;
+          this.velocity = 0;
+        }
       });
       this.eventBus.on("player:force-speed-cap", (p) => { this._speedCap = Number(p.maxSpeed) || 0; });
       this.eventBus.on("player:limp-mode", (p) => { this.limpMode = Boolean(p.active); });
@@ -205,7 +209,14 @@ export default class PlayerVehicleSystem {
   }
 
   update(deltaTime, state = {}) {
-    if (this._held) return;
+    if (this._held) {
+      this.speed = 0;
+      this.velocity = 0;
+      if (this.vehicle) {
+        // keep visual planted while negotiating / boarding
+      }
+      return;
+    }
     if (!this.initialized || !this.enabled || this.isDestroyed || !this.vehicle) return;
 
     const dt = clamp(deltaTime || 0, 0, 0.05);

@@ -17,9 +17,14 @@ const DEFAULTS = {
 
 //  ROTATION MAP: 0 = faces forward naturally, Math.PI = needs flip
 const MODEL_ROTATIONS = {
-  car: 0, car1: 0, taxi: 0, suv: 0, bus: 0, motorcycle: Math.PI,
-  truck: 0, police: 0, van: 0, pickup: 0, keke: Math.PI,
+  // World forward is +Z. Values are radians around Y.
+  // Keke/motorcycle GLBs in this pack already face +Z — do NOT add Math.PI (that looked reverse).
+  car: 0, car1: 0, taxi: 0, suv: 0, bus: 0, motorcycle: 0,
+  truck: 0, police: 0, van: 0, pickup: 0, keke: 0,
 };
+
+// Types that still appear backward after testing can be listed here (extra child mesh flip)
+const MODEL_CHILD_FLIP = new Set([]);
 
 const VEHICLE_SPECS = {
   car: {
@@ -262,6 +267,11 @@ export default class VehicleSystem {
     
     // 🔥 FIX: Apply the correct rotation so vehicle faces forward (+Z)
     vehicle.group.rotation.y = spec.rotation ?? 0;
+    if (MODEL_CHILD_FLIP.has(vehicle.type) && vehicle.group.children.length) {
+      vehicle.group.children.forEach((ch) => {
+        if (ch.isObject3D) ch.rotation.y = Math.PI;
+      });
+    }
 
     this.vehicles.set(vehicle.id, vehicle);
     this.scene.add(vehicle.group);
@@ -319,8 +329,10 @@ export default class VehicleSystem {
       );
       vehicle.group.position.z = vehicle.z;
       
-      // 🔥 FIX: Maintain forward-facing rotation while moving
-      vehicle.group.rotation.y = vehicle.spec.rotation ?? 0;
+      // Face the direction of travel (+Z). Oncoming uses negative speed if set.
+      const movingBack = (vehicle.speed || 0) < 0 || vehicle.oncoming;
+      const base = vehicle.spec.rotation ?? 0;
+      vehicle.group.rotation.y = base + (movingBack ? Math.PI : 0);
 
       this._avoidVehicleAhead(vehicle, dt);
       

@@ -40,6 +40,15 @@ export default class InstancedCrowdSystem {
       this.enabled = true;
       this._nextSpawnZ = 50;
     });
+    this._subscribe("crowd:boost", (p) => {
+      this._boostUntil = (this.playerZ || 0) + (Number(p?.radius) || 40);
+      this._boostCount = Number(p?.count) || 10;
+      // spawn extra walkers immediately near z
+      const z = Number(p?.z) || this._nextSpawnZ;
+      for (let i = 0; i < Math.min(8, this._boostCount); i++) {
+        this._spawnNear?.(z + (Math.random() - 0.5) * 20);
+      }
+    });
     this._subscribe("game:stopped", () => {
       this.enabled = false;
       this._clearAll();
