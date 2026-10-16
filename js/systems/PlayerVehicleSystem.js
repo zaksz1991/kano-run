@@ -226,6 +226,7 @@ export default class PlayerVehicleSystem {
     this._updateFuel(dt);
     this._updateCondition();
 
+    // Sync visual mesh to physics state
     this.vehicle.position.set(this.physicsState.x, this.physicsState.y, this.physicsState.z);
     this.vehicle.quaternion.copy(this.physicsState.quaternion);
 
@@ -308,9 +309,11 @@ export default class PlayerVehicleSystem {
     let nextVehicle;
     let modelLoaded = false;
 
+    // Force fallback on mobile to prevent invisible vehicle issues
+    const isMobile = typeof window !== "undefined" && (window.innerWidth <= 900 || (window.matchMedia && matchMedia("(pointer: coarse)").matches));
+
     try {
-      const mobile = typeof window !== "undefined" && (window.innerWidth <= 900 || (window.matchMedia && matchMedia("(pointer: coarse)").matches));
-      if (mobile) {
+      if (isMobile) {
         nextVehicle = this._createFallbackVehicle(preset);
         modelLoaded = false;
       } else {
@@ -340,7 +343,8 @@ export default class PlayerVehicleSystem {
       this._applyPaintToVehicle(this.vehicle, this.paintColor);
     }
 
-    this.vehicle.position.set(this.physicsState.x || 0, 0, this.physicsState.z || 0);
+    // Ensure vehicle is added and visible
+    this.vehicle.position.set(this.physicsState.x || 0, this.physicsState.y || 0, this.physicsState.z || 0);
     this.vehicle.visible = true;
     this.vehicle.frustumCulled = false;
     this.scene.add(this.vehicle);
@@ -365,45 +369,29 @@ export default class PlayerVehicleSystem {
       const model = sourceScene.clone(true);
       model.name = `player-${preset.style || "vehicle"}`;
 
-      // 🔥 STEP 1: AGGRESSIVELY REMOVE any driver/rider/human meshes BEFORE scaling
+      // 🔥 STEP 1: Update matrices to get accurate world-space bounds
+      model.updateMatrixWorld(true);
+
+      // 🔥 STEP 2: Aggressively remove tall, thin meshes (drivers/humans)
       const meshesToRemove = [];
       model.traverse((child) => {
-        if (!child.isMesh && !child.isGroup && !child.isObject3D) return;
+        if (!child.isMesh || !child.geometry) return;
         
-        const name = (child.name || "").toLowerCase();
-        const parentName = (child.parent?.name || "").toLowerCase();
+        // Compute world-space bounding box
+        child.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(child);
+        const size = box.getSize(new THREE.Vector3());
         
-        // Check for human/driver keywords in names
-        const isNamedHuman = /(driver|rider|person|character|human|man|woman|boy|girl|body|head|arm|leg|pilot|npc|male|female|skeleton|bone|placeholder)/i.test(name) || 
-                             /(driver|rider|person|character|human|man|woman|boy|girl|body|head|arm|leg|pilot|npc|male|female)/i.test(parentName);
-        
-        if (isNamedHuman) {
+        // If it's significantly taller than it is wide/deep, and has some height, it's a human part
+        if (size.y > 0.8 && size.y > size.x * 1.5 && size.y > size.z * 1.5) {
           meshesToRemove.push(child);
-          return;
-        }
-
-        // 🔥 STEP 2: Fallback shape check (tall, thin objects sitting above the floor are almost always drivers)
-        if (child.isMesh && child.geometry) {
-          child.geometry.computeBoundingBox();
-          const bb = child.geometry.boundingBox;
-          if (bb) {
-            const height = bb.max.y - bb.min.y;
-            const width = bb.max.x - bb.min.x;
-            const depth = bb.max.z - bb.min.z;
-            
-            // If it's significantly taller than it is wide/deep, and starts above the floor
-            if (height > 0.8 && height > width * 1.1 && height > depth * 1.1 && bb.min.y > 0.2) {
-              meshesToRemove.push(child);
-            }
-          }
         }
       });
 
-      // 🔥 STEP 3: Actually REMOVE them from the scene graph so they cannot affect scaling or rendering
+      //  STEP 3: Remove them from the scene graph
       meshesToRemove.forEach(mesh => {
         if (mesh.parent) {
           mesh.parent.remove(mesh);
-          // Clean up memory
           if (mesh.geometry) mesh.geometry.dispose();
           if (mesh.material) {
             if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
@@ -413,22 +401,22 @@ export default class PlayerVehicleSystem {
       });
 
       // 🔥 STEP 4: Calculate bounding box of ONLY the clean keke
+      model.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(model);
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
 
-      // 🔥 STEP 5: Scale to target size (target max dimension ~1.85 units)
+      // 🔥 STEP 5: Scale to target size (~1.85 units)
       if (maxDim > 0.01) {
         const scaleFactor = 1.85 / maxDim;
         model.scale.setScalar(scaleFactor);
       }
 
-      // 🔥 STEP 6: Re-calculate box after scaling to ground it perfectly on the road
+      // 🔥 STEP 6: Re-calculate box after scaling to ground it perfectly
       model.updateMatrixWorld(true);
       const finalBox = new THREE.Box3().setFromObject(model);
       const center = finalBox.getCenter(new THREE.Vector3());
       
-      // Center X and Z, and place bottom (min.y) exactly at 0
       model.position.x -= center.x;
       model.position.z -= center.z;
       model.position.y -= finalBox.min.y;
@@ -482,9 +470,12 @@ export default class PlayerVehicleSystem {
   _createFallbackVehicle(preset) {
     const group = new THREE.Group();
     group.name = "player-keke-fallback";
+    
     const bodyMaterial = new THREE.MeshStandardMaterial({ color: this.paintColor ?? preset.color, roughness: 0.72, metalness: 0.05 });
     const body = new THREE.Mesh(new THREE.BoxGeometry(preset.width, preset.height * 0.6, preset.length), bodyMaterial);
-    body.position.y = preset.height * 0.3; body.castShadow = true; body.receiveShadow = true;
+    body.position.y = preset.height * 0.3; 
+    body.castShadow = true; 
+    body.receiveShadow = true;
     group.add(body);
 
     const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x202020, roughness: 0.95 });
@@ -498,6 +489,7 @@ export default class PlayerVehicleSystem {
         group.add(wheel);
       }
     }
+    
     group.userData.bodyMaterial = bodyMaterial;
     group.userData.preset = preset;
     return group;
