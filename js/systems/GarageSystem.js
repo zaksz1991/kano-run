@@ -47,6 +47,10 @@ export default class GarageSystem {
 
     this._panel = null;
     this._disposers = [];
+    this._onWindowGarage = () => this.openUI();
+    if (typeof window !== "undefined") {
+      window.addEventListener("kano:open-garage", this._onWindowGarage);
+    }
     this._bindEvents();
   }
 
@@ -117,28 +121,29 @@ export default class GarageSystem {
 
     const root = document.createElement("div");
     root.id = "kano-garage-ui";
+    const isMobile = typeof window !== "undefined" && (window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches);
     Object.assign(root.style, {
       position: "fixed",
       inset: "0",
-      zIndex: "4800",
+      zIndex: "9000",
       background: "rgba(3,9,18,0.92)",
       display: "flex",
-      alignItems: "center",
+      alignItems: isMobile ? "flex-end" : "center",
       justifyContent: "center",
-      padding: "16px",
+      padding: isMobile ? "0" : "16px",
       fontFamily: "system-ui, Arial, sans-serif",
       color: "#f8fafc",
     });
 
     const panel = document.createElement("div");
     Object.assign(panel.style, {
-      width: "min(520px, 100%)",
-      maxHeight: "90vh",
+      width: isMobile ? "100%" : "min(520px, 100%)",
+      maxHeight: isMobile ? "88dvh" : "90vh",
       overflowY: "auto",
       background: "linear-gradient(145deg,#14243a,#081321)",
       border: "1px solid rgba(0,180,216,0.4)",
-      borderRadius: "16px",
-      padding: "20px",
+      borderRadius: isMobile ? "16px 16px 0 0" : "16px",
+      padding: isMobile ? "16px 16px calc(16px + env(safe-area-inset-bottom, 0px))" : "20px",
     });
 
     panel.innerHTML = `
@@ -391,6 +396,10 @@ export default class GarageSystem {
   }
 
   dispose() {
+    if (typeof window !== "undefined" && this._onWindowGarage) {
+      window.removeEventListener("kano:open-garage", this._onWindowGarage);
+    }
+
     this.closeUI();
     document.getElementById("kano-garage-fab")?.remove();
     if (this._onKey) window.removeEventListener("keydown", this._onKey);
