@@ -3,8 +3,8 @@ import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
   // Chase camera settings
-  chaseOffset: new THREE.Vector3(0, 4.5, -9),
-  lookAheadOffset: new THREE.Vector3(0, 1.5, 12),
+  chaseOffset: new THREE.Vector3(0, 6.5, -12),
+  lookAheadOffset: new THREE.Vector3(0, 1.2, 18),
   positionDamping: 6.0,
   lookAtDamping: 8.0,
   
@@ -44,6 +44,9 @@ export default class CameraSystem {
     this.currentFOV = this.config.baseFOV;
     this.introAngle = 0;
     this.isIntroPhase = true;
+    if (typeof window !== "undefined" && (window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches)) {
+      this.isIntroPhase = false;
+    }
 
     this._disposers = [];
     this._bindEvents();
@@ -67,7 +70,10 @@ export default class CameraSystem {
     });
 
     this._subscribe("game:over", () => {
-      this.isIntroPhase = true; // Reset to intro cam on game over
+      this.isIntroPhase = true;
+    if (typeof window !== "undefined" && (window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches)) {
+      this.isIntroPhase = false;
+    } // Reset to intro cam on game over
     });
   }
 
@@ -78,6 +84,7 @@ export default class CameraSystem {
   }
 
   setTarget(target) {
+    this.isIntroPhase = false;
     this.target = target;
   }
 

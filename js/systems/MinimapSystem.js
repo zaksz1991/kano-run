@@ -75,6 +75,10 @@ export default class MinimapSystem {
     });
 
     this.container.appendChild(this.canvas);
+    if (typeof window !== "undefined" && (window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches)) {
+      this.container.style.display = "none";
+      this.visible = false;
+    }
 
     this.context = this.canvas.getContext("2d");
 

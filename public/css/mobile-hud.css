@@ -1,21 +1,18 @@
-/* Force mobile-only chrome while playing */
 @media (max-width: 900px), (pointer: coarse) {
-  body.kano-playing #kano-hud {
-    display: none !important;
-  }
-  body.kano-playing #kano-mission-ui,
-  body.kano-playing #kano-radio-fab,
-  body.kano-playing #kano-garage-fab,
-  body.kano-playing #kano-naija-fab {
-    display: none !important;
-  }
-  #c, canvas#c {
+  .kano-minimap { display: none !important; visibility: hidden !important; }
+  body.kano-playing #kano-hud { display: none !important; }
+  #c, canvas#c, #game-container canvas {
+    position: fixed !important;
+    inset: 0 !important;
     width: 100% !important;
     height: 100% !important;
     display: block !important;
-    background: #87ceeb;
+    z-index: 0 !important;
   }
   #game-container {
-    background: #87ceeb;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 0 !important;
+    background: #87ceeb !important;
   }
 }
