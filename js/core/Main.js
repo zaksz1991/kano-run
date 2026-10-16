@@ -33,6 +33,36 @@ class KanoRunApp {
   }
 
   async initialize() {
+    window.addEventListener("kano:open-naija", () => {
+      const sys = this.game?.systems?.get?.("naijaChallenge");
+      if (sys?.openUI) {
+        sys.openUI();
+        return;
+      }
+      const tip = document.createElement("div");
+      tip.id = "naija-challenge-ui";
+      Object.assign(tip.style, {
+        position: "fixed", inset: "0", zIndex: "9000",
+        background: "rgba(3,9,18,0.9)", display: "flex",
+        alignItems: "center", justifyContent: "center", padding: "16px",
+        color: "#fff", fontFamily: "system-ui,Arial,sans-serif",
+      });
+      tip.innerHTML = '<div style="max-width:360px;background:#0f172a;border-radius:14px;padding:18px;border:1px solid #334155"><b>Naija Challenge</b><p style="color:#94a3b8;margin:10px 0;line-height:1.4">Loading challenge… start a run if this stays empty.</p><button type="button" id="naija-tip-close" style="width:100%;height:44px;border:0;border-radius:10px;background:#22c55e;font-weight:900">OK</button></div>';
+      tip.addEventListener("click", (e) => {
+        if (e.target === tip || e.target.id === "naija-tip-close") tip.remove();
+      });
+      document.body.appendChild(tip);
+      const t = setInterval(() => {
+        const s = this.game?.systems?.get?.("naijaChallenge");
+        if (s?.openUI) {
+          clearInterval(t);
+          tip.remove();
+          s.openUI();
+        }
+      }, 400);
+      setTimeout(() => clearInterval(t), 20000);
+    });
+
     this.injectMobileHudCss();
     if (this.destroyed) return;
 

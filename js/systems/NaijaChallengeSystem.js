@@ -1,9 +1,6 @@
 /**
- * Naija Challenge:
- * - Tribal leagues: Hausa, Yoruba, Igbo
- * - Top 3 per tribe stored locally
- * - Grand champion = best combined score from each tribe's top 3 average
- * - Regional challenges (North / South-West / South-East style routes)
+ * Naija Challenge — Hausa / Yoruba / Igbo top-3 + regional runs.
+ * Title button dispatches window event "kano:open-naija".
  */
 const STORAGE_KEY = "kano-run-naija-challenge";
 
@@ -29,11 +26,7 @@ function loadState() {
     playerName: "Driver",
     tribe: "hausa",
     region: "north",
-    leaderboards: {
-      hausa: [],
-      yoruba: [],
-      igbo: [],
-    },
+    leaderboards: { hausa: [], yoruba: [], igbo: [] },
   };
 }
 
@@ -44,63 +37,77 @@ function saveState(state) {
 }
 
 function top3(list) {
-  return [...list]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+  return [...(list || [])].sort((a, b) => b.score - a.score).slice(0, 3);
 }
 
 export default class NaijaChallengeSystem {
-  constructor({ eventBus = null } = {}) {
+  constructor({ eventBus = null, gameState = null } = {}) {
     this.eventBus = eventBus;
+    this.gameState = gameState;
     this.state = loadState();
     this._panel = null;
     this._disposers = [];
+    this._runScore = 0;
+    this._runMoney = 0;
+    this._runDistance = 0;
 
+    this._onWindowNaija = () => this.openUI();
+    if (typeof window !== "undefined") {
+      window.addEventListener("kano:open-naija", this._onWindowNaija);
+    }
+
+    this._subscribe("naija:open", () => this.openUI());
     this._subscribe("run:finished", (p) => this._onRunEnd(p));
     this._subscribe("game:over", (p) => this._onRunEnd(p));
-    this._subscribe("naija:open", () => this.openUI());
     this._subscribe("gameover:shown", (p) => this._onRunEnd(p));
-
-    this._injectFab();
+    this._subscribe("game:started", () => {
+      this._runScore = 0;
+      this._runMoney = 0;
+      this._runDistance = 0;
+    });
+    this._subscribe("economy:money-added", (p) => {
+      this._runMoney += Number(p?.amount) || 0;
+    });
+    this._subscribe("passenger:dropped", (p) => {
+      this._runScore += 50 + Math.round(Number(p?.fare) || 0);
+    });
+    this._subscribe("player:distance", (p) => {
+      this._runDistance = Number(p?.km || p?.distanceKm) || this._runDistance;
+    });
   }
 
-  _injectFab() {
-    if (typeof document === "undefined") return;
-    if (document.getElementById("kano-naija-fab")) return;
-    const fab = document.createElement("button");
-    fab.id = "kano-naija-fab";
-    fab.type = "button";
-    fab.title = "Naija Challenge";
-    fab.textContent = "🇳🇬";
-    Object.assign(fab.style, {
-      position: "fixed",
-      top: "16px",
-      left: "172px",
-      zIndex: "1800",
-      width: "44px",
-      height: "44px",
-      borderRadius: "12px",
-      border: "1px solid rgba(34,197,94,0.5)",
-      background: "rgba(15,23,42,0.92)",
-      fontSize: "18px",
-      cursor: "pointer",
-    });
-    fab.addEventListener("click", () => this.openUI());
-    document.body.appendChild(fab);
+  async initialize() {
+    return this;
   }
 
   setIdentity({ name, tribe, region } = {}) {
     if (name) this.state.playerName = String(name).slice(0, 24);
     if (tribe && TRIBES.some((t) => t.id === tribe)) this.state.tribe = tribe;
     if (region && REGIONS.some((r) => r.id === region)) this.state.region = region;
+    // Auto-hint tribe from region
+    const reg = REGIONS.find((r) => r.id === this.state.region);
+    if (reg?.tribeHint && !tribe) this.state.tribe = reg.tribeHint;
     saveState(this.state);
-    this.eventBus?.emit?.("naija:identity", { ...this.state });
+    this.eventBus?.emit?.("naija:identity", {
+      name: this.state.playerName,
+      tribe: this.state.tribe,
+      region: this.state.region,
+    });
+  }
+
+  _computeScore(payload = {}) {
+    const fromPayload = Math.round(
+      Number(payload.score ?? payload.totalScore ?? payload.runScore) || 0,
+    );
+    if (fromPayload > 0) return fromPayload;
+    const money = Math.round(this._runMoney || Number(payload.money) || 0);
+    const dist = Math.round((this._runDistance || Number(payload.distance) || 0) * 100);
+    const base = this._runScore || 0;
+    return Math.max(0, base + money + dist);
   }
 
   _onRunEnd(payload = {}) {
-    const score = Math.round(
-      Number(payload.score ?? payload.totalScore ?? payload.runScore) || 0,
-    );
+    const score = this._computeScore(payload);
     if (score <= 0) return;
 
     const tribe = this.state.tribe || "hausa";
@@ -111,12 +118,8 @@ export default class NaijaChallengeSystem {
       at: Date.now(),
     };
 
-    const board = this.state.leaderboards[tribe] || [];
-    board.push(entry);
+    const board = [...(this.state.leaderboards[tribe] || []), entry];
     this.state.leaderboards[tribe] = top3(board);
-    // keep a longer list then trim
-    const merged = top3([...(this.state.leaderboards[tribe] || []), entry]);
-    this.state.leaderboards[tribe] = merged;
     saveState(this.state);
 
     this.eventBus?.emit?.("naija:score-submitted", {
@@ -125,10 +128,14 @@ export default class NaijaChallengeSystem {
       top3: this.state.leaderboards[tribe],
       grand: this.getGrandStanding(),
     });
+
+    this.eventBus?.emit?.("hud:notify", {
+      text: `🇳🇬 ${TRIBES.find((t) => t.id === tribe)?.name || tribe} score ${score}`,
+      type: "ok",
+    });
   }
 
   getGrandStanding() {
-    // Average of each tribe's #1 score; also list all top3
     const summary = {};
     let combined = 0;
     let count = 0;
@@ -143,10 +150,11 @@ export default class NaijaChallengeSystem {
     return {
       byTribe: summary,
       championScore: count ? Math.round(combined / count) : 0,
+      tribesWithScores: count,
       message:
         count === 3
           ? "All three tribes have champions — National pool active"
-          : "Need top scores in Hausa, Yoruba & Igbo for full National ranking",
+          : `Scores in ${count}/3 tribes — play as each tribe to fill the National ranking`,
     };
   }
 
@@ -159,70 +167,91 @@ export default class NaijaChallengeSystem {
     Object.assign(root.style, {
       position: "fixed",
       inset: "0",
-      zIndex: "5200",
-      background: "rgba(3,9,18,0.92)",
+      zIndex: "9000",
+      background: "rgba(3,9,18,0.94)",
       display: "flex",
-      alignItems: "center",
+      alignItems: "flex-end",
       justifyContent: "center",
-      padding: "16px",
-      fontFamily: "system-ui, Arial, sans-serif",
+      padding: "0",
+      fontFamily: "system-ui, -apple-system, Arial, sans-serif",
       color: "#f8fafc",
     });
 
+    const boardHtml = TRIBES.map((t) => {
+      const rows = top3(this.state.leaderboards[t.id] || []);
+      const list =
+        rows
+          .map(
+            (r, i) =>
+              `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1e293b">
+                <span>${i + 1}. ${r.name}</span>
+                <span style="color:#fbbf24;font-weight:800">${r.score}</span>
+              </div>`,
+          )
+          .join("") ||
+        `<div style="color:#64748b;font-size:13px;padding:8px 0">No scores yet</div>`;
+      return `<div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:12px;margin-bottom:10px">
+        <div style="font-weight:900;color:#4ade80;margin-bottom:6px">${t.name}</div>
+        ${list}
+      </div>`;
+    }).join("");
+
     const panel = document.createElement("div");
     Object.assign(panel.style, {
-      width: "min(480px, 100%)",
-      maxHeight: "90vh",
-      overflowY: "auto",
-      background: "linear-gradient(145deg,#14532d,#081321)",
-      border: "1px solid rgba(34,197,94,0.45)",
-      borderRadius: "16px",
-      padding: "20px",
+      width: "100%",
+      maxWidth: "480px",
+      maxHeight: "88dvh",
+      overflow: "auto",
+      background: "#0b1220",
+      borderRadius: "16px 16px 0 0",
+      padding: "16px 16px calc(16px + env(safe-area-inset-bottom, 0px))",
+      border: "1px solid #1e293b",
     });
-
-    const tribeOpts = TRIBES.map(
-      (t) =>
-        `<option value="${t.id}" ${this.state.tribe === t.id ? "selected" : ""}>${t.name}</option>`,
-    ).join("");
-    const regionOpts = REGIONS.map(
-      (r) =>
-        `<option value="${r.id}" ${this.state.region === r.id ? "selected" : ""}>${r.name}</option>`,
-    ).join("");
-
-    let boardsHtml = "";
-    for (const t of TRIBES) {
-      const rows = top3(this.state.leaderboards[t.id] || []);
-      boardsHtml += `<div style="margin-bottom:12px"><div style="font-weight:800;color:#4ade80">${t.name} — Top 3</div>`;
-      if (!rows.length) boardsHtml += `<div style="font-size:12px;color:#94a3b8">No scores yet</div>`;
-      rows.forEach((r, i) => {
-        boardsHtml += `<div style="font-size:13px">${i + 1}. ${r.name} — ${r.score}</div>`;
-      });
-      boardsHtml += `</div>`;
-    }
 
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div>
-          <div style="font-size:12px;letter-spacing:2px;color:#4ade80">NAIJA CHALLENGE</div>
-          <div style="font-size:22px;font-weight:900">Tribal & Regional</div>
+          <div style="font-size:11px;color:#4ade80;font-weight:800;letter-spacing:1px">NAIJA CHALLENGE</div>
+          <div style="font-size:20px;font-weight:900">Tribes · Regions · Glory</div>
         </div>
-        <button data-close style="padding:8px 14px;border:0;border-radius:8px;background:#334155;color:#fff;font-weight:700;cursor:pointer">Close</button>
+        <button type="button" data-close style="width:40px;height:40px;border:0;border-radius:10px;background:#334155;color:#fff;font-size:18px">✕</button>
       </div>
-      <div style="font-size:13px;color:#cbd5e1;margin-bottom:12px">
-        Pick your tribe. Your run score enters that tribe’s Top 3.
-        Grand standing uses each tribe’s best drivers.
-      </div>
-      <label style="font-size:12px;color:#94a3b8">Display name</label>
-      <input data-name value="${this.state.playerName || ""}" style="width:100%;margin:4px 0 10px;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff" />
+
+      <p style="font-size:13px;color:#94a3b8;line-height:1.45;margin-bottom:12px">
+        Pick your tribe. Finish runs to post scores. Top 3 per tribe — then combine champions for the National index.
+      </p>
+
+      <label style="font-size:12px;color:#94a3b8">Driver name</label>
+      <input data-name value="${this.state.playerName || ""}" maxlength="24"
+        style="width:100%;height:44px;margin:4px 0 10px;border-radius:10px;border:1px solid #334155;background:#020617;color:#fff;padding:0 12px;font-size:15px" />
+
       <label style="font-size:12px;color:#94a3b8">Tribe</label>
-      <select data-tribe style="width:100%;margin:4px 0 10px;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff">${tribeOpts}</select>
+      <select data-tribe style="width:100%;height:44px;margin:4px 0 10px;border-radius:10px;border:1px solid #334155;background:#020617;color:#fff;padding:0 10px">
+        ${TRIBES.map(
+          (t) =>
+            `<option value="${t.id}" ${this.state.tribe === t.id ? "selected" : ""}>${t.name}</option>`,
+        ).join("")}
+      </select>
+
       <label style="font-size:12px;color:#94a3b8">Regional challenge</label>
-      <select data-region style="width:100%;margin:4px 0 14px;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff">${regionOpts}</select>
-      <button data-save style="width:100%;padding:12px;border:0;border-radius:8px;background:#22c55e;color:#052e16;font-weight:800;cursor:pointer;margin-bottom:16px">Save identity</button>
-      ${boardsHtml}
-      <div style="margin-top:8px;padding:12px;border-radius:10px;background:rgba(0,0,0,0.25);font-size:13px">
-        <b>National pool:</b> ${grand.message}<br/>
-        Champion index: <b>${grand.championScore}</b>
+      <select data-region style="width:100%;height:44px;margin:4px 0 12px;border-radius:10px;border:1px solid #334155;background:#020617;color:#fff;padding:0 10px">
+        ${REGIONS.map(
+          (r) =>
+            `<option value="${r.id}" ${this.state.region === r.id ? "selected" : ""}>${r.name}</option>`,
+        ).join("")}
+      </select>
+
+      <button type="button" data-save
+        style="width:100%;height:48px;border:0;border-radius:12px;background:linear-gradient(180deg,#22c55e,#16a34a);color:#052e16;font-weight:900;font-size:15px;margin-bottom:14px">
+        Save identity
+      </button>
+
+      <div style="font-size:13px;font-weight:800;margin-bottom:8px">Leaderboards (Top 3)</div>
+      ${boardHtml}
+
+      <div style="margin-top:8px;padding:12px;border-radius:12px;background:#14532d33;border:1px solid #166534;font-size:13px;line-height:1.5">
+        ${grand.message}<br/>
+        Champion index: <b style="color:#fbbf24">${grand.championScore}</b>
       </div>
     `;
 
@@ -256,13 +285,14 @@ export default class NaijaChallengeSystem {
 
   dispose() {
     this.closeUI();
-    document.getElementById("kano-naija-fab")?.remove();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("kano:open-naija", this._onWindowNaija);
+    }
     for (const u of this._disposers) {
       try {
         u();
       } catch {}
     }
-    this._disposers = [];
   }
 }
 
