@@ -349,7 +349,6 @@ export default class PlayerVehicleSystem {
     return this;
   }
 
-  // 🔥 FIXED: Aggressively hide drivers and scale based ONLY on the keke body
   _loadGLBModel(preset) {
     if (!preset.modelPath) return Promise.reject(new Error("No GLB model path was configured."));
 
@@ -366,62 +365,73 @@ export default class PlayerVehicleSystem {
       const model = sourceScene.clone(true);
       model.name = `player-${preset.style || "vehicle"}`;
 
-      // 1. Aggressively hide any mesh that looks like a driver/rider BEFORE scaling
-      const humanRe = /(driver|rider|person|character|human|man|woman|body|head|arm|leg|pilot|npc|male|female)/i;
+      // 🔥 STEP 1: AGGRESSIVELY REMOVE any driver/rider/human meshes BEFORE scaling
+      const meshesToRemove = [];
       model.traverse((child) => {
-        if (!child.isMesh) return;
+        if (!child.isMesh && !child.isGroup && !child.isObject3D) return;
+        
         const name = (child.name || "").toLowerCase();
         const parentName = (child.parent?.name || "").toLowerCase();
         
-        if (humanRe.test(name) || humanRe.test(parentName)) {
-          child.visible = false;
+        // Check for human/driver keywords in names
+        const isNamedHuman = /(driver|rider|person|character|human|man|woman|boy|girl|body|head|arm|leg|pilot|npc|male|female|skeleton|bone|placeholder)/i.test(name) || 
+                             /(driver|rider|person|character|human|man|woman|boy|girl|body|head|arm|leg|pilot|npc|male|female)/i.test(parentName);
+        
+        if (isNamedHuman) {
+          meshesToRemove.push(child);
           return;
         }
 
-        // Hide tall, thin meshes positioned above the base (catches unnamed drivers)
-        if (child.geometry) {
+        // 🔥 STEP 2: Fallback shape check (tall, thin objects sitting above the floor are almost always drivers)
+        if (child.isMesh && child.geometry) {
           child.geometry.computeBoundingBox();
           const bb = child.geometry.boundingBox;
           if (bb) {
             const height = bb.max.y - bb.min.y;
             const width = bb.max.x - bb.min.x;
             const depth = bb.max.z - bb.min.z;
-            if (height > width * 1.2 && height > depth * 1.2 && bb.min.y > 0.3) {
-              child.visible = false;
+            
+            // If it's significantly taller than it is wide/deep, and starts above the floor
+            if (height > 0.8 && height > width * 1.1 && height > depth * 1.1 && bb.min.y > 0.2) {
+              meshesToRemove.push(child);
             }
           }
         }
       });
 
-      // 2. Calculate bounding box of ONLY the visible keke parts
-      const visibleBox = new THREE.Box3();
-      let hasVisible = false;
-      model.traverse((child) => {
-        if (child.isMesh && child.visible) {
-          child.updateMatrixWorld(true);
-          const box = new THREE.Box3().setFromObject(child);
-          visibleBox.union(box);
-          hasVisible = true;
+      // 🔥 STEP 3: Actually REMOVE them from the scene graph so they cannot affect scaling or rendering
+      meshesToRemove.forEach(mesh => {
+        if (mesh.parent) {
+          mesh.parent.remove(mesh);
+          // Clean up memory
+          if (mesh.geometry) mesh.geometry.dispose();
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
+            else mesh.material.dispose();
+          }
         }
       });
 
-      // 3. Scale the keke to the correct size (~1.85 units)
-      if (hasVisible) {
-        const size = visibleBox.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        if (maxDim > 0.01) {
-          model.scale.setScalar(1.85 / maxDim);
-        }
+      // 🔥 STEP 4: Calculate bounding box of ONLY the clean keke
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+
+      // 🔥 STEP 5: Scale to target size (target max dimension ~1.85 units)
+      if (maxDim > 0.01) {
+        const scaleFactor = 1.85 / maxDim;
+        model.scale.setScalar(scaleFactor);
       }
 
-      // 4. Center and ground the model
+      // 🔥 STEP 6: Re-calculate box after scaling to ground it perfectly on the road
       model.updateMatrixWorld(true);
       const finalBox = new THREE.Box3().setFromObject(model);
       const center = finalBox.getCenter(new THREE.Vector3());
       
+      // Center X and Z, and place bottom (min.y) exactly at 0
       model.position.x -= center.x;
       model.position.z -= center.z;
-      model.position.y -= finalBox.min.y; // Ground it
+      model.position.y -= finalBox.min.y;
 
       model.traverse((child) => {
         if (!child.isMesh) return;
