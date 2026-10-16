@@ -371,16 +371,33 @@ export default class PlayerVehicleSystem {
 
       if (preset.modelScale) model.scale.multiplyScalar(preset.modelScale);
 
-      // Normalize size: target ~2.0m tall keke (stops giant embedded driver meshes)
+      // Normalize keke body size; shrink/hide oversized embedded human meshes
       let box = new THREE.Box3().setFromObject(model);
       let size = box.getSize(new THREE.Vector3());
       let maxDim = Math.max(size.x, size.y, size.z);
       if (maxDim > 0.01) {
-        const target = 2.15; // metres-ish
-        model.scale.multiplyScalar(target / maxDim);
+        model.scale.multiplyScalar(1.85 / maxDim);
       }
-      // Re-center on ground
+
+      // Detect and shrink human-like child meshes (driver standing on roof)
+      const humanRe = /(driver|rider|person|character|human|man|woman|body|head|arm|leg)/i;
+      model.updateMatrixWorld(true);
+      model.traverse((child) => {
+        if (!child.isMesh) return;
+        const n = `${child.name || ""} ${child.parent?.name || ""}`;
+        if (!humanRe.test(n)) return;
+        // Scale local mesh down toward seat size
+        child.scale.multiplyScalar(0.42);
+        child.position.y *= 0.35;
+      });
+
+      // Final clamp: total height should not exceed ~1.7
       box = new THREE.Box3().setFromObject(model);
+      size = box.getSize(new THREE.Vector3());
+      if (size.y > 1.75) {
+        model.scale.multiplyScalar(1.7 / size.y);
+        box = new THREE.Box3().setFromObject(model);
+      }
       const center = box.getCenter(new THREE.Vector3());
       model.position.x -= center.x;
       model.position.z -= center.z;

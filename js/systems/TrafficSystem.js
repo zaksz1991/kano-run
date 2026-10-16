@@ -34,7 +34,7 @@ export class TrafficSystem {
     this.eventBus = options.eventBus ?? null;
 
     this.lanes = options.lanes ?? [-3.2, 0, 3.2];
-    this.spawnDistance = options.spawnDistance ?? 120;
+    this.spawnDistance = options.spawnDistance ?? 160;
     this.despawnDistance = options.despawnDistance ?? -30;
     this.minimumGap = options.minimumGap ?? 14;
     this.maximumSpawnAttempts = options.maximumSpawnAttempts ?? 12;
@@ -94,12 +94,12 @@ export class TrafficSystem {
     this.updateVehicles(dt, player);
     this.timeHours = (this.timeHours + dt * 0.025) % 24;
     this.isRushHour = (this.timeHours >= 7 && this.timeHours <= 9.5) || (this.timeHours >= 16.5 && this.timeHours <= 19.5);
-    const dens = (this.isRushHour ? 1.4 : 1) * (this.isNight ? 0.55 : 1);
+    const dens = (this.isRushHour ? 2.0 : 1.35) * (this.isNight ? 0.7 : 1);
     this.spawnTimer -= dt;
 
     if (this.spawnTimer <= 0) {
       this.trySpawnTraffic(player);
-      this.spawnTimer = randomBetween(0.8, 1.5) / (this.difficulty * dens);
+      this.spawnTimer = randomBetween(0.35, 0.75) / (this.difficulty * dens);
     }
 
     this.removeDistantVehicles(player);

@@ -47,34 +47,48 @@ export default class SceneManager {
     this.camera.position.set(0, 6, -9);
     this.camera.lookAt(0, 1, 8);
 
+        // CRITICAL: bind to existing #c so we do not leave an empty canvas covering the world on mobile
+    const existingCanvas =
+      options.canvas ||
+      document.getElementById("c") ||
+      null;
+
+    const isMobile =
+      typeof window !== "undefined" &&
+      (window.innerWidth <= 900 ||
+        (window.matchMedia && matchMedia("(pointer: coarse)").matches));
+
     this.renderer = new THREE.WebGLRenderer({
-      antialias: options.antialias ?? true,
+      canvas: existingCanvas || undefined,
+      antialias: options.antialias ?? !isMobile,
       alpha: false,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: false,
     });
 
-    if (this.renderer.domElement) {
-      Object.assign(this.renderer.domElement.style, {
+    const el = this.renderer.domElement;
+    if (el) {
+      el.id = el.id || "c";
+      Object.assign(el.style, {
         position: "fixed",
         inset: "0",
         width: "100%",
         height: "100%",
         display: "block",
         zIndex: "0",
+        touchAction: "none",
       });
     }
     this.renderer.setClearColor(this.backgroundColor, 1);
-    this.renderer.setPixelRatio(
-      Math.min(
-        window.devicePixelRatio || 1,
-        options.maxPixelRatio ?? 2
-      )
+    const pr = Math.min(
+      window.devicePixelRatio || 1,
+      isMobile ? 1.5 : (options.maxPixelRatio ?? 2),
     );
+    this.renderer.setPixelRatio(pr);
 
-    this.renderer.setSize(
-      window.innerWidth,
-      window.innerHeight
-    );
+    const w = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    const h = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    this.renderer.setSize(w, h, false);
 
     this.renderer.shadowMap.enabled = options.shadows ?? true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -98,10 +112,26 @@ export default class SceneManager {
       document.getElementById("game-container") ??
       document.body;
 
-    container.appendChild(this.renderer.domElement);
+    if (this.renderer.domElement.parentElement !== container) {
+      container.appendChild(this.renderer.domElement);
+    }
+    // Remove any leftover empty canvas siblings that can block WebGL on Android
+    if (container) {
+      for (const child of [...container.querySelectorAll("canvas")]) {
+        if (child !== this.renderer.domElement) {
+          child.remove();
+        }
+      }
+    }
 
     this.resizeHandler = () => this.resize();
     window.addEventListener("resize", this.resizeHandler);
+    window.addEventListener("orientationchange", this.resizeHandler);
+    window.visualViewport?.addEventListener?.("resize", this.resizeHandler);
+    window.visualViewport?.addEventListener?.("scroll", this.resizeHandler);
+    // One more resize after layout settles (Android URL bar)
+    setTimeout(() => this.resize(), 100);
+    setTimeout(() => this.resize(), 500);
 
     this.createDefaultLighting();
 
@@ -161,19 +191,27 @@ export default class SceneManager {
       return;
     }
 
-    const width = Math.max(1, window.innerWidth);
-    const height = Math.max(1, window.innerHeight);
+    const vv = window.visualViewport;
+    const width = Math.max(
+      1,
+      Math.floor(vv?.width || window.innerWidth || document.documentElement.clientWidth || 1),
+    );
+    const height = Math.max(
+      1,
+      Math.floor(vv?.height || window.innerHeight || document.documentElement.clientHeight || 1),
+    );
 
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
 
-    this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio || 1, 2)
-    );
-    
+    const isMobile =
+      width <= 900 ||
+      (window.matchMedia && matchMedia("(pointer: coarse)").matches);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
+    this.renderer.setSize(width, height, false);
+
     // Resize the post-processing composer as well
-    this.post?.setSize(width, height);
+    this.post?.setSize?.(width, height);
   }
 
   setBackground(color) {

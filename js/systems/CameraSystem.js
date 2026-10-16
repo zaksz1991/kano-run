@@ -3,13 +3,13 @@ import { GAME_CONFIG } from "../core/config.js";
 
 const DEFAULTS = {
   // Chase camera settings
-  chaseOffset: new THREE.Vector3(0, 6.5, -12),
-  lookAheadOffset: new THREE.Vector3(0, 1.2, 18),
+  chaseOffset: new THREE.Vector3(0, 4.2, -7.5),
+  lookAheadOffset: new THREE.Vector3(0, 1.0, 10),
   positionDamping: 6.0,
   lookAtDamping: 8.0,
   
   // Dynamic FOV settings (Speed effect)
-  baseFOV: 65,
+  baseFOV: 58,
   maxFOV: 85,
   speedForMaxFOV: 34, // Matches maxSpeed in config
   
@@ -49,6 +49,11 @@ export default class CameraSystem {
     }
 
     this._disposers = [];
+    if (typeof window !== "undefined" && (window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches)) {
+      this.config.chaseOffset = new THREE.Vector3(0, 3.6, -6.2);
+      this.config.lookAheadOffset = new THREE.Vector3(0, 0.9, 8);
+      this.config.baseFOV = 55;
+    }
     this._bindEvents();
   }
 

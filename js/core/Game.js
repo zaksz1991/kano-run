@@ -72,6 +72,7 @@ export default class Game {
       });
 
       await this.sceneManager.initialize({
+        canvas: this.options.canvas ?? document.getElementById("c"),
         container:
           this.options.container ??
           this.options.canvas?.parentElement ??

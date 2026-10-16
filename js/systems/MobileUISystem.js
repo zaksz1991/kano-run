@@ -88,10 +88,10 @@ export default class MobileUISystem {
       .ui-panel {
         background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px);
         border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px;
-        padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 100px;
+        padding: 6px 10px; display: flex; flex-direction: column; gap: 3px; min-width: 0;
         box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: auto;
       }
-      .ui-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+      .ui-row { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
       .ui-icon { width: 18px; text-align: center; font-size: 14px; }
       .ui-value { margin-left: auto; font-variant-numeric: tabular-nums; }
 
@@ -101,27 +101,27 @@ export default class MobileUISystem {
       }
       .control-group { display: flex; gap: 8px; pointer-events: auto; align-items: center; }
       .control-btn {
-        width: 52px; height: 52px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25);
-        background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px);
+        width: 48px; height: 48px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3);
+        background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(4px);
         display: flex; align-items: center; justify-content: center;
-        font-size: 18px; color: #fff; user-select: none; touch-action: none;
-        transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease;
+        font-size: 16px; color: #fff; user-select: none; touch-action: none;
+        transition: transform 0.08s ease, background 0.08s ease;
         -webkit-tap-highlight-color: transparent;
       }
       .control-btn:active, .control-btn.active {
         background: rgba(255, 255, 255, 0.35); transform: scale(0.90); border-color: #fff;
       }
-      .control-btn.horn { 
-        width: 44px; height: 44px; font-size: 16px; 
-        background: rgba(251, 191, 36, 0.3); border-color: rgba(251, 191, 36, 0.6); 
+      .control-btn.horn {
+        width: 42px; height: 42px; font-size: 15px;
+        background: rgba(251, 191, 36, 0.35); border-color: rgba(251, 191, 36, 0.65);
       }
-      .control-btn.accel { 
-        background: rgba(46, 204, 113, 0.35); border-color: rgba(46, 204, 113, 0.7); 
-        width: 58px; height: 58px; font-size: 20px;
+      .control-btn.accel {
+        background: rgba(46, 204, 113, 0.4); border-color: rgba(46, 204, 113, 0.75);
+        width: 54px; height: 54px; font-size: 18px;
       }
-      .control-btn.brake { 
-        background: rgba(231, 76, 60, 0.35); border-color: rgba(231, 76, 60, 0.7); 
-        width: 80px; height: 80px; font-size: 32px;
+      .control-btn.brake {
+        background: rgba(231, 76, 60, 0.4); border-color: rgba(231, 76, 60, 0.75);
+        width: 54px; height: 54px; font-size: 18px;
       }
 
       /* Meta Dock (Missions, Radio, Pause) - positioned ABOVE driving controls */
@@ -129,6 +129,7 @@ export default class MobileUISystem {
         display: flex; gap: 8px; pointer-events: auto; margin-bottom: 12px;
       }
       .meta-btn {
+        font-size: 10px; min-width: 44px; height: 32px; padding: 0 6px;
         min-width: 56px; height: 40px; border-radius: 8px;
         border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.85);
         color: #f8fafc; font: 700 11px system-ui, Arial, sans-serif;

@@ -15,8 +15,8 @@ export default class InstancedCrowdSystem {
     this.scene = scene;
     this.eventBus = eventBus;
     this.config = {
-      maxInstances: 100,
-      spawnDistance: 150,
+      maxInstances: 140,
+      spawnDistance: 180,
       despawnDistance: 60,
       walkSpeedBase: 1.2,
       ...config,
