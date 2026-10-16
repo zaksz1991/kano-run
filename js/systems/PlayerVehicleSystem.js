@@ -7,7 +7,7 @@ const DEFAULTS = {
   laneWidth: 3.8,
   roadWidth: 14,
   fuelCapacity: 100,
-  fuelConsumption: 0.028,
+  fuelConsumption: 0.015,
   initialCondition: 100,
   collisionCooldown: 1.2,
   damagePerCollision: 18,
@@ -19,37 +19,37 @@ const DEFAULTS = {
 const VEHICLE_PRESETS = {
   standard: {
     name: "Standard Adaidaita", width: 1.65, height: 1.65, length: 2.7,
-    maxSpeed: 25, acceleration: 10, handling: 1, fuelCapacity: 100, fuelConsumption: 0.028,
+    maxSpeed: 25, acceleration: 10, handling: 1, fuelCapacity: 100, fuelConsumption: 0.015,
     color: 0xfbbf24, modelPath: MODEL_PATHS.player.standard, modelScale: MODEL_SCALES.player.standard,
     style: "standard", passengers: 3,
   },
   luxury: {
     name: "Luxury Adaidaita", width: 1.8, height: 1.75, length: 2.9,
-    maxSpeed: 29, acceleration: 12, handling: 1.12, fuelCapacity: 115, fuelConsumption: 0.03,
+    maxSpeed: 29, acceleration: 12, handling: 1.12, fuelCapacity: 115, fuelConsumption: 0.017,
     color: 0xc9a227, modelPath: MODEL_PATHS.player.luxury, modelScale: MODEL_SCALES.player.luxury,
     style: "luxury", passengers: 3,
   },
   cargo: {
     name: "Cargo Adaidaita", width: 1.9, height: 1.8, length: 3.2,
-    maxSpeed: 22, acceleration: 8, handling: 0.85, fuelCapacity: 120, fuelConsumption: 0.035,
+    maxSpeed: 22, acceleration: 8, handling: 0.85, fuelCapacity: 120, fuelConsumption: 0.0175,
     color: 0x305e48, modelPath: MODEL_PATHS.player.cargo, modelScale: MODEL_SCALES.player.cargo,
     style: "cargo", passengers: 1,
   },
   open: {
     name: "Open Adaidaita", width: 1.7, height: 1.6, length: 2.8,
-    maxSpeed: 27, acceleration: 11, handling: 1.08, fuelCapacity: 95, fuelConsumption: 0.028,
+    maxSpeed: 27, acceleration: 11, handling: 1.08, fuelCapacity: 95, fuelConsumption: 0.015,
     color: 0xd4a72c, modelPath: MODEL_PATHS.player.open, modelScale: MODEL_SCALES.player.open,
     style: "open", passengers: 3,
   },
   police: {
     name: "Police Adaidaita", width: 1.75, height: 1.7, length: 2.9,
-    maxSpeed: 31, acceleration: 14, handling: 1.15, fuelCapacity: 110, fuelConsumption: 0.032,
+    maxSpeed: 31, acceleration: 14, handling: 1.15, fuelCapacity: 110, fuelConsumption: 0.0172,
     color: 0xf3f3ed, modelPath: MODEL_PATHS.player.police, modelScale: MODEL_SCALES.player.police,
     style: "police", passengers: 2,
   },
   karota: {
     name: "KAROTA Adaidaita", width: 1.75, height: 1.7, length: 2.9,
-    maxSpeed: 28, acceleration: 12, handling: 1.1, fuelCapacity: 105, fuelConsumption: 0.03,
+    maxSpeed: 28, acceleration: 12, handling: 1.1, fuelCapacity: 105, fuelConsumption: 0.017,
     color: 0xe5a323, modelPath: MODEL_PATHS.player.karota, modelScale: MODEL_SCALES.player.karota,
     style: "karota", passengers: 2,
   },
@@ -276,7 +276,7 @@ export default class PlayerVehicleSystem {
 
   _updateFuel(dt) {
     if (!this.isAccelerating || this.speed <= 0) return;
-    const consumption = this.config.fuelConsumption * this.preset.fuelConsumption * Math.max(0.4, this.speed / 10);
+    const consumption = this.config.fuelConsumption * this.preset.fuelConsumption * Math.max(0.25, Math.min(1.1, this.speed / 28));
     const previousFuel = this.fuel;
     this.fuel = Math.max(0, this.fuel - consumption * dt);
     if (previousFuel > 0 && this.fuel <= 0) {

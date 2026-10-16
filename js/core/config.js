@@ -29,8 +29,8 @@ export const GAME_CONFIG = Object.freeze({
     collisionSpeedLoss: 0.45,
     maxCondition: 100,
     maxFuel: 100,
-    fuelConsumption: 0.025,
-    idleFuelConsumption: 0.002,
+    fuelConsumption: 0.014,
+    idleFuelConsumption: 0.001,
   },
 
   traffic: {

@@ -25,13 +25,13 @@ export default class CheckpointSystem {
     this.gameState = gameState;
     this.config = {
       speedLimit: 18, // km/h
-      spawnStart: 550,
-      spawnGapMin: 900,
-      spawnGapMax: 1400,
+      spawnStart: 1000,
+      spawnGapMin: 1600,
+      spawnGapMax: 2400,
       approachDistance: 60,
       stopDistance: 8,
-      fineBase: 1500,
-      finePerKmOver: 300,
+      fineBase: 900,
+      finePerKmOver: 180,
       bribeMultiplier: 2.2,
       repHitNegotiate: 10,
       repHitRun: 35,
@@ -227,6 +227,9 @@ export default class CheckpointSystem {
         }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .karota-card {
+          width: min(92vw, 360px);
+          max-height: 80dvh;
+          overflow: auto;
           width: min(380px, 100%);
           background: linear-gradient(160deg, #1e293b, #0f172a);
           border: 2px solid #f59e0b; border-radius: 16px;
