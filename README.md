@@ -1,25 +1,29 @@
-# Vercel build fix (exit 126)
+# Kano Life
 
-## Cause
-`node_modules/.bin/vite` is not executable on the build image (Permission denied).
-Often happens with a stale Vercel build cache after dependency changes.
+**Drive · Earn · Survive in Kano**
 
-## Fix
-Invoke Vite via Node directly (no .bin shim):
+Browser 3D/2D Adaidaita Sahu life-runner — Northern Nigerian street culture.
 
-```json
-"build": "node ./node_modules/vite/bin/vite.js build"
+## Title
+**Kano Life** (was Kano Run)
+
+## What you play
+- Drive keke through Kano routes
+- Pick up / drop passengers, negotiate fares
+- KAROTA, market day, Juma'a traffic, wedding convoys, fuel queues, school runs
+- Radio, missions, garage, life events
+- 3D when WebGL works · **2D fallback** when it does not
+
+## Responsive
+- Mobile + desktop viewport, touch controls, safe areas
+- Performance mode in settings
+
+## Models
+See `MODELS.md` — copy your InstantMesh / kit GLBs into `public/assets/models/`.
+
+## Deploy
+```bash
+npm install
+npm run build
+vercel --prod
 ```
-
-And set the same in `vercel.json` `buildCommand`.
-
-## Install
-```bat
-copy /Y package.json package.json
-copy /Y vercel.json vercel.json
-git add package.json vercel.json
-git commit -m "Fix Vercel vite permission denied (exit 126)"
-git push
-```
-
-In Vercel dashboard: Redeploy → **uncheck** "Use existing Build Cache" (or Redeploy without cache).

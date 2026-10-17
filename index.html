@@ -2,106 +2,345 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1220" />
-  <title>Kano Run — Adaidaita Sahu</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0f1c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/jpeg" href="/icons/icon-512.jpg" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.jpg" />
+  <title>Kano Life — 3D Adaidaita Sahu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/styles.css" />
-  <link rel="stylesheet" href="/css/mobile-hud.css" />
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body {
-      height: 100%; height: 100dvh; overflow: hidden;
-      background: #0b1220;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      color: #f1f5f9;
-    }
-    #game-container { position: fixed; inset: 0; }
-    #c { width: 100%; height: 100%; display: block; touch-action: none; }
-
-    #loading-screen {
-      position: fixed; inset: 0; z-index: 1000;
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px;
-      background: radial-gradient(ellipse at 50% 30%, #152238 0%, #0b1220 70%);
-      transition: opacity 0.4s ease, visibility 0.4s ease;
-    }
-    #loading-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-
-    .panel {
-      width: min(380px, 100%);
-      text-align: center;
-    }
-    .badge {
-      display: inline-block; margin-bottom: 12px;
-      padding: 5px 12px; border-radius: 999px;
-      border: 1px solid rgba(251,191,36,0.4);
-      color: #fbbf24; font-size: 11px; font-weight: 800; letter-spacing: 1px;
-    }
-    .game-title {
-      font-size: clamp(36px, 10vw, 56px); font-weight: 900; letter-spacing: -1px;
-      background: linear-gradient(180deg, #fff 0%, #fbbf24 100%);
-      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-    }
-    .subtitle {
-      margin-top: 6px; font-size: 12px; font-weight: 700;
-      color: #38bdf8; letter-spacing: 0.3em; text-transform: uppercase;
-    }
-    .tagline {
-      margin: 14px auto 20px; font-size: 14px; color: #94a3b8; line-height: 1.5; max-width: 300px;
-    }
-    .start-button {
-      width: 100%; min-height: 52px; border: 0; border-radius: 12px;
-      background: linear-gradient(135deg, #fbbf24, #f59e0b);
-      color: #1c1917; font-size: 16px; font-weight: 900; cursor: pointer;
-    }
-    .start-button:disabled { opacity: 0.7; cursor: wait; }
-    #load-status { margin-top: 10px; font-size: 12px; color: #64748b; min-height: 16px; }
-    #load-status.active { color: #38bdf8; }
-    .row-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
-    .ghost-btn {
-      min-height: 42px; border-radius: 10px;
-      border: 1px solid #334155; background: rgba(15,23,42,0.8);
-      color: #e2e8f0; font-weight: 700; font-size: 13px; cursor: pointer;
-    }
-    .loading-bar {
-      margin-top: 14px; height: 4px; border-radius: 999px;
-      background: rgba(255,255,255,0.08); overflow: hidden;
-    }
-    .loading-progress {
-      height: 100%; width: 0%;
-      background: linear-gradient(90deg, #fbbf24, #38bdf8);
-      transition: width 0.2s ease;
-    }
-    .developer {
-      margin-top: 18px; font-size: 10px; color: #475569;
-      letter-spacing: 0.15em; text-transform: uppercase;
-    }
-  </style>
+  <link rel="stylesheet" href="/css/responsive.css" />
 </head>
 <body>
-  <div id="loading-screen">
-    <div class="panel">
-      <div class="badge">KANO · ADAIDAITA SAHU</div>
-      <h1 class="game-title">KANO RUN</h1>
-      <p class="subtitle">Drive · Earn · Survive</p>
-      <p class="tagline">Negotiate fares. Beat traffic. KAROTA checkpoints. New drivers start with ₦30,000.</p>
-      <button class="start-button" id="start-btn" type="button">START DRIVING</button>
-      <p id="load-status">Tap start when ready</p>
-      <div class="row-btns">
-        <button class="ghost-btn" id="btn-garage" type="button">Garage</button>
-        <button class="ghost-btn" id="btn-naija" type="button">Naija Challenge</button>
-      </div>
-      <div class="loading-bar"><div class="loading-progress" id="loading-progress"></div></div>
-      <div class="developer">Ruffneck Entertainment</div>
+  <div id="help-overlay" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(6,10,20,0.88);backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:16px;">
+    <div style="background:linear-gradient(160deg,#121a2c,#0c1220);border:1px solid rgba(245,197,66,0.35);border-radius:18px;max-width:360px;width:100%;padding:22px 20px 18px;box-shadow:0 20px 50px rgba(0,0,0,0.5);font-family:Outfit,sans-serif;color:#e2e8f0;">
+      <div style="font-size:1.15rem;font-weight:800;color:#f5c542;margin-bottom:6px;">How to drive</div>
+      <div style="font-size:0.78rem;color:#94a3b8;margin-bottom:14px;">Kano Life · Adaidaita Sahu</div>
+      <ol style="margin:0 0 16px 18px;padding:0;font-size:0.88rem;line-height:1.55;color:#e2e8f0;">
+        <li><b style="color:#fbbf24">GAS</b> go · <b style="color:#fbbf24">BRAKE</b> stop</li>
+        <li>Steer with arrows / swipe · almost <b>stop to load</b></li>
+        <li>Green = passenger · <b>Akwai</b> to drop for fare</li>
+        <li><b>CAM</b> = Chase / Driver / Passenger / Road</li>
+        <li>KAROTA at junctions · blue = mechanic · green = fuel</li>
+      </ol>
+      <button id="help-gotit" type="button" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#f5c542,#eab308);color:#0a0f1c;font-weight:800;font-size:0.95rem;cursor:pointer;">GOT IT — DRIVE</button>
+      <div style="text-align:center;margin-top:10px;font-size:0.7rem;color:#64748b;">Game Developer: Hassan Zakariya</div>
     </div>
   </div>
-  <div id="game-container"><canvas id="c"></canvas></div>
-  <script type="module">
-    document.getElementById("btn-garage")?.addEventListener("click", () =>
-      window.dispatchEvent(new CustomEvent("kano:open-garage")));
-    document.getElementById("btn-naija")?.addEventListener("click", () =>
-      window.dispatchEvent(new CustomEvent("kano:open-naija")));
+  <div id="loading-screen" style="position:fixed;inset:0;z-index:9999;overflow:hidden;font-family:Outfit,sans-serif;transition:opacity .55s;">
+    <style>
+      @keyframes kr-road { from { background-position: 0 0; } to { background-position: 0 64px; } }
+      @keyframes kr-float { 0%,100% { transform: translateX(-50%) translateY(0) rotateY(-18deg) rotateX(8deg); } 50% { transform: translateX(-50%) translateY(-10px) rotateY(-12deg) rotateX(10deg); } }
+      @keyframes kr-pulse { 0%,100% { opacity:.8; } 50% { opacity:1; } }
+      @keyframes kr-shine { 0% { left:-50%; } 100% { left:130%; } }
+      @keyframes kr-spin { to { transform: rotate(360deg); } }
+      #loading-screen .kr-bg {
+        position:absolute;inset:0;
+        background:
+          radial-gradient(ellipse 80% 50% at 50% 20%, rgba(245,197,66,.12), transparent 55%),
+          linear-gradient(165deg,#0c1a2e 0%,#132238 35%,#1a1228 70%,#0a0f1c 100%);
+      }
+      #loading-screen .kr-grid {
+        position:absolute;inset:0;opacity:.08;
+        background-image: linear-gradient(rgba(255,255,255,.15) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,.15) 1px, transparent 1px);
+        background-size:40px 40px;
+        transform: perspective(400px) rotateX(60deg); transform-origin: center 80%;
+      }
+      #loading-screen .kr-road {
+        position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+        width:160%;height:38%;
+        background:
+          linear-gradient(90deg,transparent 0%,#1e2430 14%,#252b38 86%,transparent 100%),
+          repeating-linear-gradient(0deg,#252b38 0 28px,#f5c542 28px 32px,#252b38 32px 64px);
+        background-size:100% 100%, 100% 64px;
+        animation: kr-road .5s linear infinite;
+        clip-path: polygon(18% 0%, 82% 0%, 100% 100%, 0% 100%);
+        border-top:1px solid rgba(245,197,66,.25);
+      }
+      #loading-screen .kr-stage {
+        position:absolute;top:42%;left:50%;z-index:3;
+        width:200px;height:140px;
+        perspective:500px;
+        animation: kr-float 2.4s ease-in-out infinite;
+      }
+      #loading-screen .kr-keke3d {
+        width:200px;height:140px;
+        transform-style:preserve-3d;
+      }
+      #loading-screen .kr-title {
+        position:relative;z-index:4;text-align:center;margin-top:8vh;padding:0 20px;
+      }
+      #loading-screen .kr-badge {
+        display:inline-block;padding:4px 12px;border-radius:20px;
+        background:rgba(245,197,66,.12);border:1px solid rgba(245,197,66,.35);
+        color:#f5c542;font-size:.68rem;font-weight:700;letter-spacing:.14em;
+        text-transform:uppercase;margin-bottom:10px;
+      }
+      #loading-screen .kr-title h1 {
+        margin:0;font-size:clamp(2.4rem,10vw,3.4rem);font-weight:900;
+        letter-spacing:.16em;
+        background:linear-gradient(180deg,#fef3c7 0%,#f5c542 45%,#d97706 100%);
+        -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+        background-clip:text;
+        filter:drop-shadow(0 4px 12px rgba(245,197,66,.35));
+      }
+      #loading-screen .kr-title .tag {
+        margin-top:10px;font-size:.9rem;font-weight:600;color:#94a3b8;
+        letter-spacing:.08em;animation: kr-pulse 2.2s ease-in-out infinite;
+      }
+      #loading-screen .kr-hud {
+        position:absolute;bottom:7%;left:50%;transform:translateX(-50%);
+        width:min(92vw,360px);z-index:5;text-align:center;
+      }
+      #loading-screen .kr-bar-wrap {
+        position:relative;height:12px;border-radius:8px;overflow:hidden;
+        background:rgba(15,23,42,.9);border:1px solid rgba(245,197,66,.5);
+        box-shadow:0 0 24px rgba(245,197,66,.2);
+      }
+      #loading-screen #load-fill {
+        height:100%;width:0%;
+        background:linear-gradient(90deg,#b45309,#f5c542,#4ade80);
+        transition:width .2s;position:relative;
+      }
+      #loading-screen #load-fill::after {
+        content:'';position:absolute;top:0;left:-40%;width:40%;height:100%;
+        background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);
+        animation: kr-shine 1s linear infinite;
+      }
+      #loading-screen .kr-status {
+        margin-top:14px;font-size:.8rem;font-weight:600;color:#cbd5e1;
+      }
+      #loading-screen .kr-dev {
+        margin-top:8px;font-size:.68rem;color:#64748b;
+      }
+      #loading-screen .kr-spin {
+        width:18px;height:18px;border:2px solid rgba(245,197,66,.25);
+        border-top-color:#f5c542;border-radius:50%;
+        display:inline-block;vertical-align:middle;margin-right:8px;
+        animation: kr-spin .7s linear infinite;
+      }
+    </style>
+    <div class="kr-bg"></div>
+    <div class="kr-grid"></div>
+    <div class="kr-road"></div>
+    <div class="kr-title">
+      <div class="kr-badge">Official · Kano State</div>
+      <h1>KANO LIFE</h1>
+      <div class="tag">3D Adaidaita Sahu · 60 Routes</div>
+    </div>
+    <!-- Animated real keke photo + 3D SVG -->
+    <div class="kr-stage" aria-hidden="true">
+      <img src="/brand/keke-side.jpg" alt="Keke" class="kr-photo-keke"
+        style="position:absolute;left:50%;bottom:8px;width:170px;height:auto;transform:translateX(-50%);
+        border-radius:12px;box-shadow:0 12px 28px rgba(0,0,0,.5);border:2px solid rgba(245,197,66,.4);
+        animation: kr-float 2.4s ease-in-out infinite;z-index:2;object-fit:cover;max-height:100px;"
+        onerror="this.style.display='none'" />
+      <svg class="kr-keke3d" viewBox="0 0 220 150" xmlns="http://www.w3.org/2000/svg" style="opacity:.92;">
+        <defs>
+          <linearGradient id="bodyG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fde68a"/><stop offset="45%" stop-color="#f5c542"/><stop offset="100%" stop-color="#b45309"/>
+          </linearGradient>
+          <linearGradient id="roofG" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#334155"/><stop offset="100%" stop-color="#0f172a"/>
+          </linearGradient>
+          <linearGradient id="glassG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#7dd3fc"/><stop offset="100%" stop-color="#0369a1"/>
+          </linearGradient>
+          <filter id="sh"><feDropShadow dx="0" dy="8" stdDeviation="6" flood-opacity=".45"/></filter>
+        </defs>
+        <ellipse cx="110" cy="132" rx="70" ry="10" fill="rgba(0,0,0,.4)"/>
+        <!-- cabin / body isometric -->
+        <g filter="url(#sh)">
+          <path d="M40 88 L95 70 L175 78 L175 108 L95 118 L40 100 Z" fill="url(#bodyG)" stroke="#92400e" stroke-width="1.2"/>
+          <path d="M95 70 L130 58 L210 66 L175 78 Z" fill="#eab308" stroke="#92400e" stroke-width="1"/>
+          <path d="M175 78 L210 66 L210 96 L175 108 Z" fill="#ca8a04" stroke="#92400e" stroke-width="1"/>
+          <!-- canopy -->
+          <path d="M55 72 L95 58 L140 64 L100 80 Z" fill="url(#roofG)"/>
+          <path d="M95 58 L120 48 L165 54 L140 64 Z" fill="#1e293b"/>
+          <path d="M140 64 L165 54 L165 78 L140 88 Z" fill="#0f172a"/>
+          <!-- glass -->
+          <path d="M62 74 L92 62 L98 74 L70 84 Z" fill="url(#glassG)" opacity=".9"/>
+          <path d="M100 66 L128 58 L132 70 L106 78 Z" fill="url(#glassG)" opacity=".75"/>
+          <!-- handlebar / front -->
+          <path d="M48 90 L38 82 L42 78 L55 88 Z" fill="#64748b"/>
+          <circle cx="36" cy="80" r="4" fill="#94a3b8"/>
+          <!-- wheels -->
+          <ellipse cx="70" cy="112" rx="16" ry="16" fill="#0f172a"/><ellipse cx="70" cy="112" rx="8" ry="8" fill="#475569"/>
+          <ellipse cx="70" cy="112" rx="3" ry="3" fill="#94a3b8"/>
+          <ellipse cx="155" cy="116" rx="16" ry="16" fill="#0f172a"/><ellipse cx="155" cy="116" rx="8" ry="8" fill="#475569"/>
+          <ellipse cx="155" cy="116" rx="3" ry="3" fill="#94a3b8"/>
+          <!-- NAPEP stripe -->
+          <rect x="100" y="92" width="48" height="6" rx="1" fill="#1e293b" opacity=".85"/>
+          <text x="124" y="97" text-anchor="middle" fill="#f5c542" font-size="5" font-family="Arial,sans-serif" font-weight="700">NAPEP</text>
+        </g>
+      </svg>
+    </div>
+    <div class="kr-hud">
+      <div class="kr-bar-wrap"><div id="load-fill"></div></div>
+      <div class="kr-status" id="load-status"><span class="kr-spin"></span>Loading Kano streets…</div>
+      <div class="kr-dev">Game Developer: Hassan Zakariya</div>
+    </div>
+  </div>
+  <div id="game-container">
+    <canvas id="c"></canvas>
+
+    <div id="ui-overlay">
+      <div class="top-bar">
+        <div class="stat money">₦ <span id="score">0</span></div>
+        <div class="stat dist"><span id="dist">0.0</span> km</div>
+        <div class="stat pax">👥 <span id="pax">0</span>/<span id="capacity">5</span></div>
+        <div class="stat" style="color:#f87171">❤️ <span id="lives">3</span></div>
+        <div class="stat" style="color:#38bdf8"><span id="speedo">0</span> <small style="font-size:0.65em">km/h</small></div>
+        <div class="stat" style="color:#4ade80">⛽ <span id="fuel">100</span>%</div>
+        <div class="stat" style="color:#fb923c">🔧 <span id="condition">100</span>%</div>
+        <div class="stat" style="color:#e2e8f0" id="tyre-stat">🛞 <span id="tyre-status">OK</span></div>
+      </div>
+      <div class="mission-bar" id="mission-label">🎯 Ready</div>
+      <div id="route-label"></div>
+      <div id="radio-label" style="position:absolute;top:88px;right:12px;background:rgba(12,18,32,.9);color:#c4b5fd;padding:4px 10px;border-radius:10px;font-size:10px;font-weight:600;max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+      <canvas id="minimap" width="72" height="110" style="position:absolute;top:150px;right:10px;width:72px;height:110px;background:rgba(10,15,28,.75);border:1px solid rgba(255,255,255,.12);border-radius:10px;z-index:6;pointer-events:none;"></canvas>
+      <div id="onboard-dest" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(12,18,32,.9);border:1px solid rgba(245,197,66,.25);color:#e2e8f0;padding:6px 12px;border-radius:12px;font-size:0.72rem;font-weight:600;max-width:90%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none;z-index:6;"></div>
+      <div id="zone-label" style="position:absolute;top:148px;left:12px;background:rgba(12,18,32,.9);color:#f472b6;padding:4px 10px;border-radius:10px;font-size:10px;font-weight:600;"></div>
+      <div id="level-label" style="position:absolute;top:118px;right:12px;background:rgba(12,18,32,.9);color:#4ade80;padding:4px 10px;border-radius:10px;font-size:10px;font-weight:600;"></div>
+      <div id="driver-label" style="position:absolute;top:118px;left:12px;background:rgba(12,18,32,.9);color:#f5c542;padding:4px 10px;border-radius:10px;font-size:10px;font-weight:600;"></div>
+      <div id="combo-display"></div>
+      <div id="mission-toast"></div>
+      <div id="event-box">
+        <div id="event-title"></div>
+        <div id="event-text"></div>
+        <div id="event-choices"></div>
+      </div>
+    </div>
+
+    <button id="hud-help" type="button" title="Help" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:8;width:32px;height:32px;border-radius:50%;border:1px solid rgba(245,197,66,0.4);background:rgba(12,18,32,0.9);color:#f5c542;font-weight:800;font-size:0.85rem;cursor:pointer;display:none;">?</button>
+      <div id="controls">
+      <button class="ctrl-btn" id="left-btn" type="button">←</button>
+      <div style="display:flex;gap:8px;align-items:center;pointer-events:auto;flex-wrap:wrap;justify-content:center;">
+        <button class="ctrl-btn" id="brake-btn" type="button" style="width:56px;height:56px;font-size:0.65rem;background:linear-gradient(145deg,#dc2626,#991b1b);">BRAKE</button>
+        <button class="ctrl-btn" id="radio-btn" type="button" style="width:44px;height:44px;font-size:1rem;background:linear-gradient(145deg,#7c3aed,#5b21b6);">📻</button>
+        <button class="ctrl-btn horn" id="horn-btn" type="button">HORN</button>
+        <button class="ctrl-btn" id="gas-btn" type="button" style="width:56px;height:56px;font-size:0.65rem;background:linear-gradient(145deg,#16a34a,#15803d);">GAS</button>
+        <button class="ctrl-btn" id="cam-btn" type="button" style="width:44px;height:44px;font-size:0.65rem;background:linear-gradient(145deg,#0ea5e9,#0369a1);">CAM</button>
+        <button class="ctrl-btn" id="pause-btn" type="button" style="width:44px;height:44px;font-size:0.7rem;background:linear-gradient(145deg,#475569,#1e293b);">❚❚</button>
+      </div>
+      <button class="ctrl-btn" id="right-btn" type="button">→</button>
+    </div>
+
+    <div class="screen" id="start-screen">
+      <h1>KANO LIFE</h1>
+      <div class="sub">3D Adaidaita · 60 Kano Routes</div>
+      <div style="font-size:0.75rem;color:#64748b;margin-bottom:10px;">Game Developer: <b style="color:#f5c542">Hassan Zakariya</b></div>
+      <div class="brand-strip" style="display:flex;gap:6px;margin:4px 0 10px;max-width:340px;overflow:hidden;">
+        <img src="/brand/keke-street.webp" alt="" style="width:32%;height:48px;object-fit:cover;border-radius:8px;opacity:0.9;" />
+        <img src="/brand/kano-flyover.jpg" alt="" style="width:32%;height:48px;object-fit:cover;border-radius:8px;opacity:0.9;" />
+        <img src="/brand/kano-gate.jpg" alt="" style="width:32%;height:48px;object-fit:cover;border-radius:8px;opacity:0.9;" />
+      </div>
+      <div style="font-size:0.72rem;color:#f5c542;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Choose driver</div>
+      <div id="quick-drivers" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:340px;margin-bottom:10px;"></div>
+      <div id="selection-status" style="font-size:0.8rem;color:#94a3b8;margin-bottom:10px;max-width:320px;line-height:1.4;"></div>
+      <button class="btn" id="start-btn" type="button">START DRIVING</button>
+      <button class="btn secondary" id="route-btn" type="button">SELECT ROUTE (60)</button>
+      <button class="btn secondary" id="road-btn" type="button">ROAD: TWO-WAY</button>
+      <button class="btn secondary" id="garage-btn" type="button">GARAGE / PAINTS</button>
+      <button class="btn secondary" id="help-btn" type="button">HELP</button>
+      <div class="high">High Score: ₦ <span id="hs">0</span></div>
+      <div id="daily-box" style="margin-top:12px;font-size:0.82rem;color:#94a3b8;max-width:300px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:12px;border:1px solid rgba(255,255,255,0.08);"></div>
+      <button class="btn secondary" id="claim-daily" type="button" style="display:none;margin-top:8px;padding:10px 18px;font-size:0.9rem;">CLAIM DAILY ₦500</button>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+        <button class="btn secondary" id="mute-btn" type="button" style="width:auto;max-width:none;padding:8px 14px;font-size:0.8rem;">🔊 Sound</button>
+        <button class="btn secondary" id="quality-btn" type="button" style="width:auto;max-width:none;padding:8px 14px;font-size:0.8rem;">✨ Quality</button>
+      </div>
+      <div class="instructions">
+        GAS / BRAKE · Steer lanes · Slow to pick up<br />
+        Akwai to drop · 3 free Life Savers<br />
+        W/S or hold GAS/BRAKE · P pause
+      </div>
+      <div id="sponsor-strip">
+        <div>Sponsored</div>
+        <a href="https://ruffneck-entertainment.vercel.app" target="_blank" rel="noopener">🎬 Ruffneck Entertainment</a>
+        <a href="https://ruffneck-lms.vercel.app" target="_blank" rel="noopener">📚 Ruffneck LMS</a>
+      </div>
+    </div>
+
+    <div class="screen" id="route-screen" style="display:none">
+      <h2 style="color:#f5c542;margin-bottom:12px">Select Route</h2>
+      <div id="route-list" class="route-panel"></div>
+      <button class="btn secondary" id="route-back" type="button">Back</button>
+    </div>
+
+    <div class="screen" id="garage-screen" style="display:none">
+      <h2 style="color:#f5c542;margin-bottom:8px">Garage</h2>
+      <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em">Drivers</div>
+      <div id="driver-list" style="width:100%;max-width:360px;max-height:22vh;overflow-y:auto;text-align:left"></div>
+      <div style="font-size:0.75rem;color:#94a3b8;margin:12px 0 8px;text-transform:uppercase;letter-spacing:0.08em">Keke Paint</div>
+      <div id="paint-list" style="width:100%;max-width:360px;display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+      <div style="font-size:0.75rem;color:#94a3b8;margin:12px 0 8px;text-transform:uppercase;letter-spacing:0.08em">Top Runs</div>
+      <div id="leaderboard" style="width:100%;max-width:360px;max-height:18vh;overflow-y:auto;text-align:left;font-size:0.8rem;color:#94a3b8"></div>
+      <div style="font-size:0.75rem;color:#94a3b8;margin:12px 0 8px;text-transform:uppercase;letter-spacing:0.08em">Achievements</div>
+      <div id="ach-list" style="width:100%;max-width:360px;max-height:14vh;overflow-y:auto;text-align:left;font-size:0.78rem"></div>
+      <button class="btn secondary" id="garage-back" type="button">Back</button>
+    </div>
+
+    <div class="screen" id="over-screen" style="display:none">
+      <h2>Run Over</h2>
+      <div id="final-stats"></div>
+      <div class="high">High Score: ₦ <span id="final-hs">0</span></div>
+      <button class="btn" id="retry-btn" type="button">DRIVE AGAIN</button>
+      <button class="btn secondary" id="share-btn" type="button">SHARE RUN</button>
+      <button class="btn secondary" id="home-btn" type="button">HOME</button>
+      <div id="sponsor-over">
+        <a href="https://ruffneck-entertainment.vercel.app" target="_blank" rel="noopener">🎬 Ruffneck Entertainment</a>
+        <a href="https://ruffneck-lms.vercel.app" target="_blank" rel="noopener">📚 Ruffneck LMS</a>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/js/main.js"></script>
+  <script>
+    (function(){
+      var fill = document.getElementById('load-fill');
+      var screen = document.getElementById('loading-screen');
+      var status = document.getElementById('load-status');
+      var tips = [
+        'Loading Kano streets…',
+        'Spawning traffic…',
+        'Warming keke engine…',
+        'Checking KAROTA posts…',
+        'Tuning Freedom Radio…',
+        'Ready to drive!'
+      ];
+      function setStatus(msg) {
+        if (!status) return;
+        status.innerHTML = '<span class="kr-spin"></span>' + msg;
+      }
+      var p = 0;
+      var tip = 0;
+      var t = setInterval(function(){
+        p += 8 + Math.random() * 14;
+        if (p >= 100) {
+          p = 100;
+          clearInterval(t);
+          if (fill) fill.style.width = '100%';
+          if (status) status.innerHTML = '✓ Ready to drive!';
+          setTimeout(function(){
+            if (screen) {
+              screen.style.opacity = '0';
+              setTimeout(function(){ screen.style.display = 'none'; }, 450);
+            }
+          }, 400);
+        } else {
+          if (fill) fill.style.width = p + '%';
+          var next = Math.min(tips.length - 2, Math.floor(p / 18));
+          if (next !== tip) {
+            tip = next;
+            setStatus(tips[tip]);
+          }
+        }
+      }, 100);
+    })();
   </script>
-  <script type="module" src="/js/core/Main.js"></script>
 </body>
 </html>
