@@ -51,6 +51,36 @@ const S = {
     this.set('kanoLB', list.slice(0, 10));
   },
   getAchievements() { return this.get('kanoAch', {}) || {}; },
+  getTribalBoard() {
+    return this.get('kanoTribal', { hausa: [], yoruba: [], igbo: [] }) || { hausa: [], yoruba: [], igbo: [] };
+  },
+  submitTribalScore(tribe, entry) {
+    const board = this.getTribalBoard();
+    const t = tribe === 'yoruba' || tribe === 'igbo' ? tribe : 'hausa';
+    if (!board[t]) board[t] = [];
+    board[t].push({
+      score: Math.floor(entry.score || 0),
+      dist: entry.dist || 0,
+      name: entry.name || 'Driver',
+      mode: entry.mode || 'career',
+      at: Date.now()
+    });
+    board[t].sort((a, b) => b.score - a.score);
+    board[t] = board[t].slice(0, 3); // top 3 only
+    this.set('kanoTribal', board);
+    return board;
+  },
+  tribalGrandStanding() {
+    const board = this.getTribalBoard();
+    const sum3 = (arr) => (arr || []).slice(0, 3).reduce((s, x) => s + (x.score || 0), 0);
+    const rows = [
+      { tribe: 'hausa', label: 'Arewa · Hausa', total: sum3(board.hausa), top: board.hausa || [] },
+      { tribe: 'yoruba', label: 'Yoruba', total: sum3(board.yoruba), top: board.yoruba || [] },
+      { tribe: 'igbo', label: 'Igbo', total: sum3(board.igbo), top: board.igbo || [] }
+    ];
+    rows.sort((a, b) => b.total - a.total);
+    return rows;
+  },
   unlockAchievement(id) {
     const a = this.getAchievements();
     if (a[id]) return false;

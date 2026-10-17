@@ -243,11 +243,23 @@ export class Game {
     // Mode setup
     this.runTime = 0;
     this.raceFinished = false;
+    this.matchStreak = 0;
+    this.matchFails = 0;
+    this.fuelChallengeActive = false;
     if (this.gameMode === 'timeattack') {
       this.raceTargetKm = 3.5;
       this.raceBest = null;
       try { this.raceBest = Storage.get('kanoTA_' + (this.selectedRoute || 'city'), null); } catch (e) {}
       this.ui?.showMissionToast?.('⏱️ Time Attack — ' + this.raceTargetKm + ' km · beat the clock');
+    } else if (this.gameMode === 'fuel') {
+      this.raceTargetKm = 4.0;
+      this.fuel = 42; // tight tank — skill challenge
+      this.fuelChallengeActive = true;
+      this.ui?.showMissionToast?.('⛽ Fuel Challenge — start 42% · reach 4 km without dry-out');
+    } else if (this.gameMode === 'matchdrop') {
+      this.raceTargetKm = 0;
+      this.matchStreak = 0;
+      this.ui?.showMissionToast?.('📍 Match Drop — drop only at passenger destination');
     } else if (this.gameMode === 'freeroam') {
       this.raceTargetKm = 0;
       this.ui?.showMissionToast?.('🧭 Free roam — no timer pressure');
@@ -871,9 +883,34 @@ export class Game {
       level: this.level,
       drops: this.dropCount,
       dests: (this.destinationsServed || []).slice(-6),
-      driver: this.getDriver().name
+      driver: this.getDriver().name,
+      tribe: this.dialect || 'hausa',
+      mode: this.gameMode || 'career'
     });
+    // Naija Challenge — top 3 per tribe, grand standing by sum of top 3
+    try {
+      const tribe = this.dialect || 'hausa';
+      Storage.submitTribalScore(tribe, {
+        score: Math.floor(this.score),
+        dist: Number(this.dist.toFixed(1)),
+        name: this.getDriver()?.name || 'Driver',
+        mode: this.gameMode || 'career'
+      });
+      const stand = Storage.tribalGrandStanding();
+      this._lastTribal = stand;
+      if (stand[0]) {
+        const lead = stand[0];
+        this.ui.showMissionToast(
+          '🇳🇬 ' + lead.label + ' leads · top3 sum ₦' + lead.total.toLocaleString()
+        );
+      }
+    } catch (e) { console.warn('tribal', e); }
     this.ui.showGameOver(this);
+  }
+
+  /** Grand winners panel data for UI */
+  getNaijaGrandWinners() {
+    try { return Storage.tribalGrandStanding(); } catch (e) { return []; }
   }
 
   rectHit(a, b) {
@@ -988,6 +1025,10 @@ export class Game {
       this.ui.showMissionToast('📍 Hold BRAKE to stop at drop point');
       return;
     }
+    // Active drop zone dest (if any) for match challenge
+    const zone = (this.dropZones || []).find((d) => !d.used && Math.round(d.lane) === Math.round(this.playerLane));
+    const zoneDest = (zone?.dest || zone?.label || '').toLowerCase();
+
     const p = this.onboard.shift();
     this.paxOnBoard = Math.max(0, this.paxOnBoard - (p.seats || 1));
     this.dropCount += p.seats || 1;
@@ -998,14 +1039,32 @@ export class Game {
         (this.getBonuses().fareMult || 1) *
         this.fareScale()
     );
-    // Destination match bonus — landmark / route name
     const marks = (route.landmarks || []).map(s => s.toLowerCase());
     const dest = (p.dest || '').toLowerCase();
     let bonusNote = '';
-    if (dest && (marks.some(m => m.includes(dest.slice(0, 5)) || dest.includes(m.slice(0, 5))) ||
-        (route.name || '').toLowerCase().includes(dest.slice(0, 5)))) {
+    const destMatchZone = zoneDest && dest && (
+      zoneDest.includes(dest.slice(0, 4)) || dest.includes(zoneDest.slice(0, 4)) ||
+      zoneDest === dest
+    );
+    const destMatchRoute = dest && (marks.some(m => m.includes(dest.slice(0, 5)) || dest.includes(m.slice(0, 5))) ||
+        (route.name || '').toLowerCase().includes(dest.slice(0, 5)));
+
+    if (this.gameMode === 'matchdrop') {
+      if (destMatchZone || destMatchRoute) {
+        fare = Math.floor(fare * 1.75);
+        this.matchStreak = (this.matchStreak || 0) + 1;
+        bonusNote = ' ★ MATCH x' + this.matchStreak;
+        this.addCombo?.(2);
+      } else {
+        fare = Math.floor(fare * 0.35);
+        this.matchFails = (this.matchFails || 0) + 1;
+        this.matchStreak = 0;
+        bonusNote = ' ✗ wrong stop';
+        this.ui.showMissionToast('Wrong drop — needed ' + (p.dest || '?'));
+      }
+    } else if (destMatchZone || destMatchRoute) {
       fare = Math.floor(fare * 1.35);
-      bonusNote = ' ★ route match';
+      bonusNote = ' ★ dest match';
     }
     this.score += fare;
     this.destinationsServed = this.destinationsServed || [];
@@ -1231,12 +1290,14 @@ export class Game {
 
 
   cycleGameMode() {
-    const order = ['career', 'timeattack', 'freeroam'];
+    const order = ['career', 'timeattack', 'fuel', 'matchdrop', 'freeroam'];
     const i = order.indexOf(this.gameMode || 'career');
     this.gameMode = order[(i + 1) % order.length];
     const labels = {
       career: '💼 Career — fares, missions, KAROTA',
       timeattack: '⏱️ Time Attack — 3.5 km race',
+      fuel: '⛽ Fuel Gauge Challenge — manage tank',
+      matchdrop: '📍 Match Drop — pick dest = drop dest',
       freeroam: '🧭 Free roam — explore Kano'
     };
     this.ui?.showMissionToast?.(labels[this.gameMode] || this.gameMode);
@@ -1409,11 +1470,31 @@ export class Game {
       this.fuel = Math.max(0, this.fuel - 0.008 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
     }
     if (this.fuel <= 0) {
+      if (this.gameMode === 'fuel' && this.fuelChallengeActive) {
+        this.fuelChallengeActive = false;
+        this.ui.showMissionToast('⛽ Tank empty — Fuel Challenge failed');
+        this.gameOver?.();
+        return;
+      }
       this.speed = Math.min(this.speed, 2.2);
       if (this.frame % 70 === 0) this.ui.showMissionToast('Out of fuel — limp mode');
     } else if (this.fuel < 18 && this.frame % 100 === 0) {
-      this.ui.showMissionToast('Low fuel — find petrol');
+      this.ui.showMissionToast(this.gameMode === 'fuel' ? '⛽ CRITICAL — find petrol NOW' : 'Low fuel — find petrol');
       Audio.voiceLowFuel();
+    }
+    // Fuel challenge win at target km with fuel left
+    if (this.gameMode === 'fuel' && this.fuelChallengeActive && this.raceTargetKm > 0 && (this.dist || 0) >= this.raceTargetKm) {
+      this.fuelChallengeActive = false;
+      const bonus = Math.floor(300 + this.fuel * 8);
+      this.score += bonus;
+      this.ui.showMissionToast('⛽ Fuel Challenge cleared! +₦' + bonus + ' (tank ' + Math.floor(this.fuel) + '%)');
+      this.state = STATE.EVENT;
+      this.speed = 0;
+      this.ui.showEvent('⛽ Fuel Challenge', 'Reached ' + this.raceTargetKm + ' km with ' + Math.floor(this.fuel) + '% fuel.\nBonus ₦' + bonus, [
+        { label: 'Again', action: () => { this.gameMode = 'fuel'; this.start(); this.ui.showPlaying(); } },
+        { label: 'Career', action: () => { this.gameMode = 'career'; this.start(); this.ui.showPlaying(); } }
+      ]);
+      return;
     }
     if (!Number.isFinite(this.speed)) this.speed = 1.8;
     this.speed = Math.max(this.braking ? 0 : 1.8, Math.min(this.speed, 7));
@@ -1680,15 +1761,20 @@ export class Game {
     }
     // Yellow drop checkpoints — prefer destinations of onboard passengers
     if (this.frame % 110 === 0 && this.onboard.length > 0 && this.dropZones.length < 4) {
+      // Match challenge: first onboard dest is the correct drop label
       const prefer = this.onboard[0]?.dest || pickDestination();
+      const lanePref = this.gameMode === 'matchdrop'
+        ? Math.round(this.playerLane || 1)
+        : Math.floor(Math.random() * 3);
       this.dropZones.push({
-        lane: Math.floor(Math.random() * 3),
+        lane: lanePref,
         y: -90,
         used: false,
         akwai: true,
         dest: prefer,
         label: prefer || 'Akwai',
-        checkpoint: true
+        checkpoint: true,
+        mustMatch: this.gameMode === 'matchdrop'
       });
     }
     if (this.frame % 140 === 0 && Math.random() < 0.4) {

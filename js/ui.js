@@ -307,10 +307,31 @@ export class UI {
   showGameOver(game) {
     this.overScreen.style.display = 'flex';
     const dests = (game.destinationsServed || []).slice(-4).join(', ') || '—';
+    let tribalHtml = '';
+    try {
+      const stand = game.getNaijaGrandWinners?.() || game._lastTribal || [];
+      if (stand.length) {
+        tribalHtml = '<div style="margin-top:8px;text-align:left;font-size:0.78rem;line-height:1.35">';
+        tribalHtml += '<b>🇳🇬 Naija Challenge — Top 3 sum</b><br>';
+        stand.forEach((row, i) => {
+          const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
+          tribalHtml += medal + ' ' + row.label + ': ₦' + (row.total || 0).toLocaleString();
+          if (row.top?.length) {
+            tribalHtml += ' <span style="color:#94a3b8">(' +
+              row.top.map(t => '₦' + t.score).join(', ') + ')</span>';
+          }
+          tribalHtml += '<br>';
+        });
+        tribalHtml += '</div>';
+      }
+    } catch (e) {}
+    const mode = game.gameMode || 'career';
+    const tribe = game.dialect || 'hausa';
     document.getElementById('final-stats').innerHTML =
       `<b>₦${Math.floor(game.score).toLocaleString()}</b> · ${game.dist.toFixed(1)} km · Lv ${game.level || 1}<br>` +
       `${game.totalPax} pax · ${game.dropCount} drops · ${game.nearMissCount || 0} near misses<br>` +
-      `<span style="color:#94a3b8;font-size:0.8rem">Stops: ${dests}</span>`;
+      `<span style="color:#94a3b8;font-size:0.8rem">Mode: ${mode} · Tribe: ${tribe} · Stops: ${dests}</span>` +
+      tribalHtml;
     document.getElementById('final-hs').textContent = game.high;
   }
 
