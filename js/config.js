@@ -153,3 +153,11 @@ export const CONFIG = {
     { id: 'survivor', name: 'Survivor', desc: 'Use a Life Saver', check: (g) => g.continuesLeft < 3 }
   ]
 };
+
+
+/** Naija Challenge — regional fare dialects (UI labels) */
+export const NAIJA_CHALLENGE = {
+  hausa: { id: 'hausa', label: 'Arewa / Hausa', greet: 'Sannu', drop: 'Akwai!', ok: 'Ngode' },
+  yoruba: { id: 'yoruba', label: 'Yoruba', greet: 'E kaaro', drop: 'E se!', ok: 'O da' },
+  igbo: { id: 'igbo', label: 'Igbo', greet: 'Ndewo', drop: 'Dalụ!', ok: 'Ọ dị mma' }
+};

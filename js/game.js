@@ -4,7 +4,7 @@
  * Spec: real driving controls, intro sequence, passengers/destinations,
  * fare negotiation, KAROTA, traffic AI — preserves missions/storage/HUD.
  */
-import { CONFIG, STATE, DEVELOPER } from './config.js';
+import { CONFIG, STATE, DEVELOPER, NAIJA_CHALLENGE } from './config.js';
 import { Storage } from './storage.js';
 import { Audio } from './audio.js';
 import { LifeActivities } from './lifeActivities.js';
@@ -32,6 +32,7 @@ export class Game {
     this.ctx = null;
     this.ui = null;
     this.life = new LifeActivities(this);
+    this.dialect = 'hausa';
     this.renderer3d = null;
 
     this.state = STATE.START;
@@ -916,6 +917,8 @@ export class Game {
   startNegotiation(p) {
     this.state = STATE.EVENT;
     Audio.negotiate();
+    const arg = this.dialectLine('argue');
+    if (arg) this.ui?.showMissionToast?.(arg);
     const h = this.honorific();
     const dest = p.dest || this.randomDest();
     p.dest = dest;
@@ -990,7 +993,7 @@ export class Game {
     this.addCombo(2);
     Audio.pickup();
     Audio.voiceDrop();
-    this.ui.showMissionToast('Akwai! (' + (p.dest || 'stop') + ') +₦' + fare + bonusNote);
+    this.ui.showMissionToast((this.dialectLine('drop') || 'Akwai!') + ' (' + (p.dest || 'stop') + ') +₦' + fare + bonusNote);
     Audio.voiceAkwai();
   }
 
@@ -1138,6 +1141,25 @@ export class Game {
         }
       ]
     );
+  }
+
+
+  cycleDialect() {
+    const order = ['hausa', 'yoruba', 'igbo'];
+    const i = order.indexOf(this.dialect || 'hausa');
+    this.dialect = order[(i + 1) % order.length];
+    const d = (typeof NAIJA_CHALLENGE !== 'undefined' && NAIJA_CHALLENGE[this.dialect])
+      ? NAIJA_CHALLENGE[this.dialect]
+      : { label: this.dialect, greet: 'Sannu' };
+    this.ui?.showMissionToast?.('🇳🇬 Naija Challenge: ' + d.label + ' — ' + (d.greet || ''));
+    return this.dialect;
+  }
+
+  dialectLine(key) {
+    try {
+      const pack = NAIJA_CHALLENGE?.[this.dialect || 'hausa'];
+      return pack?.[key] || null;
+    } catch (e) { return null; }
   }
 
   // ——— Main loop ———
