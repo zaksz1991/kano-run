@@ -24,8 +24,8 @@ const VEHICLE_SPECS = Object.freeze({
 });
 
 const DEFAULT_TRAFFIC_WEIGHTS = {
-  keke: 25, car: 22, taxi: 14, bus: 9, motorcycle: 15,
-  truck: 6, police: 3, karota: 4, robber: 2,
+  keke: 32, car: 18, taxi: 18, bus: 8, motorcycle: 20,
+  truck: 5, police: 3, karota: 4, robber: 2,
 };
 
 export class TrafficSystem {
@@ -37,7 +37,8 @@ export class TrafficSystem {
     this.spawnDistance = options.spawnDistance ?? 160;
     this.despawnDistance = options.despawnDistance ?? -30;
     this.minimumGap = options.minimumGap ?? 14;
-    this.maximumSpawnAttempts = options.maximumSpawnAttempts ?? 12;
+    this.maximumSpawnAttempts = options.maximumSpawnAttempts ?? 18;
+    this.maxVehicles = options.maxVehicles ?? 32;
 
     this.vehicles = new Map();
     this.nextVehicleId = 1;
@@ -75,7 +76,11 @@ export class TrafficSystem {
   start() {
     this.enabled = true;
     this.elapsed = 0;
-    this.spawnTimer = 0.5;
+    this.spawnTimer = 0.15;
+    // Seed an immediate pack so the road is not empty at start
+    if (typeof this.seedInitialTraffic === "function") {
+      this.seedInitialTraffic();
+    }
     this.emit("traffic:started", { activeVehicles: this.vehicles.size });
   }
 
@@ -94,12 +99,12 @@ export class TrafficSystem {
     this.updateVehicles(dt, player);
     this.timeHours = (this.timeHours + dt * 0.025) % 24;
     this.isRushHour = (this.timeHours >= 7 && this.timeHours <= 9.5) || (this.timeHours >= 16.5 && this.timeHours <= 19.5);
-    const dens = (this.isRushHour ? 2.0 : 1.35) * (this.isNight ? 0.7 : 1);
+    const dens = (this.isRushHour ? 2.6 : 1.8) * (this.isNight ? 0.85 : 1);
     this.spawnTimer -= dt;
 
     if (this.spawnTimer <= 0) {
       this.trySpawnTraffic(player);
-      this.spawnTimer = randomBetween(0.35, 0.75) / (this.difficulty * dens);
+      this.spawnTimer = randomBetween(0.18, 0.42) / (this.difficulty * dens);
     }
 
     this.removeDistantVehicles(player);
@@ -191,7 +196,44 @@ export class TrafficSystem {
     }
   }
 
+
+  seedInitialTraffic() {
+    const count = Math.min(10, this.maxVehicles || 32);
+    for (let i = 0; i < count; i++) {
+      const type = this.pickTrafficType();
+      const specs = VEHICLE_SPECS[type];
+      if (!specs) continue;
+      const lane = this.lanes[i % this.lanes.length];
+      const z = 25 + i * 14 + randomBetween(0, 6);
+      if (!this.hasSafeSpawnGap(lane, z, specs.length)) continue;
+      const id = `seed-${i}-${type}`;
+      const vehicle = {
+        id,
+        type,
+        lane,
+        x: lane,
+        z,
+        speed: randomBetween(specs.speedMin, specs.speedMax),
+        width: specs.width,
+        length: specs.length,
+        weight: specs.weight,
+        score: specs.score,
+        color: randomItem(specs.colors),
+        previousZ: z,
+        laneChangeTimer: randomBetween(1, 4),
+        marked: type === TRAFFIC_TYPES.POLICE,
+        enforcement: type === TRAFFIC_TYPES.KAROTA,
+        hostile: type === TRAFFIC_TYPES.ROBBER,
+        passed: false,
+      };
+      this.vehicles.set(id, vehicle);
+      this.statistics.spawned += 1;
+      this.emit("traffic:vehicle-spawned", vehicle);
+    }
+  }
+
   trySpawnTraffic(player) {
+    if (this.vehicles.size >= (this.maxVehicles || 32)) return;
     for (let attempt = 0; attempt < this.maximumSpawnAttempts; attempt += 1) {
       const lane = Math.floor(Math.random() * this.lanes.length);
       if (!this.hasSafeSpawnGap(lane, this.spawnDistance)) continue;
