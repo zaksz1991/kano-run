@@ -140,11 +140,12 @@ export class Game {
   }
 
   fareScale() {
-    // Evening/night slightly higher; midday lower competition
+    // Night fares higher (Kano late trips); peak modest bump; midday softer
     const t = this.getTimeOfDay();
-    if (t > 0.55) return 1.2;
-    if (this.isPeakHour()) return 1.1;
-    if (t > 0.25 && t < 0.4) return 0.9;
+    if (t > 0.62) return 1.55; // deep night
+    if (t > 0.5) return 1.35;  // evening / night
+    if (this.isPeakHour()) return 1.15;
+    if (t > 0.25 && t < 0.4) return 0.92;
     return 1;
   }
 
@@ -961,7 +962,7 @@ export class Game {
   tryDropOff() {
     if (this.paxOnBoard <= 0 || this.onboard.length === 0) return;
     if (this.speed > 1.4) {
-      this.ui.showMissionToast('Akwai — brake nearly stop to drop');
+      this.ui.showMissionToast('📍 Hold BRAKE to stop at drop point');
       return;
     }
     const p = this.onboard.shift();
@@ -1057,9 +1058,11 @@ export class Game {
   }
 
   startKarotaCheckpoint() {
-    this.karotaTimer = 320;
+    this.karotaTimer = 480;
     this.state = STATE.EVENT;
+    this.speed = 0;
     this.throttle = 0;
+    this.braking = true;
     Audio.alert();
     Audio.siren();
     Audio.voiceKarota();
@@ -1140,6 +1143,10 @@ export class Game {
   // ——— Main loop ———
   update(dt) {
     if (this.state === STATE.START || this.state === STATE.OVER || this.state === STATE.EVENT) {
+      // Keke fully stops while negotiating / at checkpoint
+      this.speed = 0;
+      this.throttle = 0;
+      this.braking = true;
       if (this.shake > 0) this.shake--;
       return;
     }
@@ -1355,16 +1362,17 @@ export class Game {
       if (d.used) continue;
       const dy = d.y - this.playerY;
       if (dy > -180 && dy < -40 && Math.round(d.lane) === this.playerLane && this.frame % 45 === 0) {
-        this.ui.showMissionToast('🟡 DROP ZONE ahead — brake for Akwai');
+        this.ui.showMissionToast('📍 DROP CHECKPOINT ahead — BRAKE to stop & drop');
       }
     }
 
     // KAROTA — denser in market / junction / gate districts
     const bandK = getLevelBand(this.level || 1);
     const distK = this.currentDistrict?.karota || 1;
-    const karotaChance = 0.55 * (bandK.karota || 1) * distK *
-      (this.roadSegment?.id === 'market' || this.roadSegment?.id === 'junction' || this.currentDistrict?.market ? 1.6 : 1);
-    if (this.frame % 280 === 0 && this.dist > 0.6 && this.karotaTimer <= 0 && Math.random() < karotaChance) {
+    // KAROTA less frequent — checkpoints every ~1.5–2 min feel, not constant
+    const karotaChance = 0.22 * (bandK.karota || 1) * distK *
+      (this.roadSegment?.id === 'market' || this.roadSegment?.id === 'junction' || this.currentDistrict?.market ? 1.25 : 1);
+    if (this.frame % 520 === 0 && this.dist > 1.2 && this.karotaTimer <= 0 && Math.random() < karotaChance) {
       this.startKarotaCheckpoint();
       return;
     }

@@ -130,10 +130,10 @@ export class Renderer3D {
         () => console.warn('[KanoRun] Texture missing', url)
       );
     };
-    load('asphalt', '/textures/asphalt.jpg', 2, 24);
-    load('potholes', '/textures/potholes.jpg', 3, 20);
-    load('wall', '/textures/building-wall.jpg', 2, 2);
-    load('market', '/textures/market-stall.jpg', 1, 1);
+    load('asphalt', '/assets/models/textures/asphalt.jpg', 2, 24);
+    load('potholes', '/assets/models/textures/potholes.jpg', 3, 20);
+    load('wall', '/assets/models/textures/building-wall.jpg', 2, 2);
+    load('market', '/assets/models/textures/market-stall.jpg', 1, 1);
   }
 
   _wallMat(fallbackColor) {
@@ -162,7 +162,7 @@ export class Renderer3D {
     return this.mat(fallbackColor || 0xeab308, { roughness: 0.7 });
   }
 
-  /** Place a real GLB only — feet on ground, never giant people */
+  /** Place a real GLB only — feet on ground, never giant props */
   _placeGlb(key, x, z, opts = {}) {
     if (!this.models?.has?.(key)) {
       return null;
@@ -170,17 +170,41 @@ export class Renderer3D {
     try {
       const inst = this.models.getInstance(key, opts);
       if (!inst || inst.userData?.isPlaceholder) return null;
-      // People must stay smaller than keke
-      if (key === 'pedestrian' || key === 'passenger') {
-        inst.scale.multiplyScalar(0.7);
+
+      // Normalize scale by bounding box so bad exports cannot become sky-high
+      inst.updateMatrixWorld(true);
+      let box = new THREE.Box3().setFromObject(inst);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const targetMax = ({
+        pedestrian: 1.8, passenger: 1.8, keke: 2.2, car: 2.5,
+        building: 6, market: 3, bustop: 2.5, bustation: 3
+      })[key] || 4;
+      if (maxDim > 0.01 && maxDim > targetMax * 1.4) {
+        inst.scale.multiplyScalar(targetMax / maxDim);
+        inst.updateMatrixWorld(true);
+        box = new THREE.Box3().setFromObject(inst);
       }
+      if (key === 'pedestrian' || key === 'passenger') {
+        inst.scale.multiplyScalar(0.85);
+        inst.updateMatrixWorld(true);
+        box = new THREE.Box3().setFromObject(inst);
+      }
+
       inst.position.set(x, 0, z);
       if (opts.rotY != null) inst.rotation.y = opts.rotY;
       inst.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(inst);
+      box = new THREE.Box3().setFromObject(inst);
       if (Number.isFinite(box.min.y)) {
-        // Whole body above ground plane
         inst.position.y = -box.min.y + 0.02;
+      }
+      // Reject absurd final height (giant floating meshes)
+      box = new THREE.Box3().setFromObject(inst);
+      box.getSize(size);
+      if (size.y > 12 || size.x > 20) {
+        console.warn('[KanoRun] rejected giant GLB', key, size.toArray());
+        return null;
       }
       if (opts.y != null) inst.position.y = opts.y;
       inst.userData.baseZ = z;
