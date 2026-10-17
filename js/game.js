@@ -33,6 +33,8 @@ export class Game {
     this.ui = null;
     this.life = new LifeActivities(this);
     this.dialect = 'hausa';
+    this.gameMode = 'career'; // career | timeattack | freeroam
+    this.roadSlope = 0;
     this.renderer3d = null;
 
     this.state = STATE.START;
@@ -238,6 +240,20 @@ export class Game {
     this.throttle = 0.7;
     this.braking = false;
     this.frame = 0;
+    // Mode setup
+    this.runTime = 0;
+    this.raceFinished = false;
+    if (this.gameMode === 'timeattack') {
+      this.raceTargetKm = 3.5;
+      this.raceBest = null;
+      try { this.raceBest = Storage.get('kanoTA_' + (this.selectedRoute || 'city'), null); } catch (e) {}
+      this.ui?.showMissionToast?.('⏱️ Time Attack — ' + this.raceTargetKm + ' km · beat the clock');
+    } else if (this.gameMode === 'freeroam') {
+      this.raceTargetKm = 0;
+      this.ui?.showMissionToast?.('🧭 Free roam — no timer pressure');
+    } else {
+      this.raceTargetKm = 0;
+    }
     this.roadOff = 0;
     this.playerLane = 1;
     this.smoothLane = 1;
@@ -902,6 +918,10 @@ export class Game {
     this.addCombo(p.aishat ? 3 : p.vip ? 2 : 1);
     Audio.pickup();
     Audio.voicePickup();
+      if (Math.random() < 0.2 && this.paxOnBoard > 0) {
+        const bf = Math.floor(140 * (this.fareScale?.() || 1));
+        setTimeout(() => { if (this.state === STATE.PLAY) this.startFareArgument(bf); }, 400);
+      }
     Audio.voiceSannu();
     this.pickupCooldown = 50;
     if (p.aishat) this.ui.showMissionToast('Aishat + Hibba → ' + (p.dest || 'town'));
@@ -1144,6 +1164,126 @@ export class Game {
   }
 
 
+
+  /** Driver vs passenger fare argument — keke is already stopped (EVENT) */
+  startFareArgument(baseFare) {
+    this.state = STATE.EVENT;
+    this.speed = 0;
+    this.throttle = 0;
+    this.braking = true;
+    this.triggerShake?.(5, 3);
+    const want = Math.floor(baseFare * (0.55 + Math.random() * 0.25));
+    const ask = Math.floor(baseFare * (1.05 + Math.random() * 0.35));
+    const argue = this.dialectLine('argue') || 'Kai! Farashi ya yi tsada!';
+    const fareQ = this.dialectLine('fare') || 'Naira nawa?';
+    this.ui.showEvent(
+      '💬 Fare argument',
+      fareQ + '\nPassenger: "₦' + want + ' only!"\nYou: "₦' + ask + '!"\n' + argue,
+      [
+        {
+          label: 'Accept ₦' + want,
+          action: () => {
+            this.score += want;
+            this.ui.showMissionToast((this.dialectLine('ok') || 'Ok') + ' +₦' + want);
+            this.state = STATE.PLAY;
+            this.braking = false;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Hold for ₦' + ask,
+          action: () => {
+            if (Math.random() < 0.55) {
+              this.score += ask;
+              this.ui.showMissionToast('Settled ₦' + ask);
+            } else {
+              this.ui.showMissionToast('Passenger walked away');
+              if (this.paxOnBoard > 0) {
+                this.paxOnBoard = Math.max(0, this.paxOnBoard - 1);
+                if (this.onboard?.length) this.onboard.shift();
+              }
+            }
+            this.state = STATE.PLAY;
+            this.braking = false;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Shout & drive (risk)',
+          action: () => {
+            this.triggerShake?.(8, 4);
+            if (Math.random() < 0.4) {
+              this.score += ask;
+              this.wantedLevel = (this.wantedLevel || 0) + 0.2;
+              this.ui.showMissionToast('Forced ₦' + ask + ' — heat up');
+            } else {
+              this.score = Math.max(0, this.score - 80);
+              this.ui.showMissionToast('Crowd sided with passenger −₦80');
+            }
+            this.state = STATE.PLAY;
+            this.braking = false;
+            this.ui.showPlaying();
+          }
+        }
+      ]
+    );
+  }
+
+
+  cycleGameMode() {
+    const order = ['career', 'timeattack', 'freeroam'];
+    const i = order.indexOf(this.gameMode || 'career');
+    this.gameMode = order[(i + 1) % order.length];
+    const labels = {
+      career: '💼 Career — fares, missions, KAROTA',
+      timeattack: '⏱️ Time Attack — 3.5 km race',
+      freeroam: '🧭 Free roam — explore Kano'
+    };
+    this.ui?.showMissionToast?.(labels[this.gameMode] || this.gameMode);
+    return this.gameMode;
+  }
+
+  finishTimeAttack() {
+    if (this.raceFinished) return;
+    this.raceFinished = true;
+    this.state = STATE.EVENT;
+    this.speed = 0;
+    const sec = Math.max(1, Math.floor((this.runTime || 0) / 60));
+    const t = (this.runTime || 0) / 60;
+    let medal = 'Bronze';
+    if (t <= 95) medal = 'Gold';
+    else if (t <= 125) medal = 'Silver';
+    const key = 'kanoTA_' + (this.selectedRoute || 'city');
+    let best = null;
+    try { best = Storage.get(key, null); } catch (e) {}
+    const isBest = best == null || t < best;
+    if (isBest) {
+      try { Storage.set(key, t); } catch (e) {}
+    }
+    const msg = 'Time Attack done\n' +
+      medal + ' · ' + t.toFixed(1) + 's for ' + (this.raceTargetKm || 3.5) + ' km\n' +
+      (isBest ? '🏆 New best!' : ('Best: ' + Number(best).toFixed(1) + 's'));
+    this.ui.showEvent('🏁 ' + medal, msg, [
+      {
+        label: 'Again',
+        action: () => {
+          this.gameMode = 'timeattack';
+          this.start();
+          this.ui.showPlaying();
+        }
+      },
+      {
+        label: 'Career mode',
+        action: () => {
+          this.gameMode = 'career';
+          this.start();
+          this.ui.showPlaying();
+        }
+      }
+    ]);
+    this.score += medal === 'Gold' ? 800 : medal === 'Silver' ? 400 : 150;
+  }
+
   cycleDialect() {
     const order = ['hausa', 'yoruba', 'igbo'];
     const i = order.indexOf(this.dialect || 'hausa');
@@ -1219,6 +1359,22 @@ export class Game {
 
     // PLAY
     this.frame++;
+    // Gentle highway undulation (not a full heightmap)
+    this.runTime = (this.runTime || 0) + 1;
+    if (this.gameMode === 'timeattack' && !this.raceFinished && this.raceTargetKm > 0) {
+      if ((this.dist || 0) >= this.raceTargetKm) {
+        this.finishTimeAttack();
+        return;
+      }
+      if (this.frame % 90 === 0) {
+        const left = Math.max(0, this.raceTargetKm - (this.dist || 0));
+        const t = ((this.runTime || 0) / 60).toFixed(0);
+        this.ui?.showMissionToast?.('⏱️ ' + t + 's · ' + left.toFixed(2) + ' km left');
+      }
+    }
+    this.roadSlope = Math.sin((this.dist || 0) * 0.35) * 0.04
+      + Math.sin((this.dist || 0) * 1.1) * 0.025
+      + ((this.roadSegment?.id === 'bridge' || this.roadSegment?.slope) ? 0.06 : 0);
     if (this.inv > 0) this.inv--;
     if (this.bounce > 0) this.bounce--;
     if (this.shake > 0) this.shake--;

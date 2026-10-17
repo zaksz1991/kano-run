@@ -124,6 +124,7 @@ window.KanoLife = { game, ui, renderer, controls, mode };
 // Naija Challenge: press N or call KanoLife.game.cycleDialect()
 window.addEventListener('keydown', (e) => {
   if (e.key === 'n' || e.key === 'N') game.cycleDialect?.();
+  if (e.key === 'm' || e.key === 'M') game.cycleGameMode?.();
 });
 window.KanoRun = window.KanoLife; // back-compat
 console.log('[Kano Life] ready · mode=' + mode);

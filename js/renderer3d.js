@@ -1598,6 +1598,15 @@ export class Renderer3D {
     this.travelZ = (this.travelZ || 0) + spd * 0.065;
     const travel = this.travelZ;
 
+    // Highway slope — tip road + camera slightly
+    const slope = g.roadSlope || 0;
+    if (this.roadMesh) {
+      this.roadMesh.rotation.x = -Math.PI / 2 + slope * 0.35;
+    }
+    if (this.laneMarks) {
+      this.laneMarks.rotation.x = slope * 0.35;
+    }
+
     if (this.roadMesh?.material?.map) {
       this.roadMesh.material.map.offset.y = -(travel * 0.05) % 1;
       this.roadMesh.material.map.needsUpdate = true;
@@ -1633,11 +1642,14 @@ export class Renderer3D {
       const dx = tx - this.player.position.x;
       const steer = typeof g.steerBlend === 'number' ? g.steerBlend : (lane - 1);
       // Smooth lean into turn
-      const leanZ = THREE.MathUtils.clamp(-steer * 0.1 - dx * 0.03, -0.12, 0.12);
-      const leanY = THREE.MathUtils.clamp(steer * 0.06, -0.1, 0.1);
+      // Steering lean + pitch from slope/speed
+      const leanZ = THREE.MathUtils.clamp(-steer * 0.16 - dx * 0.04, -0.18, 0.18);
+      const leanY = THREE.MathUtils.clamp(steer * 0.09, -0.14, 0.14);
+      const slope = (g.roadSlope || 0); // -0.12..0.12
+      const pitch = THREE.MathUtils.clamp(-spd * 0.008 + slope, -0.12, 0.1);
       this.player.rotation.z += (leanZ - this.player.rotation.z) * aX;
       this.player.rotation.y += (leanY - this.player.rotation.y) * aX;
-      this.player.rotation.x = THREE.MathUtils.clamp(-spd * 0.006, -0.05, 0);
+      this.player.rotation.x += (pitch - this.player.rotation.x) * 0.12;
       let by = 0;
       if (g.bounce > 0) by = Math.sin(g.bounce * 0.8) * 0.05;
       by += Math.sin((g.frame || 0) * 0.28) * Math.min(0.03, spd * 0.004);
