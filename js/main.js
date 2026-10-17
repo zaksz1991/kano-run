@@ -1,5 +1,5 @@
 /**
- * Kano Run boot — 3D with Canvas 2D fallback (Phase 10)
+ * Kano Life boot — reliable 3D + 2D fallback
  * Game Developer: Hassan Zakariya
  */
 import { Game } from './game.js';
@@ -13,6 +13,10 @@ import { Controls } from './controls.js';
 Audio.muted = Storage.getMuted();
 
 const canvas = document.getElementById('c');
+if (!canvas) {
+  console.error('[Kano Life] #c canvas missing');
+}
+
 const game = new Game(canvas);
 const ui = new UI(game);
 game.ui = ui;
@@ -24,54 +28,70 @@ controls.bind();
 function canWebGL() {
   try {
     const t = document.createElement('canvas');
-    const gl = t.getContext('webgl2') || t.getContext('webgl') || t.getContext('experimental-webgl');
-    return !!gl;
+    const gl =
+      t.getContext('webgl2', { powerPreference: 'high-performance' }) ||
+      t.getContext('webgl', { powerPreference: 'high-performance' }) ||
+      t.getContext('experimental-webgl');
+    if (!gl) return false;
+    const lose = gl.getExtension('WEBGL_lose_context');
+    if (lose) lose.loseContext();
+    return true;
   } catch {
     return false;
   }
 }
 
-let renderer;
-let mode = '3d';
+let renderer = null;
+let mode = 'none';
 
 function use2D(reason) {
-  console.warn('[Kano Run] Falling back to 2D renderer:', reason || 'WebGL unavailable');
+  console.warn('[Kano Life] 2D fallback:', reason);
   try {
     renderer = new Renderer2D(game);
     game.renderer3d = renderer;
     mode = '2d';
-    if (ui?.showMissionToast) ui.showMissionToast('2D mode · WebGL not available');
-    console.log('Kano Run 2D active');
-  } catch (e2) {
-    console.error('2D renderer also failed', e2);
-    renderer = { ready: false, draw() {}, render() {}, resize() {}, cycleCamera() { return 'chase'; } };
+    ui.showMissionToast?.('2D mode — still playable');
+    console.log('[Kano Life] 2D active');
+  } catch (e) {
+    console.error('[Kano Life] 2D failed', e);
+    renderer = { ready: false, draw() {}, render() {}, resize() {} };
     game.renderer3d = renderer;
     mode = 'none';
   }
 }
 
-if (canWebGL()) {
+function use3D() {
+  renderer = new Renderer3D(game);
+  if (!renderer.ready) throw new Error('Renderer3D not ready');
+  // Verify context still alive
+  const gl = renderer.renderer?.getContext?.();
+  if (!gl) throw new Error('WebGL context lost after init');
+  game.renderer3d = renderer;
+  mode = '3d';
+  console.log('[Kano Life] 3D active');
+}
+
+if (canvas && canWebGL()) {
   try {
-    renderer = new Renderer3D(game);
-    if (!renderer.ready) throw new Error('Renderer3D not ready');
-    game.renderer3d = renderer;
-    mode = '3d';
-    console.log('Kano Run 3D active');
+    use3D();
   } catch (err) {
-    console.error('Renderer3D failed', err);
-    use2D(err?.message || 'init failed');
+    console.error('[Kano Life] 3D init failed', err);
+    use2D(err?.message || '3D init');
   }
 } else {
-  use2D('no WebGL');
+  use2D(canvas ? 'no WebGL' : 'no canvas');
 }
 
 function onResize() {
   try {
     game.resize?.();
     renderer?.resize?.();
-  } catch (e) {}
+  } catch (e) {
+    console.warn('resize', e);
+  }
 }
 window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
 onResize();
 
 let last = 0;
@@ -80,8 +100,8 @@ function loop(ts) {
   const dt = Math.min(32, (ts - last) || 16);
   last = ts;
   try {
-    controls.update();
-    game.update(dt);
+    controls.update?.();
+    game.update?.(dt);
   } catch (err) {
     console.error('update', err);
   }
@@ -91,8 +111,7 @@ function loop(ts) {
   } catch (err) {
     console.error('render', err);
     renderErrors++;
-    // If 3D keeps throwing, switch to 2D once
-    if (mode === '3d' && renderErrors >= 3) {
+    if (mode === '3d' && renderErrors >= 2) {
       renderErrors = 0;
       use2D('render crash');
     }
@@ -101,5 +120,6 @@ function loop(ts) {
 }
 requestAnimationFrame(loop);
 
-window.KanoRun = { game, ui, renderer, controls, mode };
-console.log('Kano Run ready · mode=' + mode);
+window.KanoLife = { game, ui, renderer, controls, mode };
+window.KanoRun = window.KanoLife; // back-compat
+console.log('[Kano Life] ready · mode=' + mode);
