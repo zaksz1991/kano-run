@@ -102,6 +102,7 @@ export class Renderer3D {
 
     // 3. Asphalt + wall/market textures
     this._applyRoadTexture();
+    this._loadSkybox();
 
     // 4. Rebuild roadside AFTER models loaded so market/bustop/pedestrian GLBs are used
     this._glbPlaced = 0;
@@ -232,7 +233,27 @@ export class Renderer3D {
     window.KanoRunAssetReport = { ...rep, envPlaced: placed, textures: Object.keys(this.textureCache || {}) };
   }
 
-  _applyRoadTexture() {
+  _loadSkybox() {
+    const base = '/assets/models/environment/sky/';
+    // Prefer sh_* set (complete 6 faces if present)
+    const faces = ['ft', 'bk', 'up', 'dn', 'rt', 'lf'].map((f) => base + 'sh_' + f + '.png');
+    const loader = new THREE.CubeTextureLoader();
+    loader.load(
+      faces,
+      (cube) => {
+        this.scene.background = cube;
+        this.scene.environment = cube;
+        console.log('[KanoRun] Skybox ← environment/sky/sh_*');
+      },
+      undefined,
+      () => {
+        // fallback single gradient sky already exists
+        console.warn('[KanoRun] Skybox incomplete — keeping dome');
+      }
+    );
+  }
+
+    _applyRoadTexture() {
     if (!this.roadMesh) return;
     this._loadWorldTextures();
     const loader = new THREE.TextureLoader();
@@ -613,20 +634,37 @@ export class Renderer3D {
       'market', 'shop', 'busstop', 'house', 'market', 'petrol'
     ];
 
-    // Roadside beyond road edge (ROAD_WIDTH/2 ≈ 4.25) so cars never clip people
+    // Roadside — prefer real building GLBs, fall back to procedural
     for (const side of [-1, 1]) {
       for (let i = 0; i < types.length * 2; i++) {
         const z = i * 4.0 + (side > 0 ? 1.2 : 0);
         const xBase = side * (6.2 + (i % 4) * 0.35);
         const kind = types[i % types.length];
-        if (kind === 'mosque') this.addMosque(xBase, z, side);
-        else if (kind === 'market') this.addMarketStall(xBase, z, side);
-        else if (kind === 'petrol') this.addPetrol(xBase, z, side);
-        else if (kind === 'busstop') this.addBusStop(xBase, z, side);
-        else if (kind === 'shop') this.addShop(xBase, z, side, colors[i % colors.length]);
-        else this.addHouse(xBase, z, side, colors[i % colors.length]);
+        let placed = false;
+        if (kind === 'house' || kind === 'shop') {
+          placed = !!this._placeGlb('building', xBase, z, { rotY: side > 0 ? -Math.PI / 2 : Math.PI / 2 });
+        } else if (kind === 'market') {
+          placed = !!this._placeGlb('market', xBase, z, { rotY: side > 0 ? -0.3 : 0.3 });
+          if (!placed) this.addMarketStall(xBase, z, side);
+          placed = true;
+        } else if (kind === 'busstop') {
+          placed = !!this._placeGlb('bustop', side * 5.2, z, {});
+          if (!placed) this.addBusStop(xBase, z, side);
+          placed = true;
+        }
+        if (!placed) {
+          if (kind === 'mosque') this.addMosque(xBase, z, side);
+          else if (kind === 'petrol') this.addPetrol(xBase, z, side);
+          else if (kind === 'shop') this.addShop(xBase, z, side, colors[i % colors.length]);
+          else this.addHouse(xBase, z, side, colors[i % colors.length]);
+        }
+        if (i % 3 === 0) this._placeGlb('tree', side * (8.5 + (i % 2)), z + 1.5, {});
         if (i % 2 === 0) this.addStreetLight(side * 4.6, z + 1.2);
-        if (i % 4 === 1) this.addBillboard(side * 4.8, z + 2.5);
+        if (i % 4 === 1) {
+          if (!this._placeGlb('billboard', side * 5.0, z + 2.5, {})) {
+            this.addBillboard(side * 4.8, z + 2.5);
+          }
+        }
       }
     }
 
