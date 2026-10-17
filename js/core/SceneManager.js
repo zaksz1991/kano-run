@@ -4,6 +4,46 @@ import GAME_CONFIG from "./config.js";
 
 const THREE_STATIC = THREE_NS;
 
+function isMobileDevice() {
+  if (typeof window === "undefined") return false;
+  return (
+    window.innerWidth <= 900 ||
+    (window.matchMedia && matchMedia("(pointer: coarse)").matches)
+  );
+}
+
+function viewportSize() {
+  const vv = typeof window !== "undefined" ? window.visualViewport : null;
+  const width = Math.max(
+    1,
+    Math.floor(
+      vv?.width ||
+        window.innerWidth ||
+        document.documentElement?.clientWidth ||
+        1,
+    ),
+  );
+  const height = Math.max(
+    1,
+    Math.floor(
+      vv?.height ||
+        window.innerHeight ||
+        document.documentElement?.clientHeight ||
+        1,
+    ),
+  );
+  return { width, height };
+}
+
+/**
+ * SceneManager — mobile black-screen fix focused.
+ *
+ * Root causes addressed:
+ * 1) Empty #c canvas left on top of a second WebGL canvas
+ * 2) Post-processing composer failing on many Android GPUs
+ * 3) Wrong size/aspect after orientation / URL-bar resize
+ * 4) devicePixelRatio too high for weak GPUs
+ */
 export default class SceneManager {
   constructor(options = {}) {
     this.THREE = options.THREE ?? null;
@@ -17,6 +57,7 @@ export default class SceneManager {
 
     this.destroyed = false;
     this.resizeHandler = null;
+    this._isMobile = isMobileDevice();
   }
 
   async initialize(options = {}) {
@@ -27,48 +68,44 @@ export default class SceneManager {
     }
 
     const THREE = this.THREE;
+    this._isMobile = isMobileDevice();
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(this.backgroundColor);
-
     this.scene.fog = new THREE.Fog(
       this.fogColor,
       options.fogNear ?? 35,
-      options.fogFar ?? 160
+      options.fogFar ?? 160,
     );
+
+    const { width, height } = viewportSize();
 
     this.camera = new THREE.PerspectiveCamera(
-      options.fov ?? 65,
-      this.getAspectRatio(),
+      options.fov ?? (this._isMobile ? 58 : 65),
+      width / height,
       options.near ?? 0.1,
-      options.far ?? 500
+      options.far ?? 500,
     );
+    this.camera.position.set(0, 5, -8);
+    this.camera.lookAt(0, 1, 10);
 
-    this.camera.position.set(0, 6, -9);
-    this.camera.lookAt(0, 1, 8);
-
-        // CRITICAL: bind to existing #c so we do not leave an empty canvas covering the world on mobile
+    // Bind to existing #c — never create a second full-screen canvas under/over it
     const existingCanvas =
       options.canvas ||
-      document.getElementById("c") ||
-      null;
-
-    const isMobile =
-      typeof window !== "undefined" &&
-      (window.innerWidth <= 900 ||
-        (window.matchMedia && matchMedia("(pointer: coarse)").matches));
+      (typeof document !== "undefined" ? document.getElementById("c") : null);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: existingCanvas || undefined,
-      antialias: options.antialias ?? !isMobile,
+      antialias: options.antialias ?? !this._isMobile,
       alpha: false,
       powerPreference: "high-performance",
       preserveDrawingBuffer: false,
+      failIfMajorPerformanceCaveat: false,
     });
 
     const el = this.renderer.domElement;
     if (el) {
-      el.id = el.id || "c";
+      el.id = "c";
       Object.assign(el.style, {
         position: "fixed",
         inset: "0",
@@ -77,203 +114,137 @@ export default class SceneManager {
         display: "block",
         zIndex: "0",
         touchAction: "none",
+        background: "#87b8d8",
       });
     }
+
     this.renderer.setClearColor(this.backgroundColor, 1);
-    const pr = Math.min(
-      window.devicePixelRatio || 1,
-      isMobile ? 1.5 : (options.maxPixelRatio ?? 2),
+    this.renderer.setPixelRatio(
+      Math.min(
+        (typeof window !== "undefined" && window.devicePixelRatio) || 1,
+        this._isMobile ? 1.25 : options.maxPixelRatio ?? 2,
+      ),
     );
-    this.renderer.setPixelRatio(pr);
+    this.renderer.setSize(width, height, false);
 
-    const w = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-    const h = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-    this.renderer.setSize(w, h, false);
-
-    this.renderer.shadowMap.enabled = options.shadows ?? true;
+    // Shadows are expensive and can black-out some mobile drivers
+    this.renderer.shadowMap.enabled = options.shadows ?? !this._isMobile;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     if ("outputColorSpace" in this.renderer && THREE.SRGBColorSpace) {
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     }
-
     if ("toneMapping" in this.renderer && THREE.ACESFilmicToneMapping) {
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.renderer.toneMappingExposure = 1.15;
-    }
-
-    // Slightly sharper on mid-range mobiles without crushing blacks
-    if ("physicallyCorrectLights" in this.renderer) {
-      this.renderer.physicallyCorrectLights = true;
+      this.renderer.toneMappingExposure = this._isMobile ? 1.35 : 1.15;
     }
 
     const container =
-      options.container ??
-      document.getElementById("game-container") ??
-      document.body;
+      options.container ||
+      (typeof document !== "undefined" &&
+        document.getElementById("game-container")) ||
+      (typeof document !== "undefined" && document.body);
 
-    if (this.renderer.domElement.parentElement !== container) {
-      container.appendChild(this.renderer.domElement);
+    if (el && container && el.parentElement !== container) {
+      container.appendChild(el);
     }
-    // Remove any leftover empty canvas siblings that can block WebGL on Android
+
+    // Remove any other canvas nodes that can cover the WebGL surface on Android
     if (container) {
       for (const child of [...container.querySelectorAll("canvas")]) {
-        if (child !== this.renderer.domElement) {
-          child.remove();
+        if (child !== el) child.remove();
+      }
+    }
+
+    // Post-processing: desktop only. Mobile composer often yields a black frame.
+    this.post = null;
+    if (!this._isMobile) {
+      try {
+        this.post = new PostProcessing({
+          scene: this.scene,
+          camera: this.camera,
+          renderer: this.renderer,
+          THREE,
+        });
+        await this.post?._initPromise;
+        if (!this.post?.ready && !this.post?.composer) {
+          this.post = null;
         }
+      } catch (err) {
+        console.warn("[SceneManager] PostProcessing disabled:", err);
+        this.post = null;
       }
     }
 
     this.resizeHandler = () => this.resize();
     window.addEventListener("resize", this.resizeHandler);
     window.addEventListener("orientationchange", this.resizeHandler);
-    if (typeof window !== "undefined" && (window.innerWidth <= 900 || matchMedia("(pointer: coarse)").matches)) {
-      this.post = null; // mobile: disable post pipeline entirely
-      this.renderer.shadowMap.enabled = false;
-    }
     window.visualViewport?.addEventListener?.("resize", this.resizeHandler);
     window.visualViewport?.addEventListener?.("scroll", this.resizeHandler);
-    // One more resize after layout settles (Android URL bar)
-    setTimeout(() => this.resize(), 100);
-    setTimeout(() => this.resize(), 500);
 
-    this.createDefaultLighting();
+    // Android chrome URL-bar settle
+    setTimeout(() => this.resize(), 50);
+    setTimeout(() => this.resize(), 300);
+    setTimeout(() => this.resize(), 1000);
 
-    // Initialize Post-Processing
-    this.post = new PostProcessing({
-      scene: this.scene,
-      camera: this.camera,
-      renderer: this.renderer,
-      THREE: this.THREE,
-    });
-
-    // Initialize the adaptive quality governor
     this._initGovernor();
 
-    return {
-      scene: this.scene,
-      camera: this.camera,
-      renderer: this.renderer,
-    };
-  }
-
-  async loadThree(_path) {
-    // Static import so Vite bundles three into the app (bare "three" fails in browser)
-    if (this.THREE) return this.THREE;
-    if (!THREE_STATIC?.Scene || !THREE_STATIC?.WebGLRenderer) {
-      throw new Error("Unable to load Three.js: static module missing Scene/WebGLRenderer");
-    }
-    this.THREE = THREE_STATIC;
-    return this.THREE;
-  }
-
-  createDefaultLighting() {
-    const THREE = this.THREE;
-
-    // Soft hemisphere only — full sun/fill comes from LightingSystem
-    // (avoids double-bright overlapping directional lights)
-    const ambient = new THREE.HemisphereLight(
-      0xd8e8f5,
-      0x8a7355,
-      0.55
+    console.info(
+      `[SceneManager] ready mobile=${this._isMobile} size=${width}x${height} post=${Boolean(this.post)}`,
     );
 
-    ambient.name = "kano-ambient-light";
-    this.scene.add(ambient);
-    this._defaultHemisphere = ambient;
+    return this;
   }
 
   getAspectRatio() {
-    const width = Math.max(1, window.innerWidth);
-    const height = Math.max(1, window.innerHeight);
-
+    const { width, height } = viewportSize();
     return width / height;
   }
 
   resize() {
-    if (this.destroyed || !this.camera || !this.renderer) {
-      return;
-    }
+    if (this.destroyed || !this.camera || !this.renderer) return;
 
-    const vv = window.visualViewport;
-    const width = Math.max(
-      1,
-      Math.floor(vv?.width || window.innerWidth || document.documentElement.clientWidth || 1),
-    );
-    const height = Math.max(
-      1,
-      Math.floor(vv?.height || window.innerHeight || document.documentElement.clientHeight || 1),
-    );
+    this._isMobile = isMobileDevice();
+    const { width, height } = viewportSize();
 
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
 
-    const isMobile =
-      width <= 900 ||
-      (window.matchMedia && matchMedia("(pointer: coarse)").matches);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
-    this.renderer.setSize(width, height, false);
-
-    // Resize the post-processing composer as well
-    this.post?.setSize?.(width, height);
-  }
-
-  setBackground(color) {
-    if (!this.scene || !this.THREE) return;
-
-    this.backgroundColor = color;
-    this.scene.background = new this.THREE.Color(color);
-  }
-
-  setFog(color, near, far) {
-    if (!this.scene || !this.THREE) return;
-
-    this.fogColor = color;
-
-    this.scene.fog = new this.THREE.Fog(
-      color,
-      Math.max(0, near),
-      Math.max(near + 1, far)
+    this.renderer.setPixelRatio(
+      Math.min(
+        window.devicePixelRatio || 1,
+        this._isMobile ? 1.25 : 2,
+      ),
     );
-  }
+    this.renderer.setSize(width, height, false);
+    this.renderer.setClearColor(this.backgroundColor, 1);
 
-  add(object) {
-    if (!this.scene || !object) return false;
-
-    this.scene.add(object);
-    return true;
-  }
-
-  remove(object) {
-    if (!this.scene || !object) return false;
-
-    this.scene.remove(object);
-    return true;
+    try {
+      this.post?.setSize?.(width, height);
+    } catch {}
   }
 
   render(delta = 0) {
     if (this.destroyed || !this.scene || !this.camera || !this.renderer) {
       return;
     }
-    // Mobile: never use post-processing (black screen / failed composer on many Androids)
-    const mobile =
-      typeof window !== "undefined" &&
-      (window.innerWidth <= 900 ||
-        (window.matchMedia && matchMedia("(pointer: coarse)").matches));
-    if (mobile) {
-      this.renderer.setClearColor(this.backgroundColor, 1);
+
+    // Always clear to sky blue so a failed frame is never pure black
+    this.renderer.setClearColor(this.backgroundColor, 1);
+
+    // Mobile: never touch post pipeline
+    if (this._isMobile || !this.post) {
       this.renderer.render(this.scene, this.camera);
       return;
     }
-    if (this.post?.composer || this.post?.ready) {
-      try {
-        this.post.render(delta);
-        return;
-      } catch (e) {
-        console.warn("[SceneManager] post failed, fallback render", e);
-      }
+
+    try {
+      this.post.render(delta);
+    } catch (err) {
+      console.warn("[SceneManager] post render failed, fallback", err);
+      this.post = null;
+      this.renderer.render(this.scene, this.camera);
     }
-    this.renderer.render(this.scene, this.camera);
   }
 
   getContext() {
@@ -289,44 +260,47 @@ export default class SceneManager {
     if (this.destroyed) {
       throw new Error("[SceneManager] Scene manager has been destroyed.");
     }
-
     if (typeof window === "undefined" || typeof document === "undefined") {
       throw new Error("[SceneManager] A browser environment is required.");
     }
   }
 
-  // --- ADAPTIVE QUALITY GOVERNOR ---
+  async loadThree(threePath) {
+    if (THREE_STATIC) return THREE_STATIC;
+    if (threePath) {
+      const mod = await import(/* @vite-ignore */ threePath);
+      return mod.default || mod;
+    }
+    return THREE_STATIC;
+  }
+
   _initGovernor() {
     this._frames = 0;
     this._accum = 0;
-    this._tierDrops = 0;          // never downgrade more than twice
+    this._tierDrops = 0;
     this._lastCheck = performance.now();
   }
 
   govern(dt) {
-    if (!this.post) return; // Safety check
-    
+    if (!this.post) return;
+
     this._frames++;
     this._accum += dt;
     const now = performance.now();
-    
-    // Sample every 2 seconds
-    if (now - this._lastCheck < 2000) return; 
+    if (now - this._lastCheck < 2000) return;
 
     const avgFps = this._frames / (this._accum || 1);
-    this._frames = 0; 
-    this._accum = 0; 
+    this._frames = 0;
+    this._accum = 0;
     this._lastCheck = now;
 
-    // Hysteresis: stop oscillating after 2 drops
-    if (this._tierDrops >= 2) return;          
+    if (this._tierDrops >= 2) return;
 
     if (avgFps < 42) {
       this._tierDrops++;
-      const next = this.post.tier === 'high' ? 'medium' : 'low';
-      this.post.setTier(next);
-      
-      if (next === 'low') {
+      const next = this.post.tier === "high" ? "medium" : "low";
+      this.post.setTier?.(next);
+      if (next === "low") {
         this.renderer.shadowMap.enabled = false;
         this.renderer.setPixelRatio(1);
       }
@@ -336,51 +310,45 @@ export default class SceneManager {
 
   destroy() {
     if (this.destroyed) return;
-
     this.destroyed = true;
 
     if (this.resizeHandler && typeof window !== "undefined") {
       window.removeEventListener("resize", this.resizeHandler);
+      window.removeEventListener("orientationchange", this.resizeHandler);
+      window.visualViewport?.removeEventListener?.("resize", this.resizeHandler);
+      window.visualViewport?.removeEventListener?.("scroll", this.resizeHandler);
     }
-
     this.resizeHandler = null;
 
-    // Clean up post-processing first
     if (this.post) {
-      this.post.dispose();
+      try {
+        this.post.dispose?.();
+      } catch {}
       this.post = null;
     }
 
     if (this.scene) {
       this.scene.traverse((object) => {
-        if (object.geometry?.dispose) {
-          object.geometry.dispose();
-        }
-
+        object.geometry?.dispose?.();
         const materials = Array.isArray(object.material)
           ? object.material
           : object.material
             ? [object.material]
             : [];
-
         for (const material of materials) {
-          for (const value of Object.values(material)) {
-            if (value?.isTexture && typeof value.dispose === "function") {
-              value.dispose();
-            }
+          for (const value of Object.values(material || {})) {
+            if (value?.isTexture) value.dispose?.();
           }
-
           material.dispose?.();
         }
       });
-
       this.scene.clear();
     }
 
     if (this.renderer) {
       this.renderer.renderLists?.dispose?.();
       this.renderer.dispose();
-      this.renderer.domElement?.remove();
+      // Do not remove #c node from DOM — page owns it
     }
 
     this.scene = null;

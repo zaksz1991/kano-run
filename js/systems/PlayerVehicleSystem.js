@@ -187,28 +187,85 @@ export default class PlayerVehicleSystem {
       const model = sourceScene.clone(true);
       model.name = `player-${preset.style || "vehicle"}`;
       
-      // Apply preset scale if available
+      /**
+       * CRITICAL SCALE FIX (do NOT scale by total height including rider):
+       * Previous logic set total height = 2.0. The rider was the tallest mesh,
+       * so the keke shrank and the rider stayed giant relative to the cabin.
+       *
+       * Correct order:
+       * 1) Classify human vs vehicle meshes
+       * 2) Scale the model so the KEKE body alone is ~1.55m tall
+       * 3) Fit each rider mesh to sitting height (~0.95m) and seat Y
+       */
       if (preset.modelScale) model.scale.multiplyScalar(preset.modelScale);
 
-      // Scale the entire model (driver + keke) to a fixed total height of 2.0 units.
-      // This keeps the driver and keke in perfect proportion to each other.
+      const humanNameRe = /(driver|rider|person|character|human|man|woman|body|head|arm|leg|pilot|npc)/i;
+      const humanMeshes = [];
+
       model.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(model);
-      const size = box.getSize(new THREE.Vector3());
-      const targetHeight = 2.0; 
-      if (size.y > 0.01) {
-        const scaleFactor = targetHeight / size.y;
-        model.scale.multiplyScalar(scaleFactor);
+      model.traverse((child) => {
+        if (!child.isMesh || !child.geometry) return;
+        const label = `${child.name || ""} ${child.parent?.name || ""}`;
+        let isHuman = humanNameRe.test(label);
+        try {
+          child.geometry.computeBoundingBox?.();
+          const bb = child.geometry.boundingBox;
+          if (bb) {
+            const sx = Math.max(0.001, bb.max.x - bb.min.x);
+            const sy = Math.max(0.001, bb.max.y - bb.min.y);
+            const sz = Math.max(0.001, bb.max.z - bb.min.z);
+            // Standing human meshes are tall and relatively narrow
+            if (sy > 0.8 && sy > sx * 1.25 && sy > sz * 1.25) isHuman = true;
+          }
+        } catch {}
+        if (isHuman) humanMeshes.push(child);
+      });
+
+      // Measure KEKE only (hide riders temporarily)
+      for (const h of humanMeshes) h.visible = false;
+      model.updateMatrixWorld(true);
+      let box = new THREE.Box3().setFromObject(model);
+      let size = new THREE.Vector3();
+      box.getSize(size);
+
+      // Target keke body height ~1.55m (cabin + roof), length ~2.6m
+      const TARGET_KEKE_HEIGHT = 1.55;
+      if (size.y > 0.05) {
+        model.scale.multiplyScalar(TARGET_KEKE_HEIGHT / size.y);
       }
 
-      // Ground the model
+      // Fit riders to seat after vehicle scale
+      model.updateMatrixWorld(true);
+      for (const h of humanMeshes) {
+        h.visible = true;
+        h.updateMatrixWorld(true);
+        const hb = new THREE.Box3().setFromObject(h);
+        const hs = new THREE.Vector3();
+        hb.getSize(hs);
+        // Sitting driver should be under ~1.0m tall in world space
+        const TARGET_RIDER_HEIGHT = 0.95;
+        if (hs.y > 0.05) {
+          const factor = TARGET_RIDER_HEIGHT / hs.y;
+          h.scale.multiplyScalar(factor);
+        }
+        // Drop toward seat (cabin floor ~0.35–0.55)
+        h.updateMatrixWorld(true);
+        const hb2 = new THREE.Box3().setFromObject(h);
+        const seatY = 0.42;
+        h.position.y += seatY - hb2.min.y;
+        // Nudge slightly forward into cabin if needed
+        h.position.z += 0.05;
+      }
+
+      // Ground the combined model
       model.updateMatrixWorld(true);
       const finalBox = new THREE.Box3().setFromObject(model);
       model.position.y -= finalBox.min.y;
 
       model.traverse((child) => {
         if (!child.isMesh) return;
-        child.castShadow = true; child.receiveShadow = true;
+        child.castShadow = true;
+        child.receiveShadow = true;
         child.material = cloneMaterial(child.material);
       });
       return model;
