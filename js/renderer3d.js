@@ -1266,29 +1266,27 @@ export class Renderer3D {
 
   /** Swap pool mesh to match obstacle type */
   styleVehicle(mesh, type) {
-    // Rebuild is expensive — instead hide all children and show prebuilt if we stored variants
-    // Simpler: recolor + scale
-    const col =
-      type === 'karota' ? 0xf59e0b :
-      type === 'police' ? 0x1e40af :
-      type === 'keke' ? 0xeab308 :
-      type === 'car' ? 0xdc2626 : 0x64748b;
-
-    mesh.traverse((ch) => {
-      if (ch.isMesh && ch.material && ch.material.color && ch.geometry) {
-        const t = ch.geometry.type;
-        if (t === 'BoxGeometry') {
-          // skip glass-ish (small height windows)
-          const p = ch.geometry.parameters;
-          if (p && p.height && p.height < 0.3 && p.depth && p.depth < 1.1) return;
+    // Only recolor procedural BoxGeometry placeholders — never touch GLB meshes
+    if (mesh.userData?.isPlaceholder) {
+      const col =
+        type === 'karota' ? 0xf59e0b :
+        type === 'police' ? 0x1e40af :
+        type === 'keke' ? 0xeab308 :
+        type === 'car' ? 0xdc2626 : 0x64748b;
+      mesh.traverse((ch) => {
+        if (ch.isMesh && ch.material?.color && ch.geometry?.type === 'BoxGeometry') {
           ch.material.color.setHex(col);
         }
-      }
-    });
-
-    if (type === 'keke') mesh.scale.set(0.9, 0.9, 0.75);
-    else if (type === 'police' || type === 'karota') mesh.scale.set(1.05, 1.05, 1.05);
-    else mesh.scale.set(1, 1, 1);
+      });
+    }
+    // Uniform scale only (do not squash GLBs on Z)
+    if (!mesh.userData._baseScale) {
+      mesh.userData._baseScale = mesh.scale.x || 1;
+    }
+    const s = mesh.userData._baseScale;
+    if (type === 'keke') mesh.scale.setScalar(s * 0.95);
+    else if (type === 'police' || type === 'karota') mesh.scale.setScalar(s * 1.05);
+    else mesh.scale.setScalar(s);
   }
 
   screenYToZ(y, playerY) {
