@@ -29,8 +29,10 @@ export class Renderer3D {
       this.init();
       // GLB Integration Pass — load all available models then swap placeholders
       const KEYS = [
-        'keke', 'car', 'motorcycle', 'passenger', 'pedestrian', 'karota',
-        'police', 'taxi', 'bus', 'truck', 'robber', 'market', 'bustop', 'bustation', 'bicycle'
+        'keke', 'car', 'taxi', 'suv', 'truck', 'motorcycle',
+        'police', 'karota', 'bus', 'ambulance', 'robber', 'bicycle',
+        'passenger', 'pedestrian',
+        'market', 'bustop', 'bustation', 'building', 'tree', 'billboard', 'bench'
       ];
       this.models.preload(KEYS).then(() => {
         this._integrateAllGlbs();
@@ -130,10 +132,10 @@ export class Renderer3D {
         () => console.warn('[KanoRun] Texture missing', url)
       );
     };
-    load('asphalt', '/assets/models/textures/asphalt.jpg', 2, 24);
-    load('potholes', '/assets/models/textures/potholes.jpg', 3, 20);
-    load('wall', '/assets/models/textures/building-wall.jpg', 2, 2);
-    load('market', '/assets/models/textures/market-stall.jpg', 1, 1);
+    load('asphalt', '/assets/models/environment/ground/asphalt.jpg', 2, 24);
+    load('potholes', '/assets/models/environment/ground/potholes.jpg', 3, 20);
+    load('wall', '/assets/models/environment/ground/building-wall.jpg', 2, 2);
+    load('market', '/assets/models/environment/ground/market-stall.jpg', 1, 1);
   }
 
   _wallMat(fallbackColor) {
@@ -235,7 +237,7 @@ export class Renderer3D {
     this._loadWorldTextures();
     const loader = new THREE.TextureLoader();
     loader.load(
-      '/textures/asphalt.jpg',
+      '/assets/models/environment/ground/asphalt.jpg',
       (tex) => {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
         tex.repeat.set(2, 24);
@@ -248,7 +250,7 @@ export class Renderer3D {
           metalness: 0.05,
           color: 0xcccccc
         });
-        loader.load('/textures/potholes.jpg', (pot) => {
+        loader.load('/assets/models/environment/ground/potholes.jpg', (pot) => {
           pot.wrapS = pot.wrapT = THREE.RepeatWrapping;
           pot.repeat.set(3, 20);
           this.textureCache.potholes = pot;

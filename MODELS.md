@@ -1,24 +1,21 @@
-# Kano Life — 3D models (required for full quality)
-
-GLBs are **not** in this zip (they live on your PC / InstantMesh exports).
-
-## Drop models here (after unzip)
+# Kano Life — asset catalog (rearranged)
 
 ```
 public/assets/models/
-  keke/keke-1.glb … keke-8.glb
-  car-kit/sedan.glb, taxi.glb, police.glb, truck.glb, …
-  city-kit-suburban/building-type-a.glb …
-  city-kit-industrial/…
-  city-pack/Bus Stop.glb, Tree.glb, Billboard.glb …
-  pedestrian-passengers/…
+  vehicles/keke/keke-1..8.glb
+  vehicles/cars/…          (sedan-like, taxi, suv, truck, motorcycle)
+  vehicles/special/        police, karota, bus, okada, ambulance
+  characters/passengers/   hijab, suit, igbo, turban…
+  characters/pedestrians/  pedestrian, passenger, police_man…
+  world/buildings-suburban/
+  world/buildings-industrial/
+  world/props/             Tree, Billboard, Bench, Stop-sign…
+  world/roads/
+  environment/ground/      asphalt, potholes, Dirt, walls, market-stall
+  environment/sky/         sh_ft/bk/up/dn/lf/rt.png
 ```
 
-Paths match `AssetCatalog` / `ModelManager`. Missing files → procedural placeholders (game still runs).
+Engine loads via `js/ModelManager.js` keys: keke, car, taxi, suv, truck, police, karota, bus, motorcycle, passenger, pedestrian, building, market, bustop, tree, billboard…
 
-## InstantMesh / your pipeline
-1. Export GLB, Y-up, meters, origin at ground.
-2. Prefer < 2 MB per vehicle for mobile.
-3. `npm run build` then deploy.
-
-Without models on Vercel you will still get WebGL/2D road + activities; with models you get full city kits.
+Console after Start should show:
+`[ModelManager] OK keke ← assets/models/vehicles/keke/keke-3.glb`

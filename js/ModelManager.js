@@ -1,75 +1,121 @@
 /**
  * Kano Life — ModelManager
- * Paths match live repo: public/assets/models/...
+ * Paths match rearranged repo:
+ *   public/assets/models/{vehicles,characters,world,environment}/
  * Game Developer: Hassan Zakariya
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-/** Primary + fallbacks (spaces encoded at load time) */
+/**
+ * Each key: ordered fallbacks (first that loads wins).
+ * Spaces in filenames are encoded at load time.
+ */
 const MODEL_MAP = {
+  // ——— Player / traffic keke ———
   keke: [
-    'assets/models/keke/keke-3.glb',
-    'assets/models/keke/keke-1.glb',
-    'assets/models/keke/keke-2.glb',
+    'assets/models/vehicles/keke/keke-3.glb',
+    'assets/models/vehicles/keke/keke-1.glb',
+    'assets/models/vehicles/keke/keke-7.glb',
+    'assets/models/vehicles/keke/keke-2.glb',
   ],
+  // ——— Cars ———
   car: [
-    'assets/models/car-kit/sedan.glb',
-    'assets/models/cars-bundle/Car.glb',
+    'assets/models/vehicles/cars/quaternius_cc0-normal-car-1190.glb',
+    'assets/models/vehicles/cars/low_poly_car_1.glb',
+    'assets/models/vehicles/cars/RedCar.glb',
+    'assets/models/world/props/Car.glb',
   ],
   taxi: [
-    'assets/models/car-kit/taxi.glb',
-    'assets/models/cars-bundle/Taxi.glb',
+    'assets/models/vehicles/cars/quaternius_cc0-taxi-1413.glb',
   ],
-  bus: ['assets/models/city-pack/Bus.glb'],
-  motorcycle: ['assets/models/city-pack/Motorcycle.glb'],
+  suv: [
+    'assets/models/vehicles/cars/quaternius_cc0-suv-1402.glb',
+  ],
   truck: [
-    'assets/models/car-kit/truck.glb',
-    'assets/models/car-kit/truck-flat.glb',
+    'assets/models/vehicles/cars/quaternius_cc0-truck-1449.glb',
+    'assets/models/vehicles/cars/truck.glb',
   ],
+  // ——— Special ———
   police: [
-    'assets/models/car-kit/police.glb',
-    'assets/models/cars-bundle/Police Car.glb',
+    'assets/models/vehicles/special/police.glb',
+    'assets/models/world/props/Police-Car.glb',
   ],
   karota: [
-    'assets/models/keke/keke-4.glb',
-    'assets/models/car-kit/police.glb',
+    'assets/models/vehicles/special/karota.glb',
+    'assets/models/vehicles/special/police.glb',
   ],
+  bus: [
+    'assets/models/vehicles/special/bus.glb',
+    'assets/models/world/props/Bus.glb',
+  ],
+  motorcycle: [
+    'assets/models/vehicles/special/okada.glb',
+    'assets/models/vehicles/cars/motorcycle.glb',
+    'assets/models/vehicles/cars/ps2_styled_old_motorcycle.glb',
+  ],
+  ambulance: [
+    'assets/models/vehicles/special/ambulance.glb',
+  ],
+  robber: [
+    'assets/models/vehicles/keke/keke-6.glb',
+  ],
+  bicycle: [
+    'assets/models/vehicles/cars/quaternius_cc0-bicycle-697.glb',
+    'assets/models/world/props/Bicycle.glb',
+  ],
+  // ——— People ———
   pedestrian: [
-    'assets/models/pedestrian-passengers/pedestrian.glb',
-    'assets/models/pedestrian-passengers/Man.glb',
+    'assets/models/characters/pedestrians/pedestrian.glb',
+    'assets/models/characters/pedestrians/passenger.glb',
+    'assets/models/characters/pedestrians/Man in Long Sleeves.glb',
+    'assets/models/characters/pedestrians/muslim_girl.glb',
+    'assets/models/characters/passengers/tekamist_mens.glb',
   ],
   passenger: [
-    'assets/models/pedestrian-passengers/passenger.glb',
-    'assets/models/pedestrian-passengers/hijab_muslim_woman.glb',
-    'assets/models/pedestrian-passengers/Man in Suit.glb',
+    'assets/models/characters/passengers/hijab_muslim_woman.glb',
+    'assets/models/characters/passengers/women_in_hijab.glb',
+    'assets/models/characters/passengers/Man in Suit.glb',
+    'assets/models/characters/passengers/Man.glb',
+    'assets/models/characters/pedestrians/passenger.glb',
   ],
-  robber: ['assets/models/keke/keke-6.glb'],
-  bicycle: ['assets/models/city-pack/Bicycle.glb'],
-  market: ['assets/models/city-pack/Pizza Corner.glb'],
+  // ——— World props ———
   bustop: [
-    'assets/models/city-pack/Bus Stop.glb',
-    'assets/models/city-pack/Bus stop sign.glb',
+    'assets/models/world/props/Stop-sign.glb',
+    'assets/models/world/props/Bench.glb',
+    'assets/models/world/props/Traffic-Light.glb',
   ],
-  bustation: ['assets/models/city-pack/Bus Stop.glb'],
-  suv: ['assets/models/car-kit/suv.glb'],
-  van: ['assets/models/car-kit/van.glb'],
+  bustation: [
+    'assets/models/world/props/Stop-sign.glb',
+    'assets/models/world/props/Bench.glb',
+  ],
+  market: [
+    'assets/models/world/props/Pizza-Corner.glb',
+    'assets/models/world/props/Greenhouse.glb',
+  ],
   building: [
-    'assets/models/city-kit-suburban/building-type-a.glb',
-    'assets/models/city-kit-suburban/building-type-b.glb',
-    'assets/models/city-pack/Big Building.glb',
+    'assets/models/world/buildings-suburban/building-type-a.glb',
+    'assets/models/world/buildings-suburban/building-type-b.glb',
+    'assets/models/world/buildings-suburban/building-type-c.glb',
+    'assets/models/world/props/big-building.glb',
   ],
+  tree: ['assets/models/world/props/Tree.glb'],
+  billboard: ['assets/models/world/props/Billboard.glb'],
+  bench: ['assets/models/world/props/Bench.glb'],
+  trafficlight: ['assets/models/world/props/Traffic-Light.glb'],
 };
 
 const TARGET_HEIGHT = {
-  keke: 1.9, car: 1.35, taxi: 1.35, bus: 2.2, truck: 2.0,
-  motorcycle: 1.15, police: 1.45, karota: 1.5, pedestrian: 1.7,
-  passenger: 1.7, robber: 1.1, bicycle: 0.85, market: 2.0,
-  bustop: 1.8, bustation: 2.6, suv: 1.6, van: 1.7, building: 4.5
+  keke: 1.85, car: 1.4, taxi: 1.4, suv: 1.65, truck: 2.1,
+  motorcycle: 1.2, police: 1.45, karota: 1.5, bus: 2.4,
+  ambulance: 1.7, robber: 1.85, bicycle: 0.9,
+  pedestrian: 1.7, passenger: 1.7,
+  building: 5.5, market: 2.8, bustop: 2.2, bustation: 2.4,
+  tree: 4, billboard: 3.5, bench: 0.6, trafficlight: 3.2
 };
 
 function encodePath(path) {
-  return path.split('/').map((seg) => encodeURIComponent(seg)).join('/');
+  return path.split('/').map((s) => encodeURIComponent(s)).join('/');
 }
 
 export class ModelManager {
@@ -82,7 +128,7 @@ export class ModelManager {
     this.loader = new GLTFLoader();
     this.ready = false;
     this.log = [];
-    console.log('[ModelManager] paths → /assets/models/…');
+    console.log('[ModelManager] catalog → vehicles/ characters/ world/ environment/');
   }
 
   async preload(keys = Object.keys(MODEL_MAP)) {
@@ -103,8 +149,7 @@ export class ModelManager {
     if (this.cache.has(key)) return this.cache.get(key);
     if (this.failed.has(key)) return null;
 
-    const paths = this.pathsFor(key);
-    for (const path of paths) {
+    for (const path of this.pathsFor(key)) {
       const url = this.baseUrl.replace(/\/?$/, '/') + encodePath(path).replace(/^\//, '');
       try {
         const gltf = await new Promise((resolve, reject) => {
@@ -116,38 +161,38 @@ export class ModelManager {
         const box = new THREE.Box3().setFromObject(root);
         const size = new THREE.Vector3();
         box.getSize(size);
-        const targetH = TARGET_HEIGHT[key] ?? 1.2;
+        const targetH = TARGET_HEIGHT[key] ?? 1.4;
         if (size.y > 0.001) {
           root.scale.multiplyScalar(targetH / size.y);
           root.updateMatrixWorld(true);
           const box2 = new THREE.Box3().setFromObject(root);
-          const min = box2.min;
-          root.position.y -= min.y; // sit on ground
+          root.position.y -= box2.min.y;
+        }
+        // Reject absurd size after normalize
+        root.updateMatrixWorld(true);
+        const box3 = new THREE.Box3().setFromObject(root);
+        box3.getSize(size);
+        if (size.y > 15 || size.x > 25) {
+          console.warn('[ModelManager] skip oversized', key, size.toArray());
+          continue;
         }
         root.traverse((ch) => {
           if (ch.isMesh) {
             ch.castShadow = true;
             ch.receiveShadow = true;
-            if (ch.material) {
-              ch.material.side = THREE.FrontSide;
-            }
           }
         });
-        const entry = {
-          scene: root,
-          animations: gltf.animations || [],
-          url
-        };
+        const entry = { scene: root, animations: gltf.animations || [], url };
         this.cache.set(key, entry);
         this.log.push({ key, ok: true, url });
-        console.log('[ModelManager] OK', key, url);
+        console.log('[ModelManager] OK', key, '←', path);
         return entry;
       } catch (err) {
         this.log.push({ key, ok: false, url, err: String(err?.message || err) });
-        console.warn('[ModelManager] try fail', url, err?.message || err);
       }
     }
     this.failed.add(key);
+    console.warn('[ModelManager] FAIL', key);
     return null;
   }
 
@@ -158,10 +203,12 @@ export class ModelManager {
       root = entry.scene.clone(true);
       root.userData.isPlaceholder = false;
       if (entry.animations?.length) {
-        const mixer = new THREE.AnimationMixer(root);
-        mixer.clipAction(entry.animations[0]).play();
-        root.userData.mixer = mixer;
-        this.mixers.push(mixer);
+        try {
+          const mixer = new THREE.AnimationMixer(root);
+          mixer.clipAction(entry.animations[0]).play();
+          root.userData.mixer = mixer;
+          this.mixers.push(mixer);
+        } catch (_) {}
       }
     } else {
       root = this.makePlaceholder(key, opts.color);
@@ -227,9 +274,26 @@ export class ModelManager {
       const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.4, 2.0), mat(col));
       body.position.y = 0.4; g.add(body);
     }
-    g.traverse((ch) => { if (ch.isMesh) { ch.castShadow = true; ch.receiveShadow = true; } });
     g.userData.isPlaceholder = true;
     g.userData.modelKey = key;
     return g;
   }
 }
+
+/** Texture URLs for road / world (rearranged environment folder) */
+export const TEXTURE_URLS = {
+  asphalt: '/assets/models/environment/ground/asphalt.jpg',
+  asphaltAlt: '/assets/models/environment/ground/asphalt-1.jpg',
+  potholes: '/assets/models/environment/ground/potholes.jpg',
+  dirt: '/assets/models/environment/ground/Dirt.jpg',
+  wall: '/assets/models/environment/ground/building-wall.jpg',
+  market: '/assets/models/environment/ground/market-stall.jpg',
+  sky: {
+    ft: '/assets/models/environment/sky/sh_ft.png',
+    bk: '/assets/models/environment/sky/sh_bk.png',
+    up: '/assets/models/environment/sky/sh_up.png',
+    dn: '/assets/models/environment/sky/sh_dn.png',
+    lf: '/assets/models/environment/sky/sh_lf.png',
+    rt: '/assets/models/environment/sky/sh_rt.png',
+  }
+};
