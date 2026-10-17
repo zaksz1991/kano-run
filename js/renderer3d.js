@@ -604,10 +604,11 @@ export class Renderer3D {
 
     // Mixed Kano roadside: houses, shops, mosques, markets, petrol, bus stops
     const types = [
-      'house', 'shop', 'house', 'market', 'house', 'mosque',
-      'shop', 'petrol', 'house', 'busstop', 'shop', 'house',
-      'market', 'house', 'shop', 'mosque', 'house', 'petrol',
-      'house', 'shop', 'market', 'busstop', 'house', 'mosque'
+      'market', 'shop', 'house', 'market', 'busstop', 'mosque',
+      'shop', 'petrol', 'market', 'busstop', 'shop', 'house',
+      'market', 'house', 'shop', 'mosque', 'market', 'petrol',
+      'house', 'shop', 'market', 'busstop', 'market', 'mosque',
+      'market', 'shop', 'busstop', 'house', 'market', 'petrol'
     ];
 
     // Roadside beyond road edge (ROAD_WIDTH/2 ≈ 4.25) so cars never clip people
@@ -1209,10 +1210,40 @@ export class Renderer3D {
   }
 
   /** Highlighted stop pad — kind: 'pick' | 'drop' | 'default' */
+  _makeLabelSprite(text, bgColor) {
+    const cv = document.createElement('canvas');
+    cv.width = 256;
+    cv.height = 64;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, 256, 64);
+    // rounded plate
+    ctx.fillStyle = bgColor;
+    ctx.beginPath();
+    const r = 12;
+    ctx.moveTo(r, 4);
+    ctx.arcTo(252, 4, 252, 60, r);
+    ctx.arcTo(252, 60, 4, 60, r);
+    ctx.arcTo(4, 60, 4, 4, r);
+    ctx.arcTo(4, 4, 252, 4, r);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 28px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 34);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.needsUpdate = true;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true });
+    const sp = new THREE.Sprite(mat);
+    sp.scale.set(2.4, 0.6, 1);
+    sp.position.set(0, 2.1, 0);
+    sp.userData.isLabel = true;
+    return sp;
+  }
+
   makeZone(color, kind = 'default') {
     const g = new THREE.Group();
     const isDrop = kind === 'drop' || color === 0xfbbf24;
-    const isPick = kind === 'pick' || !isDrop;
     const col = isDrop ? 0xfbbf24 : 0x22c55e;
     // Wide glowing stop pad
     const pad = new THREE.Mesh(
@@ -1229,7 +1260,7 @@ export class Renderer3D {
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.06;
     g.add(ring);
-    // Pole + flag so player sees checkpoint from far
+    // Pole + flag
     const pole = new THREE.Mesh(
       new THREE.CylinderGeometry(0.04, 0.04, 1.6, 8),
       this.mat(0x94a3b8, { roughness: 0.5, metalness: 0.4 })
@@ -1242,7 +1273,6 @@ export class Renderer3D {
     );
     flag.position.set(1.35, 1.4, 0);
     g.add(flag);
-    // Inner disc
     const disc = new THREE.Mesh(
       new THREE.CircleGeometry(0.7, 24),
       new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
@@ -1250,6 +1280,10 @@ export class Renderer3D {
     disc.rotation.x = -Math.PI / 2;
     disc.position.y = 0.05;
     g.add(disc);
+    // World-space label
+    const label = this._makeLabelSprite(isDrop ? 'DROP · BRAKE' : 'PICK UP', isDrop ? '#fbbf24' : '#4ade80');
+    g.add(label);
+    g.userData.label = label;
     g.userData.kind = isDrop ? 'drop' : 'pick';
     g.userData.pulse = Math.random() * Math.PI * 2;
     return g;
@@ -1725,8 +1759,10 @@ export class Renderer3D {
       mesh.position.x = this.laneToX(z.lane);
       mesh.position.z = this.screenYToZ(z.y, py);
       // Green = pick · Yellow = drop · Pink = Aishat · Purple = VIP
-      const col = z.kind === 'd' ? 0xfbbf24 : z.aishat ? 0xf472b6 : z.vip ? 0xa78bfa : 0x22c55e;
+      const isDrop = z.kind === 'd';
+      const col = isDrop ? 0xfbbf24 : z.aishat ? 0xf472b6 : z.vip ? 0xa78bfa : 0x22c55e;
       mesh.children.forEach((ch) => {
+        if (ch.userData?.isLabel) return;
         if (ch.material) {
           if (ch.material.color) ch.material.color.setHex(col);
           if (ch.material.emissive) {
@@ -1735,7 +1771,20 @@ export class Renderer3D {
           }
         }
       });
-      // Strong pulse so stop pads are obvious
+      // Update floating label text
+      if (mesh.userData.label) {
+        const txt = isDrop
+          ? ('DROP · ' + (z.label || z.name || 'BRAKE'))
+          : (z.aishat ? 'AISHAT + HIBBA' : z.vip ? 'VIP PICK' : (z.dest ? 'PICK · ' + z.dest : 'PICK UP'));
+        if (mesh.userData._labelText !== txt) {
+          mesh.userData._labelText = txt;
+          const sp = mesh.userData.label;
+          const fresh = this._makeLabelSprite(txt.slice(0, 18), isDrop ? '#fbbf24' : z.aishat ? '#f472b6' : '#4ade80');
+          sp.material.map = fresh.material.map;
+          sp.material.needsUpdate = true;
+        }
+        mesh.userData.label.position.y = 2.1 + Math.sin((g.frame || 0) * 0.12) * 0.08;
+      }
       const pulse = 1 + Math.sin((g.frame || 0) * 0.18 + (z.lane || 0)) * 0.18;
       mesh.scale.set(pulse, 1, pulse);
     }

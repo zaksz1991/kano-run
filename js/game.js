@@ -1492,6 +1492,7 @@ export class Game {
         paxClassName: paxClass.name,
         fareMult: paxClass.fareMult,
         dest,
+        label: dest || 'Stop',
         seats: roll < 0.09 ? 2 : 1,
         size: sizes[Math.floor(Math.random() * sizes.length)],
         flagging: true,
@@ -1508,6 +1509,7 @@ export class Game {
         used: false,
         akwai: true,
         dest: prefer,
+        label: prefer || 'Akwai',
         checkpoint: true
       });
     }
