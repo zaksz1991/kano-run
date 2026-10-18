@@ -58,6 +58,10 @@ export class UI {
     this.refreshDailyLogin();
   }
 
+  // ----------------------------------------------------------
+  // INITIAL SETTINGS
+  // ----------------------------------------------------------
+
   initSelects() {
     const routes = this.el('route-select');
 
@@ -71,7 +75,7 @@ export class UI {
         routes.append(option);
       });
 
-      routes.value = save.routeId || ROUTES[0].id;
+      routes.value = save.routeId || ROUTES[0]?.id || '';
     }
 
     this.refreshDriverSelect();
@@ -96,32 +100,38 @@ export class UI {
     const select = this.el('driver-select');
     if (!select) return;
 
+    const unlocked = save.unlocks || [];
     const prior = save.driverId || 'ruffneck';
 
     select.replaceChildren();
 
     DRIVERS.forEach((driver) => {
       const option = document.createElement('option');
-      const unlocked = (save.unlocks || []).includes(driver.id);
+      const isUnlocked = unlocked.includes(driver.id);
 
       option.value = driver.id;
-      option.textContent = unlocked
+      option.textContent = isUnlocked
         ? `${driver.name} — ${driver.blurb}`
         : `${driver.name} — LOCKED · ₦${(driver.price || 0).toLocaleString()}`;
 
-      option.disabled = !unlocked;
+      option.disabled = !isUnlocked;
       select.append(option);
     });
 
-    select.value = (save.unlocks || []).includes(prior)
+    select.value = unlocked.includes(prior)
       ? prior
-      : DRIVERS.find((driver) =>
-          (save.unlocks || []).includes(driver.id),
-        )?.id || DRIVERS[0].id;
+      : DRIVERS.find((driver) => unlocked.includes(driver.id))?.id
+        || DRIVERS[0]?.id
+        || '';
   }
+
+  // ----------------------------------------------------------
+  // EVENT BINDING
+  // ----------------------------------------------------------
 
   bind(game) {
     if (this.bound) return;
+    if (!game) throw new TypeError('UI.bind() requires a game instance.');
 
     this.bound = true;
     this.game = game;
@@ -149,11 +159,15 @@ export class UI {
     });
 
     on('radio-btn', 'click', () => {
-      save.radioIndex = (save.radioIndex + 1) % RADIO.length;
+      const currentIndex = Number.isInteger(save.radioIndex)
+        ? save.radioIndex
+        : 0;
+
+      save.radioIndex = (currentIndex + 1) % RADIO.length;
       persist();
 
       game.s.radio = RADIO[save.radioIndex];
-      game.audio.beep?.(540, 0.1);
+      game.audio?.beep?.(540, 0.1);
 
       this.toast(`Radio: ${game.s.radio.name} ${game.s.radio.freq}`);
     });
@@ -199,14 +213,18 @@ export class UI {
     on('mute-select', 'change', (event) => {
       const shouldEnable = event.target.value === 'on';
 
-      if (game.audio.enabled !== shouldEnable) {
+      if (game.audio && game.audio.enabled !== shouldEnable) {
         game.audio.toggle();
       }
+
+      save.muted = !shouldEnable;
+      persist();
     });
 
     on('quality-select', 'change', (event) => {
       const quality = event.target.value;
 
+      save.settings ||= {};
       save.settings.quality = quality;
       persist();
 
@@ -217,26 +235,20 @@ export class UI {
       );
     });
 
-    /*
-     * Reverse gear
-     *
-     * This supports an optional HTML button with id="reverse-btn".
-     * The game engine must expose game.setReverse().
-     *
-     * Reverse gear is toggled with a click. While reverse is engaged,
-     * the game's brake input acts as the reverse accelerator.
-     */
+    // --------------------------------------------------------
+    // REVERSE GEAR UI
+    // --------------------------------------------------------
+    // Controls owns the button's pointer and keyboard actions and
+    // calls the reverse handler supplied by main.js.
+    //
+    // Do not add another click-to-toggle handler here. Doing so
+    // could toggle reverse twice for a single physical click.
+
     this.reverseButton = this.el('reverse-btn');
 
     if (this.reverseButton) {
       this.reverseButton.type = 'button';
       this.reverseButton.setAttribute('aria-pressed', 'false');
-      this.reverseButton.textContent = 'REVERSE';
-
-      this.reverseButton.addEventListener('click', () => {
-        this.toggleReverse();
-      });
-
       this.updateReverseControl();
     }
 
@@ -304,7 +316,12 @@ export class UI {
     });
 
     this.refreshDailyMissions();
+    this.updateReverseControl();
   }
+
+  // ----------------------------------------------------------
+  // REVERSE GEAR STATE
+  // ----------------------------------------------------------
 
   toggleReverse() {
     if (!this.game || typeof this.game.setReverse !== 'function') {
@@ -315,28 +332,52 @@ export class UI {
     const currentlyReversing = Boolean(this.game.s?.reverse);
     const result = this.game.setReverse(!currentlyReversing);
 
+    this.updateReverseControl();
+
     if (result === false) {
-      this.updateReverseControl();
       return false;
     }
 
-    this.updateReverseControl();
     return true;
   }
 
   updateReverseControl(state = this.game?.s) {
     const button = this.reverseButton || this.el('reverse-btn');
-    if (!button) return;
-
     const reversing = Boolean(state?.reverse);
 
-    button.classList.toggle('reverse-engaged', reversing);
-    button.setAttribute('aria-pressed', String(reversing));
-    button.textContent = reversing ? 'REVERSE ENGAGED' : 'REVERSE';
-    button.title = reversing
-      ? 'Reverse gear is engaged. Use the brake control to reverse.'
-      : 'Engage reverse gear when the keke has stopped.';
+    if (button) {
+      // Support both classes used by the existing stylesheet.
+      button.classList.toggle('active', reversing);
+      button.classList.toggle('reverse-engaged', reversing);
+
+      button.setAttribute('aria-pressed', String(reversing));
+      button.textContent = reversing ? 'REVERSE ON' : 'REVERSE';
+
+      button.title = reversing
+        ? 'Reverse gear is engaged. Hold BRAKE to move backwards.'
+        : 'Engage reverse gear when the keke has stopped.';
+    }
+
+    const gearLabel = this.el('gear-label');
+
+    if (gearLabel) {
+      gearLabel.textContent = reversing
+        ? 'REVERSE GEAR'
+        : 'FORWARD GEAR';
+    }
+
+    const reverseLabel = this.el('reverse-label');
+
+    if (reverseLabel) {
+      reverseLabel.textContent = reversing
+        ? 'REVERSE ENGAGED'
+        : 'FORWARD GEAR';
+    }
   }
+
+  // ----------------------------------------------------------
+  // MORNING ROUTINE
+  // ----------------------------------------------------------
 
   beginMorningRoutine() {
     const routeId = this.el('route-select')?.value || save.routeId;
@@ -464,6 +505,7 @@ export class UI {
     if (!data) return;
 
     const screen = this.el('life-routine-screen');
+
     if (screen) {
       screen.classList.toggle('garage-focus', data.scene === 'garage');
     }
@@ -474,12 +516,14 @@ export class UI {
     };
 
     setText('life-time', `${data.time} · KANO STATE`);
+
     setText(
       'life-step-label',
       `STEP ${stage + 1} OF ${stages.length} · ${data.label}`,
     );
 
     const progress = this.el('life-progress-fill');
+
     if (progress) {
       progress.style.width = `${((stage + 1) / stages.length) * 100}%`;
     }
@@ -680,6 +724,10 @@ export class UI {
     this.refreshWallet();
   }
 
+  // ----------------------------------------------------------
+  // SCREEN VISIBILITY AND WALLET
+  // ----------------------------------------------------------
+
   show(id) {
     this.el(id)?.classList.remove('hidden');
   }
@@ -696,6 +744,10 @@ export class UI {
       if (element) element.textContent = text;
     });
   }
+
+  // ----------------------------------------------------------
+  // DAILY LOGIN REWARDS
+  // ----------------------------------------------------------
 
   refreshDailyLogin() {
     const status = dailyLoginStatus();
@@ -735,6 +787,10 @@ export class UI {
     }
   }
 
+  // ----------------------------------------------------------
+  // DAILY MISSIONS
+  // ----------------------------------------------------------
+
   refreshDailyMissions() {
     const host = this.el('daily-mission-list');
     if (!host) return;
@@ -759,13 +815,16 @@ export class UI {
       title.textContent = mission.text;
 
       const progress = document.createElement('small');
+
       progress.textContent =
         `${Math.floor(mission.progress)} / ${mission.target} · reward ₦${mission.reward.toLocaleString()}`;
 
       copy.append(title, progress);
 
       const button = document.createElement('button');
+      button.type = 'button';
       button.className = 'daily-claim';
+
       button.textContent = mission.claimed
         ? 'CLAIMED'
         : mission.claimable
@@ -789,6 +848,10 @@ export class UI {
       host.append(card);
     });
   }
+
+  // ----------------------------------------------------------
+  // GARAGE
+  // ----------------------------------------------------------
 
   openGarage() {
     this.refreshWallet();
@@ -902,8 +965,10 @@ export class UI {
     copy.append(title, description);
 
     const button = document.createElement('button');
+    button.type = 'button';
     button.textContent = buttonText;
     button.disabled = selected;
+
     button.className = selected
       ? 'selected-button'
       : 'garage-action';
@@ -913,6 +978,10 @@ export class UI {
     card.append(copy, button);
     host.append(card);
   }
+
+  // ----------------------------------------------------------
+  // PLAY STATE
+  // ----------------------------------------------------------
 
   startPlay() {
     this.hide('start-screen');
@@ -945,6 +1014,10 @@ export class UI {
     this.toast(`${MODES[mode]?.label || 'Free roam'} selected`);
   }
 
+  // ----------------------------------------------------------
+  // TOAST NOTIFICATIONS
+  // ----------------------------------------------------------
+
   toast(text) {
     const toast = this.el('toast');
     if (!toast) return;
@@ -959,6 +1032,10 @@ export class UI {
     }, 2500);
   }
 
+  // ----------------------------------------------------------
+  // HUD UPDATE
+  // ----------------------------------------------------------
+
   update(state, route, driver) {
     const set = (id, value) => {
       const element = this.el(id);
@@ -967,7 +1044,15 @@ export class UI {
 
     set('score', Math.floor(state.score).toLocaleString());
     set('distance', state.distance.toFixed(2));
-    set('speed', Math.round(state.speed));
+
+    const displayedSpeed = Number.isFinite(state.signedSpeed)
+      ? state.signedSpeed
+      : state.reverse
+        ? -Math.abs(state.speed)
+        : Math.abs(state.speed);
+
+    set('speed', Math.round(displayedSpeed));
+
     set(
       'pax',
       state.passengers.reduce(
@@ -1007,12 +1092,15 @@ export class UI {
 
     const reversing = Boolean(state.reverse);
 
-    /*
-     * Keep reverse gear and signed speed visible in the HUD when
-     * the corresponding optional HTML elements exist.
-     */
-    set('gear-label', reversing ? 'GEAR · REVERSE' : 'GEAR · FORWARD');
-    set('reverse-label', reversing ? 'REVERSE ENGAGED' : 'FORWARD GEAR');
+    set(
+      'gear-label',
+      reversing ? 'REVERSE GEAR' : 'FORWARD GEAR',
+    );
+
+    set(
+      'reverse-label',
+      reversing ? 'REVERSE ENGAGED' : 'FORWARD GEAR',
+    );
 
     const speedElement = this.el('speed');
 
@@ -1088,6 +1176,10 @@ export class UI {
     this.refreshWallet();
   }
 
+  // ----------------------------------------------------------
+  // STREET EVENTS
+  // ----------------------------------------------------------
+
   event(kicker, title, copy, choices) {
     const setText = (id, value) => {
       const element = this.el(id);
@@ -1105,7 +1197,7 @@ export class UI {
 
     choices.forEach((choice) => {
       const button = document.createElement('button');
-
+      button.type = 'button';
       button.textContent = choice.label;
 
       button.addEventListener('click', () => {
@@ -1121,6 +1213,10 @@ export class UI {
   hideEvent() {
     this.el('event-card')?.classList.add('hidden');
   }
+
+  // ----------------------------------------------------------
+  // RUN REPORT
+  // ----------------------------------------------------------
 
   gameOver({
     reason,
