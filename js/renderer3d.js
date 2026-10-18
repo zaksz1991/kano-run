@@ -60,6 +60,21 @@ export class Renderer3D {
   }
 
   /** Replace player + vehicle pools with GLB instances (no BoxGeometry if load OK) */
+  _clampVehicleScale(mesh, maxLong = 3.5) {
+    if (!mesh) return;
+    mesh.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(mesh);
+    const s = new THREE.Vector3();
+    b.getSize(s);
+    const longest = Math.max(s.x, s.y, s.z);
+    if (longest > maxLong) {
+      mesh.scale.multiplyScalar(maxLong / longest);
+      mesh.updateMatrixWorld(true);
+      const b2 = new THREE.Box3().setFromObject(mesh);
+      mesh.position.y -= b2.min.y;
+    }
+  }
+
   _integrateAllGlbs() {
     if (!this.scene || !this.models) return;
 
@@ -89,6 +104,7 @@ export class Renderer3D {
           this.player = next;
           this.scene.add(this.player);
           this.player.scale.setScalar(Math.min(1, 1.75 / Math.max(ps.y, 0.1)));
+          this._clampVehicleScale(this.player, 2.6);
           console.log('[KanoRun] Player → keke.glb', ps.toArray());
         }
       } catch (e) {
@@ -96,9 +112,9 @@ export class Renderer3D {
       }
     }
 
-    // 2. Traffic pools — clear procedural, refill from GLB
-    const types = ['car', 'keke', 'taxi', 'bus', 'motorcycle', 'truck', 'police', 'karota', 'robber'];
-    const counts = { car: 6, keke: 5, taxi: 3, bus: 2, motorcycle: 3, truck: 2, police: 2, karota: 2, robber: 2 };
+    // 2. Traffic pools — clear procedural, refill from GLB (no giant buses)
+    const types = ['car', 'keke', 'taxi', 'motorcycle', 'police', 'karota'];
+    const counts = { car: 6, keke: 5, taxi: 3, motorcycle: 3, police: 2, karota: 2 };
 
     if (this.vehiclePool) {
       for (const m of this.vehiclePool) {
@@ -112,8 +128,11 @@ export class Renderer3D {
       const n = counts[t] || 2;
       for (let i = 0; i < n; i++) {
         const mesh = this.models.getInstance(t);
+        if (!mesh) continue;
         mesh.visible = false;
         mesh.userData.poolType = t;
+        mesh.userData.type = t;
+        this._clampVehicleScale(mesh, t === 'keke' ? 2.5 : 3.5);
         this.scene.add(mesh);
         this.vehiclePool.push(mesh);
         this.typedPools[t].push(mesh);

@@ -296,7 +296,7 @@ export class Game {
     this.obs = [];
     // Seed traffic so the road is never empty at start
     for (let i = 0; i < 8; i++) {
-      const types = ['car', 'keke', 'taxi', 'motorcycle', 'bus', 'truck', 'keke', 'car'];
+      const types = ['car', 'keke', 'taxi', 'motorcycle', 'keke', 'car', 'police'];
       const type = types[i % types.length];
       this.obs.push({
         type,
@@ -1826,10 +1826,10 @@ export class Game {
         let lane = Math.floor(Math.random() * 3);
         if (lane === this.playerLane && Math.random() < 0.4) lane = (lane + 1) % 3;
         if (!this.laneClear(lane, -80 - b * 40, 120)) continue;
-        let types = ['car', 'keke', 'keke', 'taxi', 'motorcycle', 'motorcycle', 'bus', 'truck', 'police', 'karota', 'robber'];
+        let types = ['car', 'keke', 'keke', 'taxi', 'motorcycle', 'motorcycle', 'police', 'karota', 'robber'];
         if (chase) types = ['police', 'karota', 'car', 'police', 'keke'];
         if (this.currentDistrict?.market) types.push('keke', 'motorcycle', 'taxi');
-        if (this.currentDistrict?.industrial) types.push('truck', 'truck', 'bus');
+        if (this.currentDistrict?.industrial) types.push('car', 'car'); // no bus/truck GLBs (camera-eating)
         const type = types[Math.floor(Math.random() * types.length)];
         const roadMode = (CONFIG.ROAD_MODES && CONFIG.ROAD_MODES[this.selectedRoadMode]) || { oppositeChance: 0.35 };
         const opposite = roadMode.oppositeChance > 0 && Math.random() < roadMode.oppositeChance;

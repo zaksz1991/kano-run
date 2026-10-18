@@ -183,14 +183,32 @@ export class ModelManager {
           const box2 = new THREE.Box3().setFromObject(root);
           root.position.y -= box2.min.y;
         }
+        // Clamp LENGTH/WIDTH — height-only scale leaves buses/trucks huge in Z
+        root.updateMatrixWorld(true);
+        const boxLen = new THREE.Box3().setFromObject(root);
+        const szL = new THREE.Vector3();
+        boxLen.getSize(szL);
+        const maxLen = {
+          keke: 2.4, robber: 2.4, car: 4.2, taxi: 4.2, suv: 4.5,
+          truck: 5.5, bus: 6.0, police: 4.5, karota: 4.5, motorcycle: 2.0,
+          ambulance: 5.0, bicycle: 1.8, passenger: 1.2, pedestrian: 1.2,
+          building: 8, market: 4, flyover: 20
+        }[key] ?? 5;
+        const longest = Math.max(szL.x, szL.z);
+        if (longest > maxLen) {
+          root.scale.multiplyScalar(maxLen / longest);
+          root.updateMatrixWorld(true);
+          const boxF = new THREE.Box3().setFromObject(root);
+          root.position.y -= boxF.min.y;
+        }
         // Reject absurd size after normalize
         root.updateMatrixWorld(true);
         const box3 = new THREE.Box3().setFromObject(root);
         box3.getSize(size);
         // Strict caps — giant "train/bus in sky" meshes get rejected
-        const maxY = key === 'flyover' ? 25 : key === 'building' ? 10 : 8;
-        const maxX = key === 'flyover' ? 40 : 12;
-        const maxZ = key === 'flyover' ? 40 : 14;
+        const maxY = key === 'flyover' ? 25 : key === 'building' ? 10 : 6;
+        const maxX = key === 'flyover' ? 40 : (key === 'bus' || key === 'truck' ? 7 : 8);
+        const maxZ = key === 'flyover' ? 40 : (key === 'bus' || key === 'truck' ? 8 : 9);
         if (size.y > maxY || size.x > maxX || size.z > maxZ) {
           console.warn('[ModelManager] skip oversized', key, size.toArray());
           continue;
