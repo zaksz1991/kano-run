@@ -1,7 +1,7 @@
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{background:#070b14;color:#f1f5f9;font-family:Outfit,system-ui,sans-serif;height:100dvh;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;user-select:none}
 #game-container{position:relative;width:100%;max-width:430px;height:100dvh;max-height:900px;background:#0a101c;overflow:hidden}
-canvas{display:block;width:100%;height:100%}
+canvas,#c{display:block;width:100%;height:100%;min-height:50dvh;touch-action:none;background:#6ec5f0}
 #ui-overlay{position:absolute;inset:0;pointer-events:none;z-index:5}
 .top-bar{display:flex;gap:6px;padding:12px 12px 0}
 .stat{flex:1;background:rgba(12,18,32,.9);backdrop-filter:blur(10px);padding:8px;border-radius:14px;border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:700;text-align:center}

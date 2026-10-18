@@ -12,6 +12,17 @@ import { Controls } from './controls.js';
 
 Audio.muted = Storage.getMuted();
 
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    (window.matchMedia && window.matchMedia('(max-width: 820px)').matches) ||
+    (navigator.maxTouchPoints > 1);
+}
+const MOBILE = isMobileDevice();
+if (MOBILE) {
+  try { Storage.setLowQuality(true); } catch (e) {}
+  console.log('[Kano Life] mobile → low quality on');
+}
+
 const canvas = document.getElementById('c');
 if (!canvas) {
   console.error('[Kano Life] #c canvas missing');
@@ -84,6 +95,20 @@ if (canvas && canWebGL()) {
 
 function onResize() {
   try {
+    if (canvas) {
+      const parent = canvas.parentElement;
+      const rect = parent?.getBoundingClientRect?.() || canvas.getBoundingClientRect();
+      let w = Math.floor(rect.width || window.innerWidth || 390);
+      let h = Math.floor(rect.height || window.innerHeight || 700);
+      if (w < 200) w = Math.min(430, window.innerWidth || 390);
+      if (h < 200) h = Math.min(900, window.innerHeight || 700);
+      // Backing store — critical for mobile black canvas
+      const dpr = MOBILE ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+    }
     game.resize?.();
     renderer?.resize?.();
   } catch (e) {
@@ -91,8 +116,12 @@ function onResize() {
   }
 }
 window.addEventListener('resize', onResize);
-window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
+window.addEventListener('orientationchange', () => setTimeout(onResize, 150));
+// Multiple resize passes — mobile browser chrome settles late
 onResize();
+setTimeout(onResize, 100);
+setTimeout(onResize, 500);
+setTimeout(onResize, 1200);
 
 let last = 0;
 let renderErrors = 0;

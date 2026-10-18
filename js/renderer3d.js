@@ -297,23 +297,29 @@ export class Renderer3D {
   }
 
   init() {
-    const w = this.canvas.clientWidth || 390;
-    const h = this.canvas.clientHeight || 700;
+    const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+      (window.innerWidth || 400) < 820;
+    this._mobile = mobile;
+    let w = this.canvas.clientWidth || this.canvas.parentElement?.clientWidth || 390;
+    let h = this.canvas.clientHeight || this.canvas.parentElement?.clientHeight || 700;
+    if (w < 160) w = Math.min(430, window.innerWidth || 390);
+    if (h < 160) h = Math.min(900, window.innerHeight || 700);
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
-      powerPreference: 'high-performance',
+      antialias: !mobile,
+      powerPreference: mobile ? 'low-power' : 'high-performance',
       alpha: false,
-      failIfMajorPerformanceCaveat: false
+      failIfMajorPerformanceCaveat: false,
+      preserveDrawingBuffer: false
     });
     if (!this.renderer || !this.renderer.getContext()) {
       throw new Error('WebGL context unavailable');
     }
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(mobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.75));
     this.renderer.setSize(w, h, false);
     this.renderer.setClearColor(0x6ec5f0, 1);
     try {
-      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.enabled = !mobile;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       if (THREE.SRGBColorSpace) this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       if (THREE.ACESFilmicToneMapping) {
@@ -423,10 +429,11 @@ export class Renderer3D {
     this.weather = 'clear';
     this.weatherTimer = 0;
     try {
-      const lq = JSON.parse(localStorage.getItem('kanoLQ') || 'false');
-      if (lq) this.applyQuality(true);
+      const lq = JSON.parse(localStorage.getItem('kanoLQ') || 'false') || this._mobile;
+      if (lq || this._mobile) this.applyQuality(true);
     } catch {}
     this.ready = true;
+    console.log('[KanoRun] 3D ready', { mobile: !!this._mobile, w, h });
   }
 
   initParticles() {
@@ -657,7 +664,8 @@ export class Renderer3D {
 
     // Roadside — prefer real building GLBs, fall back to procedural
     for (const side of [-1, 1]) {
-      for (let i = 0; i < types.length * 2; i++) {
+      const cityCopies = this._mobile ? 1 : 2;
+      for (let i = 0; i < types.length * cityCopies; i++) {
         const z = i * 4.0 + (side > 0 ? 1.2 : 0);
         const xBase = side * (6.2 + (i % 4) * 0.35);
         const kind = types[i % types.length];
@@ -1483,10 +1491,27 @@ export class Renderer3D {
 
   applyQuality(low) {
     if (!this.renderer) return;
-    this.renderer.setPixelRatio(low ? 1 : Math.min(window.devicePixelRatio || 1, 1.75));
-    this.renderer.setSize(this.canvas.clientWidth || 390, this.canvas.clientHeight || 700, false);
+    this._lowQuality = !!low;
+    this.renderer.setPixelRatio(1);
+    let w = this.canvas.clientWidth || 390;
+    let h = this.canvas.clientHeight || 700;
+    if (w < 160) w = 390;
+    if (h < 160) h = 700;
+    this.renderer.setSize(w, h, false);
+    try {
+      this.renderer.shadowMap.enabled = !low;
+    } catch (e) {}
     if (this.rain) this.rain.visible = !low;
-    if (this.dust && low && this.dustMat) this.dustMat.opacity = Math.min(this.dustMat.opacity, 0.15);
+    if (this.dust) this.dust.visible = !low;
+    if (this.hemlight && low) this.hemlight.intensity = Math.max(0.4, this.hemlight.intensity);
+    // Hide far buildings on low to cut draw calls
+    if (low && this.buildings) {
+      let n = 0;
+      this.buildings.children.forEach((ch, i) => {
+        if (i > 40) ch.visible = false;
+        else n++;
+      });
+    }
   }
 
   /** Safe weather toast — never throws if UI missing */
@@ -1497,16 +1522,23 @@ export class Renderer3D {
   }
 
   resize() {
-    const w = this.canvas.clientWidth || 390;
-    const h = this.canvas.clientHeight || 700;
-    this.camera.aspect = w / h;
+    if (!this.renderer || !this.camera || !this.canvas) return;
+    let w = this.canvas.clientWidth || this.canvas.parentElement?.clientWidth || 390;
+    let h = this.canvas.clientHeight || this.canvas.parentElement?.clientHeight || 700;
+    if (w < 160) w = Math.min(430, window.innerWidth || 390);
+    if (h < 160) h = Math.min(900, window.innerHeight || 700);
+    this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    const pr = this._mobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.75);
+    this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
   }
 
   draw() {
     try {
+      if (this.canvas && (this.canvas.clientWidth < 32 || this.canvas.clientHeight < 32)) {
+        this.resize();
+      }
       this.render();
     } catch (e) {
       console.error('3D draw error', e);
@@ -1521,13 +1553,13 @@ export class Renderer3D {
 
     // ——— Day / dusk / night ———
     if (tod > 0.62) {
-      // night
-      this.renderer.setClearColor(0x020617, 1);
-      this.scene.fog.color.setHex(0x020617);
-      this.scene.fog.near = 12;
-      this.scene.fog.far = 55;
-      this.sun.intensity = 0.18;
-      this.hemlight.intensity = 0.12;
+      // night — keep visible on mobile (not pure black)
+      this.renderer.setClearColor(0x0b1224, 1);
+      this.scene.fog.color.setHex(0x152238);
+      this.scene.fog.near = 14;
+      this.scene.fog.far = this._mobile ? 42 : 55;
+      this.sun.intensity = this._mobile ? 0.35 : 0.22;
+      this.hemlight.intensity = this._mobile ? 0.28 : 0.15;
       if (this.sky) this.sky.material.color.setHex(0x020617);
       if (this.headlightL) this.headlightL.intensity = 2.2;
       if (this.headlightR) this.headlightR.intensity = 2.2;
@@ -1603,7 +1635,7 @@ export class Renderer3D {
     }
 
     // Animate dust / rain
-    if (this.dust) {
+    if (this.dust && !this._mobile) {
       const pos = this.dust.geometry.attributes.position.array;
       for (let i = 0; i < pos.length; i += 3) {
         pos[i + 2] -= spd * 0.08;
@@ -1615,7 +1647,7 @@ export class Renderer3D {
       }
       this.dust.geometry.attributes.position.needsUpdate = true;
     }
-    if (this.rain && this.rainMat.opacity > 0.05) {
+    if (this.rain && !this._mobile && this.rainMat.opacity > 0.05) {
       const pos = this.rain.geometry.attributes.position.array;
       for (let i = 0; i < pos.length; i += 3) {
         pos[i + 1] -= 0.45;
