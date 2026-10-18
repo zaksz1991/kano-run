@@ -125,9 +125,40 @@ setTimeout(onResize, 1200);
 
 let last = 0;
 let renderErrors = 0;
+let fpsFrames = 0;
+let fpsT = 0;
+let lowFpsStreak = 0;
+let force2D =
+  typeof location !== 'undefined' &&
+  (location.search.includes('force2d') || location.hash.includes('force2d'));
+
+if (force2D && mode === '3d') {
+  console.warn('[Kano Life] force2d URL flag');
+  use2D('force2d');
+}
+
 function loop(ts) {
   const dt = Math.min(32, (ts - last) || 16);
   last = ts;
+  fpsFrames++;
+  if (ts - fpsT > 1000) {
+    const fps = fpsFrames;
+    fpsFrames = 0;
+    fpsT = ts;
+    window.KanoLifeFps = fps;
+    // Mobile: if 3D can't hold ~20fps, drop to 2D so the road stays visible
+    if (mode === '3d' && MOBILE && fps > 0 && fps < 18) {
+      lowFpsStreak++;
+      if (lowFpsStreak >= 3) {
+        console.warn('[Kano Life] FPS', fps, '→ switching to 2D');
+        use2D('low fps ' + fps);
+        lowFpsStreak = 0;
+        try { ui.showMissionToast?.('Switched to fast 2D mode'); } catch (e) {}
+      }
+    } else {
+      lowFpsStreak = 0;
+    }
+  }
   try {
     controls.update?.();
     game.update?.(dt);
@@ -149,7 +180,15 @@ function loop(ts) {
 }
 requestAnimationFrame(loop);
 
-window.KanoLife = { game, ui, renderer, controls, mode };
+window.KanoLife = {
+  get game() { return game; },
+  get ui() { return ui; },
+  get renderer() { return renderer; },
+  get controls() { return controls; },
+  get mode() { return mode; },
+  switch2D: () => use2D('manual'),
+  switch3D: () => { try { use3D(); } catch (e) { use2D(e.message); } }
+};
 // Naija Challenge: press N or call KanoLife.game.cycleDialect()
 window.addEventListener('keydown', (e) => {
   if (e.key === 'n' || e.key === 'N') game.cycleDialect?.();

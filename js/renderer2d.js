@@ -49,8 +49,8 @@ export class Renderer2D {
 
     // Sky
     const tod = typeof g.getTimeOfDay === 'function' ? g.getTimeOfDay() : 0.2;
-    let skyTop = '#1e3a5f';
-    let skyBot = '#87b5d9';
+    let skyTop = '#38bdf8';
+    let skyBot = '#e0f2fe';
     if (tod > 0.62) {
       skyTop = '#020617';
       skyBot = '#1e1b4b';
@@ -223,6 +223,27 @@ export class Renderer2D {
 
     // Mode / status banner
     ctx.fillStyle = 'rgba(15,23,42,0.55)';
+    // Fuel pads
+    for (const fp of g.fuelPads || []) {
+      if (fp.taken) continue;
+      const fy = ((fp.y || 0) / (g.canvas?.clientHeight || 700)) * H;
+      if (fy < 0 || fy > H) continue;
+      const fx = (0.2 + (fp.lane || 1) * 0.25) * W;
+      ctx.fillStyle = 'rgba(34,197,94,0.7)';
+      ctx.beginPath();
+      ctx.arc(fx, Math.max(H * 0.35, Math.min(H * 0.9, fy)), 12 * this.dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (const pot of g.potholes || []) {
+      if (pot.hit) continue;
+      const py2 = ((pot.y || 0) / (g.canvas?.clientHeight || 700)) * H;
+      if (py2 < 0 || py2 > H) continue;
+      const px2 = (0.2 + (pot.lane || 1) * 0.25) * W;
+      ctx.fillStyle = 'rgba(28,25,23,0.85)';
+      ctx.beginPath();
+      ctx.ellipse(px2, Math.max(H * 0.35, Math.min(H * 0.9, py2)), 14 * this.dpr, 8 * this.dpr, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.fillRect(8 * this.dpr, H - 28 * this.dpr, 160 * this.dpr, 20 * this.dpr);
     ctx.fillStyle = '#94a3b8';
     ctx.font = (10 * this.dpr) + 'px Outfit,sans-serif';

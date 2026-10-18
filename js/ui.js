@@ -384,6 +384,16 @@ export class UI {
       routeLabel.textContent = (game.gameMode !== 'career' ? '[' + game.gameMode + '] ' : '') + tribe + extra;
     }
     this.drawMinimap(game);
+    // Show 2D/3D so player knows why graphics differ
+    try {
+      const badge = document.getElementById('level-label');
+      if (badge && window.KanoLife) {
+        const md = window.KanoLife.mode || '';
+        if (md && !badge.dataset.modePinned) {
+          badge.textContent = (badge.textContent || 'Lv').split('·')[0].trim() + ' · ' + md.toUpperCase();
+        }
+      }
+    } catch (e) {}
   }
 
   drawMinimap(game) {
