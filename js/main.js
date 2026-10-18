@@ -125,6 +125,14 @@ window.KanoLife = { game, ui, renderer, controls, mode };
 window.addEventListener('keydown', (e) => {
   if (e.key === 'n' || e.key === 'N') game.cycleDialect?.();
   if (e.key === 'm' || e.key === 'M') game.cycleGameMode?.();
+  if (e.key === 't' || e.key === 'T') {
+    const stand = game.getNaijaGrandWinners?.() || [];
+    if (!stand.length) game.ui?.showMissionToast?.('🇳🇬 No tribal scores yet — finish a run');
+    else {
+      const line = stand.map((r, i) => (i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉') + r.label.split('·').pop().trim() + ' ₦' + r.total).join(' · ');
+      game.ui?.showMissionToast?.('🇳🇬 ' + line);
+    }
+  }
 });
 window.KanoRun = window.KanoLife; // back-compat
 console.log('[Kano Life] ready · mode=' + mode);

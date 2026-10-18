@@ -78,6 +78,7 @@ export class Game {
     this.paxZones = [];
     this.dropZones = [];
     this.coins = [];
+    this.fuelPads = [];
     this.trafficJamTimer = 0;
     this.nearMissCooldown = 0;
     this.policeChase = 0;
@@ -260,6 +261,11 @@ export class Game {
       this.raceTargetKm = 0;
       this.matchStreak = 0;
       this.ui?.showMissionToast?.('📍 Match Drop — drop only at passenger destination');
+    } else if (this.gameMode === 'potholes') {
+      this.raceTargetKm = 3.0;
+      this.potholeHits = 0;
+      this.potholeMax = 8;
+      this.ui?.showMissionToast?.('🕳️ Potholes — reach 3 km with under 8 hits');
     } else if (this.gameMode === 'freeroam') {
       this.raceTargetKm = 0;
       this.ui?.showMissionToast?.('🧭 Free roam — no timer pressure');
@@ -307,6 +313,7 @@ export class Game {
     this.paxZones = [];
     this.dropZones = [];
     this.coins = [];
+    this.fuelPads = [];
     this.onboard = [];
     this.passengersWaiting = [];
     this.trafficJamTimer = 0;
@@ -716,7 +723,12 @@ export class Game {
   }
 
   // ——— 4. COLLISION TIERS ———
-  applyCollisionImpact() {
+  applyCollisionImpact(hitObj = null) {
+    const isRich = !!(hitObj && (hitObj.rich || hitObj.type === 'suv' || hitObj.type === 'luxury' || hitObj.paxClass === 'vip'));
+    if (isRich) {
+      this.startRichManDrama(hitObj);
+      return;
+    }
     const tier = collisionTier(this.speed);
     this.triggerShake(Math.min(3, (tier.shake || 2) * 0.3), Math.min(3, (tier.shake || 2) / 3));
     this.applyDamage('body', (tier.dmg || 8) * 0.45);
@@ -724,13 +736,101 @@ export class Game {
     if (tier.tier === 'high' || tier.tier === 'critical') {
       this.applyDamage('tyres', (tier.dmg || 8) * 0.15);
     }
-    // Never NaN speed
     const mul = typeof tier.speedMul === 'number' ? tier.speedMul : 0.7;
     this.speed = Math.max(1.2, (Number(this.speed) || 2.5) * mul);
     this.steerPenalty = tier.steerPenalty || 0;
     this.ui.showMissionToast(tier.msg || 'Hit!');
     Audio.crash();
     if (this.renderer3d?.setDamageVisual) this.renderer3d.setDamageVisual(this.condition);
+  }
+
+  /** Drama: keke vs rich man's car */
+  startRichManDrama(hitObj = null) {
+    this.state = STATE.EVENT;
+    this.speed = 0;
+    this.throttle = 0;
+    this.braking = true;
+    this.triggerShake(14, 8);
+    Audio.crash();
+    Audio.alert?.();
+    try { if (navigator.vibrate) navigator.vibrate([60, 40, 80, 40, 120]); } catch (e) {}
+    const fine = 2500 + Math.floor(Math.random() * 4500);
+    const plate = hitObj?.plate || ('KN-' + (100 + Math.floor(Math.random() * 899)));
+    this.ui.showEvent(
+      '🚗💥 Rich man\'s car!',
+      'You clipped a luxury ride (' + plate + ').\n' +
+      'Owner: "Kai keke driver! My Lexus!"\n' +
+      'Crowd gathers… police may come.\nDemand: ₦' + fine.toLocaleString(),
+      [
+        {
+          label: 'Pay ₦' + fine.toLocaleString(),
+          action: () => {
+            this.score = Math.max(0, this.score - fine);
+            this.condition = Math.max(5, (this.condition || 100) - 12);
+            this.ui.showMissionToast('Settled with big man −₦' + fine.toLocaleString());
+            this.inv = 90;
+            this.state = STATE.PLAY;
+            this.braking = false;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Argue (Hausa drama)',
+          action: () => {
+            const arg = this.dialectLine?.('argue') || 'Kai! Ba ni da laifi!';
+            this.ui.showMissionToast(arg);
+            if (Math.random() < 0.45) {
+              const half = Math.floor(fine * 0.45);
+              this.score = Math.max(0, this.score - half);
+              this.ui.showMissionToast('Reduced to ₦' + half.toLocaleString());
+            } else {
+              this.wantedLevel = (this.wantedLevel || 0) + 0.35;
+              this.score = Math.max(0, this.score - fine);
+              this.ui.showMissionToast('He called KAROTA — full fine + heat');
+              this.karotaTimer = 0;
+            }
+            this.condition = Math.max(5, (this.condition || 100) - 8);
+            this.inv = 70;
+            this.state = STATE.PLAY;
+            this.braking = false;
+            this.ui.showPlaying();
+          }
+        },
+        {
+          label: 'Escape (risk)',
+          action: () => {
+            this.triggerShake(10, 6);
+            if (Math.random() < 0.4) {
+              this.wantedLevel = (this.wantedLevel || 0) + 0.5;
+              this.ui.showMissionToast('Escaped — but you are wanted');
+              this.addCombo?.(2);
+            } else {
+              this.score = Math.max(0, this.score - fine * 1.2);
+              this.continuesLeft = Math.max(0, (this.continuesLeft || 1) - 1);
+              this.ui.showMissionToast('Caught — heavy fine + life');
+            }
+            this.inv = 50;
+            this.state = STATE.PLAY;
+            this.braking = false;
+            this.ui.showPlaying();
+          }
+        }
+      ]
+    );
+  }
+
+  hitPothole() {
+    this.potholeHits = (this.potholeHits || 0) + 1;
+    this.triggerShake(8, 5);
+    this.applyDamage('tyres', 6 + Math.random() * 8);
+    this.applyDamage('body', 3);
+    this.speed = Math.max(1.0, (this.speed || 2) * 0.55);
+    Audio.crash();
+    this.ui.showMissionToast('🕳️ Pothole! (' + this.potholeHits + (this.gameMode === 'potholes' ? '/' + (this.potholeMax || 8) : '') + ')');
+    if (this.gameMode === 'potholes' && this.potholeHits >= (this.potholeMax || 8)) {
+      this.ui.showMissionToast('🕳️ Too many potholes — challenge failed');
+      this.gameOver?.();
+    }
   }
 
   triggerShake(frames = 12, mag = 6) {
@@ -1290,7 +1390,7 @@ export class Game {
 
 
   cycleGameMode() {
-    const order = ['career', 'timeattack', 'fuel', 'matchdrop', 'freeroam'];
+    const order = ['career', 'timeattack', 'fuel', 'matchdrop', 'potholes', 'freeroam'];
     const i = order.indexOf(this.gameMode || 'career');
     this.gameMode = order[(i + 1) % order.length];
     const labels = {
@@ -1298,6 +1398,7 @@ export class Game {
       timeattack: '⏱️ Time Attack — 3.5 km race',
       fuel: '⛽ Fuel Gauge Challenge — manage tank',
       matchdrop: '📍 Match Drop — pick dest = drop dest',
+      potholes: '🕳️ Potholes Challenge — survive bad roads',
       freeroam: '🧭 Free roam — explore Kano'
     };
     this.ui?.showMissionToast?.(labels[this.gameMode] || this.gameMode);
@@ -1483,6 +1584,18 @@ export class Game {
       Audio.voiceLowFuel();
     }
     // Fuel challenge win at target km with fuel left
+    if (this.gameMode === 'potholes' && this.raceTargetKm > 0 && (this.dist || 0) >= this.raceTargetKm && this.potholeHits < (this.potholeMax || 8)) {
+      const bonus = Math.floor(400 + (this.potholeMax - this.potholeHits) * 80);
+      this.score += bonus;
+      this.state = STATE.EVENT;
+      this.speed = 0;
+      this.ui.showEvent('🕳️ Potholes cleared', 'Hits: ' + this.potholeHits + '/' + this.potholeMax + '\nBonus ₦' + bonus, [
+        { label: 'Again', action: () => { this.gameMode = 'potholes'; this.start(); this.ui.showPlaying(); } },
+        { label: 'Career', action: () => { this.gameMode = 'career'; this.start(); this.ui.showPlaying(); } }
+      ]);
+      this.raceTargetKm = 0;
+      return;
+    }
     if (this.gameMode === 'fuel' && this.fuelChallengeActive && this.raceTargetKm > 0 && (this.dist || 0) >= this.raceTargetKm) {
       this.fuelChallengeActive = false;
       const bonus = Math.floor(300 + this.fuel * 8);
@@ -1780,6 +1893,42 @@ export class Game {
     if (this.frame % 140 === 0 && Math.random() < 0.4) {
       this.coins.push({ lane: Math.floor(Math.random() * 3), y: -60, taken: false, bob: Math.random() * 6 });
     }
+    // Fuel stations — more often in Fuel Challenge
+    const fuelEvery = this.gameMode === 'fuel' ? 100 : 220;
+    const fuelChance = this.gameMode === 'fuel' ? 0.72 : 0.28;
+    if (this.frame % fuelEvery === 0 && Math.random() < fuelChance && (this.fuelPads || []).length < 3) {
+      this.fuelPads = this.fuelPads || [];
+      this.fuelPads.push({
+        lane: Math.floor(Math.random() * 3),
+        y: -70,
+        taken: false,
+        amount: this.gameMode === 'fuel' ? (18 + Math.floor(Math.random() * 16)) : (12 + Math.floor(Math.random() * 14))
+      });
+    }
+    // Potholes on road
+    this.potholes = this.potholes || [];
+    const potEvery = this.gameMode === 'potholes' ? 70 : 160;
+    const potChance = this.gameMode === 'potholes' ? 0.85 : 0.25;
+    if (this.frame % potEvery === 0 && Math.random() < potChance && this.potholes.length < 5) {
+      this.potholes.push({
+        lane: Math.floor(Math.random() * 3),
+        y: -50,
+        hit: false
+      });
+    }
+    // Occasional rich / luxury traffic
+    if (this.frame % 200 === 0 && Math.random() < 0.35 && this.dist > 0.4) {
+      this.obs.push({
+        lane: Math.floor(Math.random() * 3),
+        y: -100,
+        w: 40,
+        h: 55,
+        type: Math.random() < 0.5 ? 'suv' : 'car',
+        rich: true,
+        plate: 'KN-' + (100 + Math.floor(Math.random() * 899)),
+        speed: 0.85 + Math.random() * 0.3
+      });
+    }
 
     const mv = this.speed * 1.1;
     const h = this.canvas.clientHeight;
@@ -1849,6 +1998,38 @@ export class Game {
       c.bob += 0.1;
     }
     this.coins = this.coins.filter((c) => c.y < h + 40 && !c.taken);
+    this.fuelPads = this.fuelPads || [];
+    for (const f of this.fuelPads) f.y += mv;
+    // Collect fuel — must be nearly stopped on same lane
+    for (const f of this.fuelPads) {
+      if (f.taken) continue;
+      if (Math.round(f.lane) === Math.round(this.playerLane) && Math.abs(f.y - this.playerY) < 50) {
+        if (this.speed > 1.6) {
+          if (this.frame % 40 === 0) this.ui.showMissionToast('⛽ Brake at green fuel pad');
+          continue;
+        }
+        f.taken = true;
+        const add = f.amount || 15;
+        this.fuel = Math.min(100, (this.fuel || 0) + add);
+        this.fuelPickups = (this.fuelPickups || 0) + 1;
+        this.score += 25;
+        this.ui.showMissionToast('⛽ +' + add + '% fuel · tank ' + Math.floor(this.fuel) + '%');
+        Audio.pickup?.();
+      }
+    }
+    this.fuelPads = this.fuelPads.filter((f) => f.y < h + 40 && !f.taken);
+    this.potholes = this.potholes || [];
+    for (const pot of this.potholes) pot.y += mv;
+    for (const pot of this.potholes) {
+      if (pot.hit) continue;
+      if (Math.round(pot.lane) === Math.round(this.playerLane) && Math.abs(pot.y - this.playerY) < 42) {
+        if (this.speed > 1.2) {
+          pot.hit = true;
+          this.hitPothole();
+        }
+      }
+    }
+    this.potholes = this.potholes.filter((p) => p.y < h + 40 && !p.hit);
 
     // Collisions — only when obstacle is near the keke (not far ahead)
     if (this.inv <= 0 && this.speed > 0.5) {
@@ -1870,7 +2051,7 @@ export class Game {
             // Robbers never auto-end the run
             continue;
           }
-          this.applyCollisionImpact();
+          this.applyCollisionImpact(o);
           o.y += 80; // push away so no multi-hit
           this.inv = 45;
           // Only end run if keke is almost destroyed

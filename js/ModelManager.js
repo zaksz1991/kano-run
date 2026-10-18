@@ -180,8 +180,23 @@ export class ModelManager {
           if (ch.isMesh) {
             ch.castShadow = true;
             ch.receiveShadow = true;
+            // Ensure materials visible (some GLBs ship unlit / black)
+            if (ch.material) {
+              const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
+              for (const m of mats) {
+                if (m) {
+                  m.side = THREE.DoubleSide;
+                  if (m.transparent && m.opacity < 0.05) m.opacity = 1;
+                  m.needsUpdate = true;
+                }
+              }
+            }
           }
         });
+        // Vehicles face +Z toward traffic in our runner
+        if (['keke', 'car', 'taxi', 'suv', 'truck', 'police', 'karota', 'bus', 'motorcycle', 'ambulance', 'robber'].includes(key)) {
+          root.rotation.y = Math.PI; // face camera / oncoming feel
+        }
         const entry = { scene: root, animations: gltf.animations || [], url };
         this.cache.set(key, entry);
         this.log.push({ key, ok: true, url });

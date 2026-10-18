@@ -343,8 +343,32 @@ export class UI {
     if (this.livesEl) this.livesEl.textContent = game.continuesLeft;
     const speedo = document.getElementById('speedo');
     if (speedo) {
-      // cruise ~40 km/h, gas ~60
       speedo.textContent = Math.round((game.speed || 0) * 14);
+    }
+    const fuelEl = document.getElementById('fuel');
+    if (fuelEl) {
+      const f = Math.max(0, Math.min(100, Math.floor(game.fuel ?? 100)));
+      fuelEl.textContent = String(f);
+      fuelEl.style.color = f < 18 ? '#f87171' : f < 40 ? '#fbbf24' : '#4ade80';
+    }
+    // Challenge strip
+    const routeLabel = this.routeLabel || document.getElementById('route-label');
+    if (routeLabel && game.gameMode) {
+      const tribe = (game.dialect || 'hausa').toUpperCase();
+      let extra = '';
+      if (game.gameMode === 'fuel') {
+        extra = ' · ⛽ ' + Math.floor(game.fuel || 0) + '%';
+        if (game.raceTargetKm) extra += ' → ' + game.raceTargetKm + 'km';
+      } else if (game.gameMode === 'matchdrop') {
+        extra = ' · MATCH x' + (game.matchStreak || 0);
+      } else if (game.gameMode === 'timeattack') {
+        const left = Math.max(0, (game.raceTargetKm || 3.5) - (game.dist || 0));
+        extra = ' · ⏱️ ' + left.toFixed(1) + 'km';
+      }
+      // keep route name if present
+      const base = routeLabel.dataset.base || routeLabel.textContent || '';
+      if (!routeLabel.dataset.base) routeLabel.dataset.base = base;
+      routeLabel.textContent = (game.gameMode !== 'career' ? '[' + game.gameMode + '] ' : '') + tribe + extra;
     }
     this.drawMinimap(game);
   }

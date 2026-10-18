@@ -39,7 +39,14 @@ export class Renderer3D {
         const rep = this.models.report();
         console.log('[KanoRun] GLB Integration Report', rep);
         window.KanoRunAssets = rep;
-      });
+        // Retry once if player still procedural
+        setTimeout(() => {
+          if (this.player?.userData?.isPlaceholder || !this.models.has('keke')) {
+            console.warn('[KanoRun] GLB retry integrate');
+            this.models.preload(['keke', 'car', 'taxi', 'suv', 'police']).then(() => this._integrateAllGlbs());
+          }
+        }, 2500);
+      }).catch((e) => console.error('[KanoRun] preload failed', e));
     } catch (err) {
       console.error('Renderer3D init failed', err);
       this.ready = false;
