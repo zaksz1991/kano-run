@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ============================================================
+// KANO LIFE — MODEL MANAGER
+// ============================================================
+
+// ============================================================
 // MODEL CATALOG
 // ============================================================
 
@@ -16,6 +20,7 @@ const CATALOG = {
     'vehicles/keke/keke-7.glb',
     'vehicles/keke/keke-8.glb',
   ],
+
   car: [
     'vehicles/cars/quaternius_cc0-normal-car-1190.glb',
     'vehicles/cars/lowpoly_bmw_e36_m3.glb',
@@ -23,17 +28,20 @@ const CATALOG = {
     'vehicles/cars/2005_chrysler_300.glb',
     'vehicles/cars/1979_chevrolet_impala.glb',
   ],
+
   taxi: [
     'vehicles/cars/2006_kia_ceed.glb',
     'vehicles/cars/quaternius_cc0-normal-car-1190.glb',
     'vehicles/cars/lowpoly_bmw_e36_m3.glb',
   ],
+
   suv: [
     'vehicles/cars/quaternius_cc0-suv-1402.glb',
     'vehicles/cars/2002_dodge_ram_2500.glb',
     'world/props/SUV.glb',
     'vehicles/cars/asphalt_8_-_nissan_juke_nismo.glb',
   ],
+
   truck: [
     'vehicles/cars/quaternius_cc0-truck-1449.glb',
     'vehicles/cars/peterbilt_352.glb',
@@ -41,35 +49,42 @@ const CATALOG = {
     'vehicles/cars/volvo_fh_cement_truck.glb',
     'vehicles/cars/2002_dodge_ram_2500.glb',
   ],
+
   bus: [
     'vehicles/special/bus.glb',
     'vehicles/cars/quaternius_cc0-truck-1449.glb',
   ],
+
   motorcycle: [
     'vehicles/special/okada.glb',
     'vehicles/cars/motorcycle.glb',
     'vehicles/cars/asphalt_6_ktm_rc8.glb',
     'vehicles/cars/asphalt_6_can-am_spyder.glb',
   ],
+
   police: [
     'vehicles/special/police.glb',
     'world/props/Police-Car.glb',
     'vehicles/cars/2006_kia_ceed.glb',
   ],
+
   karota: [
     'vehicles/special/karota.glb',
     'vehicles/special/police.glb',
   ],
+
   ambulance: [
     'vehicles/special/ambulance.glb',
     'vehicles/special/bus.glb',
   ],
+
   passenger: [
     'characters/passengers/hijab_muslim_woman.glb',
     'characters/passengers/Man.glb',
     'characters/passengers/Man in Suit.glb',
     'characters/passengers/women_in_hijab.glb',
   ],
+
   passengerWoman: [
     'characters/passengers/hijab_muslim_woman.glb',
     'characters/passengers/women_in_hijab.glb',
@@ -77,22 +92,26 @@ const CATALOG = {
     'characters/passengers/free_download_attractive_african_woman_236.glb',
     'characters/passengers/woman with her arms crossed.glb',
   ],
+
   passengerMan: [
     'characters/passengers/Man.glb',
     'characters/passengers/Man-fjHyMd5Wxw.glb',
     'characters/passengers/handsome_man_in_casual_clothes_in_a-pose_86.glb',
     'characters/passengers/tekamist_mens.glb',
   ],
+
   passengerVIP: [
     'characters/passengers/Man in Suit.glb',
     'characters/passengers/Man-fjHyMd5Wxw.glb',
     'characters/passengers/handsome_man_in_casual_clothes_in_a-pose_86.glb',
   ],
+
   security: [
     'characters/pedestrians/Man in Long Sleeves.glb',
     'characters/pedestrians/police_man.glb',
     'characters/passengers/Man.glb',
   ],
+
   pedestrian: [
     'characters/pedestrians/pedestrian.glb',
     'characters/pedestrians/Man in Long Sleeves.glb',
@@ -100,6 +119,7 @@ const CATALOG = {
     'characters/pedestrians/hi_guys.glb',
     'characters/pedestrians/passenger.glb',
   ],
+
   pedestrianWoman: [
     'characters/pedestrians/muslim_girl.glb',
     'characters/pedestrians/keke female.glb',
@@ -107,6 +127,7 @@ const CATALOG = {
     'characters/passengers/hijab_muslim_woman.glb',
     'characters/pedestrians/low_poly_people_free_sample_pack.glb',
   ],
+
   building: [
     'world/buildings-suburban/building-type-d.glb',
     'world/buildings-suburban/building-type-e.glb',
@@ -127,6 +148,7 @@ const CATALOG = {
     'world/buildings-suburban/building-type-t.glb',
     'world/buildings-suburban/building-type-u.glb',
   ],
+
   industrialBuilding: [
     'world/buildings-industrial/building-a.glb',
     'world/buildings-industrial/building-b.glb',
@@ -149,11 +171,13 @@ const CATALOG = {
     'world/buildings-industrial/building-s.glb',
     'world/buildings-industrial/building-t.glb',
   ],
+
   flyover: [
     'world/roads/kano_urban_flyover.glb',
     'world/roads/kai_tak_flyovers.glb',
-    'world/roads/kowloon_bay_flyover.glb',
+    'world/roads/kowloon_bay_flyovers.glb',
   ],
+
   roadlight: [
     'world/roads/light-square.glb',
     'world/roads/light-curved.glb',
@@ -163,11 +187,13 @@ const CATALOG = {
     'world/roads/electricity-pole.glb',
     'world/roads/electricity-pole-wide.glb',
   ],
+
   cone: [
     'world/roads/construction-cone.glb',
     'world/roads/construction-barrier.glb',
     'world/props/Cone.glb',
   ],
+
   dirtmound: [
     'environment/ground/photoscan_-_pothole_1.glb',
     'environment/ground/low_poly_dirt_ground.glb',
@@ -175,16 +201,23 @@ const CATALOG = {
     'environment/ground/sand_with_handprints_tile_texture.glb',
     'environment/ground/manhole_cover_on_broken_asphalt_road.glb',
   ],
-  bench: ['world/props/Bench.glb'],
+
+  bench: [
+    'world/props/Bench.glb',
+  ],
+
   busStop: [],
+
   trafficLight: [
     'world/props/Traffic-Light.glb',
     'world/roads/traffic-light.glb',
   ],
+
   stopSign: [
     'world/props/Stop-sign.glb',
     'world/roads/road-sign-stop.glb',
   ],
+
   marketStall: [],
 };
 
@@ -203,17 +236,21 @@ const TARGET_HEIGHT = {
   police: 1.45,
   karota: 1.5,
   ambulance: 1.65,
+
   passenger: 1.7,
   passengerWoman: 1.7,
   passengerMan: 1.75,
   passengerVIP: 1.8,
+
   security: 1.75,
   pedestrian: 1.7,
   pedestrianWoman: 1.7,
+
   building: 4.5,
   industrialBuilding: 5.2,
   flyover: 5.8,
   roadlight: 4.2,
+
   cone: 0.75,
   dirtmound: 1.1,
   bench: 0.72,
@@ -267,9 +304,12 @@ function safeErrorMessage(error) {
 function classifyFailure(error) {
   if (error?.failureType) return error.failureType;
 
-  const status = Number(error?.httpStatus ?? error?.status);
+  const status = Number(
+    error?.httpStatus ?? error?.status,
+  );
 
   if (status === 404) return 'http_404';
+
   if (Number.isFinite(status) && status >= 400) {
     return 'http_error';
   }
@@ -285,7 +325,9 @@ function classifyFailure(error) {
   }
 
   if (
-    /parse|json|gltf|glb|buffer|unexpected token|magic/.test(message)
+    /parse|json|gltf|glb|buffer|unexpected token|magic/.test(
+      message,
+    )
   ) {
     return 'parse_error';
   }
@@ -293,7 +335,11 @@ function classifyFailure(error) {
   return 'load_error';
 }
 
-export function auditModelStart(key, relativePath, url) {
+export function auditModelStart(
+  key,
+  relativePath,
+  url,
+) {
   const now = Date.now();
 
   const record = {
@@ -312,7 +358,10 @@ export function auditModelStart(key, relativePath, url) {
     dimensions: null,
   };
 
-  MODEL_ASSET_AUDIT.set(auditId(key, relativePath), record);
+  MODEL_ASSET_AUDIT.set(
+    auditId(key, relativePath),
+    record,
+  );
 
   return record;
 }
@@ -325,8 +374,14 @@ export function auditModelSuccess(
   httpStatus = null,
 ) {
   const record =
-    MODEL_ASSET_AUDIT.get(auditId(key, relativePath)) ||
-    auditModelStart(key, relativePath, url);
+    MODEL_ASSET_AUDIT.get(
+      auditId(key, relativePath),
+    ) ||
+    auditModelStart(
+      key,
+      relativePath,
+      url,
+    );
 
   let meshCount = 0;
 
@@ -340,6 +395,7 @@ export function auditModelSuccess(
   record.httpStatus = httpStatus;
   record.meshCount = meshCount;
   record.finishedAt = Date.now();
+
   record.durationMs = Math.max(
     0,
     record.finishedAt - record.startedAt,
@@ -356,8 +412,14 @@ export function auditModelFailure(
   httpStatus = null,
 ) {
   const record =
-    MODEL_ASSET_AUDIT.get(auditId(key, relativePath)) ||
-    auditModelStart(key, relativePath, url);
+    MODEL_ASSET_AUDIT.get(
+      auditId(key, relativePath),
+    ) ||
+    auditModelStart(
+      key,
+      relativePath,
+      url,
+    );
 
   const embeddedStatus = Number(
     error?.httpStatus ?? error?.status,
@@ -374,6 +436,7 @@ export function auditModelFailure(
   record.failureType = classifyFailure(error);
   record.error = safeErrorMessage(error);
   record.finishedAt = Date.now();
+
   record.durationMs = Math.max(
     0,
     record.finishedAt - record.startedAt,
@@ -391,16 +454,27 @@ export function auditModelRejected(
   httpStatus = null,
 ) {
   const record =
-    MODEL_ASSET_AUDIT.get(auditId(key, relativePath)) ||
-    auditModelStart(key, relativePath, url);
+    MODEL_ASSET_AUDIT.get(
+      auditId(key, relativePath),
+    ) ||
+    auditModelStart(
+      key,
+      relativePath,
+      url,
+    );
 
   record.status = 'rejected';
   record.failureType = 'invalid_dimensions';
+
   record.error =
-    typeof reason === 'string' ? reason : safeErrorMessage(reason);
+    typeof reason === 'string'
+      ? reason
+      : safeErrorMessage(reason);
+
   record.dimensions = dimensions;
   record.httpStatus = httpStatus;
   record.finishedAt = Date.now();
+
   record.durationMs = Math.max(
     0,
     record.finishedAt - record.startedAt,
@@ -410,9 +484,9 @@ export function auditModelRejected(
 }
 
 export function getModelAssetAuditReport() {
-  const attemptedAssets = [...MODEL_ASSET_AUDIT.values()].map(
-    (record) => ({ ...record }),
-  );
+  const attemptedAssets = [
+    ...MODEL_ASSET_AUDIT.values(),
+  ].map((record) => ({ ...record }));
 
   const unconfiguredAssets = Object.entries(CATALOG)
     .filter(
@@ -446,11 +520,15 @@ export function getModelAssetAuditReport() {
 
     if (keyCompare !== 0) return keyCompare;
 
-    return String(a.path).localeCompare(String(b.path));
+    return String(a.path).localeCompare(
+      String(b.path),
+    );
   });
 
   const count = (status) =>
-    assets.filter((asset) => asset.status === status).length;
+    assets.filter(
+      (asset) => asset.status === status,
+    ).length;
 
   return {
     total: assets.length,
@@ -502,7 +580,7 @@ export function printModelAssetAuditReport() {
 }
 
 // ============================================================
-// MODEL RESOURCE MANAGEMENT
+// MATERIAL REPAIR
 // ============================================================
 
 function repairMaterials(root) {
@@ -534,6 +612,10 @@ function repairMaterials(root) {
   });
 }
 
+// ============================================================
+// RESOURCE MANAGEMENT
+// ============================================================
+
 function disposeModelResources(roots) {
   const geometries = new Set();
   const materials = new Set();
@@ -556,7 +638,12 @@ function disposeModelResources(roots) {
           : [];
 
       for (const material of materialList) {
-        if (!material || materials.has(material)) continue;
+        if (
+          !material ||
+          materials.has(material)
+        ) {
+          continue;
+        }
 
         materials.add(material);
 
@@ -576,30 +663,12 @@ function disposeModelResources(roots) {
   }
 }
 
-// Cloned actor materials are disposed separately because their geometry
-// and textures can be shared with the cached model.
-function disposeInstanceMaterials(root) {
-  const materials = new Set();
-
-  root?.traverse((object) => {
-    const materialList = Array.isArray(object.material)
-      ? object.material
-      : object.material
-        ? [object.material]
-        : [];
-
-    for (const material of materialList) {
-      if (!material || materials.has(material)) continue;
-
-      materials.add(material);
-      material.dispose();
-    }
-  });
-}
-
 function parseGLTF(loader, arrayBuffer, resourcePath) {
   if (typeof loader.parseAsync === 'function') {
-    return loader.parseAsync(arrayBuffer, resourcePath);
+    return loader.parseAsync(
+      arrayBuffer,
+      resourcePath,
+    );
   }
 
   return new Promise((resolve, reject) => {
@@ -622,451 +691,467 @@ function createHttpError(response, url) {
   );
 
   error.httpStatus = response.status;
+
   error.failureType =
-    response.status === 404 ? 'http_404' : 'http_error';
+    response.status === 404
+      ? 'http_404'
+      : 'http_error';
 
   return error;
 }
 
 // ============================================================
-// SEATED KEKE DRIVER RIG
+// SEATED KEKE DRIVER
+//
+// The imported vehicle GLB replaces the renderer's fallback
+// keke. This rig ensures that the replacement still has a driver
+// positioned at the handlebars, inside the passenger cabin.
+//
+// Its hierarchy follows Renderer3D.animateFallbackDriver():
+// driverPivot, arms[].shoulder, arms[].forearm.
+//
+// No standalone pedestrian is created or moved alongside the
+// player's vehicle.
 // ============================================================
 
-const DRIVER_RIG_NAME = 'KANO_SEATED_DRIVER_RIG';
-const DRIVER_BODY_NAME = 'KANO_DRIVER_BODY';
-const DRIVER_HEAD_NAME = 'KANO_DRIVER_HEAD';
-const DRIVER_LEFT_ARM_NAME = 'KANO_DRIVER_LEFT_ARM';
-const DRIVER_RIGHT_ARM_NAME = 'KANO_DRIVER_RIGHT_ARM';
+const DRIVER_RIG_NAME = 'KANO_KEKE_SEATED_DRIVER';
+const DRIVER_PIVOT_NAME = 'KANO_KEKE_DRIVER_PIVOT';
 
-function makeLimbBetween(
-  start,
-  end,
-  radiusTop,
-  radiusBottom,
-  material,
-  segments = 8,
-) {
-  const from = new THREE.Vector3(...start);
-  const to = new THREE.Vector3(...end);
+const DRIVER_LEFT_SHOULDER_NAME =
+  'KANO_KEKE_DRIVER_SHOULDER_LEFT';
 
-  const direction = new THREE.Vector3().subVectors(
-    to,
-    from,
-  );
+const DRIVER_RIGHT_SHOULDER_NAME =
+  'KANO_KEKE_DRIVER_SHOULDER_RIGHT';
 
-  const length = direction.length();
+const DRIVER_LEFT_FOREARM_NAME =
+  'KANO_KEKE_DRIVER_FOREARM_LEFT';
 
-  const limb = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      radiusTop,
-      radiusBottom,
-      Math.max(0.01, length),
-      segments,
-    ),
-    material,
-  );
+const DRIVER_RIGHT_FOREARM_NAME =
+  'KANO_KEKE_DRIVER_FOREARM_RIGHT';
 
-  limb.position.copy(from).add(to).multiplyScalar(0.5);
-
-  limb.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0),
-    direction.normalize(),
-  );
-
-  limb.castShadow = false;
-  limb.receiveShadow = false;
-
-  return limb;
-}
-
-function makeDriverMaterial(
-  color,
-  roughness = 0.86,
-) {
+function makeDriverMaterial(color, roughness = 0.88) {
   return new THREE.MeshStandardMaterial({
     color,
     roughness,
-    metalness: 0,
     side: THREE.DoubleSide,
   });
 }
 
-function createSeatedDriverRig() {
-  const rig = new THREE.Group();
-
-  rig.name = DRIVER_RIG_NAME;
-  rig.userData.proceduralSeatedDriver = true;
-  rig.userData.animationClock = 0;
-
-  const body = new THREE.Group();
-
-  body.name = DRIVER_BODY_NAME;
-  rig.add(body);
-
-  const shirt = makeDriverMaterial(0x236348);
-  const shirtLight = makeDriverMaterial(0x39795a);
-  const skin = makeDriverMaterial(0x70452f);
-  const trousers = makeDriverMaterial(0x2d3437);
-  const shoe = makeDriverMaterial(0x171c20);
-  const cap = makeDriverMaterial(0x174a37);
-  const capBand = makeDriverMaterial(0xd3b46a);
-
-  // Seated hips and torso.
-  const hips = new THREE.Mesh(
-    new THREE.BoxGeometry(0.34, 0.18, 0.31),
-    trousers,
-  );
-
-  hips.name = 'KANO_DRIVER_HIPS';
-  hips.position.set(0, 0.79, 0.04);
-  body.add(hips);
-
-  const torso = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.17, 0.28, 4, 8),
-    shirt,
-  );
-
-  torso.name = 'KANO_DRIVER_TORSO';
-  torso.position.set(0, 1.08, 0.02);
-  torso.rotation.x = -0.08;
-  body.add(torso);
-
-  const collar = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.075, 0.09, 0.09, 10),
-    shirtLight,
-  );
-
-  collar.position.set(0, 1.31, -0.035);
-  body.add(collar);
-
-  // The head pivot supports independent head movement.
-  const headPivot = new THREE.Group();
-
-  headPivot.name = DRIVER_HEAD_NAME;
-  headPivot.position.set(0, 1.34, -0.075);
-  body.add(headPivot);
-
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.132, 14, 12),
-    skin,
-  );
-
-  head.name = 'KANO_DRIVER_FACE';
-  head.position.set(0, 0.135, 0);
-  head.scale.set(0.93, 1.08, 0.94);
-  headPivot.add(head);
-
-  const neck = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.055, 0.064, 0.11, 9),
-    skin,
-  );
-
-  neck.position.set(0, 0.045, 0.018);
-  headPivot.add(neck);
-
-  const capDome = new THREE.Mesh(
-    new THREE.SphereGeometry(
-      0.135,
-      12,
-      8,
-      0,
-      Math.PI * 2,
-      0,
-      Math.PI * 0.53,
-    ),
-    cap,
-  );
-
-  capDome.name = 'KANO_DRIVER_CAP';
-  capDome.position.set(0, 0.246, -0.004);
-  capDome.scale.set(1.02, 0.76, 1.0);
-  headPivot.add(capDome);
-
-  const capRim = new THREE.Mesh(
-    new THREE.TorusGeometry(0.119, 0.012, 5, 16),
-    capBand,
-  );
-
-  capRim.position.set(0, 0.216, 0);
-  capRim.rotation.x = Math.PI / 2;
-  headPivot.add(capRim);
-
-  // Bent legs are positioned in a seated pose.
-  for (const side of [-1, 1]) {
-    const thighStart = [
-      side * 0.105,
-      0.77,
-      0.075,
-    ];
-
-    const knee = [
-      side * 0.13,
-      0.56,
-      -0.12,
-    ];
-
-    const ankle = [
-      side * 0.13,
-      0.405,
-      -0.37,
-    ];
-
-    body.add(
-      makeLimbBetween(
-        thighStart,
-        knee,
-        0.093,
-        0.115,
-        trousers,
-        8,
-      ),
-    );
-
-    body.add(
-      makeLimbBetween(
-        knee,
-        ankle,
-        0.073,
-        0.088,
-        trousers,
-        8,
-      ),
-    );
-
-    const foot = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.075, 0.22),
-      shoe,
-    );
-
-    foot.position.set(
-      side * 0.13,
-      0.365,
-      -0.43,
-    );
-
-    body.add(foot);
-  }
-
-  // Arms are pivoted at the shoulders.
-  const armDescriptors = [
-    {
-      side: -1,
-      name: DRIVER_LEFT_ARM_NAME,
-      elbow: [-0.105, -0.115, -0.19],
-      hand: [-0.13, -0.24, -0.44],
-    },
-    {
-      side: 1,
-      name: DRIVER_RIGHT_ARM_NAME,
-      elbow: [0.105, -0.115, -0.19],
-      hand: [0.13, -0.24, -0.44],
-    },
-  ];
-
-  for (const descriptor of armDescriptors) {
-    const arm = new THREE.Group();
-
-    arm.name = descriptor.name;
-    arm.position.set(
-      descriptor.side * 0.17,
-      1.245,
-      -0.015,
-    );
-
-    body.add(arm);
-
-    arm.add(
-      makeLimbBetween(
-        [0, 0, 0],
-        descriptor.elbow,
-        0.061,
-        0.075,
-        shirt,
-        8,
-      ),
-    );
-
-    arm.add(
-      makeLimbBetween(
-        descriptor.elbow,
-        descriptor.hand,
-        0.047,
-        0.055,
-        shirtLight,
-        8,
-      ),
-    );
-
-    const hand = new THREE.Mesh(
-      new THREE.SphereGeometry(0.052, 9, 8),
-      skin,
-    );
-
-    hand.position.set(...descriptor.hand);
-    arm.add(hand);
-
-    const cuff = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.049, 0.049, 0.075, 8),
-      shirt,
-    );
-
-    cuff.position.set(
-      descriptor.hand[0] * 0.84,
-      descriptor.hand[1] * 0.84,
-      descriptor.hand[2] * 0.84,
-    );
-
-    arm.add(cuff);
-  }
-
-  // Handlebar and grips.
-  const handlebar = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.025, 0.025, 0.46, 8),
-    makeDriverMaterial(0x4b5559, 0.55),
-  );
-
-  handlebar.name = 'KANO_DRIVER_HANDLEBAR';
-  handlebar.rotation.z = Math.PI / 2;
-  handlebar.position.set(0, 1.015, -0.47);
-  body.add(handlebar);
-
-  for (const side of [-1, 1]) {
-    const grip = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.033, 0.033, 0.12, 8),
-      shoe,
-    );
-
-    grip.rotation.z = Math.PI / 2;
-    grip.position.set(side * 0.22, 1.015, -0.47);
-    body.add(grip);
-  }
-
-  rig.userData.driverRigVersion = 1;
-
-  return rig;
-}
-
-// ============================================================
-// DRIVER ANIMATION
-// ============================================================
-
-export function updateDriverAnimation(
-  instance,
-  deltaSeconds,
-  {
-    speed = 0,
-    steer = 0,
-    reverse = false,
-    crashShake = 0,
-  } = {},
-) {
-  const rig = instance?.getObjectByName?.(
-    DRIVER_RIG_NAME,
-  );
-
-  if (!rig) return false;
-
-  const dt = THREE.MathUtils.clamp(
-    Number(deltaSeconds) || 0,
-    0,
-    0.05,
-  );
-
-  const velocity = THREE.MathUtils.clamp(
-    Math.abs(Number(speed) || 0),
-    0,
-    1.8,
-  );
-
-  const steering = THREE.MathUtils.clamp(
-    Number(steer) || 0,
-    -1,
-    1,
-  );
-
-  const shaking = THREE.MathUtils.clamp(
-    Number(crashShake) || 0,
-    0,
-    1,
-  );
-
-  rig.userData.animationClock =
-    (Number(rig.userData.animationClock) || 0) + dt;
-
-  const time = rig.userData.animationClock;
-
-  const movingWobble =
-    Math.sin(time * (2.2 + velocity * 8)) *
-    (0.002 + velocity * 0.004);
-
-  const body = rig.getObjectByName(
-    DRIVER_BODY_NAME,
-  );
-
-  const head = rig.getObjectByName(
-    DRIVER_HEAD_NAME,
-  );
-
-  const leftArm = rig.getObjectByName(
-    DRIVER_LEFT_ARM_NAME,
-  );
-
-  const rightArm = rig.getObjectByName(
-    DRIVER_RIGHT_ARM_NAME,
-  );
-
-  if (body) {
-    body.position.y =
-      movingWobble +
-      Math.sin(time * 27) * shaking * 0.008;
-
-    body.rotation.z = -steering * 0.035;
-    body.rotation.x = reverse
-      ? 0.035
-      : -0.012 * velocity;
-  }
-
-  if (head) {
-    head.rotation.y =
-      steering * 0.16 +
-      Math.sin(time * 0.75) * 0.018;
-
-    head.rotation.x = reverse
-      ? 0.055
-      : Math.sin(time * 0.6) * 0.012;
-  }
-
-  if (leftArm) {
-    leftArm.rotation.y = steering * 0.16;
-    leftArm.rotation.z = steering * 0.035;
-  }
-
-  if (rightArm) {
-    rightArm.rotation.y = steering * 0.16;
-    rightArm.rotation.z = -steering * 0.035;
-  }
-
-  return true;
-}
-
-function hasEmbeddedDriver(root) {
+function hasNamedDriver(root) {
   let found = false;
 
-  const characterName =
-    /(^|[_ .-])(driver|rider|mannequin|human|person)([_ .-]|$)/i;
+  const driverName =
+    /(^|[\s_.-])(driver|rider|chauffeur|human|person)([\s_.-]|$)/i;
 
   root?.traverse((object) => {
-    if (found) return;
+    if (found || !object.name) return;
 
     if (
-      object.name &&
-      characterName.test(object.name)
+      (object.isMesh || object.isSkinnedMesh) &&
+      driverName.test(object.name)
     ) {
       found = true;
     }
   });
 
   return found;
+}
+
+function createSeatedKekeDriver() {
+  const root = new THREE.Group();
+
+  root.name = DRIVER_RIG_NAME;
+
+  root.userData.proceduralDriver = true;
+  root.userData.seated = true;
+
+  const bodyMaterial = makeDriverMaterial(0x2f674e);
+  const sleeveMaterial = makeDriverMaterial(0x397457);
+  const skinMaterial = makeDriverMaterial(0x70472f);
+  const capMaterial = makeDriverMaterial(0x18382e);
+  const trouserMaterial = makeDriverMaterial(0x252d32);
+  const shoeMaterial = makeDriverMaterial(0x12171b);
+
+  // ----------------------------------------------------------
+  // SEATED TORSO PIVOT
+  //
+  // These coordinates match the cabin position used by
+  // Renderer3D.makeKeke().
+  // ----------------------------------------------------------
+
+  const driverPivot = new THREE.Group();
+
+  driverPivot.name = DRIVER_PIVOT_NAME;
+  driverPivot.position.set(0, 1.18, -0.03);
+
+  root.add(driverPivot);
+
+  const torso = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      0.16,
+      0.2,
+      0.46,
+      10,
+    ),
+    bodyMaterial,
+  );
+
+  torso.name = 'KANO_KEKE_DRIVER_TORSO';
+  torso.position.set(0, 0, 0);
+
+  driverPivot.add(torso);
+
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      0.055,
+      0.065,
+      0.10,
+      9,
+    ),
+    skinMaterial,
+  );
+
+  neck.name = 'KANO_KEKE_DRIVER_NECK';
+  neck.position.set(0, 0.235, -0.065);
+
+  driverPivot.add(neck);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(
+      0.14,
+      14,
+      12,
+    ),
+    skinMaterial,
+  );
+
+  head.name = 'KANO_KEKE_DRIVER_HEAD';
+  head.position.set(0, 0.34, -0.09);
+  head.scale.set(0.94, 1.03, 0.97);
+
+  driverPivot.add(head);
+
+  // A Northern Nigerian-style cap.
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      0.14,
+      0.16,
+      0.055,
+      12,
+    ),
+    capMaterial,
+  );
+
+  cap.name = 'KANO_KEKE_DRIVER_CAP';
+  cap.position.set(0, 0.46, -0.09);
+
+  driverPivot.add(cap);
+
+  // ----------------------------------------------------------
+  // SEATED LEGS
+  // ----------------------------------------------------------
+
+  for (const side of [-1, 1]) {
+    const thigh = new THREE.Mesh(
+      new THREE.CapsuleGeometry(
+        0.075,
+        0.20,
+        3,
+        7,
+      ),
+      trouserMaterial,
+    );
+
+    thigh.name =
+      side < 0
+        ? 'KANO_KEKE_DRIVER_LEFT_THIGH'
+        : 'KANO_KEKE_DRIVER_RIGHT_THIGH';
+
+    thigh.position.set(
+      side * 0.105,
+      -0.22,
+      -0.13,
+    );
+
+    thigh.rotation.x = Math.PI / 2.8;
+
+    driverPivot.add(thigh);
+
+    const shin = new THREE.Mesh(
+      new THREE.CapsuleGeometry(
+        0.052,
+        0.18,
+        3,
+        7,
+      ),
+      trouserMaterial,
+    );
+
+    shin.name =
+      side < 0
+        ? 'KANO_KEKE_DRIVER_LEFT_SHIN'
+        : 'KANO_KEKE_DRIVER_RIGHT_SHIN';
+
+    shin.position.set(
+      side * 0.11,
+      -0.47,
+      -0.31,
+    );
+
+    shin.rotation.x = -0.35;
+
+    driverPivot.add(shin);
+
+    const shoe = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        0.13,
+        0.07,
+        0.21,
+      ),
+      shoeMaterial,
+    );
+
+    shoe.position.set(
+      side * 0.11,
+      -0.57,
+      -0.39,
+    );
+
+    driverPivot.add(shoe);
+  }
+
+  // ----------------------------------------------------------
+  // ARTICULATED ARMS
+  //
+  // Animation code in Renderer3D expects each item to have
+  // shoulder and forearm references.
+  // ----------------------------------------------------------
+
+  const arms = [];
+
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Group();
+
+    shoulder.name =
+      side < 0
+        ? DRIVER_LEFT_SHOULDER_NAME
+        : DRIVER_RIGHT_SHOULDER_NAME;
+
+    shoulder.position.set(
+      side * 0.16,
+      0.11,
+      -0.02,
+    );
+
+    driverPivot.add(shoulder);
+
+    const upperArm = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        0.045,
+        0.055,
+        0.27,
+        8,
+      ),
+      bodyMaterial,
+    );
+
+    upperArm.name =
+      side < 0
+        ? 'KANO_KEKE_DRIVER_LEFT_UPPER_ARM'
+        : 'KANO_KEKE_DRIVER_RIGHT_UPPER_ARM';
+
+    upperArm.position.set(
+      side * 0.055,
+      -0.11,
+      -0.09,
+    );
+
+    upperArm.rotation.x = -0.35;
+    upperArm.rotation.z = side * -0.25;
+
+    shoulder.add(upperArm);
+
+    const forearm = new THREE.Group();
+
+    forearm.name =
+      side < 0
+        ? DRIVER_LEFT_FOREARM_NAME
+        : DRIVER_RIGHT_FOREARM_NAME;
+
+    forearm.position.set(
+      side * 0.08,
+      -0.21,
+      -0.15,
+    );
+
+    shoulder.add(forearm);
+
+    const forearmMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        0.035,
+        0.045,
+        0.24,
+        8,
+      ),
+      sleeveMaterial,
+    );
+
+    forearmMesh.name =
+      side < 0
+        ? 'KANO_KEKE_DRIVER_LEFT_FOREARM_MESH'
+        : 'KANO_KEKE_DRIVER_RIGHT_FOREARM_MESH';
+
+    forearmMesh.position.y = -0.1;
+    forearmMesh.rotation.z = side * 0.25;
+
+    forearm.add(forearmMesh);
+
+    const hand = new THREE.Mesh(
+      new THREE.SphereGeometry(
+        0.052,
+        9,
+        8,
+      ),
+      skinMaterial,
+    );
+
+    hand.position.set(
+      side * 0.075,
+      -0.205,
+      -0.24,
+    );
+
+    forearm.add(hand);
+
+    arms.push({
+      shoulder,
+      forearm,
+    });
+  }
+
+  // ----------------------------------------------------------
+  // STEERING HANDLE
+  // ----------------------------------------------------------
+
+  const handlebarMaterial = makeDriverMaterial(
+    0x667174,
+    0.55,
+  );
+
+  const handlebar = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      0.025,
+      0.025,
+      0.46,
+      8,
+    ),
+    handlebarMaterial,
+  );
+
+  handlebar.name = 'KANO_KEKE_DRIVER_HANDLEBAR';
+  handlebar.rotation.z = Math.PI / 2;
+  handlebar.position.set(0, -0.015, -0.42);
+
+  driverPivot.add(handlebar);
+
+  for (const side of [-1, 1]) {
+    const grip = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        0.033,
+        0.033,
+        0.12,
+        8,
+      ),
+      shoeMaterial,
+    );
+
+    grip.rotation.z = Math.PI / 2;
+
+    grip.position.set(
+      side * 0.22,
+      -0.015,
+      -0.42,
+    );
+
+    driverPivot.add(grip);
+  }
+
+  root.userData.driverPivotName = DRIVER_PIVOT_NAME;
+
+  return root;
+}
+
+// ============================================================
+// GET ANIMATION PARTS FROM A CLONED DRIVER
+// ============================================================
+
+function attachDriverAnimationReferences(instance) {
+  const driverRoot = instance.getObjectByName(
+    DRIVER_RIG_NAME,
+  );
+
+  if (!driverRoot) {
+    return false;
+  }
+
+  const driverPivot = driverRoot.getObjectByName(
+    DRIVER_PIVOT_NAME,
+  );
+
+  const leftShoulder = driverRoot.getObjectByName(
+    DRIVER_LEFT_SHOULDER_NAME,
+  );
+
+  const rightShoulder = driverRoot.getObjectByName(
+    DRIVER_RIGHT_SHOULDER_NAME,
+  );
+
+  const leftForearm = driverRoot.getObjectByName(
+    DRIVER_LEFT_FOREARM_NAME,
+  );
+
+  const rightForearm = driverRoot.getObjectByName(
+    DRIVER_RIGHT_FOREARM_NAME,
+  );
+
+  if (
+    !driverPivot ||
+    !leftShoulder ||
+    !rightShoulder ||
+    !leftForearm ||
+    !rightForearm
+  ) {
+    console.warn(
+      '[ModelManager] seated driver rig found, but some animation parts are missing.',
+    );
+
+    return false;
+  }
+
+  // Renderer3D.animateFallbackDriver() already understands
+  // this exact data structure.
+  instance.userData.driverAnimationParts = {
+    driverPivot,
+
+    arms: [
+      {
+        shoulder: leftShoulder,
+        forearm: leftForearm,
+      },
+      {
+        shoulder: rightShoulder,
+        forearm: rightForearm,
+      },
+    ],
+
+    // Imported GLB wheel nodes are not assumed to be Three.js
+    // wheel meshes with compatible rotation axes.
+    wheels: [],
+  };
+
+  instance.userData.hasSeatedDriver = true;
+
+  return true;
 }
 
 // ============================================================
@@ -1086,9 +1171,12 @@ export class ModelManager {
     this.cache = new Map();
     this.pending = new Map();
     this.failed = new Set();
-    this.instances = new Set();
     this.disposed = false;
   }
+
+  // ----------------------------------------------------------
+  // LOAD MODEL
+  // ----------------------------------------------------------
 
   async load(key) {
     if (this.disposed) return null;
@@ -1119,7 +1207,6 @@ export class ModelManager {
         );
 
         try {
-          // Fetch directly to distinguish HTTP failures from GLB parsing errors.
           const response = await fetch(url, {
             credentials: 'same-origin',
           });
@@ -1127,10 +1214,14 @@ export class ModelManager {
           auditRecord.httpStatus = response.status;
 
           if (!response.ok) {
-            throw createHttpError(response, url);
+            throw createHttpError(
+              response,
+              url,
+            );
           }
 
-          const arrayBuffer = await response.arrayBuffer();
+          const arrayBuffer =
+            await response.arrayBuffer();
 
           const resourcePath = url.slice(
             0,
@@ -1151,6 +1242,7 @@ export class ModelManager {
             }
 
             error.httpStatus = response.status;
+
             throw error;
           }
 
@@ -1171,9 +1263,8 @@ export class ModelManager {
 
           source.updateMatrixWorld(true);
 
-          const originalBox = new THREE.Box3().setFromObject(
-            source,
-          );
+          const originalBox = new THREE.Box3()
+            .setFromObject(source);
 
           const originalSize = originalBox.getSize(
             new THREE.Vector3(),
@@ -1198,7 +1289,9 @@ export class ModelManager {
                 : 18;
 
           const maxDimensionLimit =
-            key === 'flyover' ? 650 : 120;
+            key === 'flyover'
+              ? 650
+              : 120;
 
           const invalidDimensions =
             !Number.isFinite(originalSize.x) ||
@@ -1234,8 +1327,13 @@ export class ModelManager {
             );
 
             disposeModelResources([source]);
+
             continue;
           }
+
+          // --------------------------------------------------
+          // NORMALISE DIMENSIONS
+          // --------------------------------------------------
 
           const targetHeight =
             TARGET_HEIGHT[key] || 1.6;
@@ -1246,27 +1344,30 @@ export class ModelManager {
 
           source.updateMatrixWorld(true);
 
-          const scaledBox = new THREE.Box3().setFromObject(
-            source,
-          );
+          const scaledBox = new THREE.Box3()
+            .setFromObject(source);
 
           const center = scaledBox.getCenter(
             new THREE.Vector3(),
           );
 
-          // Normalize the model inside its wrapper.
           source.position.x -= center.x;
           source.position.y -= scaledBox.min.y;
           source.position.z -= center.z;
 
           repairMaterials(source);
 
+          // --------------------------------------------------
+          // ROOT WRAPPER
+          // --------------------------------------------------
+
           const wrapper = new THREE.Group();
 
           wrapper.add(source);
+
           wrapper.position.set(0, 0, 0);
 
-          // Keep the wrapper available for gameplay rotation.
+          // Preserve the orientation correction for vehicle GLBs.
           if (!UPRIGHT_KEYS.has(key)) {
             source.rotation.y = Math.PI;
           }
@@ -1275,15 +1376,27 @@ export class ModelManager {
           wrapper.userData.targetHeight = targetHeight;
           wrapper.userData.modelKey = key;
 
-          // Add a seated procedural driver to vehicle-only keke models.
-          // Do not add the procedural driver if a named rider is embedded.
+          // --------------------------------------------------
+          // SEATED DRIVER IN THE KEKE CABIN
+          //
+          // The driver is a child of the vehicle root, not a
+          // world-space actor. It therefore stays inside the
+          // keke when the vehicle moves, steers or reverses.
+          //
+          // Keep the driver separate from the GLB source group
+          // so the vehicle orientation correction does not turn
+          // the driver around.
+          // --------------------------------------------------
+
           if (
             key === 'keke' &&
-            !hasEmbeddedDriver(source)
+            !hasNamedDriver(source)
           ) {
-            wrapper.add(createSeatedDriverRig());
+            wrapper.add(
+              createSeatedKekeDriver(),
+            );
 
-            wrapper.userData.hasProceduralDriver = true;
+            wrapper.userData.seatedDriverAttached = true;
           }
 
           this.cache.set(key, wrapper);
@@ -1293,6 +1406,15 @@ export class ModelManager {
             `[ModelManager] OK ${key} <- assets/models/${relativePath}`,
           );
 
+          if (
+            key === 'keke' &&
+            wrapper.userData.seatedDriverAttached
+          ) {
+            console.info(
+              '[ModelManager] Seated driver rig attached to the keke.',
+            );
+          }
+
           return wrapper;
         } catch (error) {
           auditModelFailure(
@@ -1300,12 +1422,12 @@ export class ModelManager {
             relativePath,
             url,
             error,
-            error?.httpStatus ?? auditRecord.httpStatus,
+            error?.httpStatus ??
+              auditRecord.httpStatus,
           );
 
           if (this.disposed) return null;
 
-          // Continue to the next candidate when an asset is unavailable.
           console.debug(
             `[ModelManager] asset unavailable ${url} (${classifyFailure(error)})`,
             safeErrorMessage(error),
@@ -1337,26 +1459,42 @@ export class ModelManager {
     }
   }
 
+  // ----------------------------------------------------------
+  // PRELOAD MULTIPLE CATEGORIES
+  // ----------------------------------------------------------
+
   async preload(keys) {
     if (this.disposed) return [];
 
     return Promise.all(
-      [...new Set(keys)].map((key) => this.load(key)),
+      [...new Set(keys)].map(
+        (key) => this.load(key),
+      ),
     );
   }
 
+  // ----------------------------------------------------------
+  // GET INSTANCE
+  //
+  // Geometry is shared with the cache.
+  // Materials are cloned for independent paint/customisation.
+  // The seated-driver animation references are rebound to this
+  // particular instance after cloning.
+  // ----------------------------------------------------------
+
   getInstance(key) {
+    if (this.disposed) return null;
+
     const model = this.cache.get(key);
 
-    if (!model || this.disposed) {
-      return null;
-    }
+    if (!model) return null;
 
     const clone = model.clone(true);
 
     clone.userData.sharedGeometry = true;
     clone.userData.modelManagerInstance = true;
     clone.userData.modelKey = key;
+    clone.userData.modelPath = model.userData.modelPath;
 
     clone.traverse((object) => {
       if (!object.isMesh || !object.material) return;
@@ -1368,36 +1506,38 @@ export class ModelManager {
         : object.material.clone();
     });
 
-    this.instances.add(clone);
+    if (key === 'keke') {
+      attachDriverAnimationReferences(clone);
+    }
 
     return clone;
   }
 
-  // Call when a cloned actor is permanently removed from the scene.
-  releaseInstance(instance) {
-    if (
-      !instance ||
-      !this.instances.has(instance)
-    ) {
-      return false;
-    }
+  // ----------------------------------------------------------
+  // CACHE DIAGNOSTICS
+  // ----------------------------------------------------------
 
-    disposeInstanceMaterials(instance);
-    this.instances.delete(instance);
-
-    return true;
+  getStatus() {
+    return {
+      loaded: [...this.cache.keys()],
+      pending: [...this.pending.keys()],
+      failed: [...this.failed.keys()],
+      disposed: this.disposed,
+    };
   }
+
+  // ----------------------------------------------------------
+  // DISPOSE
+  // ----------------------------------------------------------
 
   dispose() {
     if (this.disposed) return;
 
     this.disposed = true;
 
-    for (const instance of [...this.instances]) {
-      this.releaseInstance(instance);
-    }
-
-    disposeModelResources([...this.cache.values()]);
+    disposeModelResources(
+      [...this.cache.values()],
+    );
 
     this.cache.clear();
     this.failed.clear();

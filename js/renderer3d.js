@@ -10,6 +10,7 @@ const VEHICLE_MODEL_KEY = {
   motorcycle: 'motorcycle',
   police: 'police',
   karota: 'karota',
+  ambulance: 'ambulance',
 };
 
 /**
@@ -108,9 +109,13 @@ export class Renderer3D {
     this.streetLights = [];
     this.roadProps = [];
     this.buildingSlots = [];
+
+    this.buildingLoopDistance = mobile ? 155 : 231;
+
     this.flyoverFallback = null;
     this.flyovers = [];
     this.flyoverModelAdded = false;
+    this.flyoverLoopDistance = mobile ? 260 : 306;
 
     this.lifeScene = 'road';
     this.garageGroup = null;
@@ -155,7 +160,7 @@ export class Renderer3D {
       loader.load(
         url,
         (texture) => {
-          if (!this.ready || !this.scene) {
+          if (!this.ready || !this.scene || this.disposed) {
             texture.dispose();
             return;
           }
@@ -233,6 +238,11 @@ export class Renderer3D {
     }
 
     const buildingCount = this.mobile ? 10 : 24;
+    const buildingSpacing = this.mobile ? 14 : 9;
+
+    this.buildingLoopDistance =
+      buildingCount * buildingSpacing + 15;
+
     const buildingColors = [
       0xd0b78e,
       0xb98e6b,
@@ -242,7 +252,7 @@ export class Renderer3D {
 
     for (let index = 0; index < buildingCount; index += 1) {
       const side = index % 2 ? 1 : -1;
-      const z = -index * (this.mobile ? 14 : 9) - 8;
+      const z = -index * buildingSpacing - 8;
       const x = side * (9 + (index % 3) * 2.8);
       const height = 2.2 + (index % 4) * 0.7;
       const width = 2.8 + (index % 3) * 0.7;
@@ -360,26 +370,34 @@ export class Renderer3D {
       deck.position.y = 4.35;
       group.add(deck);
 
-      const railBase = new THREE.Mesh(
-        new THREE.BoxGeometry(width, 0.3, 0.24),
-        this.material(0xf0eee6),
-      );
-
       for (const sideZ of [-2.25, 2.25]) {
-        const rail = railBase.clone();
+        const rail = new THREE.Mesh(
+          new THREE.BoxGeometry(width, 0.3, 0.24),
+          this.material(0xf0eee6),
+        );
 
         rail.position.set(0, 4.77, sideZ);
-        rail.material = this.material(0xf0eee6);
         group.add(rail);
 
-        // Red-and-white sections give the bridge a distinctive Kano-inspired look.
         const stripeCount = this.mobile ? 11 : 15;
         const stripeWidth = width / stripeCount;
 
-        for (let stripeIndex = 0; stripeIndex < stripeCount; stripeIndex += 1) {
+        for (
+          let stripeIndex = 0;
+          stripeIndex < stripeCount;
+          stripeIndex += 1
+        ) {
           const stripe = new THREE.Mesh(
-            new THREE.BoxGeometry(stripeWidth * 0.96, 0.29, 0.035),
-            this.material(stripeIndex % 2 === 0 ? 0xc83d37 : 0xf4eee0),
+            new THREE.BoxGeometry(
+              stripeWidth * 0.96,
+              0.29,
+              0.035,
+            ),
+            this.material(
+              stripeIndex % 2 === 0
+                ? 0xc83d37
+                : 0xf4eee0,
+            ),
           );
 
           stripe.position.set(
@@ -592,6 +610,7 @@ export class Renderer3D {
       actor.scale.setScalar(parked.scale);
 
       group.add(actor);
+
       this.garageVehicleSlots.push({
         actor,
         ...parked,
@@ -1373,6 +1392,9 @@ export class Renderer3D {
   buildSidewalkLife() {
     const count = this.mobile ? 8 : 22;
 
+    this.pedestrianLoopDistance =
+      count * (this.mobile ? 23 : 12);
+
     const clothes = [
       0xf1e7ce,
       0x2b8067,
@@ -1581,7 +1603,10 @@ export class Renderer3D {
           : 7.2
       );
 
-      const z = -35 - Math.floor(index / 2) * (this.mobile ? 75 : 44);
+      const z =
+        -35 -
+        Math.floor(index / 2) *
+          (this.mobile ? 75 : 44);
 
       const group = new THREE.Group();
       const postMaterial = this.material(0x554637);
@@ -1792,7 +1817,10 @@ export class Renderer3D {
         model.userData.targetHeight ||
         (slot.industrial ? 5.2 : 4.5);
 
-      model.scale.multiplyScalar(slot.height / normalizedHeight);
+      model.scale.multiplyScalar(
+        slot.height / normalizedHeight,
+      );
+
       model.position.set(slot.x, 0, slot.z);
       model.rotation.y = slot.side < 0 ? Math.PI / 2 : -Math.PI / 2;
 
@@ -1840,10 +1868,10 @@ export class Renderer3D {
           model.scale.z *= horizontalScale;
         }
 
+        const originalZ = fallback.position.z;
+
         model.position.copy(fallback.position);
         model.userData.flyoverModel = true;
-
-        const originalZ = fallback.position.z;
 
         this.world.remove(fallback);
         disposeSceneTree(fallback);
@@ -1901,7 +1929,10 @@ export class Renderer3D {
       const normalizedHeight =
         model.userData.targetHeight || slot.targetHeight;
 
-      model.scale.multiplyScalar(slot.targetHeight / normalizedHeight);
+      model.scale.multiplyScalar(
+        slot.targetHeight / normalizedHeight,
+      );
+
       model.position.copy(slot.actor.position);
       model.rotation.copy(slot.actor.rotation);
       model.userData.roadPropKey = slot.key;
@@ -2074,9 +2105,10 @@ export class Renderer3D {
     fork.rotation.x = -0.18;
     group.add(fork);
 
-    // Driver torso pivot allows visible body movement while steering.
+    // Procedural seated driver.
     const driverPivot = new THREE.Group();
 
+    driverPivot.name = 'KANO_KEKE_DRIVER_PIVOT';
     driverPivot.position.set(0, 1.18, -0.03);
     group.add(driverPivot);
 
@@ -2095,6 +2127,7 @@ export class Renderer3D {
       skin,
     );
 
+    driverHead.name = 'KANO_KEKE_DRIVER_HEAD';
     driverHead.position.set(0, 0.34, -0.09);
     driverPivot.add(driverHead);
 
@@ -2106,7 +2139,6 @@ export class Renderer3D {
     driverCap.position.set(0, 0.46, -0.09);
     driverPivot.add(driverCap);
 
-    // Articulated shoulders and forearms make steering movement visible.
     const armMaterial = this.material(0x2f674e);
     const arms = [];
 
@@ -2143,7 +2175,6 @@ export class Renderer3D {
       arms.push({ shoulder, forearm });
     }
 
-    // Tubular canopy and roof.
     for (const x of [-0.54, 0.54]) {
       addBar([x, 0.95, -0.64], [x * 1.03, 1.63, -0.47], 0.035, frame);
       addBar([x, 0.98, 0.57], [x, 1.62, 0.48], 0.035, frame);
@@ -2205,6 +2236,7 @@ export class Renderer3D {
 
     group.userData.fallback = true;
     group.userData.vehicleType = 'keke';
+
     group.userData.driverAnimationParts = {
       driverPivot,
       arms,
@@ -2214,23 +2246,56 @@ export class Renderer3D {
     return group;
   }
 
+  // ==========================================================
+  // REPLACE THE PLAYER KEKE
+  // ==========================================================
+
   async applyModel(key, object) {
-    if (!object || !this.ready || key !== 'keke') return false;
+    if (
+      !object ||
+      !this.ready ||
+      this.disposed ||
+      key !== 'keke'
+    ) {
+      return false;
+    }
 
     const old = this.player;
-    const parent = old?.parent || this.scene;
+    const oldParent = old?.parent || this.scene;
 
+    // Preserve the current state until the replacement has been prepared.
     object.position.copy(
       old?.position || new THREE.Vector3(0, 0, 2),
     );
 
-    object.rotation.set(0, 0, old?.rotation?.z || 0);
+    object.rotation.set(
+      0,
+      this.driveFacingY,
+      old?.rotation?.z || 0,
+    );
+
     object.userData.fallback = false;
+    object.userData.vehicleType = 'keke';
     object.visible =
       this.lifeScene === 'road' ||
       this.lifeScene === 'garage';
 
-    object.userData.vehicleType = 'keke';
+    // The model manager should attach animation references to the
+    // imported keke when it contains a procedural seated driver.
+    // Keep the fallback driver if the imported model has no driver rig.
+    if (!object.userData.driverAnimationParts) {
+      const rig = object.getObjectByName?.(
+        'KANO_KEKE_DRIVER_PIVOT',
+      );
+
+      if (rig) {
+        object.userData.driverAnimationParts = {
+          driverPivot: rig,
+          arms: [],
+          wheels: [],
+        };
+      }
+    }
 
     if (old?.parent) {
       old.parent.remove(old);
@@ -2243,10 +2308,9 @@ export class Renderer3D {
         ? this.garageGroup
         : this.scene;
 
-    (targetParent || parent || this.scene).add(object);
+    (targetParent || oldParent || this.scene).add(object);
 
     this.player = object;
-    this.driveFacingY = 0;
 
     if (this.lifeScene === 'garage') {
       object.position.set(0.7, 0, 1.45);
@@ -2264,6 +2328,16 @@ export class Renderer3D {
         object.userData.modelPath || 'GLB model'
       }`,
     );
+
+    if (object.userData.driverAnimationParts) {
+      console.info(
+        '[Kano Life] Seated driver animation references connected.',
+      );
+    } else {
+      console.warn(
+        '[Kano Life] This keke model has no recognised seated driver rig. Verify the ModelManager.js version and driver names.',
+      );
+    }
 
     return true;
   }
@@ -2319,7 +2393,9 @@ export class Renderer3D {
           .join(' ')}`;
 
         if (
-          /wheel|tire|tyre|glass|window|lamp|light|rubber/i.test(identity)
+          /wheel|tire|tyre|glass|window|lamp|light|rubber|driver|passenger/i.test(
+            identity,
+          )
         ) {
           return;
         }
@@ -2360,7 +2436,7 @@ export class Renderer3D {
   }
 
   resize() {
-    if (!this.ready || !this.renderer) return;
+    if (!this.ready || !this.renderer || this.disposed) return;
 
     const rect = this.canvas.getBoundingClientRect();
     const width = Math.max(1, Math.round(rect.width));
@@ -2721,7 +2797,6 @@ export class Renderer3D {
 
   /**
    * Builds a persistent, raised-edge pothole marker.
-   * The road remains intact, but the crater is visibly recessed and dark.
    */
   makePotholeActor(zone) {
     const group = new THREE.Group();
@@ -2806,7 +2881,7 @@ export class Renderer3D {
   syncZones(state) {
     const activeIds = new Set();
 
-    for (const zone of state.zones) {
+    for (const zone of state.zones || []) {
       activeIds.add(zone.id);
 
       let actor = this.zoneActors.get(zone.id);
@@ -2866,12 +2941,7 @@ export class Renderer3D {
                   ? '#145a43'
                   : '#13533c';
 
-            labelCtx.fillRect(
-              0,
-              0,
-              labelCanvas.width,
-              labelCanvas.height,
-            );
+            labelCtx.fillRect(0, 0, 512, 128);
 
             labelCtx.strokeStyle = '#f5d77b';
             labelCtx.lineWidth = 8;
@@ -3018,10 +3088,13 @@ export class Renderer3D {
           ? (zone.lane - 1) * 3
           : (zone.side || (zone.lane === 0 ? -1 : 1)) * 6.7;
 
+      // Zone depth remains controlled by game.js.
+      // In reverse gear, zone.depth must increase in game.js as
+      // reverse movement approaches objects behind the player.
       actor.position.set(
         markerX,
         0,
-        -Math.max(-0.05, zone.depth) * 88,
+        -Math.max(-0.05, Number(zone.depth) || 0) * 88,
       );
     }
 
@@ -3037,7 +3110,7 @@ export class Renderer3D {
   syncTraffic(state) {
     const activeIds = new Set();
 
-    for (const vehicle of state.traffic) {
+    for (const vehicle of state.traffic || []) {
       activeIds.add(vehicle.id);
 
       let actor = this.trafficActors.get(vehicle.id);
@@ -3074,7 +3147,7 @@ export class Renderer3D {
       actor.position.set(
         (vehicle.lane - 1) * 3,
         0,
-        -Math.max(-0.05, vehicle.depth) * 88,
+        -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
       );
 
       actor.rotation.y = vehicle.direction === -1 ? Math.PI : 0;
@@ -3089,58 +3162,117 @@ export class Renderer3D {
     }
   }
 
-  /**
-   * Animates the fallback driver without requiring an external animation clip.
-   * GLB vehicles continue to use their own model and animation setup.
-   */
+  // ==========================================================
+  // PLAYER DRIVER ANIMATION
+  //
+  // Supports both:
+  // 1. The procedural driver used by makeKeke().
+  // 2. The seated driver rig supplied by ModelManager.js.
+  // ==========================================================
+
   animateFallbackDriver(state, dt) {
-    const parts = this.player?.userData?.driverAnimationParts;
+    const parts =
+      this.player?.userData?.driverAnimationParts;
 
-    if (!parts) return;
+    if (!parts?.driverPivot) return;
 
-    const speed = Math.abs(Number(state.speed) || 0);
+    const elapsed = THREE.MathUtils.clamp(
+      Number(dt) || 0,
+      0,
+      0.05,
+    );
+
     const steer = THREE.MathUtils.clamp(
-      Number(state.steer) || 0,
+      Number(state?.steer) || 0,
       -1,
       1,
     );
 
-    this.driverAnimationTime += dt * (
+    const signedSpeed = Number.isFinite(state?.signedSpeed)
+      ? state.signedSpeed
+      : state?.reverse
+        ? -Math.abs(Number(state?.speed) || 0)
+        : Math.abs(Number(state?.speed) || 0);
+
+    const speed = Math.abs(signedSpeed);
+
+    const reversing =
+      Boolean(state?.reverse) ||
+      signedSpeed < -0.05;
+
+    this.driverAnimationTime += elapsed * (
       1.2 + Math.min(speed / 35, 1.8)
     );
 
-    const movement = Math.sin(this.driverAnimationTime);
+    const time = this.driverAnimationTime;
+
+    const movement = Math.sin(time);
+
     const bodyLean = -steer * 0.13;
 
+    const vibration = movement * Math.min(
+      speed / 180,
+      0.025,
+    );
+
+    // Move the entire seated driver's upper body slightly with the keke.
     parts.driverPivot.rotation.z =
-      bodyLean + movement * Math.min(speed / 180, 0.025);
+      bodyLean + vibration;
 
     parts.driverPivot.rotation.x =
-      Math.sin(this.driverAnimationTime * 0.5) * 0.018;
+      Math.sin(time * 0.5) * 0.018 +
+      (reversing ? 0.025 : -0.008);
 
-    for (const [index, arm] of parts.arms.entries()) {
+    // Look back a little when reversing.
+    const head = parts.driverPivot.getObjectByName?.(
+      'KANO_KEKE_DRIVER_HEAD',
+    );
+
+    if (head) {
+      const targetHeadY = reversing ? 0.48 : 0;
+
+      head.rotation.y +=
+        (targetHeadY - head.rotation.y) *
+        Math.min(1, elapsed * 5);
+
+      head.rotation.x =
+        Math.sin(time * 0.7) * 0.012;
+    }
+
+    // Move the arms in response to steering.
+    for (const [index, arm] of (
+      parts.arms || []
+    ).entries()) {
+      if (!arm?.shoulder || !arm?.forearm) continue;
+
       const side = index === 0 ? -1 : 1;
 
       arm.shoulder.rotation.z =
         side * -0.08 - steer * 0.12;
 
       arm.shoulder.rotation.x =
-        -0.16 + Math.sin(this.driverAnimationTime * 0.7) * 0.025;
+        -0.16 + Math.sin(time * 0.7) * 0.025;
 
       arm.forearm.rotation.z =
         side * 0.08 + steer * 0.09;
     }
 
-    for (const wheel of parts.wheels) {
-      wheel.rotation.x += speed * dt * 0.08;
+    // Signed speed reverses the fallback wheel rotation.
+    for (const wheel of parts.wheels || []) {
+      wheel.rotation.x += signedSpeed * elapsed * 0.08;
     }
   }
+
+  // ==========================================================
+  // MAIN RENDER
+  // ==========================================================
 
   draw(state, deltaSeconds) {
     if (!this.ready || this.disposed) return;
 
-    const dt = Math.min(
-      Math.max(deltaSeconds || 0, 0),
+    const dt = THREE.MathUtils.clamp(
+      Number(deltaSeconds) || 0,
+      0,
       0.05,
     );
 
@@ -3183,6 +3315,22 @@ export class Renderer3D {
     this.upgradeWorldAssets();
     this.upgradePedestrians();
 
+    const signedSpeed = Number.isFinite(state?.signedSpeed)
+      ? state.signedSpeed
+      : state?.reverse
+        ? -Math.abs(Number(state?.speed) || 0)
+        : Math.abs(Number(state?.speed) || 0);
+
+    const reversing =
+      Boolean(state?.reverse) ||
+      signedSpeed < -0.05;
+
+    const scroll = signedSpeed * dt * 0.28;
+
+    // --------------------------------------------------------
+    // ENVIRONMENT
+    // --------------------------------------------------------
+
     const sky = state.night
       ? 0x26334a
       : state.environment === 'harmattan'
@@ -3205,6 +3353,10 @@ export class Renderer3D {
     this.scene.fog.far =
       state.environment === 'harmattan' ? 100 : 195;
 
+    // --------------------------------------------------------
+    // PLAYER POSITION AND STEERING
+    // --------------------------------------------------------
+
     const laneX =
       (state.steer || 0) * 3 +
       (state.pullOverSide || 0) * 2.35;
@@ -3213,7 +3365,12 @@ export class Renderer3D {
       (laneX - this.player.position.x) *
       Math.min(1, dt * 5.4);
 
-    this.player.rotation.z = -(state.steer || 0) * 0.075;
+    // Steering rotates the vehicle slightly, not 180 degrees.
+    // Reverse gear moves it backwards without making it face forward.
+    this.player.rotation.z =
+      -(state.steer || 0) * 0.075;
+
+    this.player.rotation.y = this.driveFacingY;
 
     this.player.position.y =
       Math.sin((state.distance || 0) * 2.2) * 0.025;
@@ -3221,33 +3378,52 @@ export class Renderer3D {
     this.animateFallbackDriver(state, dt);
     this.applyPlayerPaint(state.paint);
 
-    // Reverse rendering support only: game.js must provide a negative signedSpeed
-    // or reverse=true for reverse motion to be represented by the environment.
-    const signedSpeed = Number.isFinite(state.signedSpeed)
-      ? state.signedSpeed
-      : state.reverse
-        ? -Math.abs(Number(state.speed) || 0)
-        : Math.abs(Number(state.speed) || 0);
-
-    const scroll = signedSpeed * dt * 0.28;
+    // --------------------------------------------------------
+    // FLYOVERS
+    // --------------------------------------------------------
 
     for (const flyover of this.flyovers) {
       flyover.position.z += scroll * 0.72;
 
       if (flyover.position.z > 22) {
         flyover.position.z -= this.flyoverLoopDistance;
-      } else if (flyover.position.z < -this.flyoverLoopDistance) {
+      } else if (
+        flyover.position.z < -this.flyoverLoopDistance
+      ) {
         flyover.position.z += this.flyoverLoopDistance;
       }
     }
+
+    // --------------------------------------------------------
+    // BUILDINGS
+    // Buildings now move in both directions with the world.
+    // --------------------------------------------------------
+
+    for (const slot of this.buildingSlots) {
+      slot.actor.position.z += scroll;
+
+      if (slot.actor.position.z > 12) {
+        slot.actor.position.z -= this.buildingLoopDistance;
+      } else if (
+        slot.actor.position.z < -this.buildingLoopDistance
+      ) {
+        slot.actor.position.z += this.buildingLoopDistance;
+      }
+    }
+
+    // --------------------------------------------------------
+    // PEDESTRIANS
+    // --------------------------------------------------------
 
     for (const pedestrian of this.pedestrians) {
       pedestrian.actor.position.z += scroll * 0.72;
 
       if (pedestrian.actor.position.z > 6) {
-        pedestrian.actor.position.z -= 200;
-      } else if (pedestrian.actor.position.z < -205) {
-        pedestrian.actor.position.z += 200;
+        pedestrian.actor.position.z -= this.pedestrianLoopDistance;
+      } else if (
+        pedestrian.actor.position.z < -this.pedestrianLoopDistance
+      ) {
+        pedestrian.actor.position.z += this.pedestrianLoopDistance;
       }
 
       if (!pedestrian.usingModel && pedestrian.arms) {
@@ -3261,6 +3437,10 @@ export class Renderer3D {
       }
     }
 
+    // --------------------------------------------------------
+    // STREET LIGHTS
+    // --------------------------------------------------------
+
     for (const pole of this.streetLights) {
       pole.position.z += scroll;
 
@@ -3270,6 +3450,10 @@ export class Renderer3D {
         pole.position.z += 245;
       }
     }
+
+    // --------------------------------------------------------
+    // ROAD PROPS
+    // --------------------------------------------------------
 
     for (const slot of this.roadProps) {
       slot.actor.position.z += scroll * 0.88;
@@ -3281,6 +3465,10 @@ export class Renderer3D {
       }
     }
 
+    // --------------------------------------------------------
+    // LANE MARKINGS
+    // --------------------------------------------------------
+
     for (const dash of this.laneDashes) {
       dash.position.z += scroll;
 
@@ -3290,6 +3478,10 @@ export class Renderer3D {
         dash.position.z += 250;
       }
     }
+
+    // --------------------------------------------------------
+    // CAMERA
+    // --------------------------------------------------------
 
     const targetX = this.player.position.x * 0.45;
     const driverView = state.camera === 'driver';
@@ -3304,19 +3496,35 @@ export class Renderer3D {
     this.camera.position.y = driverView ? 1.65 : 3.35;
     this.camera.position.z = driverView ? 4.7 : 8.6;
 
-    const shake = Math.max(0, state.crashShake || 0);
+    const shake = Math.max(
+      0,
+      Number(state.crashShake) || 0,
+    );
 
     this.camera.position.y +=
       Math.sin((state.time || 0) * 41) * shake * 0.12;
 
+    // When reversing, show the road behind the keke.
+    const cameraTargetZ = reversing
+      ? driverView
+        ? 10.5
+        : 4.8
+      : driverView
+        ? -12
+        : -1.8;
+
     this.camera.lookAt(
       targetX,
       driverView ? 1.2 : 0.72,
-      driverView ? -12 : -1.8,
+      cameraTargetZ,
     );
 
     this.renderer.render(this.scene, this.camera);
   }
+
+  // ==========================================================
+  // CLEANUP
+  // ==========================================================
 
   dispose() {
     if (!this.renderer || this.disposed) return;
