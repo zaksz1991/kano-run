@@ -1328,6 +1328,51 @@ export class Renderer3D {
     return sp;
   }
 
+
+  makeFuelPad() {
+    const g = new THREE.Group();
+    const pad = new THREE.Mesh(
+      new THREE.CircleGeometry(0.85, 24),
+      new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+    );
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.y = 0.05;
+    g.add(pad);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.7, 0.9, 24),
+      new THREE.MeshBasicMaterial({ color: 0x86efac, side: THREE.DoubleSide, transparent: true, opacity: 0.9 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.06;
+    g.add(ring);
+    const pump = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, 0.7, 0.25),
+      this.mat(0x15803d, { emissive: 0x22c55e, emissiveIntensity: 0.3 })
+    );
+    pump.position.set(0.5, 0.35, 0);
+    g.add(pump);
+    return g;
+  }
+
+  makePotholeMesh() {
+    const g = new THREE.Group();
+    const hole = new THREE.Mesh(
+      new THREE.CircleGeometry(0.55, 12),
+      new THREE.MeshBasicMaterial({ color: 0x1c1917, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+    );
+    hole.rotation.x = -Math.PI / 2;
+    hole.position.y = 0.04;
+    g.add(hole);
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(0.45, 0.65, 12),
+      new THREE.MeshBasicMaterial({ color: 0x44403c, side: THREE.DoubleSide })
+    );
+    rim.rotation.x = -Math.PI / 2;
+    rim.position.y = 0.045;
+    g.add(rim);
+    return g;
+  }
+
   makeZone(color, kind = 'default') {
     const g = new THREE.Group();
     const isDrop = kind === 'drop' || color === 0xfbbf24;
