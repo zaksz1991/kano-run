@@ -37,19 +37,30 @@ export class UI {
 
   bind() {
     document.getElementById('start-btn').onclick = () => this.game.start();
-    const modeBtn = document.getElementById('mode-btn');
-    if (modeBtn) modeBtn.onclick = () => this.game.cycleGameMode?.();
-    const tribeBtn = document.getElementById('tribe-btn');
-    if (tribeBtn) tribeBtn.onclick = () => this.game.cycleDialect?.();
-    const tribalBtn = document.getElementById('tribal-btn');
-    if (tribalBtn) tribalBtn.onclick = () => {
-      const stand = this.game.getNaijaGrandWinners?.() || [];
-      if (!stand.length) this.showMissionToast('🇳🇬 No tribal scores yet');
-      else {
-        const line = stand.map((r, i) => (i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉') + (r.label || r.tribe) + ' ₦' + r.total).join(' · ');
-        this.showMissionToast('🇳🇬 ' + line);
-      }
-    };
+    const hudMenu = document.getElementById('hud-menu-btn');
+    if (hudMenu) {
+      hudMenu.onclick = () => {
+        const g = this.game;
+        this.showEvent('Menu', 'Mode · Tribe · Rank · Graphics', [
+          { label: 'Mode: ' + (g.gameMode || 'career'), action: () => { g.cycleGameMode?.(); this.hideEvent(); this.showPlaying(); } },
+          { label: 'Tribe: ' + (g.dialect || 'hausa'), action: () => { g.cycleDialect?.(); this.hideEvent(); this.showPlaying(); } },
+          { label: 'Naija Rank', action: () => {
+              const stand = g.getNaijaGrandWinners?.() || [];
+              this.hideEvent(); this.showPlaying();
+              if (!stand.length) this.showMissionToast('🇳🇬 No scores yet');
+              else this.showMissionToast('🇳🇬 ' + stand.map((r,i)=>(i===0?'🥇':i===1?'🥈':'🥉')+(r.label||r.tribe)+' ₦'+r.total).join(' · '));
+            } },
+          { label: 'Force 3D models', action: () => {
+              this.hideEvent(); this.showPlaying();
+              try {
+                if (window.KanoLife?.switch3D) window.KanoLife.switch3D();
+                this.showMissionToast('Trying 3D…');
+              } catch (e) { this.showMissionToast('3D failed'); }
+            } },
+          { label: 'Close', action: () => { this.hideEvent(); this.showPlaying(); } }
+        ]);
+      };
+    }
     const helpBtn = document.getElementById('help-btn');
     if (helpBtn) helpBtn.onclick = () => this.showHelp();
     const hudHelp = document.getElementById('hud-help');

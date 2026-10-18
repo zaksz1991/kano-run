@@ -136,13 +136,20 @@ let renderErrors = 0;
 let fpsFrames = 0;
 let fpsT = 0;
 let lowFpsStreak = 0;
-let force2D =
+const force2D =
   typeof location !== 'undefined' &&
   (location.search.includes('force2d') || location.hash.includes('force2d'));
+const force3D =
+  typeof location !== 'undefined' &&
+  (location.search.includes('force3d') || location.hash.includes('force3d'));
 
 if (force2D && mode === '3d') {
   console.warn('[Kano Life] force2d URL flag');
   use2D('force2d');
+}
+// force3d: if we landed on 2d from a previous session path, try 3d again
+if (force3D && mode === '2d') {
+  try { use3D(); onResize(); console.log('[Kano Life] force3d'); } catch (e) { console.warn(e); }
 }
 
 function loop(ts) {
@@ -154,14 +161,14 @@ function loop(ts) {
     fpsFrames = 0;
     fpsT = ts;
     window.KanoLifeFps = fps;
-    // Mobile: if 3D can't hold ~20fps, drop to 2D so the road stays visible
-    if (mode === '3d' && MOBILE && fps > 0 && fps < 18) {
+    // Only abandon 3D if truly broken (<10fps for 8s). Models need 3D.
+    if (mode === '3d' && MOBILE && fps > 0 && fps < 10) {
       lowFpsStreak++;
-      if (lowFpsStreak >= 3) {
-        console.warn('[Kano Life] FPS', fps, '→ switching to 2D');
-        use2D('low fps ' + fps);
+      if (lowFpsStreak >= 8) {
+        console.warn('[Kano Life] FPS', fps, '→ 2D last resort');
+        use2D('critical fps ' + fps);
         lowFpsStreak = 0;
-        try { ui.showMissionToast?.('Switched to fast 2D mode'); } catch (e) {}
+        try { ui.showMissionToast?.('2D — device too slow for 3D'); } catch (e) {}
       }
     } else {
       lowFpsStreak = 0;

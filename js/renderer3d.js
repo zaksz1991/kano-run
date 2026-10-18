@@ -30,12 +30,14 @@ export class Renderer3D {
     try {
       this.init();
       // GLB Integration Pass — load all available models then swap placeholders
-      const KEYS = [
-        'keke', 'car', 'taxi', 'suv', 'truck', 'motorcycle',
-        'police', 'karota', 'bus', 'ambulance', 'robber', 'bicycle',
-        'passenger', 'pedestrian',
-        'market', 'bustop', 'bustation', 'building', 'tree', 'billboard', 'bench', 'flyover', 'roadlight', 'cone', 'dirtmound'
-      ];
+      const KEYS = this._mobile
+        ? ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'passenger']
+        : [
+            'keke', 'car', 'taxi', 'suv', 'truck', 'motorcycle',
+            'police', 'karota', 'bus', 'ambulance', 'robber', 'bicycle',
+            'passenger', 'pedestrian',
+            'market', 'bustop', 'bustation', 'building', 'tree', 'billboard', 'bench', 'flyover', 'roadlight', 'cone', 'dirtmound'
+          ];
       this.models.preload(KEYS).then(() => {
         this._integrateAllGlbs();
         const rep = this.models.report();
@@ -664,7 +666,7 @@ export class Renderer3D {
 
     // Roadside — prefer real building GLBs, fall back to procedural
     for (const side of [-1, 1]) {
-      const cityCopies = this._mobile ? 1 : 2;
+      const cityCopies = this._mobile ? 0 : 2; // mobile: GLB buildings only or skip
       for (let i = 0; i < types.length * cityCopies; i++) {
         const z = i * 4.0 + (side > 0 ? 1.2 : 0);
         const xBase = side * (6.2 + (i % 4) * 0.35);
@@ -703,18 +705,19 @@ export class Renderer3D {
       this.addPedestrian(side * (4.8 + (i % 4) * 0.2), i * 2.6 + 1.0);
     }
 
-    // Flyovers spanning the road (Kano urban)
-    for (const z of [22, 55, 95, 130]) {
-      const fo = this._placeGlb('flyover', 0, z, {});
-      if (fo) {
-        fo.position.y = Math.max(fo.position.y, 3.2);
-        fo.scale.multiplyScalar(1.15);
+    // Flyovers / lights — desktop only (mobile needs FPS for vehicle GLBs)
+    if (!this._mobile) {
+      for (const z of [22, 55, 95, 130]) {
+        const fo = this._placeGlb('flyover', 0, z, {});
+        if (fo) {
+          fo.position.y = Math.max(fo.position.y, 3.2);
+          fo.scale.multiplyScalar(1.15);
+        }
       }
-    }
-    // Street lights from roads kit
-    for (let i = 0; i < 12; i++) {
-      const side = i % 2 === 0 ? -1 : 1;
-      this._placeGlb('roadlight', side * 4.8, 8 + i * 11, {});
+      for (let i = 0; i < 12; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        this._placeGlb('roadlight', side * 4.8, 8 + i * 11, {});
+      }
     }
 
     // Kano-style city gates / welcome arches spanning the road
