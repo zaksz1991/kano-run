@@ -2,65 +2,698 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
   <meta name="theme-color" content="#101a26" />
-  <meta name="description" content="Drive an Adaidaita Sahu through Kano. Pick passengers, earn fares and survive the streets." />
+  <meta
+    name="description"
+    content="Drive an Adaidaita Sahu through Kano. Pick passengers, earn fares and survive the streets."
+  />
+
   <title>KANO LIFE — Adaidaita Sahu</title>
+
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/css/styles.css" />
+
+  <style>
+    /* Reverse gear: visual state and accessible focus. */
+    #drive-controls {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+
+    #drive-controls .reverse {
+      color: #ffd166;
+      background: #332a18;
+      border: 1px solid #f5c54288;
+      touch-action: manipulation;
+    }
+
+    #drive-controls .reverse.active {
+      color: #172333;
+      background: #f5c542;
+      border-color: #ffe69a;
+      box-shadow: 0 0 0 2px #f5c54238;
+    }
+
+    #drive-controls .reverse:focus-visible {
+      outline: 2px solid #f5c542;
+      outline-offset: 3px;
+    }
+
+    #gear-label {
+      color: #9de6d7;
+    }
+
+    @media (max-width: 380px) {
+      #drive-controls {
+        gap: 3px;
+      }
+
+      #drive-controls .control {
+        min-width: 0;
+        padding-right: 3px;
+        padding-left: 3px;
+        font-size: 9px;
+      }
+    }
+  </style>
 </head>
+
 <body>
   <main id="app">
     <div id="game-container">
-      <canvas id="game-canvas" aria-label="Kano Life driving game"></canvas>
-      <div class="sky-label">KANO STATE · NORTHERN NIGERIA</div>
-      <div class="render-badge" id="render-badge">2D MODE · ROAD VISIBLE</div>
+
+      <!-- Main game canvas -->
+      <canvas
+        id="game-canvas"
+        aria-label="Kano Life driving game"
+      ></canvas>
+
+      <div class="sky-label">
+        KANO STATE · NORTHERN NIGERIA
+      </div>
+
+      <div class="render-badge" id="render-badge">
+        2D MODE · ROAD VISIBLE
+      </div>
+
+      <!-- Driving HUD -->
       <section class="hud" id="hud" aria-live="polite">
+
         <div class="hud-top">
-          <div class="stat money"><small>WALLET / RUN</small><strong>₦<span id="score">0</span></strong></div>
-          <div class="stat"><small>DISTANCE</small><strong><span id="distance">0.00</span> km</strong></div>
-          <div class="stat"><small>SPEED</small><strong><span id="speed">0</span> km/h</strong></div>
-          <div class="stat"><small>PASSENGERS</small><strong><span id="pax">0</span>/<span id="capacity">5</span></strong></div>
-          <div class="stat"><small>FUEL</small><strong><span id="fuel">100</span>%</strong><div class="meter"><i id="fuel-meter"></i></div></div>
-          <div class="stat"><small>CONDITION</small><strong><span id="condition">100</span>%</strong><div class="meter"><i id="condition-meter"></i></div></div>
+
+          <div class="stat money">
+            <small>WALLET / RUN</small>
+            <strong>₦<span id="score">0</span></strong>
+          </div>
+
+          <div class="stat">
+            <small>DISTANCE</small>
+            <strong><span id="distance">0.00</span> km</strong>
+          </div>
+
+          <div class="stat">
+            <small>SPEED</small>
+            <strong><span id="speed">0</span> km/h</strong>
+          </div>
+
+          <div class="stat">
+            <small>PASSENGERS</small>
+            <strong>
+              <span id="pax">0</span>/<span id="capacity">5</span>
+            </strong>
+          </div>
+
+          <div class="stat">
+            <small>FUEL</small>
+            <strong><span id="fuel">100</span>%</strong>
+            <div class="meter">
+              <i id="fuel-meter"></i>
+            </div>
+          </div>
+
+          <div class="stat">
+            <small>CONDITION</small>
+            <strong><span id="condition">100</span>%</strong>
+            <div class="meter">
+              <i id="condition-meter"></i>
+            </div>
+          </div>
+
         </div>
-        <div class="hud-bottom"><span id="driver-label">RUFFNECK</span><span id="route-label">Sabon Gari → looking for fares</span><span id="radio-label">VISION FM 92.1</span><span id="lives-label">♥ ♥ ♥</span><span id="dialect-label">HAUSA</span><span id="level-label">LEVEL 1</span><span id="combo-label">COMBO ×0</span><span id="heat-label">HEAT 0%</span><span id="status-label">STATUS · OK</span></div>
-        <div class="mission-pill" id="mission-label">Mission loading…</div>
-        <aside class="passenger-list hidden" id="passenger-list" aria-live="polite" aria-label="Passengers aboard"></aside>
+
+        <div class="hud-bottom">
+          <span id="driver-label">RUFFNECK</span>
+          <span id="route-label">Sabon Gari → looking for fares</span>
+          <span id="radio-label">VISION FM 92.1</span>
+          <span id="lives-label">♥ ♥ ♥</span>
+          <span id="dialect-label">HAUSA</span>
+          <span id="level-label">LEVEL 1</span>
+          <span id="combo-label">COMBO ×0</span>
+          <span id="heat-label">HEAT 0%</span>
+          <span id="status-label">STATUS · OK</span>
+          <span id="gear-label" aria-live="polite">FORWARD GEAR</span>
+        </div>
+
+        <div class="mission-pill" id="mission-label">
+          Mission loading…
+        </div>
+
+        <aside
+          class="passenger-list hidden"
+          id="passenger-list"
+          aria-live="polite"
+          aria-label="Passengers aboard"
+        ></aside>
+
       </section>
-      <div class="minimap" aria-label="Route minimap"><span class="map-road"></span><span class="map-dot"></span><small id="map-label">KANO</small></div>
+
+      <!-- Route minimap -->
+      <div class="minimap" aria-label="Route minimap">
+        <span class="map-road"></span>
+        <span class="map-dot"></span>
+        <small id="map-label">KANO</small>
+      </div>
+
+      <!-- Toast notifications -->
       <div class="toast" id="toast" role="status"></div>
-      <section class="event-card hidden" id="event-card" role="dialog" aria-modal="true"><div class="eyebrow" id="event-kicker">KANO STREET EVENT</div><h2 id="event-title">Sannu!</h2><p id="event-copy"></p><div class="event-actions" id="event-actions"></div></section>
-      <section class="screen" id="start-screen">
-        <div class="start-card"><div class="brand-mark">KL<span>+</span></div><p class="eyebrow">NORTHERN NIGERIA · STREET LIFE</p><h1>KANO <em>LIFE</em></h1><p class="subtitle">Drive. Load. Negotiate. Survive.</p><div class="keke-art" aria-hidden="true"><span class="wheel w1"></span><span class="wheel w2"></span><span class="keke-roof"></span><span class="keke-body">NAPEP</span></div><div class="start-fields"><label>ROUTE<select id="route-select"></select></label><label>DRIVER<select id="driver-select"></select></label><label>MODE<select id="mode-select"><option value="career">Career</option><option value="timeAttack">Time Attack</option><option value="fuel">Fuel Gauge Challenge</option><option value="matchDrop">Match Drop</option><option value="potholes">Potholes Challenge</option><option value="freeRoam">Free roam</option></select></label></div><div class="start-actions"><button class="primary" id="start-btn">START THE MORNING</button><button class="secondary" id="help-btn">HOW TO PLAY</button></div><div class="start-meta"><span>BANKED FUNDS <b id="wallet-balance">₦1,200</b></span><span id="daily-streak">Current streak: 0 day(s)</span></div><div class="start-extra"><button class="secondary" id="garage-btn">GARAGE · DRIVERS & PAINT</button><button class="secondary" id="daily-login-btn">CLAIM DAILY LOGIN</button></div><div class="credit">Game Developer: <b>Hassan Zakariya</b></div><div class="promo"><a href="https://ruffneck-entertainment.vercel.app" target="_blank" rel="noopener">RUFFNECK ENTERTAINMENT</a><span>·</span><a href="https://ruffneck-lms.vercel.app" target="_blank" rel="noopener">RUFFNECK LEARN</a></div></div>
+
+      <!-- Street events -->
+      <section
+        class="event-card hidden"
+        id="event-card"
+        role="dialog"
+        aria-modal="true"
+      >
+        <div class="eyebrow" id="event-kicker">
+          KANO STREET EVENT
+        </div>
+
+        <h2 id="event-title">Sannu!</h2>
+
+        <p id="event-copy"></p>
+
+        <div class="event-actions" id="event-actions"></div>
       </section>
-      <section class="screen hidden life-routine-screen" id="life-routine-screen" aria-labelledby="life-title">
-        <div class="life-routine-card">
-          <header class="life-routine-header">
-            <div><p class="eyebrow">KANO LIFE · A DRIVER'S DAY</p><p class="life-time" id="life-time">06:05 AM · KANO</p></div>
-            <div class="life-step-meta"><span id="life-step-label">STEP 1 OF 5</span><span class="life-progress"><i id="life-progress-fill"></i></span></div>
-          </header>
-          <div class="life-scene-art scene-bedroom" id="life-scene-art" aria-hidden="true">
-            <div class="art-sun"></div><div class="art-window"><i></i><i></i><i></i><i></i></div>
-            <div class="art-wall-clock"></div><div class="art-bed"><i></i><b></b></div><div class="art-nightstand"></div>
-            <div class="art-scene-sign">HOME COMPOUND · KANO</div>
+
+      <!-- Start screen -->
+      <section class="screen" id="start-screen">
+        <div class="start-card">
+
+          <div class="brand-mark">KL<span>+</span></div>
+
+          <p class="eyebrow">
+            NORTHERN NIGERIA · STREET LIFE
+          </p>
+
+          <h1>KANO <em>LIFE</em></h1>
+
+          <p class="subtitle">
+            Drive. Load. Negotiate. Survive.
+          </p>
+
+          <div class="keke-art" aria-hidden="true">
+            <span class="wheel w1"></span>
+            <span class="wheel w2"></span>
+            <span class="keke-roof"></span>
+            <span class="keke-body">NAPEP</span>
           </div>
+
+          <div class="start-fields">
+
+            <label>
+              ROUTE
+              <select id="route-select"></select>
+            </label>
+
+            <label>
+              DRIVER
+              <select id="driver-select"></select>
+            </label>
+
+            <label>
+              MODE
+              <select id="mode-select">
+                <option value="career">Career</option>
+                <option value="timeAttack">Time Attack</option>
+                <option value="fuel">Fuel Gauge Challenge</option>
+                <option value="matchDrop">Match Drop</option>
+                <option value="potholes">Potholes Challenge</option>
+                <option value="freeRoam">Free roam</option>
+              </select>
+            </label>
+
+          </div>
+
+          <div class="start-actions">
+            <button class="primary" id="start-btn" type="button">
+              START THE MORNING
+            </button>
+
+            <button class="secondary" id="help-btn" type="button">
+              HOW TO PLAY
+            </button>
+          </div>
+
+          <div class="start-meta">
+            <span>
+              BANKED FUNDS
+              <b id="wallet-balance">₦1,200</b>
+            </span>
+
+            <span id="daily-streak">
+              Current streak: 0 day(s)
+            </span>
+          </div>
+
+          <div class="start-extra">
+            <button
+              class="secondary"
+              id="garage-btn"
+              type="button"
+            >
+              GARAGE · DRIVERS &amp; PAINT
+            </button>
+
+            <button
+              class="secondary"
+              id="daily-login-btn"
+              type="button"
+            >
+              CLAIM DAILY LOGIN
+            </button>
+          </div>
+
+          <div class="credit">
+            Game Developer: <b>Hassan Zakariya</b>
+          </div>
+
+          <div class="promo">
+            <a
+              href="https://ruffneck-entertainment.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+            >RUFFNECK ENTERTAINMENT</a>
+
+            <span>·</span>
+
+            <a
+              href="https://ruffneck-lms.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+            >RUFFNECK LEARN</a>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Kano morning routine -->
+      <section
+        class="screen hidden life-routine-screen"
+        id="life-routine-screen"
+        aria-labelledby="life-title"
+      >
+        <div class="life-routine-card">
+
+          <header class="life-routine-header">
+
+            <div>
+              <p class="eyebrow">
+                KANO LIFE · A DRIVER'S DAY
+              </p>
+
+              <p class="life-time" id="life-time">
+                06:05 AM · KANO
+              </p>
+            </div>
+
+            <div class="life-step-meta">
+              <span id="life-step-label">STEP 1 OF 5</span>
+
+              <span class="life-progress">
+                <i id="life-progress-fill"></i>
+              </span>
+            </div>
+
+          </header>
+
+          <div
+            class="life-scene-art scene-bedroom"
+            id="life-scene-art"
+            aria-hidden="true"
+          >
+            <div class="art-sun"></div>
+
+            <div class="art-window">
+              <i></i>
+              <i></i>
+              <i></i>
+              <i></i>
+            </div>
+
+            <div class="art-wall-clock"></div>
+
+            <div class="art-bed">
+              <i></i>
+              <b></b>
+            </div>
+
+            <div class="art-nightstand"></div>
+
+            <div class="art-scene-sign">
+              HOME COMPOUND · KANO
+            </div>
+          </div>
+
           <div class="life-copy-wrap">
-            <h2 id="life-title">Morning has come.</h2>
-            <p id="life-copy">Wake up, wash, dress, and get ready for the day.</p>
-            <div class="life-detail" id="life-detail">A careful morning starts a better shift.</div>
+
+            <h2 id="life-title">
+              Morning has come.
+            </h2>
+
+            <p id="life-copy">
+              Wake up, wash, dress, and get ready for the day.
+            </p>
+
+            <div class="life-detail" id="life-detail">
+              A careful morning starts a better shift.
+            </div>
+
             <div class="life-actions" id="life-actions"></div>
-            <footer class="life-footer"><span id="life-wallet">Banked wallet · ₦1,200</span><span>Game Developer · Hassan Zakariya</span></footer>
+
+            <footer class="life-footer">
+              <span id="life-wallet">
+                Banked wallet · ₦1,200
+              </span>
+
+              <span>
+                Game Developer · Hassan Zakariya
+              </span>
+            </footer>
+
           </div>
         </div>
       </section>
-      <section class="screen hidden" id="menu-screen"><div class="panel"><button class="close-x" data-close="menu-screen">×</button><p class="eyebrow">PAUSE / SETTINGS</p><h2>Street menu</h2><div class="menu-grid"><button data-mode="career">Career</button><button data-mode="timeAttack">Time Attack</button><button data-mode="fuel">Fuel challenge</button><button data-mode="matchDrop">Match Drop</button><button data-mode="potholes">Potholes</button><button data-mode="freeRoam">Free roam</button></div><div class="setting-row"><label for="dialect-select">Street language</label><select id="dialect-select"><option value="hausa">Hausa</option><option value="yoruba">Yoruba</option><option value="igbo">Igbo</option></select></div><div class="setting-row"><label for="camera-select">Camera</label><select id="camera-select"><option value="chase">Chase</option><option value="driver">Driver view</option></select></div><div class="setting-row"><label for="road-select">Traffic direction</label><select id="road-select"><option value="oneway">One-way</option><option value="twoway">Two-way</option></select></div><div class="setting-row"><label for="mute-select">Sound</label><select id="mute-select"><option value="on">On</option><option value="off">Muted</option></select></div><div class="setting-row"><label for="quality-select">Rendering</label><select id="quality-select"><option value="auto">Auto 3D / 2D</option><option value="3d">Force 3D</option><option value="2d">Canvas 2D</option></select></div><div class="daily-board"><div class="daily-board-heading"><strong>DAILY MISSIONS · WAT</strong><small>Complete, then claim rewards</small></div><div id="daily-mission-list"></div></div><div class="menu-actions"><button id="radio-btn">CHANGE RADIO</button><button id="rank-btn">NAIJA RANK</button><button id="menu-garage-btn">GARAGE</button><button id="daily-login-btn-menu">CLAIM DAILY LOGIN</button><button id="resume-btn" class="primary">RESUME DRIVE</button></div></div></section>
-      <section class="screen hidden" id="garage-screen"><div class="panel garage-panel"><button class="close-x" data-close="garage-screen" aria-label="Close garage">×</button><p class="eyebrow">KEKE CUSTOMISATION</p><h2>Garage</h2><p class="garage-wallet-line">Banked wallet <strong id="garage-wallet">₦1,200</strong></p><h3>DRIVERS</h3><div class="garage-list" id="garage-drivers"></div><h3>PAINT JOBS</h3><div class="garage-list" id="garage-paints"></div><button class="primary full" data-close="garage-screen">BACK</button></div></section><section class="screen hidden" id="over-screen"><div class="panel over-panel"><p class="eyebrow">RUN REPORT</p><h2 id="over-title">Run complete</h2><div class="result-grid"><div><small>RUN SCORE</small><strong id="over-score">₦0</strong></div><div><small>DISTANCE</small><strong id="over-distance">0.00 km</strong></div><div><small>PASSENGERS DROPPED</small><strong id="over-drops">0</strong></div><div><small>BEST SCORE</small><strong id="over-best">₦0</strong></div></div><p id="over-message"></p><div id="tribe-standing" class="tribe-standing"></div><div class="menu-actions"><button id="continue-btn" class="primary hidden">USE LIFE SAVER</button><button id="again-btn" class="primary">DRIVE AGAIN</button><button id="home-btn">MAIN MENU</button></div></div></section>
-      <section class="screen hidden" id="help-screen"><div class="panel"><button class="close-x" data-close="help-screen">×</button><p class="eyebrow">QUICK GUIDE</p><h2>Drive Kano streets</h2><ul class="guide"><li><b>LEFT / RIGHT</b> — change lane. Swipe on the road or use arrow keys / A-D.</li><li><b>GAS</b> — accelerate. <b>BRAKE</b> — slow down to board and drop passengers.</li><li><b>GREEN PAD</b> — passenger pickup. <b>GOLD PAD</b> — passenger drop-off. Stop almost completely first.</li><li><b>FUEL</b> — stop on a fuel pad. Potholes damage tyres and vehicle condition.</li><li><b>KAROTA</b> — pay, talk, or run. Escaping raises heat.</li><li><b>SPACE</b> — brake; <b>H</b> — horn; <b>ESC</b> — menu.</li></ul><button class="primary full" data-close="help-screen">GOT IT</button></div></section>
-      <nav class="drive-controls" id="drive-controls" aria-label="Driving controls"><button class="control lane" data-action="left" aria-label="Steer left">←</button><button class="control lane" data-action="right" aria-label="Steer right">→</button><button class="control brake" data-action="brake">BRAKE</button><button class="control gas" data-action="gas">GAS</button><button class="control horn" data-action="horn" aria-label="Horn">HORN</button></nav>
-      <button class="menu-button" id="menu-btn" aria-label="Open game menu">☰</button>
+
+      <!-- Pause menu and settings -->
+      <section class="screen hidden" id="menu-screen">
+        <div class="panel">
+
+          <button
+            class="close-x"
+            data-close="menu-screen"
+            type="button"
+            aria-label="Close menu"
+          >×</button>
+
+          <p class="eyebrow">PAUSE / SETTINGS</p>
+
+          <h2>Street menu</h2>
+
+          <div class="menu-grid">
+            <button data-mode="career" type="button">Career</button>
+            <button data-mode="timeAttack" type="button">Time Attack</button>
+            <button data-mode="fuel" type="button">Fuel challenge</button>
+            <button data-mode="matchDrop" type="button">Match Drop</button>
+            <button data-mode="potholes" type="button">Potholes</button>
+            <button data-mode="freeRoam" type="button">Free roam</button>
+          </div>
+
+          <div class="setting-row">
+            <label for="dialect-select">Street language</label>
+
+            <select id="dialect-select">
+              <option value="hausa">Hausa</option>
+              <option value="yoruba">Yoruba</option>
+              <option value="igbo">Igbo</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <label for="camera-select">Camera</label>
+
+            <select id="camera-select">
+              <option value="chase">Chase</option>
+              <option value="driver">Driver view</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <label for="road-select">Traffic direction</label>
+
+            <select id="road-select">
+              <option value="oneway">One-way</option>
+              <option value="twoway">Two-way</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <label for="mute-select">Sound</label>
+
+            <select id="mute-select">
+              <option value="on">On</option>
+              <option value="off">Muted</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <label for="quality-select">Rendering</label>
+
+            <select id="quality-select">
+              <option value="auto">Auto 3D / 2D</option>
+              <option value="3d">Force 3D</option>
+              <option value="2d">Canvas 2D</option>
+            </select>
+          </div>
+
+          <div class="daily-board">
+
+            <div class="daily-board-heading">
+              <strong>DAILY MISSIONS · WAT</strong>
+              <small>Complete, then claim rewards</small>
+            </div>
+
+            <div id="daily-mission-list"></div>
+
+          </div>
+
+          <div class="menu-actions">
+            <button id="radio-btn" type="button">CHANGE RADIO</button>
+            <button id="rank-btn" type="button">NAIJA RANK</button>
+            <button id="menu-garage-btn" type="button">GARAGE</button>
+
+            <button id="daily-login-btn-menu" type="button">
+              CLAIM DAILY LOGIN
+            </button>
+
+            <button id="resume-btn" class="primary" type="button">
+              RESUME DRIVE
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Driver and paint garage -->
+      <section class="screen hidden" id="garage-screen">
+        <div class="panel garage-panel">
+
+          <button
+            class="close-x"
+            data-close="garage-screen"
+            type="button"
+            aria-label="Close garage"
+          >×</button>
+
+          <p class="eyebrow">KEKE CUSTOMISATION</p>
+
+          <h2>Garage</h2>
+
+          <p class="garage-wallet-line">
+            Banked wallet
+            <strong id="garage-wallet">₦1,200</strong>
+          </p>
+
+          <h3>DRIVERS</h3>
+
+          <div class="garage-list" id="garage-drivers"></div>
+
+          <h3>PAINT JOBS</h3>
+
+          <div class="garage-list" id="garage-paints"></div>
+
+          <button
+            class="primary full"
+            data-close="garage-screen"
+            type="button"
+          >BACK</button>
+
+        </div>
+      </section>
+
+      <!-- Run report -->
+      <section class="screen hidden" id="over-screen">
+        <div class="panel over-panel">
+
+          <p class="eyebrow">RUN REPORT</p>
+
+          <h2 id="over-title">Run complete</h2>
+
+          <div class="result-grid">
+
+            <div>
+              <small>RUN SCORE</small>
+              <strong id="over-score">₦0</strong>
+            </div>
+
+            <div>
+              <small>DISTANCE</small>
+              <strong id="over-distance">0.00 km</strong>
+            </div>
+
+            <div>
+              <small>PASSENGERS DROPPED</small>
+              <strong id="over-drops">0</strong>
+            </div>
+
+            <div>
+              <small>BEST SCORE</small>
+              <strong id="over-best">₦0</strong>
+            </div>
+
+          </div>
+
+          <p id="over-message"></p>
+
+          <div id="tribe-standing" class="tribe-standing"></div>
+
+          <div class="menu-actions">
+
+            <button
+              id="continue-btn"
+              class="primary hidden"
+              type="button"
+            >USE LIFE SAVER</button>
+
+            <button id="again-btn" class="primary" type="button">
+              DRIVE AGAIN
+            </button>
+
+            <button id="home-btn" type="button">
+              MAIN MENU
+            </button>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- Help and driving instructions -->
+      <section class="screen hidden" id="help-screen">
+        <div class="panel">
+
+          <button
+            class="close-x"
+            data-close="help-screen"
+            type="button"
+            aria-label="Close instructions"
+          >×</button>
+
+          <p class="eyebrow">QUICK GUIDE</p>
+
+          <h2>Drive Kano streets</h2>
+
+          <ul class="guide">
+            <li>
+              <b>LEFT / RIGHT</b> — change lane. Swipe on the road
+              or use the arrow keys / A-D.
+            </li>
+
+            <li>
+              <b>GAS</b> — accelerate forward.
+              <b>BRAKE</b> — slow down when driving forward.
+            </li>
+
+            <li>
+              <b>REVERSE</b> — engage reverse gear while nearly
+              stopped. Hold BRAKE to move backwards. Press GAS to
+              return to forward gear.
+            </li>
+
+            <li>
+              <b>GREEN PAD</b> — passenger pickup.
+              <b>GOLD PAD</b> — passenger drop-off.
+              Stop almost completely first.
+            </li>
+
+            <li>
+              <b>FUEL</b> — stop on a fuel pad. Potholes damage
+              tyres and vehicle condition.
+            </li>
+
+            <li>
+              <b>KAROTA</b> — pay, talk, or run. Escaping raises heat.
+            </li>
+
+            <li>
+              <b>SPACE</b> — brake; <b>H</b> — horn;
+              <b>ESC</b> — menu.
+            </li>
+          </ul>
+
+          <button
+            class="primary full"
+            data-close="help-screen"
+            type="button"
+          >GOT IT</button>
+
+        </div>
+      </section>
+
+      <!-- Touchscreen driving controls -->
+      <nav
+        class="drive-controls"
+        id="drive-controls"
+        aria-label="Driving controls"
+      >
+
+        <button
+          class="control lane"
+          data-action="left"
+          aria-label="Steer left"
+          type="button"
+        >←</button>
+
+        <button
+          class="control lane"
+          data-action="right"
+          aria-label="Steer right"
+          type="button"
+        >→</button>
+
+        <button
+          class="control brake"
+          data-action="brake"
+          aria-label="Brake or accelerate backwards while reverse gear is engaged"
+          type="button"
+        >BRAKE</button>
+
+        <button
+          class="control gas"
+          data-action="gas"
+          aria-label="Accelerate forward"
+          type="button"
+        >GAS</button>
+
+        <button
+          class="control reverse"
+          id="reverse-btn"
+          aria-label="Toggle reverse gear"
+          aria-pressed="false"
+          type="button"
+        >REVERSE</button>
+
+        <button
+          class="control horn"
+          data-action="horn"
+          aria-label="Sound horn"
+          type="button"
+        >HORN</button>
+
+      </nav>
+
+      <!-- Menu shortcut -->
+      <button
+        class="menu-button"
+        id="menu-btn"
+        aria-label="Open game menu"
+        type="button"
+      >☰</button>
+
     </div>
   </main>
+
   <script type="module" src="/js/main.js"></script>
 </body>
 </html>
