@@ -39,8 +39,74 @@ canvas,#c{display:block;width:100%;height:100%;min-height:50dvh;touch-action:non
 .stat{font-size:11px;padding:6px 8px}
 #controls{padding-bottom:max(16px, env(safe-area-inset-bottom));gap:6px}
 
-#mode-bar{top:148px!important;right:8px!important;left:auto!important;transform:none!important;flex-direction:column!important;align-items:flex-end!important;}
-#mode-bar .ctrl-btn{border-radius:8px!important;}
+
+
 @media (max-height:700px){
-  #mode-bar{top:130px!important;}
+  
+}
+
+/* ——— Mobile layout: keep road clear ——— */
+#minimap{
+  top: 132px !important;
+  left: 8px !important;
+  right: auto !important;
+  width: 56px !important;
+  height: 88px !important;
+  opacity: 0.92;
+}
+#mode-bar{
+  top: 132px !important;
+  right: 8px !important;
+  left: auto !important;
+  transform: none !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  gap: 4px !important;
+  z-index: 10 !important;
+}
+#mode-bar .ctrl-btn{
+  width: auto !important;
+  min-width: 52px !important;
+  height: 28px !important;
+  padding: 0 8px !important;
+  font-size: 0.58rem !important;
+  border-radius: 7px !important;
+}
+#controls{
+  padding: 6px 10px max(10px, env(safe-area-inset-bottom)) !important;
+  align-items: flex-end !important;
+  background: linear-gradient(to top, rgba(7,11,20,.97) 55%, transparent) !important;
+}
+#controls .ctrl-btn{
+  width: 48px !important;
+  height: 48px !important;
+  font-size: 0.7rem !important;
+}
+#controls .ctrl-btn.horn{
+  width: 56px !important;
+  height: 56px !important;
+  font-size: 0.62rem !important;
+}
+#controls #brake-btn,
+#controls #gas-btn{
+  width: 50px !important;
+  height: 50px !important;
+  font-size: 0.55rem !important;
+}
+#controls #left-btn,
+#controls #right-btn{
+  width: 44px !important;
+  height: 44px !important;
+}
+#controls #cam-btn,
+#controls #pause-btn,
+#controls #radio-btn{
+  width: 40px !important;
+  height: 40px !important;
+  font-size: 0.65rem !important;
+}
+/* Hide huge stacked labels on very small screens */
+@media (max-height: 720px) {
+  #driver-label{ font-size: 9px !important; }
+  #mission-label{ font-size: 10px !important; max-width: 55% !important; }
 }

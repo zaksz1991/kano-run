@@ -300,33 +300,51 @@ export class Renderer2D {
       ctx.fill();
     }
 
-    // Player keke
+    // Player keke (NAPEP-style tricycle, clear of controls)
     const lane = g.playerLane ?? 1;
-    const py = H * 0.78;
+    const py = H * 0.62;
     const px = laneX3(lane, py);
     const bounce = Math.sin((g.frame || 0) * 0.25) * 2 * dpr;
-    const kw = 52 * dpr;
-    const kh = 58 * dpr;
-    // shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    const kw = 48 * dpr;
+    const kh = 54 * dpr;
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
-    ctx.ellipse(px, py + 6 * dpr + bounce, kw * 0.45, 8 * dpr, 0, 0, Math.PI * 2);
+    ctx.ellipse(px, py + 8 * dpr + bounce, kw * 0.5, 7 * dpr, 0, 0, Math.PI * 2);
     ctx.fill();
-    // body
-    ctx.fillStyle = '#f5c542';
-    ctx.fillRect(px - kw / 2, py - kh * 0.55 + bounce, kw, kh * 0.5);
-    // canopy
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(px - kw * 0.42, py - kh * 0.95 + bounce, kw * 0.84, kh * 0.42);
-    // glass
-    ctx.fillStyle = 'rgba(56,189,248,0.75)';
-    ctx.fillRect(px - kw * 0.28, py - kh * 0.88 + bounce, kw * 0.35, kh * 0.28);
-    // wheels
-    ctx.fillStyle = '#1e293b';
+    // rear cabin (yellow)
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(px - kw * 0.48, py - kh * 0.5 + bounce, kw * 0.96, kh * 0.42);
+    // black canopy roof
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(px - kw * 0.5, py - kh * 0.92 + bounce, kw, kh * 0.38);
+    // roof edge
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(px - kw * 0.5, py - kh * 0.58 + bounce, kw, 4 * dpr);
+    // windshield
+    ctx.fillStyle = 'rgba(125,211,252,0.85)';
+    ctx.fillRect(px - kw * 0.22, py - kh * 0.85 + bounce, kw * 0.36, kh * 0.22);
+    // front nose
+    ctx.fillStyle = '#eab308';
+    ctx.fillRect(px - kw * 0.18, py - kh * 0.22 + bounce, kw * 0.36, kh * 0.2);
+    // handle bar
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 3 * dpr;
     ctx.beginPath();
-    ctx.arc(px - kw * 0.32, py - 2 + bounce, 9 * dpr, 0, Math.PI * 2);
-    ctx.arc(px + kw * 0.32, py - 2 + bounce, 9 * dpr, 0, Math.PI * 2);
-    ctx.arc(px, py - kh * 0.15 + bounce, 7 * dpr, 0, Math.PI * 2);
+    ctx.moveTo(px - kw * 0.2, py - kh * 0.18 + bounce);
+    ctx.lineTo(px + kw * 0.2, py - kh * 0.18 + bounce);
+    ctx.stroke();
+    // 3 wheels
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(px - kw * 0.38, py + bounce, 8 * dpr, 0, Math.PI * 2);
+    ctx.arc(px + kw * 0.38, py + bounce, 8 * dpr, 0, Math.PI * 2);
+    ctx.arc(px, py - kh * 0.08 + bounce, 7 * dpr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#64748b';
+    ctx.beginPath();
+    ctx.arc(px - kw * 0.38, py + bounce, 3 * dpr, 0, Math.PI * 2);
+    ctx.arc(px + kw * 0.38, py + bounce, 3 * dpr, 0, Math.PI * 2);
+    ctx.arc(px, py - kh * 0.08 + bounce, 2.5 * dpr, 0, Math.PI * 2);
     ctx.fill();
 
     // Banner
