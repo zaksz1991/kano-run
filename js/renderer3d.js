@@ -77,10 +77,20 @@ export class Renderer3D {
           if (this.headlightL.target) next.add(this.headlightL.target);
           if (this.headlightR.target) next.add(this.headlightR.target);
         }
-        this.scene.remove(this.player);
-        this.player = next;
-        this.scene.add(this.player);
-        console.log('[KanoRun] Player → keke.glb');
+        // Reject bus-sized "keke" impostors
+        next.updateMatrixWorld(true);
+        const pb = new THREE.Box3().setFromObject(next);
+        const ps = new THREE.Vector3();
+        pb.getSize(ps);
+        if (Math.max(ps.x, ps.z) > 3.2 || ps.y > 2.8) {
+          console.warn('[KanoRun] Player GLB too big — keep procedural keke', ps.toArray());
+        } else {
+          this.scene.remove(this.player);
+          this.player = next;
+          this.scene.add(this.player);
+          this.player.scale.setScalar(Math.min(1, 1.75 / Math.max(ps.y, 0.1)));
+          console.log('[KanoRun] Player → keke.glb', ps.toArray());
+        }
       } catch (e) {
         console.warn('keke upgrade failed', e);
       }
@@ -711,8 +721,8 @@ export class Renderer3D {
       for (const z of [22, 55, 95, 130]) {
         const fo = this._placeGlb('flyover', 0, z, {});
         if (fo) {
-          fo.position.y = Math.max(fo.position.y, 3.2);
-          fo.scale.multiplyScalar(1.15);
+          fo.position.y = Math.max(fo.position.y, 4.5);
+          fo.scale.multiplyScalar(0.35); // prevent sky-eating flyover kits
         }
       }
       for (let i = 0; i < 12; i++) {

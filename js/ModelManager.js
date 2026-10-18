@@ -121,11 +121,11 @@ const MODEL_MAP = {
 };
 
 const TARGET_HEIGHT = {
-  keke: 1.85, car: 1.4, taxi: 1.4, suv: 1.65, truck: 2.1,
-  motorcycle: 1.2, police: 1.45, karota: 1.5, bus: 2.4,
+  keke: 1.75, car: 1.35, taxi: 1.35, suv: 1.55, truck: 2.0,
+  motorcycle: 1.15, police: 1.4, karota: 1.45, bus: 2.2,
   ambulance: 1.7, robber: 1.85, bicycle: 0.9,
   pedestrian: 1.7, passenger: 1.7,
-  building: 5.5, market: 2.8, bustop: 2.2, bustation: 2.4,
+  building: 5.0, market: 2.8, bustop: 2.2, bustation: 2.4, flyover: 6.0, roadlight: 4.5,
   tree: 4, billboard: 3.5, bench: 0.6, trafficlight: 3.2
 };
 
@@ -187,9 +187,21 @@ export class ModelManager {
         root.updateMatrixWorld(true);
         const box3 = new THREE.Box3().setFromObject(root);
         box3.getSize(size);
-        if (size.y > 12 || size.x > 18 || size.z > 22) {
+        // Strict caps — giant "train/bus in sky" meshes get rejected
+        const maxY = key === 'flyover' ? 25 : key === 'building' ? 10 : 8;
+        const maxX = key === 'flyover' ? 40 : 12;
+        const maxZ = key === 'flyover' ? 40 : 14;
+        if (size.y > maxY || size.x > maxX || size.z > maxZ) {
           console.warn('[ModelManager] skip oversized', key, size.toArray());
           continue;
+        }
+        // Keke must be tricycle-ish, not bus-long
+        if (key === 'keke' || key === 'robber') {
+          const longest = Math.max(size.x, size.z);
+          if (longest > 4.5 || size.y < 0.8) {
+            console.warn('[ModelManager] skip non-keke aspect', key, size.toArray());
+            continue;
+          }
         }
         root.traverse((ch) => {
           if (ch.isMesh) {
