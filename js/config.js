@@ -3,16 +3,50 @@ export const DRIVERS=[
 {id:'ruffneck',name:'Ruffneck',blurb:'Balanced flagship driver. Better speed, fare and luck.',speedMod:1.08,fareMult:1.12,capacityMod:0,damageTakenMod:.95,flags:{luck:1.12}},
 {id:'baba',name:'Baba',blurb:'Veteran driver. Careful and takes less damage.',speedMod:.91,fareMult:1,capacityMod:0,damageTakenMod:.72,flags:{careful:true}},
 {id:'mama',name:'Mama',blurb:'Steady driver with trusted passenger service.',speedMod:.96,fareMult:1.08,capacityMod:0,damageTakenMod:.8,flags:{trust:1.15}},
-{id:'mayen-mata',name:'Mayen Mata',blurb:'Prioritises women passengers; bonus fare for women.',speedMod:.97,fareMult:1.04,capacityMod:0,damageTakenMod:.92,flags:{womenBonus:1.3}},
+{id:'mayen-mata',name:'Mayen Mata',blurb:'Prioritises women passengers; bonus fare for women.',price:1400,speedMod:.97,fareMult:1.04,capacityMod:0,damageTakenMod:.92,flags:{womenBonus:1.3}},
 {id:'uztaz',name:'Uztaz',blurb:'Measured driving, modest interactions, low scandal risk.',speedMod:.94,fareMult:1.03,capacityMod:0,damageTakenMod:.78,flags:{lowScandal:true}},
-{id:'dan-yaro',name:'Dan Yaro',blurb:'Bold youth: quicker acceleration, riskier repairs.',speedMod:1.13,fareMult:1.02,capacityMod:0,damageTakenMod:1.15,flags:{aggressive:true}},
-{id:'radio-lover',name:'Radio Lover',blurb:'Radio fan with a small fare bonus.',speedMod:1,fareMult:1.06,capacityMod:0,damageTakenMod:1,flags:{radioBonus:true}}
+{id:'dan-yaro',name:'Dan Yaro',blurb:'Bold youth: quicker acceleration, riskier repairs.',price:2200,speedMod:1.13,fareMult:1.02,capacityMod:0,damageTakenMod:1.15,flags:{aggressive:true}},
+{id:'radio-lover',name:'Radio Lover',blurb:'Radio fan with a small fare bonus.',price:1800,speedMod:1,fareMult:1.06,capacityMod:0,damageTakenMod:1,flags:{radioBonus:true}}
 ];
 export const RADIO=[{name:'Vision FM',freq:'92.1'},{name:'Rahama Radio',freq:'97.3'},{name:'Freedom Radio',freq:'99.5'},{name:'Cool FM Kano',freq:'96.9'},{name:'Arewa Radio',freq:'93.1'},{name:'Express Radio Kano',freq:'90.3'}];
 export const DIALECT={hausa:{greet:'Sannu! Ina za ka?',fare:'Ka rage farashin mana!',ok:'To, mu je.',fuel:'Man fetur ya kusa ƙarewa!',argue:'Yanzu wannan kuɗin ne?',thanks:'Nagode, Allah ya saka da alheri.'},yoruba:{greet:'Ẹ káàbọ̀! Ẹ n lọ síbo?',fare:'Ẹ jọ̀ọ́, dín owó kù!',ok:'Ó dáa, ẹ jẹ́ ká lọ.',fuel:'Epo ti fẹ́ tán!',argue:'Owó yìí kò tó o!',thanks:'Ẹ ṣé, ẹ kú iṣẹ́.'},igbo:{greet:'Nnọọ! Ebee ka ị na-aga?',fare:'Biko, belata ego!',ok:'Ọ dị mma, ka anyị gawa.',fuel:'Mmanụ ọkụ na-agwụ!',argue:'Ego a ezughị!',thanks:'Daalụ, i meela.'}};
 export const MODES={career:{label:'Career',target:Infinity},timeAttack:{label:'Time Attack',target:3.5},fuel:{label:'Fuel Gauge Challenge',target:4},matchDrop:{label:'Match Drop',target:Infinity},potholes:{label:'Potholes Challenge',target:3},freeRoam:{label:'Free roam',target:Infinity}};
 export const MISSION_POOL=[
-{id:'drops5',text:'Drop 5 passengers',target:5,key:'drops',reward:900},{id:'board5',text:'Board 5 passengers',target:5,key:'boards',reward:700},{id:'fares1500',text:'Earn ₦1,500 in fares',target:1500,key:'fares',reward:650},{id:'matched3',text:'Complete 3 matched drops',target:3,key:'matchedDrops',reward:850},{id:'near3',text:'Near-miss traffic 3 times',target:3,key:'nearMisses',reward:500},{id:'km2',text:'Drive 2 km',target:2,key:'distance',reward:600},{id:'karota1',text:'Resolve a KAROTA checkpoint',target:1,key:'checkpoints',reward:800},{id:'fuel1',text:'Refill at a fuel pad',target:1,key:'refills',reward:450},{id:'vip1',text:'Board a VIP passenger',target:1,key:'vip',reward:750},{id:'combo4',text:'Reach a 4x combo',target:4,key:'combo',reward:500},{id:'aishat',text:'Board Aishat and Hibba',target:1,key:'aishat',reward:1200},{id:'clean1',text:'Drive 1 km with condition above 80%',target:1,key:'cleanKm',reward:600}
+{id:'drops5',text:'Drop 5 passengers',target:5,key:'drops',reward:900},
+{id:'board5',text:'Board 5 passengers',target:5,key:'boards',reward:700},
+{id:'fares1500',text:'Earn ₦1,500 in fares',target:1500,key:'fares',reward:650},
+{id:'matched3',text:'Complete 3 destination-matched drops',target:3,key:'matchedDrops',reward:850},
+{id:'near3',text:'Near-miss traffic 3 times',target:3,key:'nearMisses',reward:500},
+{id:'km2',text:'Drive 2 km',target:2,key:'distance',reward:600},
+{id:'karota1',text:'Resolve a KAROTA checkpoint',target:1,key:'checkpoints',reward:800},
+{id:'karota3',text:'Resolve 3 KAROTA checkpoints',target:3,key:'checkpoints',reward:1200},
+{id:'fuel1',text:'Refill at a fuel pad',target:1,key:'refills',reward:450},
+{id:'fuel2',text:'Refill fuel twice',target:2,key:'refills',reward:800},
+{id:'vip1',text:'Board a VIP passenger',target:1,key:'vip',reward:750},
+{id:'vip2',text:'Board 2 VIP passengers',target:2,key:'vip',reward:1100},
+{id:'combo4',text:'Reach a 4x combo',target:4,key:'combo',reward:500},
+{id:'combo8',text:'Reach an 8x combo',target:8,key:'combo',reward:950},
+{id:'aishat',text:'Board Aishat and Hibba',target:1,key:'aishat',reward:1200},
+{id:'streak3',text:'Keep a Match Drop streak of 3',target:3,key:'streak',reward:800},
+{id:'near5',text:'Near-miss traffic 5 times',target:5,key:'nearMisses',reward:900},
+{id:'safeSpeed',text:'Hold 95 km/h without a crash for 12 seconds',target:12,key:'safeSpeedSeconds',reward:800},
+{id:'cleanRoad',text:'Drive 1.5 km without a vehicle collision',target:1.5,key:'noCollisionKm',reward:850},
+{id:'horn3',text:'Use the horn near traffic 3 times',target:3,key:'horns',reward:350},
+{id:'richDrama',text:'Resolve a rich-man vehicle drama',target:1,key:'richDramas',reward:1000},
+{id:'clean1',text:'Drive 1 km with condition above 80%',target:1,key:'cleanKm',reward:600},
+{id:'endFuel',text:'End the run with at least 30% fuel',target:1,key:'endFuel',terminal:'fuel',threshold:30,reward:600},
+{id:'endCondition',text:'End the run with 75% condition',target:1,key:'endCondition',terminal:'condition',threshold:75,reward:650},
+{id:'potholesClean',text:'Finish 3 km with fewer than 8 pothole hits',target:1,key:'potholesClean',terminal:'cleanPotholes',distance:3,maxHits:8,reward:900}
 ];
 export const ACHIEVEMENTS=[{id:'first-km',name:'First kilometre',test:s=>s.distance>=1},{id:'first-aishat',name:'Aishat & Hibba',test:s=>s.aishat>=1},{id:'first-gold',name:'Gold driver',test:s=>s.goldTimes>0},{id:'tribe-score',name:'Naija contender',test:s=>s.tribeSubmits>0}];
 export const PROMOS=[{label:'RuffNeck Entertainment',url:'https://ruffneck-entertainment.vercel.app'},{label:'RuffNeck Learn',url:'https://ruffneck-lms.vercel.app'}];
+
+export const PAINTS=[
+{id:'gold',name:'Kano Gold',color:'#f5c542',price:0,blurb:'The classic Adaidaita Sahu'},
+{id:'arewa-green',name:'Arewa Green',color:'#188b62',price:900,blurb:'Deep northern green'},
+{id:'desert-red',name:'Desert Red',color:'#b94235',price:1400,blurb:'Market-road red'},
+{id:'night-blue',name:'Night Blue',color:'#245a9a',price:1900,blurb:'Blue-hour finish'},
+{id:'clean-white',name:'Clean White',color:'#ece8dc',price:2400,blurb:'Fresh paint, careful driver'},
+{id:'royal-purple',name:'Royal Purple',color:'#7247a8',price:3200,blurb:'A standout custom paint'}
+];
+export const DAILY_MISSION_POOL=MISSION_POOL.filter(m=>['drops','boards','fares','matchedDrops','nearMisses','distance','checkpoints','refills','vip','combo','aishat','streak','richDramas','endFuel','endCondition','potholesClean'].includes(m.key));

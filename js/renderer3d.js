@@ -5,12 +5,53 @@ const VEHICLE_MODEL_KEY = {
   bus: 'bus', motorcycle: 'motorcycle', police: 'police', karota: 'karota',
 };
 
+/**
+ * Release resources owned by a scene subtree. GLB clones share cached geometry
+ * and textures, identified by userData.sharedGeometry on the clone root. Their
+ * cloned materials are still unique and safe to dispose when an actor is removed.
+ */
+function disposeSceneTree(root, { disposeTextures = false } = {}) {
+  if (!root) return;
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+
+  const visit = (object, inheritedSharedGeometry = false) => {
+    const sharedGeometry = inheritedSharedGeometry || object.userData?.sharedGeometry === true;
+    if (object.geometry && !sharedGeometry && !geometries.has(object.geometry)) {
+      geometries.add(object.geometry);
+      object.geometry.dispose();
+    }
+
+    const materialList = Array.isArray(object.material)
+      ? object.material
+      : object.material ? [object.material] : [];
+    for (const material of materialList) {
+      if (!material || materials.has(material)) continue;
+      materials.add(material);
+      if (disposeTextures && !sharedGeometry) {
+        for (const value of Object.values(material)) {
+          if (value?.isTexture && !textures.has(value)) {
+            textures.add(value);
+            value.dispose();
+          }
+        }
+      }
+      material.dispose();
+    }
+    for (const child of object.children || []) visit(child, sharedGeometry);
+  };
+
+  visit(root);
+}
+
 export class Renderer3D {
   constructor(canvas, models, { mobile = false } = {}) {
     this.canvas = canvas;
     this.models = models;
     this.mobile = mobile;
     this.ready = false;
+    this.disposed = false;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
     this.scene.fog = new THREE.Fog(0x8ccde5, 48, 195);
@@ -31,6 +72,12 @@ export class Renderer3D {
     this.trafficActors = new Map();
     this.zoneActors = new Map();
     this.laneDashes = [];
+    this.pedestrians = [];
+    this.streetLights = [];
+    this.roadProps = [];
+    this.buildingSlots = [];
+    this.flyoverFallback = null;
+    this.flyoverModelAdded = false;
     this.buildWorld();
     this.player = this.makeKeke();
     this.player.position.set(0, 0, 2);
@@ -46,11 +93,36 @@ export class Renderer3D {
     });
   }
 
+  loadOptionalTexture(url, material, repeat = [1, 1]) {
+    try {
+      const loader = new THREE.TextureLoader();
+      loader.load(url, (texture) => {
+        if (!this.ready || !this.scene) {
+          texture.dispose();
+          return;
+        }
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(repeat[0], repeat[1]);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        material.map = texture;
+        material.color.set(0xffffff);
+        material.needsUpdate = true;
+      }, undefined, () => {
+        // Textures are optional. The coloured asphalt material remains valid.
+      });
+    } catch {
+      // A missing or unsupported texture must never block the road renderer.
+    }
+  }
+
   buildWorld() {
-    const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(13, 250), this.material(0x343c43));
+    const asphaltMaterial = this.material(0x343c43);
+    const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(13, 250), asphaltMaterial);
     asphalt.rotation.x = -Math.PI / 2;
     asphalt.position.z = -92;
     this.world.add(asphalt);
+    this.loadOptionalTexture('/assets/environment/ground/asphalt.jpg', asphaltMaterial, [3, 64]);
 
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 270), this.material(0xa59a78));
     ground.rotation.x = -Math.PI / 2;
@@ -83,16 +155,20 @@ export class Renderer3D {
       const x = side * (9 + (index % 3) * 2.8);
       const height = 2.2 + (index % 4) * 0.7;
       const width = 2.8 + (index % 3) * 0.7;
+      const buildingGroup = new THREE.Group();
       const building = new THREE.Mesh(
         new THREE.BoxGeometry(width, height, 3),
         this.material(buildingColors[index % buildingColors.length]),
       );
-      building.position.set(x, height / 2, z);
-      this.world.add(building);
+      building.position.set(0, height / 2, 0);
+      buildingGroup.add(building);
       const roof = new THREE.Mesh(new THREE.BoxGeometry(width + 0.15, 0.15, 3.15), this.material(0x9d5740));
-      roof.position.set(x, height + 0.05, z);
-      this.world.add(roof);
-      this.addWindows(building, width, height, z, x);
+      roof.position.set(0, height + 0.05, 0);
+      buildingGroup.add(roof);
+      this.addWindows(buildingGroup, width, height);
+      buildingGroup.position.set(x, 0, z);
+      this.world.add(buildingGroup);
+      this.buildingSlots.push({ actor: buildingGroup, x, z, height, side, industrial: index % 6 === 3, replaced: false });
       if (index % 4 === 0) this.addBillboard(x - side * 1.5, 2.7, z + 1.75, index % 2 === 0);
     }
 
@@ -104,9 +180,12 @@ export class Renderer3D {
 
     this.addBillboard(-8.7, 3.1, -45, false);
     this.addBillboard(8.7, 3.1, -78, true);
+    this.buildFlyover();
+    this.buildSidewalkLife();
+    this.buildRoadsideProps();
   }
 
-  addWindows(building, width, height, z, x) {
+  addWindows(buildingGroup, width, height) {
     if (this.mobile) return;
     const count = Math.max(1, Math.floor(width / 0.8));
     for (let row = 0; row < Math.max(1, Math.floor(height / 1.2)); row += 1) {
@@ -115,14 +194,30 @@ export class Renderer3D {
           new THREE.PlaneGeometry(0.24, 0.32),
           this.material(0x4f7180),
         );
-        windowMesh.position.set(
-          x - width * 0.35 + col * 0.65,
-          0.6 + row * 0.9,
-          z + 1.51,
-        );
-        this.world.add(windowMesh);
+        windowMesh.position.set(-width * 0.35 + col * 0.65, 0.6 + row * 0.9, 1.51);
+        buildingGroup.add(windowMesh);
       }
     }
+  }
+
+  buildFlyover() {
+    if (this.mobile) return;
+    const group = new THREE.Group();
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(20, 0.62, 3.4), this.material(0x888d91));
+    deck.position.y = 4.25;
+    group.add(deck);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(20, 0.24, 0.2), this.material(0xb7b9b7));
+    rail.position.set(0, 4.68, -1.45);
+    group.add(rail);
+    for (const x of [-7.7, 7.7]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.2, 0.85), this.material(0x777e83));
+      pillar.position.set(x, 2.1, 0);
+      group.add(pillar);
+    }
+    group.position.set(0, 0, -116);
+    group.userData.proceduralFlyover = true;
+    this.world.add(group);
+    this.flyoverFallback = group;
   }
 
   addBillboard(x, y, z, green) {
@@ -132,6 +227,30 @@ export class Renderer3D {
       this.material(green ? 0x168b71 : 0xf5c542),
     );
     sign.add(board);
+    const signCanvas = document.createElement('canvas');
+    signCanvas.width = 640;
+    signCanvas.height = 210;
+    const signContext = signCanvas.getContext('2d');
+    signContext.fillStyle = green ? '#126c56' : '#172638';
+    signContext.fillRect(0, 0, signCanvas.width, signCanvas.height);
+    signContext.fillStyle = green ? '#f7d85a' : '#f6d45d';
+    signContext.font = '900 42px Arial, sans-serif';
+    signContext.textAlign = 'center';
+    signContext.fillText(green ? 'RUFFNECK LEARN' : 'RUFFNECK ENTERTAINMENT', 320, 78, 600);
+    signContext.fillStyle = '#ffffff';
+    signContext.font = '700 25px Arial, sans-serif';
+    signContext.fillText(green ? 'ruffneck-lms.vercel.app' : 'ruffneck-entertainment.vercel.app', 320, 135, 600);
+    signContext.fillStyle = '#b9d7e4';
+    signContext.font = '600 18px Arial, sans-serif';
+    signContext.fillText(green ? 'PRACTICAL AI & DIGITAL SKILLS' : 'KANO LIFE · MADE IN NIGERIA', 320, 176, 600);
+    const texture = new THREE.CanvasTexture(signCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const face = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.12, 0.91),
+      new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide }),
+    );
+    face.position.z = 0.066;
+    sign.add(face);
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.15, 0.09), this.material(0x495260));
     post.position.y = -1.05;
     sign.add(post);
@@ -140,9 +259,272 @@ export class Renderer3D {
     this.world.add(sign);
   }
 
+
+  buildSidewalkLife() {
+    const count = this.mobile ? 6 : 14;
+    const clothes = [0xf1e7ce, 0x2b8067, 0x99472e, 0x343d56, 0xdec15c, 0xb88fa8, 0x42749a];
+    const skinTones = [0x8d5537, 0x6d402d, 0xa66a45, 0x5a3528];
+    for (let index = 0; index < count; index += 1) {
+      const side = index % 2 === 0 ? -1 : 1;
+      const variant = index % 5;
+      const group = new THREE.Group();
+      const skin = this.material(skinTones[index % skinTones.length]);
+      const cloth = this.material(clothes[index % clothes.length]);
+      const accent = this.material(clothes[(index + 3) % clothes.length]);
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(variant === 1 ? 0.22 : 0.15, variant === 1 ? 0.30 : 0.23, 0.82, 8),
+        cloth,
+      );
+      body.position.y = 0.80;
+      group.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), skin);
+      head.position.y = 1.39;
+      group.add(head);
+      if (variant === 1 || variant === 4) {
+        const hijab = new THREE.Mesh(new THREE.SphereGeometry(0.215, 10, 8), accent);
+        hijab.scale.set(1, 1.22, 0.92);
+        hijab.position.set(0, 1.42, 0.015);
+        group.add(hijab);
+        const scarf = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.44, 8), accent);
+        scarf.position.set(0, 1.18, 0.02);
+        scarf.rotation.x = Math.PI;
+        group.add(scarf);
+      } else if (variant === 0) {
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.08, 10), accent);
+        cap.position.y = 1.55;
+        group.add(cap);
+      }
+      for (const armX of [-0.22, 0.22]) {
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.56, 6), cloth);
+        arm.position.set(armX, 0.90, 0);
+        arm.rotation.z = armX < 0 ? -0.12 : 0.12;
+        group.add(arm);
+      }
+      if (variant === 2 || variant === 3) {
+        for (const legX of [-0.095, 0.095]) {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.40, 6), accent);
+          leg.position.set(legX, 0.22, 0);
+          group.add(leg);
+        }
+      }
+      if (variant === 4) {
+        const basket = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 0.25), this.material(0x8b5934));
+        basket.position.set(side * 0.25, 0.16, 0.08);
+        group.add(basket);
+      }
+      group.scale.setScalar(index % 3 === 0 ? 0.94 : 0.82);
+      const z = -5 - index * (this.mobile ? 27 : 15);
+      group.position.set(side * (7.0 + (index % 3) * 0.45), 0, z);
+      group.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+      group.userData.fallbackPedestrian = true;
+      this.world.add(group);
+      this.pedestrians.push({ index, side, actor: group, usingModel: false });
+    }
+
+    if (!this.mobile) {
+      for (let index = 0; index < 6; index += 1) {
+        for (const side of [-1, 1]) {
+          const pole = new THREE.Group();
+          const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 4.1, 8), this.material(0x48505a));
+          stem.position.y = 2.05;
+          pole.add(stem);
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.07, 0.07), this.material(0x48505a));
+          arm.position.set(-side * 0.22, 4.05, 0);
+          pole.add(arm);
+          const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.12, 0.24), this.material(0xf3e2a1));
+          lamp.position.set(-side * 0.48, 4.00, 0);
+          pole.add(lamp);
+          pole.position.set(side * 7.6, 0, -24 - index * 34);
+          pole.userData.proceduralStreetLight = true;
+          this.world.add(pole);
+          this.streetLights.push(pole);
+        }
+      }
+    }
+  }
+
+  buildRoadsideProps() {
+    const types = ['marketStall', 'bench', 'busStop', 'trafficLight', 'stopSign'];
+    const count = this.mobile ? 5 : 10;
+    const colors = [0x168c70, 0xf0be42, 0xb54b36, 0x6e7f90, 0xd7c8a5];
+    for (let index = 0; index < count; index += 1) {
+      const key = types[index % types.length];
+      const side = index % 2 === 0 ? -1 : 1;
+      const x = side * (key === 'marketStall' || key === 'busStop' ? 7.05 : 7.2);
+      const z = -35 - Math.floor(index / 2) * (this.mobile ? 75 : 44);
+      const group = new THREE.Group();
+      const postMaterial = this.material(0x554637);
+      const accent = this.material(colors[index % colors.length]);
+
+      if (key === 'bench') {
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.12, 0.36), accent);
+        seat.position.y = 0.42;
+        group.add(seat);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.46, 0.10), accent);
+        back.position.set(0, 0.68, -0.14);
+        group.add(back);
+        for (const legX of [-0.48, 0.48]) {
+          const leg = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.38, 0.10), postMaterial);
+          leg.position.set(legX, 0.20, 0);
+          group.add(leg);
+        }
+      } else if (key === 'marketStall') {
+        for (const postX of [-0.80, 0.80]) {
+          for (const postZ of [-0.48, 0.48]) {
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.075, 1.75, 0.075), postMaterial);
+            post.position.set(postX, 0.88, postZ);
+            group.add(post);
+          }
+        }
+        const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.13, 1.2), accent);
+        canopy.position.y = 1.83;
+        group.add(canopy);
+        const counter = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.16, 0.52), this.material(0xb88a59));
+        counter.position.set(0, 0.83, 0.28);
+        group.add(counter);
+        const crates = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.25, 0.30), this.material(0x7a512f));
+        crates.position.set(-0.45, 0.55, -0.05);
+        group.add(crates);
+      } else if (key === 'busStop') {
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.14, 1.3), accent);
+        roof.position.y = 2.42;
+        group.add(roof);
+        for (const postX of [-0.86, 0.86]) {
+          const post = new THREE.Mesh(new THREE.BoxGeometry(0.10, 2.35, 0.10), postMaterial);
+          post.position.set(postX, 1.18, 0);
+          group.add(post);
+        }
+        const bench = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.10, 0.35), this.material(0x9b7048));
+        bench.position.set(0, 0.52, -0.20);
+        group.add(bench);
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.32, 0.08), this.material(0x172a3a));
+        sign.position.set(0, 1.98, 0.05);
+        group.add(sign);
+      } else if (key === 'trafficLight') {
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 3.3, 8), postMaterial);
+        stem.position.y = 1.65;
+        group.add(stem);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.44, 1.12, 0.35), this.material(0x242d35));
+        head.position.set(0, 2.65, 0.02);
+        group.add(head);
+        for (const [lightY, color] of [[3.00, 0xdf4a3d], [2.66, 0xf2bd3c], [2.31, 0x39bf75]]) {
+          const light = new THREE.Mesh(new THREE.SphereGeometry(0.105, 8, 6), this.material(color));
+          light.position.set(0, lightY, 0.21);
+          group.add(light);
+        }
+      } else {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 1.85, 7), postMaterial);
+        post.position.y = 0.92;
+        group.add(post);
+        const sign = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.09, 8), this.material(0xc94a3b));
+        sign.rotation.x = Math.PI / 2;
+        sign.position.set(0, 1.65, 0.02);
+        group.add(sign);
+        const face = new THREE.Mesh(new THREE.CircleGeometry(0.26, 8), this.material(0xf4e6cf));
+        face.position.set(0, 1.65, 0.075);
+        group.add(face);
+      }
+
+      group.position.set(x, 0, z);
+      group.rotation.y = side < 0 ? 0.10 : -0.10;
+      group.userData.proceduralRoadProp = true;
+      this.world.add(group);
+      this.roadProps.push({ key, actor: group, replaced: false, targetHeight: ({ bench: 0.72, busStop: 3, trafficLight: 3.8, stopSign: 2.1, marketStall: 2.45 })[key] });
+    }
+  }
+
+  upgradeWorldAssets() {
+    if (!this.models || this.mobile) return;
+
+    for (const slot of this.buildingSlots) {
+      if (slot.replaced) continue;
+      const key = slot.industrial ? 'industrialBuilding' : 'building';
+      if (!this.models.cache.has(key)) continue;
+      const model = this.models.getInstance(key);
+      if (!model) continue;
+      const normalizedHeight = model.userData.targetHeight || (slot.industrial ? 5.2 : 4.5);
+      model.scale.multiplyScalar(slot.height / normalizedHeight);
+      model.position.set(slot.x, 0, slot.z);
+      model.rotation.y = slot.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+      this.world.remove(slot.actor);
+      disposeSceneTree(slot.actor);
+      this.world.add(model);
+      slot.actor = model;
+      slot.replaced = true;
+    }
+
+    if (this.flyoverFallback && !this.flyoverModelAdded && this.models.cache.has('flyover')) {
+      const model = this.models.getInstance('flyover');
+      if (model) {
+        model.position.copy(this.flyoverFallback.position);
+        const bounds = new THREE.Box3().setFromObject(model);
+        const size = bounds.getSize(new THREE.Vector3());
+        if (size.x > 0 && size.x < 15) model.scale.x *= 15 / size.x;
+        this.world.remove(this.flyoverFallback);
+        disposeSceneTree(this.flyoverFallback);
+        this.world.add(model);
+        this.flyoverFallback = null;
+        this.flyoverModelAdded = true;
+      }
+    }
+
+    if (this.models.cache.has('roadlight')) {
+      for (let index = 0; index < this.streetLights.length; index += 1) {
+        const old = this.streetLights[index];
+        if (!old.userData.proceduralStreetLight) continue;
+        const model = this.models.getInstance('roadlight');
+        if (!model) continue;
+        model.position.copy(old.position);
+        model.scale.multiplyScalar(4.1 / (model.userData.targetHeight || 4.2));
+        this.world.remove(old);
+        disposeSceneTree(old);
+        this.world.add(model);
+        this.streetLights[index] = model;
+      }
+    }
+
+    for (const slot of this.roadProps) {
+      if (slot.replaced || !this.models.cache.has(slot.key)) continue;
+      const model = this.models.getInstance(slot.key);
+      if (!model) continue;
+      const normalizedHeight = model.userData.targetHeight || slot.targetHeight;
+      model.scale.multiplyScalar(slot.targetHeight / normalizedHeight);
+      model.position.copy(slot.actor.position);
+      model.rotation.copy(slot.actor.rotation);
+      model.userData.roadPropKey = slot.key;
+      this.world.remove(slot.actor);
+      disposeSceneTree(slot.actor);
+      this.world.add(model);
+      slot.actor = model;
+      slot.replaced = true;
+    }
+  }
+
+  upgradePedestrians() {
+    if (!this.models || !this.pedestrians.length) return;
+    const modelKey = this.models.cache.has('pedestrian') ? 'pedestrian'
+      : this.models.cache.has('passenger') ? 'passenger' : null;
+    if (!modelKey) return;
+    for (const pedestrian of this.pedestrians) {
+      if (pedestrian.usingModel || pedestrian.index % 3 !== 0) continue;
+      const model = this.models.getInstance(modelKey);
+      if (!model) continue;
+      model.position.copy(pedestrian.actor.position);
+      model.rotation.y = pedestrian.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+      model.userData.fallback = false;
+      model.userData.characterType = 'pedestrian';
+      this.world.remove(pedestrian.actor);
+      disposeSceneTree(pedestrian.actor);
+      this.world.add(model);
+      pedestrian.actor = model;
+      pedestrian.usingModel = true;
+    }
+  }
+
   makeKeke() {
     const group = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.65, 1.85), this.material(0xf5c542));
+    body.userData.paintable = true;
     body.position.y = 0.8;
     group.add(body);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 1.2), this.material(0x1d2a3a));
@@ -159,14 +541,24 @@ export class Renderer3D {
     );
     windshield.position.set(0, 1.16, -0.86);
     group.add(windshield);
-    for (const x of [-0.56, 0.56]) {
-      for (const z of [-0.6, 0.65]) {
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.15, 12), this.material(0x121820));
-        wheel.rotation.z = Math.PI / 2;
-        wheel.position.set(x, 0.28, z);
-        group.add(wheel);
-      }
+    // Adaidaita Sahu geometry: one steerable front wheel and two rear wheels.
+    const wheelSpots = [[0, -0.73], [-0.56, 0.62], [0.56, 0.62]];
+    for (const [x, z] of wheelSpots) {
+      const wheel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.24, 0.15, 12),
+        this.material(0x121820),
+      );
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, 0.28, z);
+      group.add(wheel);
     }
+    const frontFork = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.62, 8), this.material(0x7a8794));
+    frontFork.position.set(0, 0.61, -0.71);
+    frontFork.rotation.x = -0.22;
+    group.add(frontFork);
+    const headlamp = new THREE.Mesh(new THREE.SphereGeometry(0.095, 8, 8), this.material(0xffedb5));
+    headlamp.position.set(0, 0.91, -0.96);
+    group.add(headlamp);
     group.userData.fallback = true;
     return group;
   }
@@ -178,9 +570,59 @@ export class Renderer3D {
     object.rotation.z = old.rotation.z;
     object.userData.fallback = false;
     this.scene.remove(old);
+    disposeSceneTree(old);
     this.scene.add(object);
     this.player = object;
+    this.lastPaint = null;
     return true;
+  }
+
+  applyPlayerPaint(paint) {
+    const color = typeof paint === 'string' && /^#[0-9a-f]{6}$/i.test(paint) ? paint : '#f5c542';
+    if (!this.player || this.lastPaint === color) return;
+
+    const paintable = [];
+    const namedPaintPart = /body|paint|shell|chassis|outer|cover|hood|fender|side.?panel|cowl/i;
+    this.player.traverse((object) => {
+      if (!object.isMesh || !object.material) return;
+      const materialList = Array.isArray(object.material) ? object.material : [object.material];
+      const identity = `${object.name || ''} ${materialList.map((material) => material?.name || '').join(' ')}`;
+      if (object.userData.paintable || namedPaintPart.test(identity)) paintable.push(object);
+    });
+
+    // Many GLB packs merge the painted shell into one unnamed mesh. In that
+    // case tint only the largest plausible non-glass/non-wheel mesh, never all
+    // vehicle materials at once.
+    if (!paintable.length && !this.player.userData.fallback) {
+      let largest = null;
+      let largestVolume = 0;
+      this.player.traverse((object) => {
+        if (!object.isMesh || !object.geometry) return;
+        const identity = `${object.name || ''} ${(Array.isArray(object.material) ? object.material : [object.material]).map((material) => material?.name || '').join(' ')}`;
+        if (/wheel|tire|tyre|glass|window|lamp|light|rubber/i.test(identity)) return;
+        if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+        const box = object.geometry.boundingBox;
+        if (!box) return;
+        const size = box.getSize(new THREE.Vector3());
+        const volume = size.x * size.y * size.z;
+        if (Number.isFinite(volume) && volume > largestVolume) {
+          largest = object;
+          largestVolume = volume;
+        }
+      });
+      if (largest) paintable.push(largest);
+    }
+
+    for (const object of paintable) {
+      const materialList = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materialList) {
+        if (material?.color) {
+          material.color.set(color);
+          material.needsUpdate = true;
+        }
+      }
+    }
+    this.lastPaint = color;
   }
 
   resize() {
@@ -252,14 +694,27 @@ export class Renderer3D {
           actor.add(pump);
         }
         actor.userData.zoneType = zone.type;
+        actor.userData.propKey = zone.prop || null;
+        actor.userData.propAdded = false;
         this.world.add(actor);
         this.zoneActors.set(zone.id, actor);
+      }
+      actor.userData.propKey = zone.prop || actor.userData.propKey || null;
+      if (actor.userData.propKey && !actor.userData.propAdded && this.models?.cache.has(actor.userData.propKey)) {
+        const prop = this.models.getInstance(actor.userData.propKey);
+        if (prop) {
+          prop.scale.multiplyScalar(actor.userData.propKey === 'cone' ? 0.7 : 0.42);
+          prop.position.set(actor.userData.propKey === 'cone' ? 0.82 : -0.82, 0.03, -0.15);
+          actor.add(prop);
+          actor.userData.propAdded = true;
+        }
       }
       actor.position.set((zone.lane - 1) * 3, 0.035, -Math.max(-0.05, zone.depth) * 88);
     }
     for (const [id, actor] of this.zoneActors) {
       if (!activeIds.has(id)) {
         this.world.remove(actor);
+        disposeSceneTree(actor);
         this.zoneActors.delete(id);
       }
     }
@@ -288,17 +743,21 @@ export class Renderer3D {
           model.position.copy(actor.position);
           model.rotation.copy(actor.rotation);
           this.world.remove(actor);
+          disposeSceneTree(actor);
           this.world.add(model);
           this.trafficActors.set(vehicle.id, model);
           actor = model;
         }
       }
       actor.position.set((vehicle.lane - 1) * 3, 0, -Math.max(-0.05, vehicle.depth) * 88);
-      actor.rotation.y = Math.PI;
+      actor.rotation.y = vehicle.direction === -1
+        ? (actor.userData.fallback ? Math.PI : 0)
+        : (actor.userData.fallback ? 0 : Math.PI);
     }
     for (const [id, actor] of this.trafficActors) {
       if (!activeIds.has(id)) {
         this.world.remove(actor);
+        disposeSceneTree(actor);
         this.trafficActors.delete(id);
       }
     }
@@ -309,6 +768,8 @@ export class Renderer3D {
     const dt = Math.min(Math.max(deltaSeconds || 0, 0), 0.05);
     this.syncZones(state);
     this.syncTraffic(state);
+    this.upgradeWorldAssets();
+    this.upgradePedestrians();
     const sky = state.night ? 0x26334a : state.environment === 'harmattan' ? 0xb5b2a3 : 0x8ccde5;
     this.scene.background.set(sky);
     this.scene.fog.color.set(state.night ? 0x374256 : state.environment === 'harmattan' ? 0xb5b2a3 : 0x8ccde5);
@@ -319,8 +780,21 @@ export class Renderer3D {
     this.player.position.x += (laneX - this.player.position.x) * Math.min(1, dt * 8);
     this.player.rotation.z = -state.steer * 0.075;
     this.player.position.y = Math.sin(state.distance * 2.2) * 0.025;
+    this.applyPlayerPaint(state.paint);
 
     const scroll = state.speed * dt * 0.48;
+    for (const pedestrian of this.pedestrians) {
+      pedestrian.actor.position.z += scroll * 0.72;
+      if (pedestrian.actor.position.z > 6) pedestrian.actor.position.z -= 200;
+    }
+    for (const pole of this.streetLights) {
+      pole.position.z += scroll;
+      if (pole.position.z > 9) pole.position.z -= 245;
+    }
+    for (const slot of this.roadProps) {
+      slot.actor.position.z += scroll * 0.88;
+      if (slot.actor.position.z > 9) slot.actor.position.z -= 245;
+    }
     for (const dash of this.laneDashes) {
       dash.position.z += scroll;
       if (dash.position.z > 8) dash.position.z -= 250;
@@ -336,8 +810,13 @@ export class Renderer3D {
   }
 
   dispose() {
-    if (!this.renderer) return;
+    if (!this.renderer || this.disposed) return;
+    this.disposed = true;
     this.ready = false;
+    // First release clone-owned materials and procedural scene resources; then
+    // release the cache-owned GLB geometries and textures exactly once.
+    disposeSceneTree(this.scene, { disposeTextures: true });
+    this.models?.dispose?.();
     try { this.renderer.renderLists?.dispose?.(); } catch { /* renderer version fallback */ }
     this.renderer.dispose();
     try { this.renderer.forceContextLoss(); } catch { /* some browsers omit this API */ }

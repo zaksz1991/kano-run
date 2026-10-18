@@ -1,9 +1,9 @@
 import {
-  ROUTES, DRIVERS, RADIO, DIALECT, MODES, MISSION_POOL, ACHIEVEMENTS,
+  ROUTES, DRIVERS, RADIO, DIALECT, MODES, MISSION_POOL, DAILY_MISSION_POOL, ACHIEVEMENTS,
 } from './config.js';
 import {
-  save, persist, bankRun, submitTribe, tribeStanding, claimDaily,
-  updateBestTime, unlockAchievement,
+  save, persist, bankRun, submitTribe, tribeStanding,
+  updateBestTime, unlockAchievement, dailyLoginStatus, addDailyMissionProgress,
 } from './storage.js';
 
 const randomBetween = (min, max) => min + Math.random() * (max - min);
@@ -12,6 +12,13 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const VALID_MODES = new Set([
   'career', 'timeAttack', 'fuel', 'matchDrop', 'potholes', 'freeRoam',
+]);
+
+// These mission keys describe events or totals earned over the run. Their
+// values are increments; all other keys are peak/current-value objectives.
+const ADDITIVE_MISSION_KEYS = new Set([
+  'drops', 'boards', 'fares', 'matchedDrops', 'nearMisses', 'checkpoints',
+  'refills', 'vip', 'aishat', 'horns', 'richDramas',
 ]);
 
 export class Game {
@@ -49,6 +56,12 @@ export class Game {
       vip: 0,
       aishat: 0,
       combo: 0,
+      streak: 0,
+      horns: 0,
+      richDramas: 0,
+      collisions: 0,
+      cleanDistance: 0,
+      safeSpeedSeconds: 0,
       heat: 0,
       lives: 3,
       continues: 0,
@@ -69,7 +82,6 @@ export class Game {
       missions: [],
       event: null,
       invuln: 0,
-      streak: 0,
       runEnded: false,
       radio: RADIO[save.radioIndex % RADIO.length] || RADIO[0],
       dialect: DIALECT[save.dialect] ? save.dialect : 'hausa',
@@ -85,7 +97,11 @@ export class Game {
       lifeEventTimer: randomBetween(45, 75),
       eventCooldown: 0,
       environment: 'clear',
+      environmentDuration: 0,
+      roadMode: save.roadMode || 'oneway',
       runStartedAt: 0,
+      lastDailyDistance: 0,
+      lastDailyCombo: 0,
     };
     this.spawnInitial();
     this.chooseMissions();
@@ -99,14 +115,15 @@ export class Game {
 
   spawnZone(initialIndex = null) {
     const roll = Math.random();
-    const type = roll < 0.43 ? 'pickup'
-      : roll < 0.76 ? 'drop'
-        : roll < 0.89 ? 'fuel' : 'pothole';
+    let type;
+    if (this.s.environment === 'market' && roll < 0.60) type = 'pickup';
+    else if (this.s.environment === 'fuelQueue') type = roll < 0.43 ? 'pickup' : roll < 0.78 ? 'drop' : roll < 0.83 ? 'fuel' : 'pothole';
+    else type = roll < 0.43 ? 'pickup' : roll < 0.76 ? 'drop' : roll < 0.89 ? 'fuel' : 'pothole';
     const hub = type === 'pickup' && Math.random() < 0.22;
     const lane = type === 'pickup' && !hub
       ? (Math.random() < 0.5 ? 0 : 2)
       : type === 'pickup' && hub ? 1 : Math.floor(randomBetween(0, 3));
-    const dest = choose(ROUTES).name;
+    const dest = this.chooseZoneDestination(type);
     const seats = type === 'pickup' ? (hub ? Math.floor(randomBetween(2, 5)) : 1) : 0;
     const depth = Number.isInteger(initialIndex)
       ? 0.36 + initialIndex * 0.17
@@ -124,9 +141,18 @@ export class Game {
     });
   }
 
+  chooseZoneDestination(type) {
+    if (type === 'drop' && this.s.passengers.length) {
+      const matchChance = this.mode === 'matchDrop' ? 0.82 : 0.68;
+      if (Math.random() < matchChance) return choose(this.s.passengers).dest;
+    }
+    if (type === 'drop' && Math.random() < 0.58) return this.route.name;
+    return choose(ROUTES).name;
+  }
+
   spawnTraffic(initialIndex = null) {
-    const types = ['keke', 'car', 'taxi', 'suv', 'motorcycle'];
-    if (!this.mobile) types.push('truck', 'bus', 'karota', 'police');
+    const types = ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police'];
+    if (!this.mobile) types.push('truck', 'bus', 'karota');
     const type = choose(types);
     const lane = Math.floor(randomBetween(0, 3));
     const depth = Number.isInteger(initialIndex)
@@ -136,6 +162,7 @@ export class Game {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       type,
       lane,
+      direction: this.s.roadMode === 'twoway' && lane === 0 ? -1 : 1,
       depth,
       color: choose(['#e4c24e', '#d7e1e9', '#bd5142', '#3983b9', '#36404d', '#f2f2f2']),
       passed: false,
@@ -168,10 +195,17 @@ export class Game {
   }
 
   checkDaily() {
-    const daily = claimDaily();
-    if (daily.ok) {
-      this.ui.toast(`Daily reward: ₦${daily.reward.toLocaleString()} · streak ${daily.streak} day(s)`);
+    dailyLoginStatus();
+    this.ui.refreshDailyLogin?.();
+    this.ui.refreshDailyMissions?.();
+  }
+
+  dailyAdd(key, amount) {
+    const newlyReady = addDailyMissionProgress(key, amount, DAILY_MISSION_POOL);
+    for (const mission of newlyReady) {
+      this.ui.toast(`DAILY MISSION READY · ${mission.text} · claim ₦${mission.reward.toLocaleString()} in the menu`);
     }
+    if (newlyReady.length) this.ui.refreshDailyMissions?.();
   }
 
   setMode(mode) {
@@ -207,6 +241,7 @@ export class Game {
       && Math.abs(vehicle.lane - (this.s.targetLane + 1)) <= 1
     ));
     if (close) {
+      this.s.horns += 1;
       this.ui.toast(this.s.dialect === 'hausa' ? 'Peeep! Ka ji ƙaho!' : 'Horn sounded!');
       this.missionAdd('horns', 1);
     }
@@ -217,6 +252,9 @@ export class Game {
       this.state = 'MENU';
       this.s.gas = false;
       this.s.brake = false;
+      this.audio.engine(0);
+      this.ui.refreshDailyLogin?.();
+      this.ui.refreshDailyMissions?.();
       this.ui.show('menu-screen');
     } else if (this.state === 'MENU') {
       this.state = 'PLAY';
@@ -244,8 +282,15 @@ export class Game {
     const acceleration = s.brake ? 7.5 : s.gas ? 3.25 : 1.65;
     s.speed += (desiredSpeed - s.speed) * Math.min(1, acceleration * dt);
     if (s.brake) s.speed = Math.max(0, s.speed - 36 * dt);
-    s.steer += (s.targetLane - s.steer) * Math.min(1, dt * 7.5);
+    const steeringRate = s.environment === 'muddy' ? 4.2 : 7.5;
+    s.steer += (s.targetLane - s.steer) * Math.min(1, dt * steeringRate);
+    if (s.environment === 'muddy') s.speed = Math.min(s.speed, 92 * (this.driver.speedMod || 1));
     s.distance += (s.speed / 3600) * dt;
+    const distanceSteps = Math.floor(s.distance * 10) - Math.floor(s.lastDailyDistance * 10);
+    if (distanceSteps > 0) {
+      this.dailyAdd('distance', distanceSteps / 10);
+      s.lastDailyDistance = Math.floor(s.distance * 10) / 10;
+    }
     s.night = (Math.floor(s.elapsed / 52) % 2) === 1;
     s.level = 1 + Math.floor(s.distance / 1.5);
 
@@ -265,13 +310,28 @@ export class Game {
       }
     }
 
+    if (s.environment !== 'clear') {
+      s.environmentDuration = Math.max(0, s.environmentDuration - dt);
+      if (s.environmentDuration === 0) s.environment = 'clear';
+    }
+
     if (s.condition <= 0 || s.engine <= 0 || s.tyres <= 0) {
       this.endRun('Keke breakdown');
       return;
     }
 
     this.moveZones(dt);
+    const collisionsBeforeTraffic = s.collisions;
     this.moveTraffic(dt);
+    if (s.collisions === collisionsBeforeTraffic) {
+      s.cleanDistance += Math.max(0, s.speed / 3600) * dt;
+      s.safeSpeedSeconds = s.speed >= 95 ? s.safeSpeedSeconds + dt : 0;
+    } else {
+      s.cleanDistance = 0;
+      s.safeSpeedSeconds = 0;
+    }
+    this.missionAdd('noCollisionKm', s.cleanDistance);
+    this.missionAdd('safeSpeedSeconds', s.safeSpeedSeconds);
     if (this.state !== 'PLAY') return;
     this.updateEnvironment(dt);
     this.checkProgress(dt);
@@ -305,6 +365,13 @@ export class Game {
       const zone = s.zones[index];
       const aligned = zone.lane === laneIndex;
       const inInteractionRange = zone.depth <= 0.23 && zone.depth >= 0.12;
+
+      if (zone.type === 'pothole' && aligned && inInteractionRange) {
+        this.hitPothole(zone);
+        s.zones.splice(index, 1);
+        this.spawnZone();
+        continue;
+      }
 
       if (aligned && inInteractionRange && zone.type !== 'pothole') {
         if (s.speed > 8.5) {
@@ -345,6 +412,7 @@ export class Game {
     }
     s.fuel = Math.min(100, s.fuel + 42);
     s.refills += 1;
+    this.dailyAdd('refills', 1);
     s.refillCooldown = 3;
     this.missionAdd('refills', 1);
     this.ui.toast('Fuel filled · Alhamdulillah');
@@ -352,12 +420,26 @@ export class Game {
     return true;
   }
 
+  hitPothole() {
+    const s = this.s;
+    s.potholeHits += 1;
+    s.tyres = Math.max(0, s.tyres - 14 * (this.driver.damageTakenMod || 1));
+    s.condition = Math.max(0, s.condition - 4 * (this.driver.damageTakenMod || 1));
+    s.engine = Math.max(0, s.engine - 2);
+    s.speed *= 0.72;
+    s.steer = clamp(s.steer + (Math.random() < 0.5 ? -0.12 : 0.12), -1, 1);
+    this.audio.beep?.(105, 0.14);
+    this.ui.toast(`POTHOLE! Tyres damaged · ${s.potholeHits} hit${s.potholeHits === 1 ? '' : 's'}`);
+  }
+
   moveTraffic(dt) {
     const s = this.s;
     const laneIndex = s.targetLane + 1;
     for (let index = s.traffic.length - 1; index >= 0; index -= 1) {
       const vehicle = s.traffic[index];
-      vehicle.depth -= dt * (0.075 + s.speed / 300) * vehicle.speed;
+      const oncoming = vehicle.direction === -1;
+      const trafficSlowdown = s.environment === 'juma' ? 0.68 : 1;
+      vehicle.depth -= dt * (0.075 + s.speed / (oncoming ? 220 : 300)) * vehicle.speed * trafficSlowdown;
       if (!vehicle.passed && vehicle.depth <= 0.22 && vehicle.depth >= 0.105) {
         if (vehicle.lane === laneIndex && s.invuln <= 0) {
           vehicle.passed = true;
@@ -365,6 +447,7 @@ export class Game {
         } else if (Math.abs(vehicle.lane - laneIndex) === 1) {
           vehicle.passed = true;
           s.nearMisses += 1;
+          this.dailyAdd('nearMisses', 1);
           s.combo = Math.min(20, s.combo + 1);
           s.comboTimer = 5.5;
           const bonus = Math.floor(80 * this.comboMultiplier());
@@ -392,6 +475,9 @@ export class Game {
 
   hit(vehicle) {
     const s = this.s;
+    s.collisions += 1;
+    s.cleanDistance = 0;
+    s.safeSpeedSeconds = 0;
     const fast = s.speed >= 95;
     const heavy = vehicle.type === 'truck' || vehicle.type === 'bus' || vehicle.type === 'suv';
     const mod = this.driver.damageTakenMod || 1;
@@ -422,8 +508,12 @@ export class Game {
       return false;
     }
 
-    const special = Math.random() < 0.08;
+    const special = Math.random() < 0.08 * (this.driver.flags?.luck || 1);
     const female = Math.random() < 0.58;
+    if (this.driver.id === 'mayen-mata' && !female && Math.random() < 0.25) {
+      this.ui.toast('Mayen Mata prioritises women passengers · this pickup is skipped.');
+      return true;
+    }
     const vip = Math.random() < 0.12;
     const className = vip ? 'VIP' : female ? 'market woman' : 'worker';
     const fareFactor = randomBetween(1, 2.3) * (s.night ? 1.42 : 1) * (vip ? 1.5 : 1);
@@ -447,10 +537,12 @@ export class Game {
     }
     s.passengers.push(passenger);
     s.boards += 1;
-    if (vip) s.vip += 1;
+    this.dailyAdd('boards', 1);
+    if (vip) { s.vip += 1; this.dailyAdd('vip', 1); }
     if (special) {
       s.aishat += 1;
-      this.ui.toast('Aishat and little Hibba boarded · Allah ya kiyaye!');
+      this.dailyAdd('aishat', 1);
+      this.ui.toast('Aishat and 2-year-old Hibba boarded · Allah ya kiyaye!');
       this.missionAdd('aishat', 1);
     } else {
       this.ui.toast(`${passenger.name} boarded · ${passenger.dest}`);
@@ -474,26 +566,35 @@ export class Game {
       return true;
     }
     const passenger = s.passengers[0];
-    const matched = passenger.dest === zone.dest
-      || passenger.dest === this.route.name
-      || zone.dest === this.route.name;
+    // Match Drop is destination-based, not route-origin-based. A stop only
+    // counts as correct when it matches the passenger's actual destination.
+    const matched = passenger.dest === zone.dest;
     let fare = passenger.fare;
+    if (matched) {
+      s.streak += 1;
+      this.dailyAdd('streak', s.streak);
+    } else {
+      s.streak = 0;
+    }
+
     if (this.mode === 'matchDrop') {
       fare = Math.floor(fare * (matched ? 1.75 : 0.35));
       if (matched) {
-        s.streak += 1;
         s.matchedDrops += 1;
+        this.dailyAdd('matchedDrops', 1);
         this.ui.toast(`Correct destination! ×${s.streak} streak`);
       } else {
-        s.streak = 0;
         this.ui.toast('Wrong stop · reduced fare');
       }
     } else if (matched) {
       fare = Math.floor(fare * 1.25);
       s.matchedDrops += 1;
+      this.dailyAdd('matchedDrops', 1);
     }
     s.passengers.shift();
     s.drops += 1;
+    this.dailyAdd('drops', 1);
+    this.dailyAdd('fares', fare);
     s.fares += fare;
     s.score += Math.floor(fare * (s.night ? 1.15 : 1));
     s.combo = Math.min(20, s.combo + 1);
@@ -532,6 +633,7 @@ export class Game {
     const events = ['market', 'wedding', 'harmattan', 'badRoad', 'muddy', 'fuelQueue', 'juma'];
     const event = choose(events);
     s.environment = event;
+    s.environmentDuration = randomBetween(20, 32);
     const messages = {
       market: 'Market day · roadside pickups are busier',
       wedding: 'Bikin aure · wedding convoy ahead!',
@@ -551,7 +653,10 @@ export class Game {
       }
     }
     if (event === 'badRoad') {
-      for (let i = 0; i < 2; i += 1) this.spawnZone();
+      for (let i = 0; i < 2; i += 1) {
+        const lane = Math.floor(randomBetween(0, 3));
+        this.s.zones.push({ id: `${Date.now()}-pothole-${i}-${Math.random()}`, type: 'pothole', prop: i === 0 ? 'dirtmound' : 'cone', lane, depth: 1.1 + i * 0.1, dest: this.route.name, seats: 0, hub: false, label: '', warned: false });
+      }
     }
     this.ui.toast(messages[event]);
   }
@@ -562,12 +667,18 @@ export class Game {
   }
 
   missionUpdate() {
+    if (this.s.combo > this.s.lastDailyCombo) {
+      this.dailyAdd('combo', this.s.combo);
+      this.s.lastDailyCombo = this.s.combo;
+    }
     for (const mission of this.s.missions) {
-      if (mission.done) continue;
+      if (mission.done || mission.terminal) continue;
       let value = this.s[mission.key] ?? 0;
       if (mission.key === 'distance') value = this.s.distance;
       if (mission.key === 'combo') value = this.s.combo;
-      if (mission.key === 'condition') value = this.s.condition;
+      if (mission.key === 'streak') value = this.s.streak;
+      if (mission.key === 'noCollisionKm') value = this.s.cleanDistance;
+      if (mission.key === 'safeSpeedSeconds') value = this.s.safeSpeedSeconds;
       if (mission.key === 'cleanKm') value = this.s.distance >= 1 && this.s.condition >= 80 ? 1 : 0;
       this.updateOneMission(mission, value);
     }
@@ -576,7 +687,10 @@ export class Game {
   updateMissions(key, value) {
     for (const mission of this.s.missions) {
       if (mission.key !== key || mission.done) continue;
-      const progress = Math.max(this.s.missionProgress[mission.id] || 0, value);
+      const previous = this.s.missionProgress[mission.id] || 0;
+      const progress = ADDITIVE_MISSION_KEYS.has(key)
+        ? previous + value
+        : Math.max(previous, value);
       this.s.missionProgress[mission.id] = progress;
       this.updateOneMission(mission, progress);
     }
@@ -657,11 +771,9 @@ export class Game {
     } else if (type === 'karota') {
       if (action === 'pay') {
         s.score = Math.max(0, s.score - 700);
-        s.checkpoints += 1;
         s.heat = Math.max(0, s.heat - 15);
         this.ui.toast('KAROTA checkpoint settled');
       } else if (action === 'talk') {
-        s.checkpoints += 1;
         if (Math.random() < (this.driver.flags?.careful ? 0.82 : 0.68)) {
           s.heat = Math.max(0, s.heat - 10);
           this.ui.toast('An fahimta · proceed');
@@ -676,7 +788,9 @@ export class Game {
         s.speed = Math.max(s.speed, 65);
         this.ui.toast('Escaped KAROTA · wanted heat rising');
       }
+      s.checkpoints += 1;
       this.missionAdd('checkpoints', 1);
+      this.dailyAdd('checkpoints', 1);
     } else if (type === 'rich') {
       if (action === 'payRich') {
         s.score = Math.max(0, s.score - 3500);
@@ -700,6 +814,11 @@ export class Game {
         s.heat = Math.min(100, s.heat + 7);
         s.speed = Math.max(s.speed, 60);
       }
+    }
+    if (type === 'rich') {
+      s.richDramas += 1;
+      this.missionAdd('richDramas', 1);
+      this.dailyAdd('richDramas', 1);
     }
     s.invuln = 2;
     this.ui.hideEvent();
@@ -732,6 +851,11 @@ export class Game {
       return;
     }
 
+    this.completeTerminalMissions();
+    if (s.fuel >= 30) this.dailyAdd('endFuel', 1);
+    if (s.condition >= 75) this.dailyAdd('endCondition', 1);
+    if (s.distance >= 3 && s.potholeHits < 8) this.dailyAdd('potholesClean', 1);
+
     const earned = bankRun({
       score: s.score,
       fares: s.fares,
@@ -758,6 +882,17 @@ export class Game {
     }
     persist();
     this.ui.gameOver({ reason, earned, run: s, best: save.highScore, standing: tribeStanding(), board, soft: false });
+  }
+
+  completeTerminalMissions() {
+    for (const mission of this.s.missions) {
+      if (!mission.terminal || mission.done) continue;
+      let qualifies = false;
+      if (mission.terminal === 'fuel') qualifies = this.s.fuel >= mission.threshold;
+      else if (mission.terminal === 'condition') qualifies = this.s.condition >= mission.threshold;
+      else if (mission.terminal === 'cleanPotholes') qualifies = this.s.distance >= mission.distance && this.s.potholeHits < mission.maxHits;
+      if (qualifies) this.updateOneMission(mission, mission.target);
+    }
   }
 
   continueRun(paid = false) {

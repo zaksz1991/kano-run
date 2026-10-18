@@ -1,16 +1,22 @@
 {
   "name": "kano-life",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "private": true,
-  "description": "Kano Life — Adaidaita Sahu street-life driving game. Game Developer: Hassan Zakariya",
+  "description": "Kano Life \u2014 Adaidaita Sahu street-life driving game. Game Developer: Hassan Zakariya",
   "author": "Hassan Zakariya",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "node ./node_modules/vite/bin/vite.js build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test",
+    "check": "node --check js/main.js && node --check js/game.js && node --check js/ui.js && node --check js/controls.js && node --check js/renderer2d.js && node --check js/renderer3d.js && node --check js/ModelManager.js && node --check js/storage.js && node --check js/config.js && node --check js/progression.js && node --check js/audio.js && node --check vite.config.js"
   },
-  "dependencies": { "three": "^0.170.0" },
-  "devDependencies": { "vite": "^5.4.0" }
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
 }

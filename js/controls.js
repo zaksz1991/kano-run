@@ -68,6 +68,9 @@ export class Controls {
       const action = button.dataset.action;
       const down = (event) => {
         event.preventDefault();
+        if (action === 'gas' || action === 'brake') {
+          try { button.setPointerCapture(event.pointerId); } catch { /* capture can be unavailable */ }
+        }
         if (action === 'left') this.handlers.lane(-1);
         else if (action === 'right') this.handlers.lane(1);
         else if (action === 'gas') this.handlers.gas(true);

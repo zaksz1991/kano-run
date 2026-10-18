@@ -25,6 +25,7 @@ let fpsWindowStart = performance.now();
 let lowFpsSince = 0;
 let fallbackStarted = false;
 let runtimeFailureCount = 0;
+let keep3D = force3d || save?.settings?.quality === '3d';
 
 function setRenderBadge(text) {
   const badge = document.getElementById('render-badge');
@@ -63,6 +64,9 @@ function attachWebGLRecovery(targetCanvas) {
 }
 
 async function start3D() {
+  try { renderer?.dispose?.(); } catch (error) { console.warn('[Kano Life] renderer disposal warning', error); }
+  lowFpsSince = 0;
+  fallbackStarted = false;
   // Probe a temporary canvas only. The active render canvas is always fresh and
   // is not reused for Canvas 2D after a WebGL context has been attached to it.
   const probe = document.createElement('canvas');
@@ -87,7 +91,11 @@ async function start3D() {
 
   const essentials = mobile
     ? ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'passenger']
-    : ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota', 'truck', 'bus', 'passenger', 'pedestrian'];
+    : [
+      'keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota', 'truck', 'bus',
+      'passenger', 'pedestrian', 'building', 'industrialBuilding', 'flyover', 'roadlight', 'cone', 'dirtmound',
+      'bench', 'busStop', 'trafficLight', 'stopSign', 'marketStall',
+    ];
   models.preload(essentials)
     .then(() => {
       if (renderer !== webglRenderer || renderMode !== '3D') return;
@@ -108,6 +116,19 @@ function boot() {
   });
 
   const saved2D = save?.settings?.quality === '2d';
+  window.addEventListener('kano:quality-change', (event) => {
+    const quality = event.detail?.quality || 'auto';
+    if (force2d || force3d) return;
+    keep3D = quality === '3d';
+    if (quality === '2d') {
+      start2D('2D MODE · SELECTED IN SETTINGS');
+    } else {
+      start3D().catch((error) => {
+        console.warn('[Kano Life] selected 3D mode unavailable; switching to Canvas 2D', error);
+        start2D('2D MODE · WEBGL UNAVAILABLE');
+      });
+    }
+  });
   if (force2d || (saved2D && !force3d)) {
     start2D(force2d ? '2D MODE · FORCED BY URL' : '2D MODE · SAVED SETTING');
   } else {
@@ -133,7 +154,7 @@ function boot() {
     lastFrame = performance.now();
   });
 
-  if (force3d) console.info('[Kano Life] ?force3d requested; automatic low-FPS fallback disabled');
+  if (force3d || keep3D) console.info('[Kano Life] 3D preference active; automatic low-FPS fallback disabled');
   if (force2d) console.info('[Kano Life] ?force2d requested');
   requestAnimationFrame(frame);
 }
@@ -147,7 +168,7 @@ function frame(now) {
     const fps = fpsFrames * 1000 / Math.max(1, now - fpsWindowStart);
     fpsFrames = 0;
     fpsWindowStart = now;
-    if (mobile && renderMode === '3D' && !force3d) {
+    if (mobile && renderMode === '3D' && !keep3D) {
       if (fps < 10) {
         if (!lowFpsSince) lowFpsSince = now;
         if (now - lowFpsSince >= 8000 && !fallbackStarted) {
