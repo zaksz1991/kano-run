@@ -9,6 +9,8 @@ import { createModelAuditPanel } from './ModelAuditPanel.js';
 import { save } from './storage.js';
 import { KanoProductionBridge } from './KanoProductionBridge.js';
 import { KekeDynamics } from './KekeDynamics.js';
+import { KanoVisualEffects } from './KanoVisualEffects.js';
+import { LiveUserCounter } from './LiveUserCounter.js';
 
 // ============================================================
 // KANO LIFE — APPLICATION ENTRY POINT
@@ -41,6 +43,8 @@ const audio = new AudioManager();
 let renderer = null;
 let productionBridge = null;
 let kekeDynamics = null;
+let visualEffects = null;
+let liveUserCounter = null;
 let controls = null;
 let game = null;
 let renderMode = '2D';
@@ -74,6 +78,14 @@ function setRenderMode(mode) {
 // ============================================================
 
 function disposeRenderer() {
+  // Dispose per-renderer effects before their scene/world is destroyed.
+  try {
+    visualEffects?.dispose?.();
+  } catch (error) {
+    console.warn('[Kano Life] visual effects disposal warning', error);
+  }
+  visualEffects = null;
+
   // The bridge owns DOM overlays and a hawker attached to the renderer world.
   // Dispose it before destroying the renderer it depends on.
   try {
@@ -153,6 +165,7 @@ function start2D(reason = '2D MODE · ROAD VISIBLE') {
   try {
     renderer = new Renderer2D(newCanvas);
     renderer.resize?.();
+    visualEffects = new KanoVisualEffects({ renderer, game, container, mobile });
     setRenderMode('2D');
     setRenderBadge(reason);
 
@@ -249,6 +262,15 @@ async function start3D() {
       // Renderer became stale during initialization.
     }
     return;
+  }
+
+  // Bind collectible coins and exhaust smoke. The effects module supports
+  // both Three.js and Canvas 2D rendering, and never owns the game simulation.
+  try {
+    visualEffects = new KanoVisualEffects({ renderer: webglRenderer, game, container, mobile });
+  } catch (error) {
+    visualEffects = null;
+    console.warn('[Kano Life] smoke/coin effects unavailable', error);
   }
 
   // Bind visual-only Keke dynamics. It follows renderer.player automatically
@@ -380,6 +402,14 @@ async function start3D() {
 // ============================================================
 
 function boot() {
+  // The counter reports recent sessions from the server-backed presence API.
+  // It displays UNAVAILABLE rather than inventing a local-only global count.
+  try {
+    liveUserCounter = new LiveUserCounter({ container }).start();
+  } catch (error) {
+    console.warn('[Kano Life] live-user counter unavailable', error);
+  }
+
   // Asset diagnostics are optional; a panel error must not prevent play.
   try {
     createModelAuditPanel();
@@ -541,7 +571,9 @@ function frame(now) {
     // Update optional, 3D-only narrative and hawker features once per frame.
     // The bridge is disposed whenever the renderer is replaced or falls back.
     productionBridge?.update?.(dt);
+    visualEffects?.update?.(dt, game?.s || {});
     renderer?.draw?.(game?.s, dt);
+    visualEffects?.render2DOverlay?.(game?.s || {});
     runtimeFailureCount = 0;
   } catch (error) {
     runtimeFailureCount += 1;
