@@ -121,6 +121,7 @@
         <div class="event-actions" id="event-actions"></div>
       </section>
 
+      <!-- START SCREEN -->
       <section class="screen" id="start-screen">
         <div class="start-card">
           <div class="brand-mark">KL<span>+</span></div>
@@ -176,6 +177,7 @@
         </div>
       </section>
 
+      <!-- KANO MORNING ROUTINE -->
       <section class="screen hidden life-routine-screen" id="life-routine-screen" aria-labelledby="life-title">
         <div class="life-routine-card">
           <header class="life-routine-header">
@@ -211,6 +213,7 @@
         </div>
       </section>
 
+      <!-- PAUSE MENU AND SETTINGS -->
       <section class="screen hidden" id="menu-screen">
         <div class="panel">
           <button class="close-x" data-close="menu-screen" type="button" aria-label="Close menu">×</button>
@@ -234,6 +237,7 @@
               <option value="igbo">Igbo</option>
             </select>
           </div>
+
           <div class="setting-row">
             <label for="camera-select">Camera</label>
             <select id="camera-select">
@@ -241,6 +245,7 @@
               <option value="driver">Driver view</option>
             </select>
           </div>
+
           <div class="setting-row">
             <label for="road-select">Traffic direction</label>
             <select id="road-select">
@@ -248,6 +253,7 @@
               <option value="twoway">Two-way</option>
             </select>
           </div>
+
           <div class="setting-row">
             <label for="mute-select">Sound</label>
             <select id="mute-select">
@@ -255,6 +261,7 @@
               <option value="off">Muted</option>
             </select>
           </div>
+
           <div class="setting-row">
             <label for="quality-select">Rendering</label>
             <select id="quality-select">
@@ -282,6 +289,7 @@
         </div>
       </section>
 
+      <!-- DRIVER AND PAINT GARAGE -->
       <section class="screen hidden" id="garage-screen">
         <div class="panel garage-panel">
           <button class="close-x" data-close="garage-screen" type="button" aria-label="Close garage">×</button>
@@ -296,18 +304,22 @@
         </div>
       </section>
 
+      <!-- RUN REPORT -->
       <section class="screen hidden" id="over-screen">
         <div class="panel over-panel">
           <p class="eyebrow">RUN REPORT</p>
           <h2 id="over-title">Run complete</h2>
+
           <div class="result-grid">
             <div><small>RUN SCORE</small><strong id="over-score">₦0</strong></div>
             <div><small>DISTANCE</small><strong id="over-distance">0.00 km</strong></div>
             <div><small>PASSENGERS DROPPED</small><strong id="over-drops">0</strong></div>
             <div><small>BEST SCORE</small><strong id="over-best">₦0</strong></div>
           </div>
+
           <p id="over-message"></p>
           <div id="tribe-standing" class="tribe-standing"></div>
+
           <div class="menu-actions">
             <button id="continue-btn" class="primary hidden" type="button">USE LIFE SAVER</button>
             <button id="again-btn" class="primary" type="button">DRIVE AGAIN</button>
@@ -316,11 +328,13 @@
         </div>
       </section>
 
+      <!-- HELP AND DRIVING INSTRUCTIONS -->
       <section class="screen hidden" id="help-screen">
         <div class="panel">
           <button class="close-x" data-close="help-screen" type="button" aria-label="Close instructions">×</button>
           <p class="eyebrow">QUICK GUIDE</p>
           <h2>Drive Kano streets</h2>
+
           <ul class="guide">
             <li><b>LEFT / RIGHT</b> — change lane. Swipe on the road or use arrow keys / A-D.</li>
             <li><b>GAS</b> — accelerate forward. <b>BRAKE</b> — slow down while moving forward.</li>
@@ -330,10 +344,12 @@
             <li><b>KAROTA</b> — pay, talk, or run. Escaping raises heat.</li>
             <li><b>SPACE</b> — brake; <b>H</b> — horn; <b>ESC</b> — menu.</li>
           </ul>
+
           <button class="primary full" data-close="help-screen" type="button">GOT IT</button>
         </div>
       </section>
 
+      <!-- TOUCHSCREEN DRIVING CONTROLS -->
       <nav class="drive-controls" id="drive-controls" aria-label="Driving controls">
         <button type="button" class="control lane" data-action="left" aria-label="Steer left">←</button>
         <button type="button" class="control lane" data-action="right" aria-label="Steer right">→</button>
