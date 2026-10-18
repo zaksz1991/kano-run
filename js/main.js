@@ -17,6 +17,10 @@ const ui = new UI();
 const audio = new AudioManager();
 
 let renderer = null;
+window.addEventListener('kano:life-scene', (event) => {
+  renderer?.setLifeScene?.(event.detail?.scene || 'road');
+});
+
 let renderMode = '2D';
 let game = null;
 let lastFrame = performance.now();
@@ -92,17 +96,38 @@ async function start3D() {
   const essentials = mobile
     ? ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'passenger']
     : [
-      'keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota', 'truck', 'bus',
-      'passenger', 'pedestrian', 'building', 'industrialBuilding', 'flyover', 'roadlight', 'cone', 'dirtmound',
+      'keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota', 'ambulance', 'truck', 'bus',
+      'passenger', 'passengerWoman', 'passengerMan', 'passengerVIP', 'security',
+      'pedestrian', 'pedestrianWoman', 'building', 'industrialBuilding', 'flyover', 'roadlight', 'cone', 'dirtmound',
       'bench', 'busStop', 'trafficLight', 'stopSign', 'marketStall',
     ];
-  models.preload(essentials)
+  const essentialLoad = models.preload(essentials)
     .then(() => {
       if (renderer !== webglRenderer || renderMode !== '3D') return;
       const playerModel = models.getInstance('keke');
       if (playerModel) webglRenderer.applyModel('keke', playerModel);
+      else console.warn('[ModelManager] keke GLB unavailable; stylised three-wheel fallback remains visible');
     })
     .catch((error) => console.warn('[ModelManager] preload issue', error));
+
+  // Load the rest of the asset pack in short mobile batches after the keke is ready.
+  // This lets the first drive start quickly while boxes/fallbacks are upgraded in place.
+  if (mobile) {
+    const mobileAssetBatches = [
+      ['flyover', 'building', 'passengerWoman', 'passengerMan'],
+      ['karota', 'ambulance', 'truck', 'bus'],
+      ['passengerVIP', 'security', 'pedestrian', 'pedestrianWoman'],
+      ['industrialBuilding', 'roadlight', 'cone', 'dirtmound'],
+      ['bench', 'busStop', 'trafficLight', 'stopSign', 'marketStall'],
+    ];
+    essentialLoad.then(async () => {
+      for (const keys of mobileAssetBatches) {
+        if (renderer !== webglRenderer || renderMode !== '3D') return;
+        await models.preload(keys);
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+    }).catch((error) => console.warn('[ModelManager] deferred mobile assets issue', error));
+  }
 }
 
 function boot() {

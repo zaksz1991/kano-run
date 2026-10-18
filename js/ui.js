@@ -5,7 +5,9 @@ import { selectDriver, purchaseDriver, selectPaint, purchasePaint } from './prog
 export class UI {
   constructor() {
     this.el = (id) => document.getElementById(id);
-    this.screens = ['start-screen', 'menu-screen', 'over-screen', 'help-screen', 'garage-screen'];
+    this.screens = ['start-screen', 'life-routine-screen', 'menu-screen', 'over-screen', 'help-screen', 'garage-screen'];
+    this.morningStage = 0;
+    this.morning = { fed: false, cost: 0, food: '', guardGreeted: false };
     this.toastTimer = 0;
     this.bound = false;
     this.initSelects();
@@ -56,21 +58,7 @@ export class UI {
     this.bound = true;
     this.game = game;
 
-    this.el('start-btn').addEventListener('click', () => {
-      const routeId = this.el('route-select').value;
-      const driverId = this.el('driver-select').value;
-      if (!(save.unlocks || []).includes(driverId)) {
-        this.toast('That driver is locked. Open the garage to unlock them.');
-        this.openGarage();
-        return;
-      }
-      save.routeId = routeId;
-      save.driverId = driverId;
-      game.route = ROUTES.find((route) => route.id === routeId) || ROUTES[0];
-      game.driver = DRIVERS.find((driver) => driver.id === driverId) || DRIVERS[0];
-      persist();
-      game.start(this.el('mode-select').value);
-    });
+    this.el('start-btn').addEventListener('click', () => this.beginMorningRoutine());
 
     this.el('help-btn').onclick = () => this.show('help-screen');
     this.el('garage-btn').onclick = () => this.openGarage();
@@ -134,11 +122,16 @@ export class UI {
         if (target === 'menu-screen' && game.state === 'MENU') game.state = 'PLAY';
       });
     });
-    this.el('again-btn').onclick = () => game.start(game.mode);
+    this.el('again-btn').onclick = () => this.beginMorningRoutine();
     this.el('home-btn').onclick = () => {
       this.hide('over-screen');
+      this.hide('life-routine-screen');
       this.show('start-screen');
+      this.el('hud').style.display = 'none';
+      this.el('drive-controls').style.display = 'none';
+      this.el('menu-btn').style.display = 'none';
       game.state = 'INTRO';
+      window.dispatchEvent(new CustomEvent('kano:life-scene', { detail: { scene: 'road' } }));
     };
     this.el('continue-btn').onclick = () => {
       if (game.s.lives > 0) game.continueRun(false);
@@ -155,6 +148,170 @@ export class UI {
       }
     };
     this.refreshDailyMissions();
+  }
+
+  beginMorningRoutine() {
+    const routeId = this.el('route-select')?.value || save.routeId;
+    const driverId = this.el('driver-select')?.value || save.driverId;
+    if (!(save.unlocks || []).includes(driverId)) {
+      this.toast('That driver is locked. Open the garage to unlock them.');
+      this.openGarage();
+      return;
+    }
+
+    save.routeId = routeId;
+    save.driverId = driverId;
+    persist();
+    this.game.route = ROUTES.find((route) => route.id === routeId) || ROUTES[0];
+    this.game.driver = DRIVERS.find((driver) => driver.id === driverId) || DRIVERS[0];
+    this.morningStage = 0;
+    this.morning = { fed: false, cost: 0, food: '', guardGreeted: false };
+    this.hide('start-screen');
+    this.hide('over-screen');
+    this.hide('garage-screen');
+    this.hide('menu-screen');
+    this.show('life-routine-screen');
+    this.el('hud').style.display = 'none';
+    this.el('drive-controls').style.display = 'none';
+    this.el('menu-btn').style.display = 'none';
+    window.dispatchEvent(new CustomEvent('kano:life-scene', { detail: { scene: 'road' } }));
+    this.renderMorningStage();
+  }
+
+  renderMorningStage() {
+    const stage = this.morningStage;
+    const stages = [
+      {
+        time: '06:05 AM', scene: 'bedroom', label: 'WAKE UP',
+        title: 'Morning has come in Kano.',
+        copy: 'The sky is turning gold over the compound. Get up, wash, dress, and prepare for a working day behind the handlebar.',
+        detail: 'You will need fuel, patience, and enough change to make the first trip worthwhile.',
+        art: '<div class="art-sun"></div><div class="art-window"><i></i><i></i><i></i><i></i></div><div class="art-wall-clock"></div><div class="art-bed"><i></i><b></b></div><div class="art-nightstand"></div><div class="art-scene-sign">HOME COMPOUND · KANO</div>',
+      },
+      {
+        time: '06:16 AM', scene: 'street', label: 'STEP OUT',
+        title: 'The neighbourhood is waking up.',
+        copy: 'A neighbour sweeps the frontage. A tailor opens his shop. The first keke horns carry from the junction while breakfast sellers set up by the road.',
+        detail: 'Walk to the roadside food stall before heading to the park.',
+        art: '<div class="art-street-sun"></div><div class="art-compound compound-one"></div><div class="art-compound compound-two"></div><div class="art-footpath"></div><div class="art-person art-walker"></div><div class="art-scene-sign">SABON GARI · EARLY MORNING</div>',
+      },
+      {
+        time: '06:22 AM', scene: 'breakfast', label: 'ROADSIDE BREAKFAST',
+        title: 'Akara and pap from the roadside.',
+        copy: 'The seller lifts hot akara from the oil and pours smooth pap into an enamel cup. The smell of pepper and fried beans fills the morning air.',
+        detail: 'Eating before the shift gives a small 5% fare bonus for this run. You can also choose pap only or skip the meal.',
+        art: '<div class="art-stall-roof"></div><div class="art-stall-post post-a"></div><div class="art-stall-post post-b"></div><div class="art-stall-counter"></div><div class="art-seller"><i></i><b></b></div><div class="art-akara-bowl"><i></i><i></i><i></i></div><div class="art-pap-cup"><i></i></div><div class="art-scene-sign">FRESH AKARA · WARM PAP</div>',
+      },
+      {
+        time: '06:34 AM', scene: 'walk', label: 'TO THE KEKE PARK',
+        title: 'Head towards the parking yard.',
+        copy: 'You finish breakfast and cut through the compound lane towards the covered keke park. Your Adaidaita Sahu stayed there overnight under a security guard’s watch.',
+        detail: 'The shift starts when you greet the guard, inspect your keke, and unlock it.',
+        art: '<div class="art-park-wall"></div><div class="art-gate"><i></i><i></i><i></i><i></i><i></i></div><div class="art-walk-road"></div><div class="art-person art-walker"></div><div class="art-scene-sign">KEKE PARK AHEAD</div>',
+      },
+      {
+        time: '06:43 AM', scene: 'garage', label: 'PARKING GARAGE',
+        title: this.morning.guardGreeted ? 'Ina kwana, oga. Kekenka lafiya.' : 'Mallam kept watch overnight.',
+        copy: this.morning.guardGreeted
+          ? 'The guard greets you and points to your parked Adaidaita Sahu. Check the road, settle into the driver’s seat, and start your shift.'
+          : 'Your keke is inside the covered yard. Mallam security has guarded it through the night. Greet him before you take the keys.',
+        detail: this.morning.guardGreeted
+          ? 'MALLAM SECURITY: “Ina kwana, oga. Na kula da kekenka.” · KEKE READY'
+          : 'KANO KEKE PARK · SECURITY ON DUTY · YOUR KEKE IS PARKED INSIDE',
+        art: '<div class="art-garage-label">KANO KEKE PARK · MODEL PREVIEW</div>',
+      },
+    ];
+    const data = stages[stage];
+    if (!data) return;
+    const screen = this.el('life-routine-screen');
+    screen.classList.toggle('garage-focus', stage === 4);
+    this.el('life-time').textContent = `${data.time} · KANO STATE`;
+    this.el('life-step-label').textContent = `STEP ${stage + 1} OF ${stages.length} · ${data.label}`;
+    this.el('life-progress-fill').style.width = `${((stage + 1) / stages.length) * 100}%`;
+    this.el('life-title').textContent = data.title;
+    this.el('life-copy').textContent = data.copy;
+    this.el('life-detail').textContent = data.detail;
+    const art = this.el('life-scene-art');
+    art.className = `life-scene-art scene-${data.scene}`;
+    art.innerHTML = data.art;
+    this.el('life-wallet').textContent = `Banked wallet · ₦${Math.floor(save.money || 0).toLocaleString()}`;
+    window.dispatchEvent(new CustomEvent('kano:life-scene', {
+      detail: { scene: stage === 4 ? 'garage' : 'road' },
+    }));
+
+    const actions = this.el('life-actions');
+    actions.replaceChildren();
+    const addButton = (text, action, className = 'primary') => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = className;
+      button.textContent = text;
+      button.addEventListener('click', action, { once: true });
+      actions.append(button);
+      return button;
+    };
+    const setStage = (next) => {
+      this.morningStage = next;
+      this.renderMorningStage();
+    };
+
+    if (stage === 0) addButton('WAKE UP · WASH AND DRESS', () => setStage(1));
+    if (stage === 1) addButton('WALK TO THE ROADSIDE STALL', () => setStage(2));
+    if (stage === 2) {
+      const fullMeal = addButton('AKARA + PAP · ₦450', () => this.buyMorningMeal('Akara and pap', 450), 'primary');
+      const papOnly = addButton('PAP ONLY · ₦250', () => this.buyMorningMeal('Pap', 250), 'secondary');
+      fullMeal.disabled = (save.money || 0) < 450;
+      papOnly.disabled = (save.money || 0) < 250;
+      addButton('SKIP BREAKFAST', () => setStage(3), 'secondary');
+    }
+    if (stage === 3) addButton('WALK TO THE PARKING GARAGE', () => setStage(4));
+    if (stage === 4 && !this.morning.guardGreeted) {
+      addButton('GREET MALLAM SECURITY', () => {
+        this.morning.guardGreeted = true;
+        this.toast('Mallam: “Ina kwana, oga. Kekenka lafiya.”');
+        this.renderMorningStage();
+      });
+    }
+    if (stage === 4 && this.morning.guardGreeted) {
+      addButton('UNLOCK KEKE · START SHIFT', () => this.launchMorningShift());
+    }
+    addButton('BACK TO TITLE', () => {
+      this.hide('life-routine-screen');
+      this.show('start-screen');
+      this.game.state = 'INTRO';
+      window.dispatchEvent(new CustomEvent('kano:life-scene', { detail: { scene: 'road' } }));
+    }, 'secondary life-back-button');
+  }
+
+  buyMorningMeal(food, cost) {
+    if ((save.money || 0) < cost) {
+      this.toast(`Not enough cash for ${food.toLowerCase()}. Choose pap only or skip breakfast.`);
+      return;
+    }
+    save.money -= cost;
+    persist();
+    this.morning.fed = true;
+    this.morning.cost = cost;
+    this.morning.food = food;
+    this.refreshWallet();
+    this.morningStage = 3;
+    this.renderMorningStage();
+    this.toast(`${food} bought for ₦${cost.toLocaleString()}. Kai lafiya.`);
+  }
+
+  launchMorningShift() {
+    window.dispatchEvent(new CustomEvent('kano:life-scene', { detail: { scene: 'road' } }));
+    this.hide('life-routine-screen');
+    this.game.start(this.el('mode-select')?.value || 'career');
+    this.game.s.breakfastEaten = this.morning.fed;
+    this.game.s.breakfastCost = this.morning.cost;
+    this.game.s.guardedOvernight = this.morning.guardGreeted;
+    this.el('hud').style.display = 'block';
+    this.el('drive-controls').style.display = 'grid';
+    this.el('menu-btn').style.display = 'block';
+    if (this.morning.fed) this.toast(`Shift started fed: ${this.morning.food}. Small fare bonus active.`);
+    else this.toast('Shift started. Next stop: your first passenger.');
+    this.refreshWallet();
   }
 
   show(id) { this.el(id)?.classList.remove('hidden'); }
@@ -313,6 +470,7 @@ export class UI {
     this.hide('over-screen');
     this.hide('help-screen');
     this.hide('garage-screen');
+    this.hide('life-routine-screen');
     this.el('hud').style.display = 'block';
     this.el('drive-controls').style.display = 'grid';
     this.el('menu-btn').style.display = 'block';

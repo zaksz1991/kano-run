@@ -1,68 +1,67 @@
-# Kano Life — Scan, Audit and Review
+# Kano Life — Updated Scan, Audit and Review
 
-## Scope
+## Scope and boundary
 
-The public repository to be upgraded is `https://github.com/zaksz1991/kano-run`. The deployment referenced during the review is `https://kano-run-nu.vercel.app`. This package is a separate local candidate; it has not been pushed to GitHub or deployed to Vercel.
+Target repository: `https://github.com/zaksz1991/kano-run`.
+Reference deployment: `https://kano-run-nu.vercel.app`.
 
-An initial public-source audit reported a malformed viewport value (`viewport-fit=cover.0`), duplicate viewport scaling options, a simulated rather than readiness-based loading screen, and a game-loop call to `this.checkCollisions()` without a matching method. The candidate fixes the viewport and removes the undefined-method dependency by using the collision update in the traffic loop. The animation frame loop includes recovery handling and keeps requesting frames after exceptions. A follow-up gameplay audit found a mission-progress defect: repeated actions such as drops, boards, and near-misses were being recorded as a peak of one instead of accumulated counts. Those run counters now accumulate; peak objectives such as combo and collision-free distance remain max-based. KAROTA checkpoint resolution also counts once per encounter rather than double-counting pay/talk outcomes.
+The package is a separate implementation candidate. No GitHub commit or Vercel deployment was made from this environment. The actual GLB pack supplied by the user is not bundled into this package; the catalog has been checked against their provided case-sensitive asset listing. Preserve `public/assets/models/` and existing audio assets when applying code changes.
 
-## Work included in this candidate
+## Findings addressed in this pass
 
-### Boot, renderer and asset loading
+### Player visibility and road movement
 
-- Vanilla JavaScript ES modules + Vite + Three.js `^0.170.0`.
-- Correct single mobile viewport declaration.
-- WebGL/Three.js path and Canvas 2D fallback.
-- Fresh-canvas replacement before creating a 2D context after WebGL has been used; context-loss recovery also goes to a new canvas.
-- `?force2d` and `?force3d` options.
-- Mobile performance watchdog only switches at below 10 FPS for roughly eight seconds, unless 3D has been explicitly forced.
-- Optional GLB catalog, ordered fallbacks, target-height scaling, per-model bounding-box/aspect checks, material repair, model cache/clones, grounding, and console success logs. Rejected malformed models are cleaned up. Available desktop assets replace procedural buildings, flyover, streetlights, roadside stalls, benches, bus stops, traffic lights, stop signs, cones and dirt mounds. An optional asphalt texture is loaded when present.
-- 3D resource lifecycle cleanup: transient actor geometries and unique materials are disposed when traffic/zones/fallback props are removed; cached GLB geometry/textures are protected from clone cleanup and disposed by `ModelManager` when the renderer is retired. Pending loads clean up results that finish after renderer shutdown.
-- Procedural 3D vehicle models and visible Canvas 2D keke/road fallback.
+- The earlier chase camera aimed far ahead with a higher camera position, which pushed the player near the lower edge. The candidate now aims lower on the horizon so the keke occupies the middle/lower portion of the view and stays above the control row.
+- The procedural player fallback was upgraded from a primitive vehicle stand-in to a three-wheeled Adaidaita Sahu-like shape with a driver, open passenger bay, canopy, windshield, mirrors, and lamps.
+- Career cruise has been reduced to 27 km/h base with a 68 km/h base cap (driver modifiers still apply). Free roam is 30/62. Time Attack has a separate 140 km/h base cap because its 3.5 km Gold time of 95 seconds requires an average speed around 133 km/h.
+- Renderer road scrolling and game zone advancement now share the same km/h-to-world conversion. Zones stop moving while the player is stopped, making brake-to-load/drop/refuel interactions physically consistent.
+- Canvas 2D lane markings and roadside props now advance based on distance travelled, and the player keke remains clearly drawn above touch controls.
 
-### Driving and gameplay fixes
+### Existing assets and vehicle boxes
 
-- Three-lane steering, gas/brake, speed, vehicle wear, fuel, collision/invulnerability behavior, near misses, combo bonuses, and traffic pooling.
-- Added actual pothole collision/damage counting. Before this fix, `potholeHits` did not increment, making the Potholes Challenge incorrectly succeed at the finish.
-- Match Drop now compares a stop against the passenger's actual destination. The earlier comparison incorrectly counted stops at the selected route name as matches even when the passenger destination differed.
-- Drop-zone spawning favours destinations for passengers currently aboard, reducing the chance that their intended stop never appears.
-- Touch gas/brake buttons capture the pointer so the input can be released when a finger slides outside a control. Very narrow phones now retain all six critical HUD cards by changing to a three-column/two-row layout instead of hiding passenger, fuel, and condition stats.
-- Saved paint is applied to the procedural 3D keke and to plausible painted meshes in a loaded GLB.
-- Both one-way and two-way traffic configuration; police remain in the reduced mobile traffic pool.
+- Replaced incorrect/generic model catalog paths with actual filenames from the user's repository tree, including all `vehicles/keke/keke-1.glb` through `keke-8.glb`, actual cars/SUV/truck assets, special vehicles, passenger/pedestrian character assets, exact-case props, building folders, and flyover files.
+- Fixed URL encoding for filenames with spaces.
+- Added valid road-light and pothole candidates; retained a purpose-built procedural bus-stop shelter rather than treating a road-side mesh or bench as a bus stop.
+- Mobile's first-drive preload remains small; later models load in short batches and replace traffic/person/building fallbacks in place. KAROTA traffic now also appears on mobile.
+- Added multiple flyover spans that are visible immediately, then replaced by loaded `kano_urban_flyover.glb` instances when available. Only horizontal dimensions are expanded, preventing a narrow bridge mesh from scaling into an enormous tower.
+- Added market-stall texture use from the existing `environment/ground/market-stall.jpg`.
 
-### Progression and local life-sim layer
+### Kano morning life sequence
 
-- 60+ Kano route labels; seven driver profiles; purchasable locked drivers and paint jobs.
-- Six modes: Career, Time Attack, Fuel Gauge Challenge, Match Drop, Potholes Challenge, and Free roam.
-- Three randomly selected run missions from a broader pool covering fares, boarding/drops, matched destinations, streak, near-misses, safe speed, collision-free distance, horn use, KAROTA checkpoints, rich-man drama, refills, Aishat/Hibba, combo, and end-run fuel/condition/pothole conditions.
-- WAT-based daily login reward and claimable daily missions with one-time rewards. Saved route, driver, paint, sound, camera, language, radio, best-time, leaderboard, and progression fields are normalized to known-safe values when browser storage is corrupted. Career runs now track consecutive matched destinations so the match-streak mission can actually be completed.
-- Wallet, high score, recent runs, route/driver/paint/radio/dialect/settings, best times, achievements, and top-three local Hausa/Yoruba/Igbo scoreboards persisted in localStorage.
-- Career events for fare negotiation, KAROTA, rich-man drama, and robber keke.
-- Timed market day, wedding convoy, harmattan, bad road, muddy stretch, fuel queue, and Juma'a traffic modifiers.
-- Procedural northern-clothing cues for roadside pedestrians, text-textured RuffNeck promotional billboards in 3D, and start-screen promo links.
-- HUD exposes level, combo, heat/status, language, route, radio, lives, and an onboard manifest with passenger name, destination, seats, and fare.
+- Added a staged 06:05–06:43 morning journey: wake up, step into the neighbourhood, buy akara + pap/pap only or skip, walk to the keke park, greet the security guard, and unlock the same player keke before driving.
+- Breakfast costs are charged from the saved banked wallet. Eating activates a small fare bonus during that run.
+- WebGL shows the actual player keke inside the guarded 3D parking yard. Canvas 2D has a dedicated garage scene with the same stylized keke and security guard, so forced fallback no longer leaves a road-only screen behind the garage stage.
 
-## Verification performed
+## Previous audited items retained
 
-The current local test run passed **36/36** Node tests. `npm run check` also passed for the project source modules. Tests cover catalog size, game ticking, mode selection, vehicle collision damage, passenger fares, paid continues, repeatable run-mission progress, peak-based objectives, one-count-per-encounter KAROTA progression, tribal top-three sorting, daily mission rewards, paint/driver purchases, two-way traffic, Time Attack completion, pothole damage/challenge failure, true Match Drop penalties, mission pool coverage and completion, corrupted-save normalization, terminal mission thresholds, canvas replacement for fallback, GLB validation/grounding contracts, touch pointer capture, UI IDs, world asset catalog coverage, GLB resource-lifecycle contracts, and CI job contents.
+- Valid single viewport declaration.
+- WebGL context failure/context loss replaces the active canvas before creating a Canvas 2D context.
+- `?force2d` and `?force3d` modes.
+- Mobile low-FPS fallback only after below 10 FPS for about eight continuous seconds.
+- Frame-level recovery, asset cache/clone cleanup, target-height normalization, model bounds checks, material repair, and road-grounding.
+- Run-mission progress accumulates repeatable actions; combo/clean-distance objectives are peak-based; each KAROTA decision counts once.
+- 60+ route names, drivers and paint progression, all six modes, save normalization, daily rewards/missions, local tribe boards, and existing career events remain in the candidate.
 
-The CI workflow installs dependencies and runs syntax checks, tests, and a production build on GitHub Actions. It intentionally does not use the `setup-node` npm cache because there is no committed lockfile in this candidate yet.
+## Verification results
 
-## Remaining release blockers and limitations
+- `npm test`: **43/43 passing**.
+- `npm run check`: **passed**.
+- Package JSON/script validation: passed.
+- Static regression coverage includes the actual asset catalog names, progressive mobile preloads, morning routine, 2D garage, repeated flyover replacement, slower cruise tuning, stopped pickup zones, existing game/progression behavior, and canvas fallback.
 
-1. **Production build is not verified here.** `node ./node_modules/vite/bin/vite.js build` cannot run until Vite is installed. Dependency installation previously failed when the environment could not resolve `registry.npmjs.org`. GitHub Actions can attempt the build after the candidate is integrated and pushed.
-2. **No GLB pack is bundled.** The loader paths are present, but actual asset URLs, 200 responses, model facing/orientation, quality, and performance must be tested with the user's licensed files.
-3. **No browser/WebGL session was available for full interactive QA.** Source tests do not substitute for playing the game on desktop and a real phone.
-4. **Audio is intentionally lightweight synthesized SFX.** Local radio station labels/cycling are implemented; recorded Hausa voice clips and a true radio music bed are not included.
-5. **Leaderboards are local-only.** The tribal top-three boards persist in the browser's localStorage; there is no server submission or cross-device ranking service.
-6. **The live repository/deployment remains unchanged.** The changes are packaged as a candidate only. A merge/replacement decision, network-enabled build, browser QA, and deployment are still required before calling this production-shipped.
+## Remaining release blockers
 
-## Release acceptance checklist
+1. **Vite build unverified.** This environment currently has no `node_modules/vite`; an earlier install attempt could not resolve `registry.npmjs.org`. Run the production build from a network-enabled environment before deployment.
+2. **Actual GLB requests not verified.** Source catalog paths align with the user's supplied file tree, but the package does not include the assets. Verify HTTP 200 responses and `[ModelManager] OK ...` console logs in the real repository.
+3. **Browser/WebGL/mobile visuals not run.** The keke's actual asset facing, scale and screen position must be tested in a browser and on a physical phone. Node tests cannot prove visual correctness.
+4. **No live changes.** GitHub and Vercel remain unchanged; this output contains local candidate files only.
 
-- Install dependencies in a network-enabled environment and run `npm run check`, `npm test`, and `npm run build`.
-- Verify `/`, `/?force2d`, and `/?force3d` in a browser; ensure the fallback always draws the road and keke.
-- Supply owned/licensed GLBs and verify `[ModelManager] OK ...` logs and HTTP 200 model paths.
-- Test first movement within ten seconds, mobile controls, gas/brake release, passenger pickup/drop/match, fuel pads, real pothole damage, collision recovery, fare/KAROTA/rich-man/robber choices, life savers, and paid continue.
-- Verify garage purchases, paint changes, WAT daily claim, mission claims, wallet/save recovery after reload, route-specific best times, and top-three tribe totals.
-- Test portrait and landscape on a physical phone; ensure the passenger manifest and controls do not cover the road centre or player keke.
-- Deploy to Vercel only after the build is green and the live site is verified.
+## Acceptance checklist before release
+
+- Preserve the existing GLB and audio folders while applying the code overlay.
+- Run `npm run check`, `npm test`, and `npm run build` in the repository root.
+- Test `/`, `/?force2d`, and `/?force3d` on desktop and mobile.
+- Verify `[ModelManager] OK keke`, loaded traffic/person/building messages, visible flyovers and no vehicle boxes remaining after preload.
+- Complete the morning sequence, purchase the meal, greet the guard, inspect the parked keke, start the shift, stop on a pickup pad, and test fare/drop/fuel/pothole interactions.
+- Test each continue/event button, portrait and landscape layouts, and reload persistence.
+- Deploy to Vercel only after the production build and browser QA pass.

@@ -400,3 +400,31 @@ test('corrupted browser saves are normalized to safe routes, paint, dialect, rad
   assert.equal(clean.daily.streak, 0);
   assert.deepEqual(clean.daily.progress, { clean: 4 });
 });
+
+
+test('Career starts at a calmer urban cruise and gas stays below racing-game speeds', () => {
+  const { game } = createHarness();
+  game.start('career');
+  game.gas(false);
+  game.s.invuln = 100;
+  for (let frame = 0; frame < 180; frame += 1) game.tick(1 / 60);
+  assert.ok(game.s.speed >= 20 && game.s.speed < 37, `calm cruise was ${game.s.speed} km/h`);
+  game.gas(true);
+  for (let frame = 0; frame < 180; frame += 1) game.tick(1 / 60);
+  assert.ok(game.s.speed > 55 && game.s.speed < 82, `accelerated city speed was ${game.s.speed} km/h`);
+  game.start('timeAttack');
+  game.s.invuln = 100;
+  game.gas(true);
+  for (let frame = 0; frame < 180; frame += 1) game.tick(1 / 60);
+  assert.ok(game.s.speed > 115, `Time Attack speed should support a Gold run when driven cleanly: ${game.s.speed} km/h`);
+});
+
+test('roadside pickup zones stop advancing when the keke is fully stopped', () => {
+  const { game } = createHarness();
+  game.start('career');
+  game.s.speed = 0;
+  const before = game.s.zones.map((zone) => zone.depth);
+  game.moveZones(1.5);
+  const after = game.s.zones.map((zone) => zone.depth);
+  assert.deepEqual(after, before, 'a stationary driver must be able to wait at a pickup without the pad drifting away');
+});

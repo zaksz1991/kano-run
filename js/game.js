@@ -39,6 +39,9 @@ export class Game {
     this.s = {
       score: 0,
       fares: 0,
+      breakfastEaten: false,
+      breakfastCost: 0,
+      guardedOvernight: false,
       distance: 0,
       speed: 0,
       fuel: this.mode === 'fuel' ? 42 : 100,
@@ -151,8 +154,8 @@ export class Game {
   }
 
   spawnTraffic(initialIndex = null) {
-    const types = ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police'];
-    if (!this.mobile) types.push('truck', 'bus', 'karota');
+    const types = ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota'];
+    if (!this.mobile) types.push('truck', 'bus');
     const type = choose(types);
     const lane = Math.floor(randomBetween(0, 3));
     const depth = Number.isInteger(initialIndex)
@@ -275,16 +278,19 @@ export class Game {
     s.comboTimer = Math.max(0, s.comboTimer - dt);
     if (s.comboTimer === 0) s.combo = 0;
 
-    const modeSpeed = this.mode === 'timeAttack' ? 150 : this.mode === 'freeRoam' ? 118 : 125;
+    // A working Kano keke should cruise calmly between stops, not feel like a racing bike.
+    // Gas gives a decisive but believable rise; Time Attack remains the fast mode.
+    const modeSpeed = this.mode === 'timeAttack' ? 140 : this.mode === 'freeRoam' ? 62 : 68;
     const maxSpeed = modeSpeed * (this.driver.speedMod || 1);
-    const cruiseSpeed = (this.mode === 'freeRoam' ? 78 : 66) * (this.driver.speedMod || 1);
+    const cruiseBase = this.mode === 'timeAttack' ? 42 : this.mode === 'freeRoam' ? 30 : 27;
+    const cruiseSpeed = cruiseBase * (this.driver.speedMod || 1);
     const desiredSpeed = s.gas ? maxSpeed : s.brake ? 0 : cruiseSpeed;
-    const acceleration = s.brake ? 7.5 : s.gas ? 3.25 : 1.65;
+    const acceleration = s.brake ? 7.5 : s.gas ? (this.mode === 'timeAttack' ? 2.5 : 1.65) : 1.05;
     s.speed += (desiredSpeed - s.speed) * Math.min(1, acceleration * dt);
     if (s.brake) s.speed = Math.max(0, s.speed - 36 * dt);
     const steeringRate = s.environment === 'muddy' ? 4.2 : 7.5;
     s.steer += (s.targetLane - s.steer) * Math.min(1, dt * steeringRate);
-    if (s.environment === 'muddy') s.speed = Math.min(s.speed, 92 * (this.driver.speedMod || 1));
+    if (s.environment === 'muddy') s.speed = Math.min(s.speed, 48 * (this.driver.speedMod || 1));
     s.distance += (s.speed / 3600) * dt;
     const distanceSteps = Math.floor(s.distance * 10) - Math.floor(s.lastDailyDistance * 10);
     if (distanceSteps > 0) {
@@ -360,7 +366,9 @@ export class Game {
   moveZones(dt) {
     const s = this.s;
     const laneIndex = s.targetLane + 1;
-    const scroll = dt * (0.08 + s.speed / 310);
+    // A roadside zone should only move when the keke moves. Keeping the same
+    // km/h-to-world scale as Renderer3D makes stopping for fares genuinely possible.
+    const scroll = dt * (s.speed / 310);
     for (let index = s.zones.length - 1; index >= 0; index -= 1) {
       const zone = s.zones[index];
       const aligned = zone.lane === laneIndex;
@@ -516,7 +524,7 @@ export class Game {
     }
     const vip = Math.random() < 0.12;
     const className = vip ? 'VIP' : female ? 'market woman' : 'worker';
-    const fareFactor = randomBetween(1, 2.3) * (s.night ? 1.42 : 1) * (vip ? 1.5 : 1);
+    const fareFactor = randomBetween(1, 2.3) * (s.night ? 1.42 : 1) * (vip ? 1.5 : 1) * (s.breakfastEaten ? 1.05 : 1);
     const passenger = {
       name: special
         ? 'Aishat & Hibba'

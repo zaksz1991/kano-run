@@ -2,35 +2,132 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const CATALOG = {
+  // Every preferred path below matches a filename in the Kano Run public asset pack.
+  // Ordered alternatives keep one broken or unusual model from disabling a category.
   keke: [
     'vehicles/keke/keke-3.glb', 'vehicles/keke/keke-1.glb', 'vehicles/keke/keke-2.glb',
     'vehicles/keke/keke-4.glb', 'vehicles/keke/keke-5.glb', 'vehicles/keke/keke-6.glb',
     'vehicles/keke/keke-7.glb', 'vehicles/keke/keke-8.glb',
   ],
-  car: ['vehicles/cars/sedan.glb', 'vehicles/cars/car.glb', 'vehicles/cars/vehicle.glb'],
-  taxi: ['vehicles/cars/taxi.glb', 'vehicles/cars/sedan.glb'],
-  suv: ['vehicles/cars/suv.glb', 'vehicles/cars/luxury-suv.glb', 'vehicles/cars/sedan.glb'],
-  truck: ['vehicles/cars/truck.glb'],
-  bus: ['vehicles/special/bus.glb', 'vehicles/cars/bus.glb'],
-  motorcycle: ['vehicles/cars/motorcycle.glb', 'vehicles/special/okada.glb'],
-  police: ['vehicles/special/police.glb', 'vehicles/cars/police.glb', 'vehicles/cars/sedan.glb'],
+  car: [
+    'vehicles/cars/quaternius_cc0-normal-car-1190.glb',
+    'vehicles/cars/lowpoly_bmw_e36_m3.glb',
+    'vehicles/cars/2006_kia_ceed.glb',
+    'vehicles/cars/2005_chrysler_300.glb',
+    'vehicles/cars/1979_chevrolet_impala.glb',
+  ],
+  taxi: [
+    'vehicles/cars/2006_kia_ceed.glb',
+    'vehicles/cars/quaternius_cc0-normal-car-1190.glb',
+    'vehicles/cars/lowpoly_bmw_e36_m3.glb',
+  ],
+  suv: [
+    'vehicles/cars/quaternius_cc0-suv-1402.glb',
+    'vehicles/cars/2002_dodge_ram_2500.glb',
+    'world/props/SUV.glb',
+    'vehicles/cars/asphalt_8_-_nissan_juke_nismo.glb',
+  ],
+  truck: [
+    'vehicles/cars/quaternius_cc0-truck-1449.glb',
+    'vehicles/cars/peterbilt_352.glb',
+    'vehicles/cars/volvo_fh.glb',
+    'vehicles/cars/volvo_fh_cement_truck.glb',
+    'vehicles/cars/2002_dodge_ram_2500.glb',
+  ],
+  bus: ['vehicles/special/bus.glb', 'vehicles/cars/quaternius_cc0-truck-1449.glb'],
+  motorcycle: [
+    'vehicles/special/okada.glb',
+    'vehicles/cars/motorcycle.glb',
+    'vehicles/cars/asphalt_6_ktm_rc8.glb',
+    'vehicles/cars/asphalt_6_can-am_spyder.glb',
+  ],
+  police: ['vehicles/special/police.glb', 'world/props/Police-Car.glb', 'vehicles/cars/2006_kia_ceed.glb'],
   karota: ['vehicles/special/karota.glb', 'vehicles/special/police.glb'],
+  ambulance: ['vehicles/special/ambulance.glb', 'vehicles/special/bus.glb'],
   passenger: [
     'characters/passengers/hijab_muslim_woman.glb',
     'characters/passengers/Man.glb',
-    'characters/passengers/suit.glb',
+    'characters/passengers/Man in Suit.glb',
     'characters/passengers/women_in_hijab.glb',
   ],
-  pedestrian: ['characters/pedestrians/pedestrian.glb', 'characters/pedestrians/Man.glb'],
+  passengerWoman: [
+    'characters/passengers/hijab_muslim_woman.glb',
+    'characters/passengers/women_in_hijab.glb',
+    'characters/passengers/hijab_muslim_woman 2.glb',
+    'characters/passengers/free_download_attractive_african_woman_236.glb',
+    'characters/passengers/woman with her arms crossed.glb',
+  ],
+  passengerMan: [
+    'characters/passengers/Man.glb',
+    'characters/passengers/Man-fjHyMd5Wxw.glb',
+    'characters/passengers/handsome_man_in_casual_clothes_in_a-pose_86.glb',
+    'characters/passengers/tekamist_mens.glb',
+  ],
+  passengerVIP: [
+    'characters/passengers/Man in Suit.glb',
+    'characters/passengers/Man-fjHyMd5Wxw.glb',
+    'characters/passengers/handsome_man_in_casual_clothes_in_a-pose_86.glb',
+  ],
+  security: [
+    'characters/pedestrians/Man in Long Sleeves.glb',
+    'characters/pedestrians/police_man.glb',
+    'characters/passengers/Man.glb',
+  ],
+  pedestrian: [
+    'characters/pedestrians/pedestrian.glb',
+    'characters/pedestrians/Man in Long Sleeves.glb',
+    'characters/pedestrians/low_poly_people_free_sample_pack.glb',
+    'characters/pedestrians/hi_guys.glb',
+    'characters/pedestrians/passenger.glb',
+  ],
+  pedestrianWoman: [
+    'characters/pedestrians/muslim_girl.glb',
+    'characters/pedestrians/keke female.glb',
+    'characters/passengers/women_in_hijab.glb',
+    'characters/passengers/hijab_muslim_woman.glb',
+    'characters/pedestrians/low_poly_people_free_sample_pack.glb',
+  ],
   building: [
-    'world/buildings-suburban/building-1.glb',
-    'world/buildings-suburban/house.glb',
-    'world/buildings-suburban/building.glb',
+    'world/buildings-suburban/building-type-d.glb',
+    'world/buildings-suburban/building-type-e.glb',
+    'world/buildings-suburban/building-type-f.glb',
+    'world/buildings-suburban/building-type-g.glb',
+    'world/buildings-suburban/building-type-h.glb',
+    'world/buildings-suburban/building-type-i.glb',
+    'world/buildings-suburban/building-type-j.glb',
+    'world/buildings-suburban/building-type-k.glb',
+    'world/buildings-suburban/building-type-l.glb',
+    'world/buildings-suburban/building-type-m.glb',
+    'world/buildings-suburban/building-type-n.glb',
+    'world/buildings-suburban/building-type-o.glb',
+    'world/buildings-suburban/building-type-p.glb',
+    'world/buildings-suburban/building-type-q.glb',
+    'world/buildings-suburban/building-type-r.glb',
+    'world/buildings-suburban/building-type-s.glb',
+    'world/buildings-suburban/building-type-t.glb',
+    'world/buildings-suburban/building-type-u.glb',
   ],
   industrialBuilding: [
-    'world/buildings-industrial/industrial-building.glb',
-    'world/buildings-industrial/factory.glb',
-    'world/buildings-industrial/building.glb',
+    'world/buildings-industrial/building-a.glb',
+    'world/buildings-industrial/building-b.glb',
+    'world/buildings-industrial/building-c.glb',
+    'world/buildings-industrial/building-d.glb',
+    'world/buildings-industrial/building-e.glb',
+    'world/buildings-industrial/building-f.glb',
+    'world/buildings-industrial/building-g.glb',
+    'world/buildings-industrial/building-h.glb',
+    'world/buildings-industrial/building-i.glb',
+    'world/buildings-industrial/building-j.glb',
+    'world/buildings-industrial/building-k.glb',
+    'world/buildings-industrial/building-l.glb',
+    'world/buildings-industrial/building-m.glb',
+    'world/buildings-industrial/building-n.glb',
+    'world/buildings-industrial/building-o.glb',
+    'world/buildings-industrial/building-p.glb',
+    'world/buildings-industrial/building-q.glb',
+    'world/buildings-industrial/building-r.glb',
+    'world/buildings-industrial/building-s.glb',
+    'world/buildings-industrial/building-t.glb',
   ],
   flyover: [
     'world/roads/kano_urban_flyover.glb',
@@ -38,27 +135,45 @@ const CATALOG = {
     'world/roads/kowloon_bay_flyover.glb',
   ],
   roadlight: [
-    'world/roads/street-lights.glb',
-    'world/roads/roadlight.glb',
-    'world/roads/street_light.glb',
+    'world/roads/light-square.glb',
+    'world/roads/light-curved.glb',
+    'world/roads/light-square-double.glb',
+    'world/roads/light-curved-double.glb',
+    'world/roads/electricity-pole-single.glb',
+    'world/roads/electricity-pole.glb',
+    'world/roads/electricity-pole-wide.glb',
   ],
-  cone: ['world/roads/construction-cone.glb', 'world/roads/cone.glb'],
-  dirtmound: ['world/roads/gravel-dirt-mound.glb', 'world/roads/dirt-mound.glb'],
-  bench: ['world/props/bench.glb', 'world/props/park-bench.glb'],
-  busStop: ['world/props/bus-stop.glb', 'world/props/bus_stop.glb'],
-  trafficLight: ['world/props/traffic-light.glb', 'world/props/trafficlight.glb', 'world/roads/traffic-light.glb'],
-  stopSign: ['world/props/stop-sign.glb', 'world/roads/stop-sign.glb'],
-  marketStall: ['world/props/market-stall.glb', 'world/props/market_stall.glb'],
+  cone: ['world/roads/construction-cone.glb', 'world/roads/construction-barrier.glb', 'world/props/Cone.glb'],
+  dirtmound: [
+    'environment/ground/photoscan_-_pothole_1.glb',
+    'environment/ground/low_poly_dirt_ground.glb',
+    'environment/ground/close_sand_with_tracks.glb',
+    'environment/ground/sand_with_handprints_tile.glb',
+    'environment/ground/manhole_cover_on_broken_asphalt_road.glb',
+  ],
+  bench: ['world/props/Bench.glb'],
+  busStop: [], // No dedicated bus-stop GLB in this pack; retain the purpose-built procedural shelter.
+  trafficLight: ['world/props/Traffic-Light.glb', 'world/roads/traffic-light.glb'],
+  stopSign: ['world/props/Stop-sign.glb', 'world/roads/road-sign-stop.glb'],
+  marketStall: [], // Roadside stalls use the supplied market-stall JPG textures and a procedural stall.
 };
 
 const TARGET_HEIGHT = {
   keke: 1.85, car: 1.4, taxi: 1.4, suv: 1.65, truck: 2.35,
-  bus: 2.55, motorcycle: 1.25, police: 1.45, karota: 1.5,
-  passenger: 1.7, pedestrian: 1.7,
+  bus: 2.55, motorcycle: 1.25, police: 1.45, karota: 1.5, ambulance: 1.65,
+  passenger: 1.7, passengerWoman: 1.7, passengerMan: 1.75, passengerVIP: 1.8,
+  security: 1.75, pedestrian: 1.7, pedestrianWoman: 1.7,
   building: 4.5, industrialBuilding: 5.2, flyover: 5.8, roadlight: 4.2,
   cone: 0.75, dirtmound: 1.1,
   bench: 0.72, busStop: 3.0, trafficLight: 3.8, stopSign: 2.1, marketStall: 2.45,
 };
+
+const UPRIGHT_KEYS = new Set([
+  'passenger', 'passengerWoman', 'passengerMan', 'passengerVIP', 'security',
+  'pedestrian', 'pedestrianWoman', 'building', 'industrialBuilding', 'flyover',
+  'roadlight', 'cone', 'dirtmound', 'bench', 'busStop', 'trafficLight',
+  'stopSign', 'marketStall',
+]);
 
 function repairMaterials(root) {
   root.traverse((object) => {
@@ -123,7 +238,7 @@ export class ModelManager {
     const catalog = CATALOG[key] || [];
     const task = (async () => {
       for (const relativePath of catalog) {
-        const url = `${this.basePath}${relativePath}`;
+        const url = `${this.basePath}${relativePath.split('/').map((segment) => encodeURIComponent(segment)).join('/')}`;
         try {
           const gltf = await this.loader.loadAsync(url);
           if (this.disposed) {
@@ -168,8 +283,7 @@ export class ModelManager {
           const wrapper = new THREE.Group();
           wrapper.add(source);
           wrapper.position.set(0, 0, 0);
-          const uprightWorldAssets = new Set(['passenger', 'pedestrian', 'building', 'industrialBuilding', 'flyover', 'roadlight', 'cone', 'dirtmound', 'bench', 'busStop', 'trafficLight', 'stopSign', 'marketStall']);
-          if (!uprightWorldAssets.has(key)) wrapper.rotation.y = Math.PI;
+          if (!UPRIGHT_KEYS.has(key)) wrapper.rotation.y = Math.PI;
           wrapper.userData.modelPath = relativePath;
           wrapper.userData.targetHeight = targetHeight;
           this.cache.set(key, wrapper);

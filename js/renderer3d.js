@@ -56,7 +56,7 @@ export class Renderer3D {
     this.scene.background = new THREE.Color(0x8ccde5);
     this.scene.fog = new THREE.Fog(0x8ccde5, 48, 195);
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, 260);
-    this.camera.position.set(0, 5.2, 11);
+    this.camera.position.set(0, 3.85, 10.5);
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: !mobile,
@@ -77,11 +77,18 @@ export class Renderer3D {
     this.roadProps = [];
     this.buildingSlots = [];
     this.flyoverFallback = null;
+    this.flyovers = [];
     this.flyoverModelAdded = false;
+    this.lifeScene = 'road';
+    this.garageGroup = null;
+    this.securityActor = null;
+    this.securityUsingModel = false;
+    this.driveFacingY = 0;
     this.buildWorld();
     this.player = this.makeKeke();
     this.player.position.set(0, 0, 2);
     this.scene.add(this.player);
+    this.buildGarageScene();
     this.ready = true;
   }
 
@@ -201,23 +208,217 @@ export class Renderer3D {
   }
 
   buildFlyover() {
-    if (this.mobile) return;
-    const group = new THREE.Group();
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(20, 0.62, 3.4), this.material(0x888d91));
-    deck.position.y = 4.25;
-    group.add(deck);
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(20, 0.24, 0.2), this.material(0xb7b9b7));
-    rail.position.set(0, 4.68, -1.45);
-    group.add(rail);
-    for (const x of [-7.7, 7.7]) {
-      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.2, 0.85), this.material(0x777e83));
-      pillar.position.set(x, 2.1, 0);
-      group.add(pillar);
+    // Two bridge spans create a Kano urban-flyover rhythm on both phone and desktop.
+    // Procedural concrete bridges are visible immediately; real GLBs replace them later.
+    const positions = this.mobile ? [-72, -202] : [-72, -174, -276];
+    this.flyoverLoopDistance = this.mobile ? 260 : 306;
+    for (const [index, z] of positions.entries()) {
+      const group = new THREE.Group();
+      const width = this.mobile ? 22 : 26;
+      const deck = new THREE.Mesh(
+        new THREE.BoxGeometry(width, 0.58, 5.2),
+        this.material(index % 2 === 0 ? 0x858d92 : 0x777f84),
+      );
+      deck.position.y = 4.35;
+      group.add(deck);
+      const railMaterial = this.material(0xb7b9b7);
+      for (const sideZ of [-2.25, 2.25]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(width, 0.28, 0.18), railMaterial);
+        rail.position.set(0, 4.77, sideZ);
+        group.add(rail);
+      }
+      for (const x of [-8.4, 8.4]) {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.85, 4.35, 0.95), this.material(0x777e83));
+        pillar.position.set(x, 2.17, 0);
+        group.add(pillar);
+        if (!this.mobile) {
+          const base = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.35, 1.35), this.material(0x6a7075));
+          base.position.set(x, 0.18, 0);
+          group.add(base);
+        }
+      }
+      group.position.set(0, 0, z);
+      group.userData.proceduralFlyover = true;
+      group.userData.flyoverIndex = index;
+      this.world.add(group);
+      this.flyovers.push(group);
     }
-    group.position.set(0, 0, -116);
-    group.userData.proceduralFlyover = true;
-    this.world.add(group);
-    this.flyoverFallback = group;
+    this.flyoverFallback = this.flyovers[0] || null;
+  }
+
+  buildGarageScene() {
+    // A compact Kano keke park for the morning routine. The actual player keke
+    // is moved into this scene, so the model shown here is the one being driven.
+    const group = new THREE.Group();
+    group.visible = false;
+    this.scene.add(group);
+    this.garageGroup = group;
+
+    const concrete = this.material(0x9d998d);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 26), concrete);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, -0.08, -1);
+    group.add(floor);
+
+    const wall = this.material(0xb69b78);
+    const wallShadow = this.material(0x8c775f);
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(19, 4.3, 0.36), wall);
+    backWall.position.set(0, 2.05, -10.3);
+    group.add(backWall);
+    for (const x of [-9.3, 9.3]) {
+      const sideWall = new THREE.Mesh(new THREE.BoxGeometry(0.36, 4.1, 21), wall);
+      sideWall.position.set(x, 2, -0.2);
+      group.add(sideWall);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 21.4), wallShadow);
+      cap.position.set(x, 4.1, -0.2);
+      group.add(cap);
+    }
+
+    // Open steel canopy beams keep the parked model clearly visible from the camera.
+    const steel = this.material(0x37434a);
+    for (const x of [-4.7, 4.7]) {
+      for (const z of [-3.6, 2.5]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4.15, 8), steel);
+        post.position.set(x, 2.05, z);
+        group.add(post);
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 7.2), steel);
+      beam.position.set(x, 4.15, -0.55);
+      group.add(beam);
+    }
+    for (let index = 0; index < (this.mobile ? 4 : 7); index += 1) {
+      const rafter = new THREE.Mesh(new THREE.BoxGeometry(9.55, 0.11, 0.12), steel);
+      rafter.position.set(0, 4.12, -3.4 + index * 0.95);
+      group.add(rafter);
+    }
+
+    // Rolling shutter, park sign and simple guard kiosk.
+    const shutter = new THREE.Mesh(new THREE.BoxGeometry(5.4, 3.15, 0.12), this.material(0x777e80));
+    shutter.position.set(0.6, 1.65, -10.05);
+    group.add(shutter);
+    for (let y = 0.35; y < 3.0; y += 0.28) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(5.25, 0.035, 0.03), this.material(0x515b60));
+      slat.position.set(0.6, y, -9.96);
+      group.add(slat);
+    }
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 2.4), this.material(0xc8b79a));
+    cabin.position.set(-6.0, 1.25, -5.3);
+    group.add(cabin);
+    const cabinWindow = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.62, 0.06), this.material(0x45606a));
+    cabinWindow.position.set(-6.0, 1.75, -4.05);
+    group.add(cabinWindow);
+    const guardDesk = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.78, 0.58), this.material(0x72543b));
+    guardDesk.position.set(-4.4, 0.39, -3.5);
+    group.add(guardDesk);
+
+    const signCanvas = document.createElement('canvas');
+    signCanvas.width = 640;
+    signCanvas.height = 160;
+    const signCtx = signCanvas.getContext('2d');
+    signCtx.fillStyle = '#183326';
+    signCtx.fillRect(0, 0, 640, 160);
+    signCtx.fillStyle = '#f6d46d';
+    signCtx.font = '900 42px Arial, sans-serif';
+    signCtx.textAlign = 'center';
+    signCtx.fillText('KANO KEKE PARK', 320, 65);
+    signCtx.fillStyle = '#ffffff';
+    signCtx.font = '700 24px Arial, sans-serif';
+    signCtx.fillText('SECURITY · PARKING YARD', 320, 112);
+    const signTexture = new THREE.CanvasTexture(signCanvas);
+    signTexture.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(5.1, 1.25),
+      new THREE.MeshBasicMaterial({ map: signTexture, side: THREE.DoubleSide }),
+    );
+    sign.position.set(0.6, 4.55, -9.96);
+    group.add(sign);
+
+    this.securityActor = this.makeSecurityPlaceholder();
+    this.securityActor.position.set(-3.7, 0, -1.8);
+    this.securityActor.rotation.y = -0.55;
+    group.add(this.securityActor);
+
+    // Wheel stops and painted parking bays ground the scene in a working park.
+    for (const x of [-2.1, 3.0]) {
+      const stop = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 3.4), this.material(0xe0d5b1));
+      stop.position.set(x, 0.02, -0.6);
+      group.add(stop);
+    }
+    const lamp = new THREE.PointLight(0xffd6a0, 1.35, 17);
+    lamp.position.set(0, 4.0, 0.5);
+    group.add(lamp);
+  }
+
+  makeSecurityPlaceholder() {
+    const guard = new THREE.Group();
+    const uniform = this.material(0x315b47);
+    const skin = this.material(0x70472f);
+    const trousers = this.material(0x29313a);
+    const capMaterial = this.material(0x233d32);
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 0.9, 9), uniform);
+    torso.position.y = 1.05;
+    guard.add(torso);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), skin);
+    head.position.y = 1.68;
+    guard.add(head);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 0.1, 10), capMaterial);
+    cap.position.y = 1.84;
+    guard.add(cap);
+    for (const x of [-0.12, 0.12]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.58, 8), trousers);
+      leg.position.set(x, 0.34, 0);
+      guard.add(leg);
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.09, 0.28), this.material(0x20262a));
+      boot.position.set(x, 0.07, 0.06);
+      guard.add(boot);
+    }
+    for (const x of [-0.29, 0.29]) {
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.68, 8), uniform);
+      arm.position.set(x, 1.1, 0.01);
+      arm.rotation.z = x < 0 ? -0.22 : 0.22;
+      guard.add(arm);
+    }
+    guard.userData.securityPlaceholder = true;
+    return guard;
+  }
+
+  setLifeScene(sceneName) {
+    if (!this.ready || !this.player || !this.garageGroup) return;
+    const nextScene = sceneName === 'garage' ? 'garage' : 'road';
+    if (this.lifeScene === nextScene) return;
+    if (nextScene === 'garage') {
+      if (this.player.parent) this.player.parent.remove(this.player);
+      this.garageGroup.add(this.player);
+      this.player.position.set(0.7, 0, 1.45);
+      this.player.rotation.set(0, 0, 0);
+      this.world.visible = false;
+      this.garageGroup.visible = true;
+      this.lifeScene = 'garage';
+      this.camera.position.set(5.1, 3.35, 8.6);
+      this.camera.lookAt(0, 1.0, -0.4);
+      this.upgradeGarageAssets();
+    } else {
+      if (this.player.parent) this.player.parent.remove(this.player);
+      this.scene.add(this.player);
+      this.player.position.set(0, 0, 2);
+      this.player.rotation.set(0, this.driveFacingY, 0);
+      this.garageGroup.visible = false;
+      this.world.visible = true;
+      this.lifeScene = 'road';
+    }
+  }
+
+  upgradeGarageAssets() {
+    if (!this.models || !this.garageGroup || this.securityUsingModel || !this.models.cache.has('security')) return;
+    const model = this.models.getInstance('security');
+    if (!model) return;
+    model.position.copy(this.securityActor.position);
+    model.rotation.y = -0.55;
+    this.garageGroup.remove(this.securityActor);
+    disposeSceneTree(this.securityActor);
+    this.garageGroup.add(model);
+    this.securityActor = model;
+    this.securityUsingModel = true;
   }
 
   addBillboard(x, y, z, green) {
@@ -376,7 +577,9 @@ export class Renderer3D {
             group.add(post);
           }
         }
-        const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.13, 1.2), accent);
+        const canopyMaterial = this.material(colors[index % colors.length]);
+        this.loadOptionalTexture('/assets/environment/ground/market-stall.jpg', canopyMaterial, [1, 1]);
+        const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.13, 1.2), canopyMaterial);
         canopy.position.y = 1.83;
         group.add(canopy);
         const counter = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.16, 0.52), this.material(0xb88a59));
@@ -434,9 +637,11 @@ export class Renderer3D {
   }
 
   upgradeWorldAssets() {
-    if (!this.models || this.mobile) return;
+    if (!this.models) return;
 
-    for (const slot of this.buildingSlots) {
+    // Phones replace only two nearby buildings; desktop can upgrade the full row.
+    const activeBuildingSlots = this.mobile ? this.buildingSlots.slice(0, 2) : this.buildingSlots;
+    for (const slot of activeBuildingSlots) {
       if (slot.replaced) continue;
       const key = slot.industrial ? 'industrialBuilding' : 'building';
       if (!this.models.cache.has(key)) continue;
@@ -453,21 +658,40 @@ export class Renderer3D {
       slot.replaced = true;
     }
 
-    if (this.flyoverFallback && !this.flyoverModelAdded && this.models.cache.has('flyover')) {
-      const model = this.models.getInstance('flyover');
-      if (model) {
-        model.position.copy(this.flyoverFallback.position);
-        const bounds = new THREE.Box3().setFromObject(model);
-        const size = bounds.getSize(new THREE.Vector3());
-        if (size.x > 0 && size.x < 15) model.scale.x *= 15 / size.x;
-        this.world.remove(this.flyoverFallback);
-        disposeSceneTree(this.flyoverFallback);
+    if (this.models.cache.has('flyover')) {
+      for (let index = 0; index < this.flyovers.length; index += 1) {
+        const fallback = this.flyovers[index];
+        if (!fallback?.userData?.proceduralFlyover) continue;
+        const model = this.models.getInstance('flyover');
+        if (!model) continue;
+        // Rotate to span across the road. Scale only horizontally so the bridge
+        // deck stays at a realistic elevation instead of growing sky-high.
+        model.updateMatrixWorld(true);
+        let bounds = new THREE.Box3().setFromObject(model);
+        let size = bounds.getSize(new THREE.Vector3());
+        if (size.x < size.z) model.rotation.y = Math.PI / 2;
+        model.updateMatrixWorld(true);
+        bounds = new THREE.Box3().setFromObject(model);
+        size = bounds.getSize(new THREE.Vector3());
+        const span = Math.max(size.x, size.z);
+        if (span > 0) {
+          const horizontalScale = THREE.MathUtils.clamp(22 / span, 0.55, 4.0);
+          model.scale.x *= horizontalScale;
+          model.scale.z *= horizontalScale;
+        }
+        model.position.copy(fallback.position);
+        model.userData.flyoverModel = true;
+        const originalZ = fallback.position.z;
+        this.world.remove(fallback);
+        disposeSceneTree(fallback);
         this.world.add(model);
-        this.flyoverFallback = null;
+        model.position.z = originalZ;
+        this.flyovers[index] = model;
+        if (index === 0) this.flyoverFallback = model;
         this.flyoverModelAdded = true;
+        console.info(`[Kano Life] Flyover GLB active${model.userData.modelPath ? `: ${model.userData.modelPath}` : ''}`);
       }
     }
-
     if (this.models.cache.has('roadlight')) {
       for (let index = 0; index < this.streetLights.length; index += 1) {
         const old = this.streetLights[index];
@@ -502,17 +726,17 @@ export class Renderer3D {
 
   upgradePedestrians() {
     if (!this.models || !this.pedestrians.length) return;
-    const modelKey = this.models.cache.has('pedestrian') ? 'pedestrian'
-      : this.models.cache.has('passenger') ? 'passenger' : null;
-    if (!modelKey) return;
+    const characterKeys = ['pedestrianWoman', 'pedestrian', 'passengerWoman', 'passengerMan', 'passenger'];
     for (const pedestrian of this.pedestrians) {
-      if (pedestrian.usingModel || pedestrian.index % 3 !== 0) continue;
+      if (pedestrian.usingModel) continue;
+      const modelKey = characterKeys[pedestrian.index % characterKeys.length];
+      if (!this.models.cache.has(modelKey)) continue;
       const model = this.models.getInstance(modelKey);
       if (!model) continue;
       model.position.copy(pedestrian.actor.position);
       model.rotation.y = pedestrian.side < 0 ? Math.PI / 2 : -Math.PI / 2;
       model.userData.fallback = false;
-      model.userData.characterType = 'pedestrian';
+      model.userData.characterType = modelKey;
       this.world.remove(pedestrian.actor);
       disposeSceneTree(pedestrian.actor);
       this.world.add(model);
@@ -522,43 +746,108 @@ export class Renderer3D {
   }
 
   makeKeke() {
+    // Visually distinctive fallback until a real keke-1..8.glb finishes loading.
+    // Adaidaita Sahu geometry: rounded bodywork, open passenger bay, canopy and three wheels,
+    // rather than the generic four-wheel box used for most traffic placeholders.
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.65, 1.85), this.material(0xf5c542));
-    body.userData.paintable = true;
-    body.position.y = 0.8;
-    group.add(body);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 1.2), this.material(0x1d2a3a));
-    roof.position.set(0, 1.45, -0.1);
-    group.add(roof);
-    const windshield = new THREE.Mesh(
-      new THREE.BoxGeometry(1.08, 0.42, 0.05),
-      new THREE.MeshStandardMaterial({
-        color: 0x7dd3fc,
-        transparent: true,
-        opacity: 0.8,
-        side: THREE.DoubleSide,
-      }),
-    );
-    windshield.position.set(0, 1.16, -0.86);
-    group.add(windshield);
-    // Adaidaita Sahu geometry: one steerable front wheel and two rear wheels.
-    const wheelSpots = [[0, -0.73], [-0.56, 0.62], [0.56, 0.62]];
+    const yellow = this.material(0xf5c542, 0.72);
+    const darkGreen = this.material(0x18382e, 0.88);
+    const frame = this.material(0x343e44, 0.62);
+    const rubber = this.material(0x111820, 0.95);
+    const metal = this.material(0x9da7a8, 0.55);
+    const glass = new THREE.MeshStandardMaterial({
+      color: 0x91d8e9, transparent: true, opacity: 0.48, roughness: 0.2,
+      side: THREE.DoubleSide,
+    });
+    const seatMaterial = this.material(0x6f3425, 0.92);
+
+    const lowerShell = new THREE.Mesh(new THREE.SphereGeometry(0.7, 18, 12), yellow);
+    lowerShell.scale.set(1.0, 0.55, 1.38);
+    lowerShell.position.set(0, 0.73, 0.03);
+    lowerShell.userData.paintable = true;
+    group.add(lowerShell);
+    const frontNose = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 10), yellow);
+    frontNose.scale.set(0.84, 0.53, 0.72);
+    frontNose.position.set(0, 0.86, -0.62);
+    frontNose.userData.paintable = true;
+    group.add(frontNose);
+
+    // Open passenger bay and dark rear bench.
+    const rearBench = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.12, 0.38), seatMaterial);
+    rearBench.position.set(0, 0.97, 0.42);
+    group.add(rearBench);
+    const backRest = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.42, 0.09), seatMaterial);
+    backRest.position.set(0, 1.17, 0.62);
+    group.add(backRest);
+
+    const addBar = (from, to, radius, material) => {
+      const start = new THREE.Vector3(...from);
+      const end = new THREE.Vector3(...to);
+      const direction = end.clone().sub(start);
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, direction.length(), 7), material);
+      bar.position.copy(start).add(end).multiplyScalar(0.5);
+      bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+      group.add(bar);
+    };
+    // Three-wheel chassis and steering hardware.
+    const wheelSpots = [[0, -0.91], [-0.63, 0.62], [0.63, 0.62]];
     for (const [x, z] of wheelSpots) {
-      const wheel = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.24, 0.24, 0.15, 12),
-        this.material(0x121820),
-      );
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.235, 0.17, 16), rubber);
       wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(x, 0.28, z);
+      wheel.position.set(x, 0.26, z);
       group.add(wheel);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.18, 12), metal);
+      hub.rotation.z = Math.PI / 2;
+      hub.position.copy(wheel.position);
+      group.add(hub);
     }
-    const frontFork = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.62, 8), this.material(0x7a8794));
-    frontFork.position.set(0, 0.61, -0.71);
-    frontFork.rotation.x = -0.22;
-    group.add(frontFork);
-    const headlamp = new THREE.Mesh(new THREE.SphereGeometry(0.095, 8, 8), this.material(0xffedb5));
-    headlamp.position.set(0, 0.91, -0.96);
-    group.add(headlamp);
+    const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.66, 8), metal);
+    fork.position.set(0, 0.59, -0.76);
+    fork.rotation.x = -0.18;
+    group.add(fork);
+
+    // Character in the driver's seat makes the fallback read as a working keke, not a car.
+    const driverBody = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.46, 9), this.material(0x2f674e));
+    driverBody.position.set(0, 1.18, -0.03);
+    group.add(driverBody);
+    const driverHead = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), this.material(0x70472f));
+    driverHead.position.set(0, 1.52, -0.12);
+    group.add(driverHead);
+    const driverCap = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.055, 10), darkGreen);
+    driverCap.position.set(0, 1.64, -0.12);
+    group.add(driverCap);
+    addBar([-0.17, 1.28, -0.04], [-0.34, 1.02, -0.53], 0.045, this.material(0x2f674e));
+    addBar([0.17, 1.28, -0.04], [0.34, 1.02, -0.53], 0.045, this.material(0x2f674e));
+
+    // Tubular canopy, fabric roof, front screen and small mirrors.
+    for (const x of [-0.54, 0.54]) {
+      addBar([x, 0.95, -0.64], [x * 1.03, 1.63, -0.47], 0.035, frame);
+      addBar([x, 0.98, 0.57], [x, 1.62, 0.48], 0.035, frame);
+      addBar([x, 1.62, -0.47], [x, 1.62, 0.48], 0.035, frame);
+    }
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.09, 1.22), darkGreen);
+    roof.position.set(0, 1.67, 0.0);
+    group.add(roof);
+    const windshield = new THREE.Mesh(new THREE.PlaneGeometry(0.88, 0.42), glass);
+    windshield.position.set(0, 1.34, -0.48);
+    group.add(windshield);
+    for (const x of [-0.72, 0.72]) {
+      const mirrorArm = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.26, 6), metal);
+      mirrorArm.position.set(x, 1.28, -0.47);
+      mirrorArm.rotation.z = x < 0 ? -0.28 : 0.28;
+      group.add(mirrorArm);
+      const mirror = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 8), metal);
+      mirror.position.set(x * 1.08, 1.39, -0.48);
+      group.add(mirror);
+    }
+    for (const x of [-0.43, 0.43]) {
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), this.material(0xffedbd, 0.35));
+      lamp.position.set(x, 0.91, -1.0);
+      group.add(lamp);
+      const tail = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), this.material(0xd94735));
+      tail.position.set(x, 0.7, 0.94);
+      group.add(tail);
+    }
     group.userData.fallback = true;
     return group;
   }
@@ -566,19 +855,33 @@ export class Renderer3D {
   async applyModel(key, object) {
     if (!object || !this.ready || key !== 'keke') return false;
     const old = this.player;
-    object.position.set(old.position.x, 0, old.position.z);
-    object.rotation.z = old.rotation.z;
+    const parent = old?.parent || this.scene;
+    object.position.copy(old?.position || new THREE.Vector3(0, 0, 2));
+    object.rotation.set(0, this.lifeScene === 'garage' ? 0 : Math.PI, old?.rotation?.z || 0);
     object.userData.fallback = false;
-    this.scene.remove(old);
+    object.userData.vehicleType = 'keke';
+    if (old?.parent) old.parent.remove(old);
     disposeSceneTree(old);
-    this.scene.add(object);
+    const targetParent = this.lifeScene === 'garage' ? this.garageGroup : this.scene;
+    (targetParent || parent || this.scene).add(object);
     this.player = object;
+    this.driveFacingY = Math.PI;
+    if (this.lifeScene === 'garage') {
+      object.position.set(0.7, 0, 1.45);
+      object.rotation.set(0, 0, 0);
+    } else {
+      object.position.set(0, 0, 2);
+      object.rotation.set(0, this.driveFacingY, 0);
+    }
     this.lastPaint = null;
+    this.applyPlayerPaint(this.currentPaint || '#f5c542');
+    console.info(`[Kano Life] Player keke visible using ${object.userData.modelPath || 'GLB model'}`);
     return true;
   }
 
   applyPlayerPaint(paint) {
     const color = typeof paint === 'string' && /^#[0-9a-f]{6}$/i.test(paint) ? paint : '#f5c542';
+    this.currentPaint = color;
     if (!this.player || this.lastPaint === color) return;
 
     const paintable = [];
@@ -766,6 +1069,16 @@ export class Renderer3D {
   draw(state, deltaSeconds) {
     if (!this.ready) return;
     const dt = Math.min(Math.max(deltaSeconds || 0, 0), 0.05);
+    if (this.lifeScene === 'garage') {
+      this.upgradeGarageAssets();
+      this.applyPlayerPaint(state.paint);
+      this.camera.position.set(5.1, 3.35, 8.6);
+      this.camera.lookAt(0, 1.0, -0.4);
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    this.world.visible = true;
+    this.garageGroup.visible = false;
     this.syncZones(state);
     this.syncTraffic(state);
     this.upgradeWorldAssets();
@@ -782,7 +1095,11 @@ export class Renderer3D {
     this.player.position.y = Math.sin(state.distance * 2.2) * 0.025;
     this.applyPlayerPaint(state.paint);
 
-    const scroll = state.speed * dt * 0.48;
+    const scroll = state.speed * dt * 0.28;
+    for (const flyover of this.flyovers) {
+      flyover.position.z += scroll * 0.72;
+      if (flyover.position.z > 22) flyover.position.z -= this.flyoverLoopDistance;
+    }
     for (const pedestrian of this.pedestrians) {
       pedestrian.actor.position.z += scroll * 0.72;
       if (pedestrian.actor.position.z > 6) pedestrian.actor.position.z -= 200;
@@ -803,9 +1120,9 @@ export class Renderer3D {
     const targetX = this.player.position.x * 0.45;
     const driverView = state.camera === 'driver';
     this.camera.position.x += ((driverView ? this.player.position.x * 0.25 : this.player.position.x * 0.45) - this.camera.position.x) * Math.min(1, dt * 2.2);
-    this.camera.position.y = driverView ? 1.55 : 5.15;
-    this.camera.position.z = driverView ? 4.25 : 11;
-    this.camera.lookAt(targetX, driverView ? 1.15 : 0.9, -14);
+    this.camera.position.y = driverView ? 1.65 : 3.85;
+    this.camera.position.z = driverView ? 4.7 : 10.5;
+    this.camera.lookAt(targetX, driverView ? 1.2 : 0.65, driverView ? -12 : -3.5);
     this.renderer.render(this.scene, this.camera);
   }
 
