@@ -9,11 +9,13 @@ import { createModelAuditPanel } from './ModelAuditPanel.js';
 import { save } from './storage.js';
 
 const container = document.getElementById('game-container');
+
 let canvas = document.getElementById('game-canvas');
 
 const query = new URLSearchParams(window.location.search);
 const force2d = query.has('force2d');
 const force3d = query.has('force3d');
+
 const mobile = window.matchMedia(
   '(max-width: 760px), (pointer: coarse)',
 ).matches;
@@ -35,7 +37,12 @@ let fpsWindowStart = performance.now();
 let lowFpsSince = 0;
 let fallbackStarted = false;
 let runtimeFailureCount = 0;
+
 let keep3D = force3d || save?.settings?.quality === '3d';
+
+// ============================================================
+// RENDERER STATUS
+// ============================================================
 
 function setRenderBadge(text) {
   const badge = document.getElementById('render-badge');
@@ -45,25 +52,45 @@ function setRenderBadge(text) {
   }
 }
 
+// ============================================================
+// CANVAS REPLACEMENT
+//
+// A WebGL canvas must not be reused for Canvas 2D after context
+// creation fails. Replace it with a fresh canvas instead.
+// ============================================================
+
 function freshCanvas() {
   const replacement = document.createElement('canvas');
 
   replacement.id = 'game-canvas';
-  replacement.setAttribute('aria-label', 'Kano Life driving game');
+
+  replacement.setAttribute(
+    'aria-label',
+    'Kano Life driving game',
+  );
+
   replacement.style.cssText =
     'position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y';
 
   canvas?.replaceWith(replacement);
+
   canvas = replacement;
 
   return replacement;
 }
 
+// ============================================================
+// CANVAS 2D FALLBACK
+// ============================================================
+
 function start2D(reason = '2D MODE · ROAD VISIBLE') {
   try {
     renderer?.dispose?.();
   } catch (error) {
-    console.warn('[Kano Life] renderer disposal warning', error);
+    console.warn(
+      '[Kano Life] renderer disposal warning',
+      error,
+    );
   }
 
   const newCanvas = freshCanvas();
@@ -72,6 +99,7 @@ function start2D(reason = '2D MODE · ROAD VISIBLE') {
   renderer.resize();
 
   renderMode = '2D';
+
   window.__KANO_RENDER_MODE__ = renderMode;
 
   setRenderBadge(reason);
@@ -80,6 +108,10 @@ function start2D(reason = '2D MODE · ROAD VISIBLE') {
     '[Kano Life] Canvas 2D fallback active; road renderer ready',
   );
 }
+
+// ============================================================
+// WEBGL CONTEXT RECOVERY
+// ============================================================
 
 function attachWebGLRecovery(targetCanvas) {
   targetCanvas.addEventListener(
@@ -99,11 +131,18 @@ function attachWebGLRecovery(targetCanvas) {
   );
 }
 
+// ============================================================
+// THREE.JS RENDERER
+// ============================================================
+
 async function start3D() {
   try {
     renderer?.dispose?.();
   } catch (error) {
-    console.warn('[Kano Life] renderer disposal warning', error);
+    console.warn(
+      '[Kano Life] renderer disposal warning',
+      error,
+    );
   }
 
   lowFpsSince = 0;
@@ -148,9 +187,11 @@ async function start3D() {
   );
 
   renderer = webglRenderer;
+
   renderer.resize();
 
   renderMode = '3D';
+
   window.__KANO_RENDER_MODE__ = renderMode;
 
   setRenderBadge('3D MODE · WEBGL');
@@ -201,7 +242,10 @@ async function start3D() {
   const essentialLoad = models
     .preload(essentials)
     .then(() => {
-      if (renderer !== webglRenderer || renderMode !== '3D') {
+      if (
+        renderer !== webglRenderer ||
+        renderMode !== '3D'
+      ) {
         return;
       }
 
@@ -216,11 +260,14 @@ async function start3D() {
       }
     })
     .catch((error) => {
-      console.warn('[ModelManager] preload issue', error);
+      console.warn(
+        '[ModelManager] preload issue',
+        error,
+      );
     });
 
-  // Load remaining models in batches on mobile so the player keke can appear
-  // before the rest of the environment finishes loading.
+  // Load the remaining models in batches on mobile so the player
+  // keke can appear before the whole environment finishes loading.
   if (mobile) {
     const mobileAssetBatches = [
       ['flyover', 'building', 'passengerWoman', 'passengerMan'],
@@ -233,7 +280,10 @@ async function start3D() {
     essentialLoad
       .then(async () => {
         for (const keys of mobileAssetBatches) {
-          if (renderer !== webglRenderer || renderMode !== '3D') {
+          if (
+            renderer !== webglRenderer ||
+            renderMode !== '3D'
+          ) {
             return;
           }
 
@@ -253,45 +303,69 @@ async function start3D() {
   }
 }
 
+// ============================================================
+// GAME BOOTSTRAP
+// ============================================================
+
 function boot() {
   // Open the asset diagnostics panel through its floating button.
-  // It does not control or replace any gameplay systems.
+  // It does not control or replace gameplay systems.
   createModelAuditPanel();
 
   game = new Game(ui, audio, { mobile });
 
+  // ----------------------------------------------------------
+  // KEYBOARD AND TOUCH CONTROLS
+  // ----------------------------------------------------------
+
   new Controls(container, {
     lane: (direction) => game.lane(direction),
+
     gas: (value) => game.gas(value),
+
     brake: (value) => game.brake(value),
+
     horn: () => game.horn(),
+
     menu: () => game.menu(),
+
+    // REVERSE GEAR:
+    // R toggles reverse and forward gear.
+    // The game engine prevents unsafe gear changes at speed.
+    reverse: () => game.toggleReverse(),
   });
+
+  // ----------------------------------------------------------
+  // RENDERING QUALITY
+  // ----------------------------------------------------------
 
   const saved2D = save?.settings?.quality === '2d';
 
-  window.addEventListener('kano:quality-change', (event) => {
-    const quality = event.detail?.quality || 'auto';
+  window.addEventListener(
+    'kano:quality-change',
+    (event) => {
+      const quality = event.detail?.quality || 'auto';
 
-    if (force2d || force3d) {
-      return;
-    }
+      if (force2d || force3d) {
+        return;
+      }
 
-    keep3D = quality === '3d';
+      keep3D = quality === '3d';
 
-    if (quality === '2d') {
-      start2D('2D MODE · SELECTED IN SETTINGS');
-    } else {
-      start3D().catch((error) => {
-        console.warn(
-          '[Kano Life] selected 3D mode unavailable; switching to Canvas 2D',
-          error,
-        );
+      if (quality === '2d') {
+        start2D('2D MODE · SELECTED IN SETTINGS');
+      } else {
+        start3D().catch((error) => {
+          console.warn(
+            '[Kano Life] selected 3D mode unavailable; switching to Canvas 2D',
+            error,
+          );
 
-        start2D('2D MODE · WEBGL UNAVAILABLE');
-      });
-    }
-  });
+          start2D('2D MODE · WEBGL UNAVAILABLE');
+        });
+      }
+    },
+  );
 
   if (force2d || (saved2D && !force3d)) {
     start2D(
@@ -314,13 +388,20 @@ function boot() {
     });
   }
 
+  // ----------------------------------------------------------
+  // RESPONSIVE RESIZING
+  // ----------------------------------------------------------
+
   const resizeWithMobilePasses = () => {
     [0, 140, 320, 620].forEach((delay) => {
       window.setTimeout(() => {
         try {
           renderer?.resize?.();
         } catch (error) {
-          console.warn('[Kano Life] resize deferred', error);
+          console.warn(
+            '[Kano Life] resize deferred',
+            error,
+          );
         }
       }, delay);
     });
@@ -344,9 +425,12 @@ function boot() {
     { passive: true },
   );
 
-  document.addEventListener('visibilitychange', () => {
-    lastFrame = performance.now();
-  });
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+      lastFrame = performance.now();
+    },
+  );
 
   if (force3d || keep3D) {
     console.info(
@@ -360,6 +444,10 @@ function boot() {
 
   requestAnimationFrame(frame);
 }
+
+// ============================================================
+// GAME LOOP
+// ============================================================
 
 function frame(now) {
   const dt = Math.min(
@@ -378,7 +466,13 @@ function frame(now) {
     fpsFrames = 0;
     fpsWindowStart = now;
 
-    if (mobile && renderMode === '3D' && !keep3D) {
+    // Automatically fall back on mobile only after sustained
+    // poor performance. Forced 3D disables this behaviour.
+    if (
+      mobile &&
+      renderMode === '3D' &&
+      !keep3D
+    ) {
       if (fps < 10) {
         if (!lowFpsSince) {
           lowFpsSince = now;
@@ -389,6 +483,7 @@ function frame(now) {
           !fallbackStarted
         ) {
           fallbackStarted = true;
+
           start2D('2D MODE · LOW FPS FALLBACK');
         }
       } else {
@@ -399,13 +494,17 @@ function frame(now) {
 
   try {
     game?.tick(dt);
+
     renderer?.draw?.(game?.s, dt);
 
     runtimeFailureCount = 0;
   } catch (error) {
     runtimeFailureCount += 1;
 
-    console.error('[Kano Life] frame update failed', error);
+    console.error(
+      '[Kano Life] frame update failed',
+      error,
+    );
 
     if (renderMode === '3D') {
       start2D('2D MODE · RECOVERED AFTER ERROR');
@@ -416,8 +515,11 @@ function frame(now) {
       game?.state === 'PLAY'
     ) {
       game.state = 'MENU';
+
       game.s.gas = false;
       game.s.brake = false;
+
+      game.s.signedSpeed = 0;
 
       ui.show('menu-screen');
 
@@ -429,5 +531,9 @@ function frame(now) {
     requestAnimationFrame(frame);
   }
 }
+
+// ============================================================
+// START
+// ============================================================
 
 boot();
