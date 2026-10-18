@@ -78,38 +78,9 @@ export class Renderer3D {
   _integrateAllGlbs() {
     if (!this.scene || !this.models) return;
 
-    // 1. Player keke
-    if (this.models.has('keke') && this.player) {
-      try {
-        const next = this.models.getInstance('keke');
-        next.position.copy(this.player.position);
-        // re-attach headlights if present
-        if (this.headlightL) {
-          this.player.remove(this.headlightL);
-          this.player.remove(this.headlightR);
-          next.add(this.headlightL);
-          next.add(this.headlightR);
-          if (this.headlightL.target) next.add(this.headlightL.target);
-          if (this.headlightR.target) next.add(this.headlightR.target);
-        }
-        // Reject bus-sized "keke" impostors
-        next.updateMatrixWorld(true);
-        const pb = new THREE.Box3().setFromObject(next);
-        const ps = new THREE.Vector3();
-        pb.getSize(ps);
-        if (Math.max(ps.x, ps.z) > 3.2 || ps.y > 2.8) {
-          console.warn('[KanoRun] Player GLB too big — keep procedural keke', ps.toArray());
-        } else {
-          this.scene.remove(this.player);
-          this.player = next;
-          this.scene.add(this.player);
-          this.player.scale.setScalar(Math.min(1, 1.75 / Math.max(ps.y, 0.1)));
-          this._clampVehicleScale(this.player, 2.6);
-          console.log('[KanoRun] Player → keke.glb', ps.toArray());
-        }
-      } catch (e) {
-        console.warn('keke upgrade failed', e);
-      }
+    // 1. Player ALWAYS procedural yellow NAPEP (GLB keke files are wrong silhouette)
+    if (this.player) {
+      console.log('[KanoRun] Player → procedural yellow keke (NAPEP)');
     }
 
     // 2. Traffic pools — clear procedural, refill from GLB (no giant buses)
@@ -406,7 +377,7 @@ export class Renderer3D {
     this.buildCityscape();
     this.buildHorizon();
 
-    this.player = this.makeKeke(0xfbbf24, true);
+    this.player = this.makeKeke(0xfbbf24, true); // forced NAPEP yellow
     this.player.position.set(0, 0, PLAYER_Z);
     this.player.traverse((ch) => { if (ch.isMesh) { ch.castShadow = true; ch.receiveShadow = true; } });
     this.scene.add(this.player);
@@ -1159,6 +1130,29 @@ export class Renderer3D {
     const fork = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.08), chrome);
     fork.position.set(0, 0.45, 0.78);
     g.add(fork);
+
+    // Rear face (camera sees this most) — strong yellow + black roof
+    const rearPanel = new THREE.Mesh(
+      new THREE.BoxGeometry(1.15, 0.55, 0.08),
+      this.mat(bodyColor, { roughness: 0.4, metalness: 0.15 })
+    );
+    rearPanel.position.set(0, 0.65, -0.72);
+    g.add(rearPanel);
+    const rearRoof = new THREE.Mesh(
+      new THREE.BoxGeometry(1.25, 0.12, 0.5),
+      roofM
+    );
+    rearRoof.position.set(0, 1.15, -0.45);
+    g.add(rearRoof);
+    // Yellow side panels visible in chase cam
+    for (const x of [-0.62, 0.62]) {
+      const side = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 0.45, 1.1),
+        this.mat(bodyColor, { roughness: 0.45 })
+      );
+      side.position.set(x, 0.6, -0.05);
+      g.add(side);
+    }
 
     g.userData.kind = 'keke';
     return g;
