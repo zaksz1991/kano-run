@@ -58,10 +58,18 @@ let mode = 'none';
 function use2D(reason) {
   console.warn('[Kano Life] 2D fallback:', reason);
   try {
+    // Release WebGL so we can draw; Renderer2D clones canvas if needed
+    try {
+      if (renderer && renderer.renderer) {
+        renderer.renderer.dispose?.();
+        renderer.renderer.forceContextLoss?.();
+      }
+    } catch (e) {}
     renderer = new Renderer2D(game);
     game.renderer3d = renderer;
     mode = '2d';
-    ui.showMissionToast?.('2D mode — still playable');
+    onResize();
+    ui.showMissionToast?.('2D mode — road on');
     console.log('[Kano Life] 2D active');
   } catch (e) {
     console.error('[Kano Life] 2D failed', e);
