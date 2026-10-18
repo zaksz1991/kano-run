@@ -11,6 +11,8 @@ import { KanoProductionBridge } from './KanoProductionBridge.js';
 import { KekeDynamics } from './KekeDynamics.js';
 import { KanoVisualEffects } from './KanoVisualEffects.js';
 import { LiveUserCounter } from './LiveUserCounter.js';
+import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
+import '../css/kano-responsive-upgrade.css';
 
 // ============================================================
 // KANO LIFE — APPLICATION ENTRY POINT
@@ -32,6 +34,15 @@ if (!canvas) {
 const query = new URLSearchParams(window.location.search);
 const force2d = query.has('force2d');
 const force3d = query.has('force3d');
+// Developer diagnostics are opt-in; normal production play stays clean.
+const debugMode = query.has('debugModels');
+if (debugMode) {
+  container.classList.add('kano-debug-mode');
+  document.body.classList.add('kano-debug-mode');
+} else {
+  container.classList.remove('kano-debug-mode');
+  document.body.classList.remove('kano-debug-mode');
+}
 
 const mobile = window.matchMedia(
   '(max-width: 760px), (pointer: coarse)',
@@ -42,6 +53,7 @@ const audio = new AudioManager();
 
 let renderer = null;
 let productionBridge = null;
+let sceneUpgrade = null;
 let kekeDynamics = null;
 let visualEffects = null;
 let liveUserCounter = null;
@@ -59,13 +71,20 @@ let rendererGeneration = 0;
 
 let keep3D = Boolean(force3d || save?.settings?.quality === '3d');
 
+// Keep the existing morning-routine UI and the active renderer in sync.
+window.addEventListener('kano:life-scene', (event) => {
+  renderer?.setLifeScene?.(event.detail?.scene || 'road');
+});
+
 // ============================================================
 // RENDERER STATUS
 // ============================================================
 
 function setRenderBadge(text) {
   const badge = document.getElementById('render-badge');
-  if (badge) badge.textContent = text;
+  if (!badge) return;
+  badge.textContent = text;
+  badge.hidden = !debugMode;
 }
 
 function setRenderMode(mode) {
@@ -94,6 +113,15 @@ function disposeRenderer() {
     console.warn('[Kano Life] production bridge disposal warning', error);
   }
   productionBridge = null;
+
+  // Restore Game.pickup/drop hooks and remove upgrade-owned scene meshes
+  // before the Keke visual pivot and Renderer3D are torn down.
+  try {
+    sceneUpgrade?.dispose?.();
+  } catch (error) {
+    console.warn('[Kano Life] scene upgrade disposal warning', error);
+  }
+  sceneUpgrade = null;
 
   try {
     kekeDynamics?.dispose?.();
@@ -264,6 +292,17 @@ async function start3D() {
     return;
   }
 
+  // Dense Kano market, animated roadside pedestrians, life-scene action rigs,
+  // passenger walking animations, and a calibrated seated-driver fallback.
+  // This is an additive visual layer: Game remains the authority for fares,
+  // collision outcomes, fuel, vehicle condition, and traffic simulation.
+  try {
+    sceneUpgrade = new KanoSceneUpgrade({ renderer: webglRenderer, game, mobile });
+  } catch (error) {
+    sceneUpgrade = null;
+    console.warn('[Kano Life] market/crowd/scene animations unavailable', error);
+  }
+
   // Bind collectible coins and exhaust smoke. The effects module supports
   // both Three.js and Canvas 2D rendering, and never owns the game simulation.
   try {
@@ -410,11 +449,14 @@ function boot() {
     console.warn('[Kano Life] live-user counter unavailable', error);
   }
 
-  // Asset diagnostics are optional; a panel error must not prevent play.
-  try {
-    createModelAuditPanel();
-  } catch (error) {
-    console.warn('[Kano Life] model audit panel unavailable', error);
+  // The 3D model audit is developer tooling, not a player HUD widget.
+  // Open the game with ?debugModels=1 when diagnosing model assets.
+  if (debugMode) {
+    try {
+      createModelAuditPanel();
+    } catch (error) {
+      console.warn('[Kano Life] model audit panel unavailable', error);
+    }
   }
 
   game = new Game(ui, audio, { mobile });
@@ -563,6 +605,11 @@ function frame(now) {
 
   try {
     game?.tick(dt);
+    // Keep stalls, ambient pedestrians, morning actions, passenger boarding and
+    // passenger alighting on the same frame clock as the existing world.
+    if (renderMode === '3D' && sceneUpgrade) {
+      sceneUpgrade.update(dt, game?.s || {});
+    }
     // Apply Keke chassis/suspension/wheel visuals before the current frame renders.
     // This never changes authoritative game physics or creates another road/traffic system.
     if (renderMode === '3D' && kekeDynamics) {

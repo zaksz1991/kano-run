@@ -7,6 +7,23 @@ const COIN_IMPACT_MAX = 0.012;
 const COIN_IMPACT_MIN = -0.025;
 const COIN_REWARD = 50;
 
+// Curated far-to-near route. Collected in play order, the route guides
+// the driver centre -> left -> centre -> right instead of scattering coins.
+const COIN_ROUTE = [
+  { lane: 2, depth: 1.16 },
+  { lane: 2, depth: 1.09 },
+  { lane: 2, depth: 1.02 },
+  { lane: 1, depth: 0.95 },
+  { lane: 1, depth: 0.88 },
+  { lane: 1, depth: 0.81 },
+  { lane: 0, depth: 0.74 },
+  { lane: 0, depth: 0.67 },
+  { lane: 0, depth: 0.60 },
+  { lane: 1, depth: 0.53 },
+  { lane: 1, depth: 0.46 },
+  { lane: 1, depth: 0.39 },
+];
+
 /**
  * KanoVisualEffects
  *
@@ -76,22 +93,22 @@ export class KanoVisualEffects {
 
   ensureCoinState() {
     if (!this.game.__kanoCoinState || this.game.__kanoCoinState.runState !== this.game.s) {
-      const coins = [];
-      for (let index = 0; index < 12; index += 1) {
-        coins.push({
-          id: `kano-coin-${index}`,
-          lane: index % 3,
-          xOffset: randomBetween(-0.22, 0.22),
-          depth: 0.18 + index * 0.078 + randomBetween(-0.008, 0.008),
-          phase: randomBetween(0, Math.PI * 2),
-          collected: false,
-        });
-      }
+      const coins = COIN_ROUTE.map((spot, index) => ({
+        id: `kano-coin-${index}`,
+        lane: spot.lane,
+        xOffset: randomBetween(-0.035, 0.035),
+        depth: spot.depth,
+        phase: randomBetween(0, Math.PI * 2),
+        collected: false,
+      }));
 
       this.game.s.coinsCollected = 0;
       this.game.__kanoCoinState = {
         runState: this.game.s,
         coins,
+        // Respawns continue through the same route pattern so each new coin
+        // extends the intended path instead of appearing in random lanes.
+        nextSpawnIndex: COIN_ROUTE.length,
       };
     }
 
@@ -451,9 +468,16 @@ export class KanoVisualEffects {
   // ----------------------------------------------------------
 
   respawnCoin(coin) {
-    coin.depth = randomBetween(1.00, 1.15);
-    coin.lane = Math.floor(Math.random() * 3);
-    coin.xOffset = randomBetween(-0.22, 0.22);
+    const routeState = this.coinState || this.game.__kanoCoinState;
+    const spawnIndex = Math.max(0, Math.floor(routeState?.nextSpawnIndex || 0));
+    const routeIndex = spawnIndex % COIN_ROUTE.length;
+    const spot = COIN_ROUTE[routeIndex];
+
+    if (routeState) routeState.nextSpawnIndex = spawnIndex + 1;
+
+    coin.depth = spot.depth;
+    coin.lane = spot.lane;
+    coin.xOffset = randomBetween(-0.035, 0.035);
     coin.phase = randomBetween(0, Math.PI * 2);
     coin.collected = false;
   }
