@@ -1,15 +1,147 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-const CATALOG={
- keke:['vehicles/keke/keke-3.glb','vehicles/keke/keke-1.glb','vehicles/keke/keke-2.glb','vehicles/keke/keke-4.glb','vehicles/keke/keke-5.glb','vehicles/keke/keke-6.glb','vehicles/keke/keke-7.glb','vehicles/keke/keke-8.glb'],
- car:['vehicles/cars/sedan.glb','vehicles/cars/car.glb','vehicles/cars/vehicle.glb'],taxi:['vehicles/cars/taxi.glb','vehicles/cars/sedan.glb'],suv:['vehicles/cars/suv.glb','vehicles/cars/luxury-suv.glb','vehicles/cars/sedan.glb'],truck:['vehicles/cars/truck.glb'],bus:['vehicles/special/bus.glb'],motorcycle:['vehicles/cars/motorcycle.glb','vehicles/special/okada.glb'],police:['vehicles/special/police.glb','vehicles/cars/sedan.glb'],karota:['vehicles/special/karota.glb','vehicles/special/police.glb'],passenger:['characters/passengers/hijab_muslim_woman.glb','characters/passengers/Man.glb','characters/passengers/suit.glb','characters/passengers/women_in_hijab.glb'],pedestrian:['characters/pedestrians/pedestrian.glb']
+
+const CATALOG = {
+  keke: [
+    'vehicles/keke/keke-3.glb', 'vehicles/keke/keke-1.glb', 'vehicles/keke/keke-2.glb',
+    'vehicles/keke/keke-4.glb', 'vehicles/keke/keke-5.glb', 'vehicles/keke/keke-6.glb',
+    'vehicles/keke/keke-7.glb', 'vehicles/keke/keke-8.glb',
+  ],
+  car: ['vehicles/cars/sedan.glb', 'vehicles/cars/car.glb', 'vehicles/cars/vehicle.glb'],
+  taxi: ['vehicles/cars/taxi.glb', 'vehicles/cars/sedan.glb'],
+  suv: ['vehicles/cars/suv.glb', 'vehicles/cars/luxury-suv.glb', 'vehicles/cars/sedan.glb'],
+  truck: ['vehicles/cars/truck.glb'],
+  bus: ['vehicles/special/bus.glb', 'vehicles/cars/bus.glb'],
+  motorcycle: ['vehicles/cars/motorcycle.glb', 'vehicles/special/okada.glb'],
+  police: ['vehicles/special/police.glb', 'vehicles/cars/police.glb', 'vehicles/cars/sedan.glb'],
+  karota: ['vehicles/special/karota.glb', 'vehicles/special/police.glb'],
+  passenger: [
+    'characters/passengers/hijab_muslim_woman.glb',
+    'characters/passengers/Man.glb',
+    'characters/passengers/suit.glb',
+    'characters/passengers/women_in_hijab.glb',
+  ],
+  pedestrian: ['characters/pedestrians/pedestrian.glb', 'characters/pedestrians/Man.glb'],
 };
-const HEIGHT={keke:1.85,car:1.4,taxi:1.4,suv:1.65,truck:2.35,bus:2.55,motorcycle:1.25,police:1.45,karota:1.5,passenger:1.7,pedestrian:1.7};
-function materials(root){root.traverse(o=>{if(!o.isMesh)return;o.castShadow=false;o.receiveShadow=false;const arr=Array.isArray(o.material)?o.material:[o.material];for(const m of arr){if(!m)continue;m.side=THREE.DoubleSide;if(m.transparent&&m.opacity<.25){m.opacity=.85;m.transparent=false}m.needsUpdate=true}})}
-export class ModelManager{
- constructor(){this.loader=new GLTFLoader();this.cache=new Map();this.pending=new Map()}
- async load(key){if(this.cache.has(key))return this.cache.get(key);if(this.pending.has(key))return this.pending.get(key);const task=(async()=>{for(const rel of CATALOG[key]||[]){const url=`/assets/models/${rel}`;try{const gltf=await this.loader.loadAsync(url);const root=gltf.scene;const box=new THREE.Box3().setFromObject(root);const size=box.getSize(new THREE.Vector3());if(!Number.isFinite(size.y)||size.y<.02||size.y>100||Math.max(size.x,size.y,size.z)>500){console.warn(`[ModelManager] rejected absurd model ${url}`);continue}const target=HEIGHT[key]||1.6;root.scale.multiplyScalar(target/size.y);const scaled=new THREE.Box3().setFromObject(root);const center=scaled.getCenter(new THREE.Vector3());root.position.sub(center);root.position.y+=target/2;root.rotation.y=Math.PI;materials(root);root.userData.modelPath=rel;this.cache.set(key,root);console.info(`[ModelManager] OK ${key} ← assets/models/${rel}`);return root}catch(e){/* optional pack file; try next candidate */}}console.info(`[ModelManager] placeholder ${key} (no usable GLB found)`);return null})();this.pending.set(key,task);const result=await task;this.pending.delete(key);return result}
- async preload(keys){return Promise.all(keys.map(k=>this.load(k)))}
- getInstance(key){const root=this.cache.get(key);if(!root)return null;const clone=root.clone(true);clone.traverse(o=>{if(o.isMesh){o.material=Array.isArray(o.material)?o.material.map(m=>m.clone()):o.material.clone()}});return clone}
+
+const TARGET_HEIGHT = {
+  keke: 1.85, car: 1.4, taxi: 1.4, suv: 1.65, truck: 2.35,
+  bus: 2.55, motorcycle: 1.25, police: 1.45, karota: 1.5,
+  passenger: 1.7, pedestrian: 1.7,
+};
+
+function repairMaterials(root) {
+  root.traverse((object) => {
+    if (!object.isMesh || !object.material) return;
+    object.castShadow = false;
+    object.receiveShadow = false;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      if (!material) continue;
+      material.side = THREE.DoubleSide;
+      if (Number.isFinite(material.opacity) && material.opacity < 0.12) {
+        material.opacity = 0.85;
+        material.transparent = true;
+      }
+      material.needsUpdate = true;
+    }
+  });
 }
-export const MODEL_KEYS=CATALOG;
+
+export class ModelManager {
+  constructor({ basePath = '/assets/models/' } = {}) {
+    this.loader = new GLTFLoader();
+    this.basePath = basePath.endsWith('/') ? basePath : `${basePath}/`;
+    this.cache = new Map();
+    this.pending = new Map();
+    this.failed = new Set();
+  }
+
+  async load(key) {
+    if (this.cache.has(key)) return this.cache.get(key);
+    if (this.pending.has(key)) return this.pending.get(key);
+    const catalog = CATALOG[key] || [];
+    const task = (async () => {
+      for (const relativePath of catalog) {
+        const url = `${this.basePath}${relativePath}`;
+        try {
+          const gltf = await this.loader.loadAsync(url);
+          const source = gltf.scene;
+          source.updateMatrixWorld(true);
+          const originalBox = new THREE.Box3().setFromObject(source);
+          const originalSize = originalBox.getSize(new THREE.Vector3());
+          const maxSize = Math.max(originalSize.x, originalSize.y, originalSize.z);
+          const horizontalSpan = Math.max(originalSize.x, originalSize.z);
+          if (
+            !Number.isFinite(originalSize.y)
+            || !Number.isFinite(horizontalSpan)
+            || originalSize.y < 0.05
+            || originalSize.y > 40
+            || maxSize > 120
+            || horizontalSpan > originalSize.y * 18
+          ) {
+            console.warn(`[ModelManager] rejected absurd model ${url}`, originalSize);
+            continue;
+          }
+
+          const targetHeight = TARGET_HEIGHT[key] || 1.6;
+          source.scale.multiplyScalar(targetHeight / originalSize.y);
+          source.updateMatrixWorld(true);
+          const scaledBox = new THREE.Box3().setFromObject(source);
+          const center = scaledBox.getCenter(new THREE.Vector3());
+
+          // Keep all source-mesh normalization offsets inside a wrapper. Gameplay
+          // can then position the wrapper without undoing the model's centering.
+          source.position.x -= center.x;
+          // Keep the model's feet/wheels on the road (Y=0), not half-buried.
+          source.position.y -= scaledBox.min.y;
+          source.position.z -= center.z;
+          repairMaterials(source);
+
+          const wrapper = new THREE.Group();
+          wrapper.add(source);
+          wrapper.position.set(0, 0, 0);
+          if (key !== 'passenger' && key !== 'pedestrian') wrapper.rotation.y = Math.PI;
+          wrapper.userData.modelPath = relativePath;
+          wrapper.userData.targetHeight = targetHeight;
+          this.cache.set(key, wrapper);
+          this.failed.delete(key);
+          console.info(`[ModelManager] OK ${key} ← assets/models/${relativePath}`);
+          return wrapper;
+        } catch (error) {
+          // GLB packs are optional; keep trying each catalog fallback.
+          console.debug(`[ModelManager] asset unavailable ${url}`, error?.message || error);
+        }
+      }
+      this.failed.add(key);
+      console.info(`[ModelManager] placeholder ${key} (no usable GLB found)`);
+      return null;
+    })();
+    this.pending.set(key, task);
+    try {
+      return await task;
+    } finally {
+      this.pending.delete(key);
+    }
+  }
+
+  async preload(keys) {
+    return Promise.all([...new Set(keys)].map((key) => this.load(key)));
+  }
+
+  getInstance(key) {
+    const model = this.cache.get(key);
+    if (!model) return null;
+    const clone = model.clone(true);
+    clone.traverse((object) => {
+      if (!object.isMesh || !object.material) return;
+      object.material = Array.isArray(object.material)
+        ? object.material.map((material) => material.clone())
+        : object.material.clone();
+    });
+    return clone;
+  }
+}
+
+export const MODEL_KEYS = CATALOG;
+export const MODEL_TARGET_HEIGHT = TARGET_HEIGHT;

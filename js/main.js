@@ -1,16 +1,185 @@
-import * as THREE from 'three';
-import {Game} from './game.js';
-import {UI} from './ui.js';
-import {Controls} from './controls.js';
-import {AudioManager} from './audio.js';
-import {Renderer2D} from './renderer2d.js';
-import {Renderer3D} from './renderer3d.js';
-import {ModelManager} from './ModelManager.js';
-import {save} from './storage.js';
-const container=document.getElementById('game-container');let canvas=document.getElementById('game-canvas');const query=new URLSearchParams(location.search);const force2d=query.has('force2d'),force3d=query.has('force3d');const mobile=matchMedia('(max-width: 760px), (pointer: coarse)').matches;let renderer=null,mode='2D',game=null,last=performance.now(),fpsFrames=0,fpsStart=performance.now(),lowFpsSince=0,switched=false;const ui=new UI(),audio=new AudioManager();
-function freshCanvas(){const old=canvas;const next=document.createElement('canvas');next.id='game-canvas';next.setAttribute('aria-label','Kano Life driving game');next.style.cssText='position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y';old.replaceWith(next);canvas=next;return next}
-function start2D(reason='2D MODE · ROAD VISIBLE'){try{renderer?.dispose?.()}catch{};canvas=freshCanvas();renderer=new Renderer2D(canvas);renderer.resize();mode='2D';window.__KANO_RENDER_MODE__=mode;document.getElementById('render-badge').textContent=reason;console.info('[Kano Life] Canvas 2D fallback active; road renderer ready')}
-async function start3D(){const probe=document.createElement('canvas');const gl=probe.getContext('webgl2',{failIfMajorPerformanceCaveat:false})||probe.getContext('webgl',{failIfMajorPerformanceCaveat:false});if(!gl)throw new Error('WebGL unavailable');const models=new ModelManager();const next=freshCanvas();renderer=new Renderer3D(next,models,{mobile});renderer.resize();mode='3D';window.__KANO_RENDER_MODE__=mode;document.getElementById('render-badge').textContent='3D MODE · WEBGL';console.info('[Kano Life] WebGL renderer ready');const essentials=mobile?['keke','car','taxi','suv','motorcycle','police','passenger']:['keke','car','taxi','suv','motorcycle','police','karota','truck','bus','passenger','pedestrian'];models.preload(essentials).then(()=>{const k=models.getInstance('keke');if(k&&renderer?.applyModel)renderer.applyModel('keke',k)}).catch(e=>console.warn('[ModelManager] preload issue',e));return renderer}
-function boot(){game=new Game(ui,audio,{mobile});new Controls(container,{lane:d=>game.lane(d),gas:v=>game.gas(v),brake:v=>game.brake(v),horn:()=>game.horn(),menu:()=>game.menu()});const start=async()=>{if(force2d){start2D();return}try{await start3D()}catch(e){console.warn('[Kano Life] 3D unavailable; using fresh 2D canvas',e);start2D()}};start();window.addEventListener('resize',()=>{for(let i=0;i<3;i++)setTimeout(()=>{try{renderer?.resize?.()}catch{}},i*140)});window.addEventListener('orientationchange',()=>{setTimeout(()=>renderer?.resize?.(),80);setTimeout(()=>renderer?.resize?.(),350);setTimeout(()=>renderer?.resize?.(),800)});if(force3d)console.info('[Kano Life] ?force3d requested');if(force2d)console.info('[Kano Life] ?force2d requested');if(save.daily?.claimed){};document.addEventListener('visibilitychange',()=>{last=performance.now()});requestAnimationFrame(loop)}
-function loop(now){const dt=Math.min((now-last)/1000,.05);last=now;fpsFrames++;if(now-fpsStart>=1000){const fps=fpsFrames*1000/(now-fpsStart);fpsFrames=0;fpsStart=now;if(mobile&&mode==='3D'&&!force3d){if(fps<10){if(!lowFpsSince)lowFpsSince=now;if(now-lowFpsSince>=8000&&!switched){switched=true;start2D('2D MODE · LOW FPS FALLBACK')}}else lowFpsSince=0}}game?.tick(dt);if(renderer){try{renderer.draw(game?.s||{zones:[],traffic:[],steer:0,speed:0,distance:0,fuel:100,condition:100,paint:'#f5c542',camera:'chase',night:false},dt)}catch(e){console.error('[Kano Life] render failure',e);if(mode==='3D'&&!force3d){start2D('2D MODE · RECOVERED AFTER 3D ERROR')}}}requestAnimationFrame(loop)}
+import { Game } from './game.js';
+import { UI } from './ui.js';
+import { Controls } from './controls.js';
+import { AudioManager } from './audio.js';
+import { Renderer2D } from './renderer2d.js';
+import { Renderer3D } from './renderer3d.js';
+import { ModelManager } from './ModelManager.js';
+import { save } from './storage.js';
+
+const container = document.getElementById('game-container');
+let canvas = document.getElementById('game-canvas');
+const query = new URLSearchParams(window.location.search);
+const force2d = query.has('force2d');
+const force3d = query.has('force3d');
+const mobile = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+const ui = new UI();
+const audio = new AudioManager();
+
+let renderer = null;
+let renderMode = '2D';
+let game = null;
+let lastFrame = performance.now();
+let fpsFrames = 0;
+let fpsWindowStart = performance.now();
+let lowFpsSince = 0;
+let fallbackStarted = false;
+let runtimeFailureCount = 0;
+
+function setRenderBadge(text) {
+  const badge = document.getElementById('render-badge');
+  if (badge) badge.textContent = text;
+}
+
+function freshCanvas() {
+  const replacement = document.createElement('canvas');
+  replacement.id = 'game-canvas';
+  replacement.setAttribute('aria-label', 'Kano Life driving game');
+  replacement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y';
+  canvas?.replaceWith(replacement);
+  canvas = replacement;
+  return replacement;
+}
+
+function start2D(reason = '2D MODE · ROAD VISIBLE') {
+  try { renderer?.dispose?.(); } catch (error) {
+    console.warn('[Kano Life] renderer disposal warning', error);
+  }
+  const newCanvas = freshCanvas();
+  renderer = new Renderer2D(newCanvas);
+  renderer.resize();
+  renderMode = '2D';
+  window.__KANO_RENDER_MODE__ = renderMode;
+  setRenderBadge(reason);
+  console.info('[Kano Life] Canvas 2D fallback active; road renderer ready');
+}
+
+function attachWebGLRecovery(targetCanvas) {
+  targetCanvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    console.error('[Kano Life] WebGL context lost; switching to fresh Canvas 2D');
+    if (renderMode === '3D') start2D('2D MODE · WEBGL CONTEXT LOST');
+  }, { once: true });
+}
+
+async function start3D() {
+  // Probe a temporary canvas only. The active render canvas is always fresh and
+  // is not reused for Canvas 2D after a WebGL context has been attached to it.
+  const probe = document.createElement('canvas');
+  let gl = null;
+  try {
+    gl = probe.getContext('webgl2', { failIfMajorPerformanceCaveat: false })
+      || probe.getContext('webgl', { failIfMajorPerformanceCaveat: false });
+  } catch { gl = null; }
+  if (!gl) throw new Error('WebGL unavailable');
+  try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* optional extension */ }
+
+  const models = new ModelManager();
+  const activeCanvas = freshCanvas();
+  attachWebGLRecovery(activeCanvas);
+  const webglRenderer = new Renderer3D(activeCanvas, models, { mobile });
+  renderer = webglRenderer;
+  renderer.resize();
+  renderMode = '3D';
+  window.__KANO_RENDER_MODE__ = renderMode;
+  setRenderBadge('3D MODE · WEBGL');
+  console.info('[Kano Life] WebGL renderer ready');
+
+  const essentials = mobile
+    ? ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'passenger']
+    : ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota', 'truck', 'bus', 'passenger', 'pedestrian'];
+  models.preload(essentials)
+    .then(() => {
+      if (renderer !== webglRenderer || renderMode !== '3D') return;
+      const playerModel = models.getInstance('keke');
+      if (playerModel) webglRenderer.applyModel('keke', playerModel);
+    })
+    .catch((error) => console.warn('[ModelManager] preload issue', error));
+}
+
+function boot() {
+  game = new Game(ui, audio, { mobile });
+  new Controls(container, {
+    lane: (direction) => game.lane(direction),
+    gas: (value) => game.gas(value),
+    brake: (value) => game.brake(value),
+    horn: () => game.horn(),
+    menu: () => game.menu(),
+  });
+
+  const saved2D = save?.settings?.quality === '2d';
+  if (force2d || (saved2D && !force3d)) {
+    start2D(force2d ? '2D MODE · FORCED BY URL' : '2D MODE · SAVED SETTING');
+  } else {
+    start3D().catch((error) => {
+      console.warn('[Kano Life] 3D unavailable; starting Canvas 2D on a fresh canvas', error);
+      start2D(force3d ? '2D MODE · WEBGL UNAVAILABLE' : '2D MODE · ROAD VISIBLE');
+    });
+  }
+
+  const resizeWithMobilePasses = () => {
+    [0, 140, 320, 620].forEach((delay) => {
+      window.setTimeout(() => {
+        try { renderer?.resize?.(); } catch (error) {
+          console.warn('[Kano Life] resize deferred', error);
+        }
+      }, delay);
+    });
+  };
+  window.addEventListener('resize', resizeWithMobilePasses, { passive: true });
+  window.addEventListener('orientationchange', resizeWithMobilePasses, { passive: true });
+  window.visualViewport?.addEventListener('resize', resizeWithMobilePasses, { passive: true });
+  document.addEventListener('visibilitychange', () => {
+    lastFrame = performance.now();
+  });
+
+  if (force3d) console.info('[Kano Life] ?force3d requested; automatic low-FPS fallback disabled');
+  if (force2d) console.info('[Kano Life] ?force2d requested');
+  requestAnimationFrame(frame);
+}
+
+function frame(now) {
+  const dt = Math.min(Math.max((now - lastFrame) / 1000, 0), 0.05);
+  lastFrame = now;
+  fpsFrames += 1;
+
+  if (now - fpsWindowStart >= 1000) {
+    const fps = fpsFrames * 1000 / Math.max(1, now - fpsWindowStart);
+    fpsFrames = 0;
+    fpsWindowStart = now;
+    if (mobile && renderMode === '3D' && !force3d) {
+      if (fps < 10) {
+        if (!lowFpsSince) lowFpsSince = now;
+        if (now - lowFpsSince >= 8000 && !fallbackStarted) {
+          fallbackStarted = true;
+          start2D('2D MODE · LOW FPS FALLBACK');
+        }
+      } else {
+        lowFpsSince = 0;
+      }
+    }
+  }
+
+  try {
+    game?.tick(dt);
+    renderer?.draw?.(game?.s, dt);
+    runtimeFailureCount = 0;
+  } catch (error) {
+    runtimeFailureCount += 1;
+    console.error('[Kano Life] frame update failed', error);
+    if (renderMode === '3D') {
+      start2D('2D MODE · RECOVERED AFTER ERROR');
+    }
+    if (runtimeFailureCount >= 3 && game?.state === 'PLAY') {
+      game.state = 'MENU';
+      game.s.gas = false;
+      game.s.brake = false;
+      ui.show('menu-screen');
+      ui.toast('Game paused after a runtime error. Check the console before continuing.');
+    }
+  } finally {
+    requestAnimationFrame(frame);
+  }
+}
+
 boot();
