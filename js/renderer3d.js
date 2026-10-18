@@ -35,9 +35,9 @@ export class Renderer3D {
         ? ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota', 'passenger', 'building']
         : [
             'keke', 'car', 'taxi', 'suv', 'truck', 'motorcycle',
-            'police', 'karota', 'bus', 'ambulance', 'robber', 'bicycle',
+            'police', 'karota', 'robber',
             'passenger', 'pedestrian',
-            'market', 'bustop', 'bustation', 'building', 'tree', 'billboard', 'bench', 'flyover', 'roadlight', 'cone', 'dirtmound'
+            'market', 'bustop', 'bustation', 'building', 'tree', 'billboard', 'bench', 'roadlight', 'cone'
           ];
       this.models.preload(KEYS).then(() => {
         this._integrateAllGlbs();
@@ -221,11 +221,15 @@ export class Renderer3D {
       const size = new THREE.Vector3();
       box.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
+      // Never place these as world props (mislabelled bus/train assets)
+      if (key === 'flyover' || key === 'bus' || key === 'truck' || key === 'ambulance') {
+        return null;
+      }
       const targetMax = ({
         pedestrian: 1.8, passenger: 1.8, keke: 2.2, car: 2.5,
-        building: 6, market: 3, bustop: 2.5, bustation: 3
-      })[key] || 4;
-      if (maxDim > 0.01 && maxDim > targetMax * 1.4) {
+        building: 5, market: 3, bustop: 2.5, bustation: 2.8, roadlight: 4
+      })[key] || 3.5;
+      if (maxDim > 0.01 && maxDim > targetMax * 1.15) {
         inst.scale.multiplyScalar(targetMax / maxDim);
         inst.updateMatrixWorld(true);
         box = new THREE.Box3().setFromObject(inst);
@@ -246,8 +250,13 @@ export class Renderer3D {
       // Reject absurd final height (giant floating meshes)
       box = new THREE.Box3().setFromObject(inst);
       box.getSize(size);
-      if (size.y > 12 || size.x > 20) {
+      if (size.y > 7 || size.x > 10 || size.z > 12) {
         console.warn('[KanoRun] rejected giant GLB', key, size.toArray());
+        return null;
+      }
+      // Never put large props in the driving lanes
+      if (Math.abs(x) < 3.2 && (size.x > 3 || size.z > 3 || size.y > 4)) {
+        console.warn('[KanoRun] rejected center-road prop', key, size.toArray());
         return null;
       }
       if (opts.y != null) inst.position.y = opts.y;
@@ -426,7 +435,7 @@ export class Renderer3D {
     for (let i = 0; i < 6; i++) add(this.makeCar(0xdc2626), 'car');
     for (let i = 0; i < 5; i++) add(this.makeKeke(0xeab308, false), 'keke');
     for (let i = 0; i < 3; i++) add(this.makeCar(0xeab308), 'taxi');
-    for (let i = 0; i < 2; i++) add(this.makeBus(), 'bus');
+    // bus GLB disabled — camera-eating
     for (let i = 0; i < 3; i++) add(this.makeMotorcycle(), 'motorcycle');
     for (let i = 0; i < 2; i++) add(this.makeTruck(), 'truck');
     for (let i = 0; i < 2; i++) add(this.makeEnforcer('police'), 'police');
@@ -735,18 +744,12 @@ export class Renderer3D {
       this.addPedestrian(side * (4.8 + (i % 4) * 0.2), i * 2.6 + 1.0);
     }
 
-    // Flyovers / lights — desktop only (mobile needs FPS for vehicle GLBs)
+    // NO flyover GLBs — several kits are full buses/trains and eat the camera
+    // Street lights only, roadside (never center of road)
     if (!this._mobile) {
-      for (const z of [22, 55, 95, 130]) {
-        const fo = this._placeGlb('flyover', 0, z, {});
-        if (fo) {
-          fo.position.y = Math.max(fo.position.y, 4.5);
-          fo.scale.multiplyScalar(0.35); // prevent sky-eating flyover kits
-        }
-      }
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 10; i++) {
         const side = i % 2 === 0 ? -1 : 1;
-        this._placeGlb('roadlight', side * 4.8, 8 + i * 11, {});
+        this._placeGlb('roadlight', side * 5.2, 10 + i * 12, {});
       }
     }
 

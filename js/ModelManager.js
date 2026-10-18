@@ -102,11 +102,9 @@ const MODEL_MAP = {
   tree: ['assets/models/world/props/Tree.glb'],
   billboard: ['assets/models/world/props/Billboard.glb'],
   bench: ['assets/models/world/props/Bench.glb'],
-  flyover: [
-    'assets/models/world/roads/kano_urban_flyover.glb',
-    'assets/models/world/roads/kai_tak_flyovers.glb',
-    'assets/models/world/roads/kowloon_bay_flyover.glb',
-  ],
+  // DISABLED: these files render as full buses/trains in-camera
+  flyover: [],
+
   roadlight: [
     'assets/models/world/roads/light-curved.glb',
     'assets/models/world/roads/light-square.glb',
