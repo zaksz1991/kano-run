@@ -237,7 +237,7 @@ export class Game {
     this.paidContinuesUsed = 0;
     this.combo = 0;
     this.comboTimer = 0;
-    this.speed = 3.5;
+    this.speed = 4.8;
     this.throttle = 0.7;
     this.braking = false;
     this.frame = 0;
@@ -1552,20 +1552,20 @@ export class Game {
     const route = CONFIG.ROUTES[this.selectedRoute] || CONFIG.ROUTES.citycenter;
     const bonuses = this.getBonuses();
 
-    // ——— MOVEMENT — calmer city pace ———
-    if (typeof this.throttle !== 'number' || this.throttle < 0.15) this.throttle = 0.5;
+    // ——— MOVEMENT — snappier Kano pace ———
+    if (typeof this.throttle !== 'number' || this.throttle < 0.15) this.throttle = 0.55;
     this.braking = !!this.braking;
 
-    const loadFactor = 1 - Math.min(0.2, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.2);
-    // Cruise ~35–50 km/h feel; gas up to ~70
-    const top = (4.2 + (bonuses.speed || 0) * 1.5) * loadFactor;
-    let targetSpeed = this.braking ? 0 : (1.8 + this.throttle * (top - 1.8));
-    if (!this.braking && targetSpeed < 1.8) targetSpeed = 1.8;
-    if (this.trafficJamTimer > 0 && !this.braking) targetSpeed = Math.max(1.2, targetSpeed * 0.5);
+    const loadFactor = 1 - Math.min(0.15, (this.paxOnBoard / Math.max(1, this.capacity)) * 0.15);
+    // Cruise ~50–65 km/h feel; gas up to ~95 (was too slow)
+    const top = (6.4 + (bonuses.speed || 0) * 1.8) * loadFactor;
+    let targetSpeed = this.braking ? 0 : (2.6 + this.throttle * (top - 2.6));
+    if (!this.braking && targetSpeed < 2.6) targetSpeed = 2.6;
+    if (this.trafficJamTimer > 0 && !this.braking) targetSpeed = Math.max(1.8, targetSpeed * 0.55);
 
-    this.speed += (targetSpeed - this.speed) * (this.braking ? 0.22 : 0.1);
-    if (this.braking) this.speed *= 0.82;
-    if (!this.braking) this.speed = Math.max(1.8, this.speed);
+    this.speed += (targetSpeed - this.speed) * (this.braking ? 0.28 : 0.16);
+    if (this.braking) this.speed *= 0.78;
+    if (!this.braking) this.speed = Math.max(2.4, this.speed);
     // Fuel
     if (this.speed > 0.25) {
       this.fuel = Math.max(0, this.fuel - 0.008 * (0.4 + this.throttle + this.paxOnBoard * 0.03));
@@ -1610,7 +1610,7 @@ export class Game {
       return;
     }
     if (!Number.isFinite(this.speed)) this.speed = 1.8;
-    this.speed = Math.max(this.braking ? 0 : 1.8, Math.min(this.speed, 7));
+    this.speed = Math.max(this.braking ? 0 : 2.2, Math.min(this.speed, 9.5));
 
     // Condition warnings
     if (this.condition < 25 && this.frame % 120 === 0) {
@@ -1629,8 +1629,8 @@ export class Game {
 
     // Travel progress — moderate
     const move = Math.max(this.speed, this.braking ? 0 : 1.8);
-    this.roadOff = (this.roadOff + move * 1.6) % 10000;
-    const kmPerFrame = move * 0.0015;
+    this.roadOff = (this.roadOff + move * 2.1) % 10000;
+    const kmPerFrame = move * 0.0022;
     this.dist += kmPerFrame;
     this.meters = (this.meters || 0) + kmPerFrame * 1000;
     this.segmentDist += kmPerFrame;
@@ -1847,46 +1847,73 @@ export class Game {
       }
     }
 
-    // Highlighted pick-up checkpoints (green stop pads)
-    if (this.frame % 90 === 0 && this.paxZones.length < 6) {
-      const roll = Math.random();
-      const sizes = ['normal', 'normal', 'normal', 'tall', 'fat', 'big'];
-      const isPark = true; // marked stop pad = legal park
-      const paxClass = pickPaxClass(this.level || 1);
+    // Individual roadside pick-ups (shoulder, 1 passenger)
+    if (this.frame % 55 === 0 && this.paxZones.length < 8 && Math.random() < 0.65) {
       const dest = pickDestination(this.currentDistrict);
+      const sideLane = Math.random() < 0.5 ? 0 : 2; // roadside lanes
       this.paxZones.push({
-        lane: Math.floor(Math.random() * 3),
-        y: -90,
+        lane: sideLane,
+        y: -70,
         taken: false,
-        aishat: roll < 0.09,
-        vip: paxClass.id === 'vip' || (roll >= 0.09 && roll < 0.14),
-        paxClass: paxClass.id,
-        paxClassName: paxClass.name,
-        fareMult: paxClass.fareMult,
+        aishat: false,
+        vip: false,
+        paxClass: 'worker',
+        paxClassName: 'Roadside',
+        fareMult: 1,
         dest,
         label: dest || 'Stop',
-        seats: roll < 0.09 ? 2 : 1,
-        size: sizes[Math.floor(Math.random() * sizes.length)],
+        seats: 1,
+        size: 'normal',
         flagging: true,
-        isPark,
-        checkpoint: true
+        isPark: false,
+        checkpoint: false,
+        roadside: true
       });
     }
-    // Yellow drop checkpoints — prefer destinations of onboard passengers
-    if (this.frame % 110 === 0 && this.onboard.length > 0 && this.dropZones.length < 4) {
-      // Match challenge: first onboard dest is the correct drop label
+    // Big multi-passenger checkpoints (hub stops)
+    if (this.frame % 120 === 0 && this.paxZones.length < 10) {
+      const roll = Math.random();
+      const sizes = ['normal', 'normal', 'tall', 'fat', 'big'];
+      const paxClass = pickPaxClass(this.level || 1);
+      const dest = pickDestination(this.currentDistrict);
+      const multi = Math.random() < 0.55;
+      this.paxZones.push({
+        lane: 1, // center hub
+        y: -100,
+        taken: false,
+        aishat: roll < 0.08,
+        vip: paxClass.id === 'vip' || (roll >= 0.08 && roll < 0.14),
+        paxClass: paxClass.id,
+        paxClassName: multi ? 'Group' : paxClass.name,
+        fareMult: paxClass.fareMult,
+        dest,
+        label: (multi ? 'HUB · ' : '') + (dest || 'Stop'),
+        seats: multi ? (2 + Math.floor(Math.random() * 3)) : (roll < 0.09 ? 2 : 1),
+        size: sizes[Math.floor(Math.random() * sizes.length)],
+        flagging: true,
+        isPark: true,
+        checkpoint: true,
+        multi: multi,
+        bigPad: true
+      });
+    }
+    // Drop: individual roadside + larger hub for multi onboard
+    if (this.frame % 85 === 0 && this.onboard.length > 0 && this.dropZones.length < 6) {
       const prefer = this.onboard[0]?.dest || pickDestination();
+      const multiDrop = this.onboard.length >= 2 || (this.onboard[0]?.seats || 1) >= 2;
       const lanePref = this.gameMode === 'matchdrop'
         ? Math.round(this.playerLane || 1)
-        : Math.floor(Math.random() * 3);
+        : (multiDrop ? 1 : (Math.random() < 0.5 ? 0 : 2));
       this.dropZones.push({
         lane: lanePref,
         y: -90,
         used: false,
         akwai: true,
         dest: prefer,
-        label: prefer || 'Akwai',
-        checkpoint: true,
+        label: multiDrop ? ('HUB DROP · ' + prefer) : prefer,
+        checkpoint: multiDrop,
+        bigPad: multiDrop,
+        roadside: !multiDrop,
         mustMatch: this.gameMode === 'matchdrop'
       });
     }

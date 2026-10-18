@@ -102,6 +102,21 @@ const MODEL_MAP = {
   tree: ['assets/models/world/props/Tree.glb'],
   billboard: ['assets/models/world/props/Billboard.glb'],
   bench: ['assets/models/world/props/Bench.glb'],
+  flyover: [
+    'assets/models/world/roads/kano_urban_flyover.glb',
+    'assets/models/world/roads/kai_tak_flyovers.glb',
+    'assets/models/world/roads/kowloon_bay_flyover.glb',
+  ],
+  roadlight: [
+    'assets/models/world/roads/light-curved.glb',
+    'assets/models/world/roads/light-square.glb',
+  ],
+  trafficlight: [
+    'assets/models/world/roads/traffic-light.glb',
+    'assets/models/world/props/Traffic-Light.glb',
+  ],
+  cone: ['assets/models/world/roads/construction-cone.glb'],
+  dirtmound: ['assets/models/world/roads/gravel_asphalt_dirt_mound_pile.glb'],
   trafficlight: ['assets/models/world/props/Traffic-Light.glb'],
 };
 
@@ -172,7 +187,7 @@ export class ModelManager {
         root.updateMatrixWorld(true);
         const box3 = new THREE.Box3().setFromObject(root);
         box3.getSize(size);
-        if (size.y > 15 || size.x > 25) {
+        if (size.y > 12 || size.x > 18 || size.z > 22) {
           console.warn('[ModelManager] skip oversized', key, size.toArray());
           continue;
         }

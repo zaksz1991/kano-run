@@ -34,7 +34,7 @@ export class Renderer3D {
         'keke', 'car', 'taxi', 'suv', 'truck', 'motorcycle',
         'police', 'karota', 'bus', 'ambulance', 'robber', 'bicycle',
         'passenger', 'pedestrian',
-        'market', 'bustop', 'bustation', 'building', 'tree', 'billboard', 'bench'
+        'market', 'bustop', 'bustation', 'building', 'tree', 'billboard', 'bench', 'flyover', 'roadlight', 'cone', 'dirtmound'
       ];
       this.models.preload(KEYS).then(() => {
         this._integrateAllGlbs();
@@ -693,6 +693,20 @@ export class Renderer3D {
     for (let i = 0; i < 70; i++) {
       const side = i % 2 === 0 ? -1 : 1;
       this.addPedestrian(side * (4.8 + (i % 4) * 0.2), i * 2.6 + 1.0);
+    }
+
+    // Flyovers spanning the road (Kano urban)
+    for (const z of [22, 55, 95, 130]) {
+      const fo = this._placeGlb('flyover', 0, z, {});
+      if (fo) {
+        fo.position.y = Math.max(fo.position.y, 3.2);
+        fo.scale.multiplyScalar(1.15);
+      }
+    }
+    // Street lights from roads kit
+    for (let i = 0; i < 12; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      this._placeGlb('roadlight', side * 4.8, 8 + i * 11, {});
     }
 
     // Kano-style city gates / welcome arches spanning the road
@@ -1616,7 +1630,7 @@ export class Renderer3D {
     }
 
     // Travel — slower so camera can keep up cleanly
-    this.travelZ = (this.travelZ || 0) + spd * 0.065;
+    this.travelZ = (this.travelZ || 0) + spd * 0.085;
     const travel = this.travelZ;
 
     // Highway slope — tip road + camera slightly
@@ -1858,7 +1872,8 @@ export class Renderer3D {
         }
         mesh.userData.label.position.y = 2.1 + Math.sin((g.frame || 0) * 0.12) * 0.08;
       }
-      const pulse = 1 + Math.sin((g.frame || 0) * 0.18 + (z.lane || 0)) * 0.18;
+      const basePad = z.bigPad || z.multi || z.checkpoint ? 1.55 : (z.roadside ? 0.85 : 1);
+      const pulse = basePad * (1 + Math.sin((g.frame || 0) * 0.18 + (z.lane || 0)) * 0.12);
       mesh.scale.set(pulse, 1, pulse);
     }
     while (zi < this.zonePool.length) this.zonePool[zi++].visible = false;
