@@ -50,12 +50,12 @@ export class UI {
               if (!stand.length) this.showMissionToast('🇳🇬 No scores yet');
               else this.showMissionToast('🇳🇬 ' + stand.map((r,i)=>(i===0?'🥇':i===1?'🥈':'🥉')+(r.label||r.tribe)+' ₦'+r.total).join(' · '));
             } },
-          { label: 'Force 3D models', action: () => {
+          { label: 'Reload 3D models', action: () => {
               this.hideEvent(); this.showPlaying();
               try {
-                if (window.KanoLife?.switch3D) window.KanoLife.switch3D();
-                this.showMissionToast('Trying 3D…');
-              } catch (e) { this.showMissionToast('3D failed'); }
+                if (window.KanoLife?.reload3D) window.KanoLife.reload3D();
+                this.showMissionToast('Reloading 3D…');
+              } catch (e) { this.showMissionToast('Reload failed'); }
             } },
           { label: 'Close', action: () => { this.hideEvent(); this.showPlaying(); } }
         ]);
@@ -395,14 +395,11 @@ export class UI {
       routeLabel.textContent = (game.gameMode !== 'career' ? '[' + game.gameMode + '] ' : '') + tribe + extra;
     }
     this.drawMinimap(game);
-    // Show 2D/3D so player knows why graphics differ
     try {
       const badge = document.getElementById('level-label');
-      if (badge && window.KanoLife) {
-        const md = window.KanoLife.mode || '';
-        if (md && !badge.dataset.modePinned) {
-          badge.textContent = (badge.textContent || 'Lv').split('·')[0].trim() + ' · ' + md.toUpperCase();
-        }
+      if (badge) {
+        const lv = 'Lv ' + (game.level || 1);
+        badge.textContent = lv + ' · 3D';
       }
     } catch (e) {}
   }

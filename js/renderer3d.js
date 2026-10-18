@@ -30,8 +30,9 @@ export class Renderer3D {
     try {
       this.init();
       // GLB Integration Pass — load all available models then swap placeholders
+      // Always load vehicles so GLBs appear (mobile = no heavy world kits)
       const KEYS = this._mobile
-        ? ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'passenger']
+        ? ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota', 'passenger', 'building']
         : [
             'keke', 'car', 'taxi', 'suv', 'truck', 'motorcycle',
             'police', 'karota', 'bus', 'ambulance', 'robber', 'bicycle',
@@ -1542,9 +1543,14 @@ export class Renderer3D {
       if (this.canvas && (this.canvas.clientWidth < 32 || this.canvas.clientHeight < 32)) {
         this.resize();
       }
+      if (this.renderer && !this.renderer.getContext()) {
+        console.error('[KanoRun] WebGL context gone');
+        return;
+      }
       this.render();
     } catch (e) {
       console.error('3D draw error', e);
+      throw e; // surface to main loop counter
     }
   }
 
