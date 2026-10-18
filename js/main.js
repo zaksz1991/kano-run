@@ -155,13 +155,15 @@ if (canvas) {
 
 let last = 0;
 let renderErrors = 0;
+let _rafAcc = 0;
+const TARGET_MS = MOBILE ? 33 : 16; // ~30fps mobile, 60 desktop
 function loop(ts) {
-  const dt = Math.min(32, (ts - last) || 16);
+  requestAnimationFrame(loop);
+  if (mode !== '3d') return;
+  const elapsed = ts - last;
+  if (elapsed < TARGET_MS - 1) return; // throttle
+  const dt = Math.min(50, elapsed || TARGET_MS);
   last = ts;
-  if (mode !== '3d') {
-    requestAnimationFrame(loop);
-    return;
-  }
   try {
     controls.update?.();
     game.update?.(dt);
@@ -180,7 +182,6 @@ function loop(ts) {
       mode = 'none';
     }
   }
-  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 

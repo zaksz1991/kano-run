@@ -347,7 +347,7 @@ export class Renderer3D {
     if (h < 160) h = Math.min(900, window.innerHeight || 700);
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: !mobile,
+      antialias: false,
       powerPreference: mobile ? 'low-power' : 'high-performance',
       alpha: false,
       failIfMajorPerformanceCaveat: false,
@@ -373,7 +373,7 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     // Stronger fog = clearer depth (near sharp, far fades)
-    this.scene.fog = new THREE.Fog(0x8ec8e8, 18, 70);
+    this.scene.fog = new THREE.Fog(0x8ec8e8, 12, this._mobile ? 38 : 55);
 
     // Chase cam framed on full 3-lane highway
     this.camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 250);
@@ -473,6 +473,14 @@ export class Renderer3D {
       const lq = JSON.parse(localStorage.getItem('kanoLQ') || 'false') || this._mobile;
       if (lq || this._mobile) this.applyQuality(true);
     } catch {}
+    // Performance: kill shadows on all meshes
+    this.scene.traverse((ch) => {
+      if (ch.isMesh) {
+        ch.castShadow = false;
+        ch.receiveShadow = false;
+      }
+    });
+    try { this.renderer.shadowMap.enabled = false; } catch (e) {}
     this.ready = true;
     console.log('[KanoRun] 3D ready', { mobile: !!this._mobile, w, h });
   }
@@ -705,8 +713,8 @@ export class Renderer3D {
 
     // Roadside — prefer real building GLBs, fall back to procedural
     for (const side of [-1, 1]) {
-      const cityCopies = this._mobile ? 0 : 2; // mobile: GLB buildings only or skip
-      for (let i = 0; i < types.length * cityCopies; i++) {
+      const cityCopies = this._mobile ? 0 : 1;
+      for (let i = 0; i < Math.min(types.length * cityCopies, this._mobile ? 0 : 18); i++) {
         const z = i * 4.0 + (side > 0 ? 1.2 : 0);
         const xBase = side * (6.2 + (i % 4) * 0.35);
         const kind = types[i % types.length];
@@ -739,9 +747,10 @@ export class Renderer3D {
     }
 
     // People on sidewalk only — outside lane bounds (±2.2)
-    for (let i = 0; i < 70; i++) {
+    const pedN = this._mobile ? 8 : 16;
+    for (let i = 0; i < pedN; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      this.addPedestrian(side * (4.8 + (i % 4) * 0.2), i * 2.6 + 1.0);
+      this.addPedestrian(side * (5.0 + (i % 3) * 0.25), i * 6.5 + 2.0);
     }
 
     // NO flyover GLBs — several kits are full buses/trains and eat the camera
@@ -1649,14 +1658,7 @@ export class Renderer3D {
       if (this.sky) this.sky.material.color.setHex(0x020617);
       if (this.headlightL) this.headlightL.intensity = 2.2;
       if (this.headlightR) this.headlightR.intensity = 2.2;
-      // Boost street lamp emissive at night
-      if (this.buildings) {
-        this.buildings.traverse((ch) => {
-          if (ch.isMesh && ch.material && ch.material.emissive && ch.geometry?.type === 'SphereGeometry') {
-            ch.material.emissiveIntensity = 1.2;
-          }
-        });
-      }
+      // (no per-frame buildings.traverse — too heavy)
     } else if (tod > 0.42) {
       // dusk
       this.renderer.setClearColor(0x7c3aed, 1);
