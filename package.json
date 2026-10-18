@@ -1,20 +1,16 @@
 {
   "name": "kano-life",
-  "version": "3.2.0",
+  "version": "4.0.0",
   "private": true,
-  "description": "Kano Life 3D — Adaidaita Sahu through Kano. Game Developer: Hassan Zakariya",
+  "description": "Kano Life — Adaidaita Sahu street-life driving game. Game Developer: Hassan Zakariya",
   "author": "Hassan Zakariya",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview"
   },
-  "dependencies": {
-    "three": "^0.170.0"
-  },
-  "devDependencies": {
-    "vite": "^5.4.0"
-  }
+  "dependencies": { "three": "^0.170.0" },
+  "devDependencies": { "vite": "^5.4.0" }
 }
