@@ -18,6 +18,8 @@ export class Renderer3D {
     this.vehiclePool = [];
     this.zonePool = [];
     this.coinPool = [];
+    this.fuelPadPool = [];
+    this.potholePool = [];
     this.introPhase = 3;
     this.cabinCam = false;
     this.cameraMode = 'chase';
@@ -403,6 +405,18 @@ export class Renderer3D {
       c.visible = false;
       this.scene.add(c);
       this.coinPool.push(c);
+    }
+    for (let i = 0; i < 6; i++) {
+      const f = this.makeFuelPad();
+      f.visible = false;
+      this.scene.add(f);
+      this.fuelPadPool.push(f);
+    }
+    for (let i = 0; i < 8; i++) {
+      const p = this.makePotholeMesh();
+      p.visible = false;
+      this.scene.add(p);
+      this.potholePool.push(p);
     }
 
     this.initParticles();
@@ -1863,6 +1877,32 @@ export class Renderer3D {
       }
     }
     while (ci < this.coinPool.length) this.coinPool[ci++].visible = false;
+
+    // Fuel pads (green)
+    let fi = 0;
+    for (const fp of g.fuelPads || []) {
+      if (fp.taken || fi >= (this.fuelPadPool || []).length) continue;
+      const mesh = this.fuelPadPool[fi++];
+      mesh.visible = true;
+      mesh.position.x = this.laneToX(fp.lane);
+      mesh.position.z = this.screenYToZ(fp.y, py);
+      mesh.position.y = 0;
+      const pulse = 1 + Math.sin((g.frame || 0) * 0.2) * 0.12;
+      mesh.scale.setScalar(pulse);
+    }
+    while (this.fuelPadPool && fi < this.fuelPadPool.length) this.fuelPadPool[fi++].visible = false;
+
+    // Potholes (dark)
+    let pi = 0;
+    for (const pot of g.potholes || []) {
+      if (pot.hit || pi >= (this.potholePool || []).length) continue;
+      const mesh = this.potholePool[pi++];
+      mesh.visible = true;
+      mesh.position.x = this.laneToX(pot.lane);
+      mesh.position.z = this.screenYToZ(pot.y, py);
+      mesh.position.y = 0;
+    }
+    while (this.potholePool && pi < this.potholePool.length) this.potholePool[pi++].visible = false;
 
     this.renderer.render(this.scene, this.camera);
   }

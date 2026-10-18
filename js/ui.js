@@ -37,6 +37,19 @@ export class UI {
 
   bind() {
     document.getElementById('start-btn').onclick = () => this.game.start();
+    const modeBtn = document.getElementById('mode-btn');
+    if (modeBtn) modeBtn.onclick = () => this.game.cycleGameMode?.();
+    const tribeBtn = document.getElementById('tribe-btn');
+    if (tribeBtn) tribeBtn.onclick = () => this.game.cycleDialect?.();
+    const tribalBtn = document.getElementById('tribal-btn');
+    if (tribalBtn) tribalBtn.onclick = () => {
+      const stand = this.game.getNaijaGrandWinners?.() || [];
+      if (!stand.length) this.showMissionToast('🇳🇬 No tribal scores yet');
+      else {
+        const line = stand.map((r, i) => (i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉') + (r.label || r.tribe) + ' ₦' + r.total).join(' · ');
+        this.showMissionToast('🇳🇬 ' + line);
+      }
+    };
     const helpBtn = document.getElementById('help-btn');
     if (helpBtn) helpBtn.onclick = () => this.showHelp();
     const hudHelp = document.getElementById('hud-help');
