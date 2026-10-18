@@ -1,3 +1,11 @@
+// Align near traffic with the player's displayed position instead of letting
+// collision markers disappear under the bottom control bar. At impact depth the
+// projected road object lands around 59% of screen height, where the keke is drawn.
+export function projectRoadDepth(depth) {
+  const value = Number.isFinite(depth) ? depth : 1.32;
+  return Math.max(0.02, Math.min(0.59, 0.59 - (value - 0.045) * 0.45));
+}
+
 export class Renderer2D {
   constructor(canvas) {
     this.canvas = canvas;
@@ -20,13 +28,18 @@ export class Renderer2D {
   }
 
   setLifeScene(sceneName) {
-    this.lifeScene = sceneName === 'garage' ? 'garage' : 'road';
+    const supported = new Set(['road', 'garage', 'bedroom', 'household', 'street', 'breakfast', 'walk', 'school']);
+    this.lifeScene = supported.has(sceneName) ? sceneName : 'road';
   }
 
   draw(state, deltaSeconds) {
     if (!this.ctx) return;
     if (this.lifeScene === 'garage') {
       this.drawGarage(state);
+      return;
+    }
+    if (this.lifeScene !== 'road') {
+      this.drawLifeScene(state);
       return;
     }
 
@@ -97,7 +110,7 @@ export class Renderer2D {
       for (let index = 0; index < 9; index += 1) {
         const t = ((index / 9 + roadPhase) % 1);
         const y = roadTop + (roadBottom - roadTop) * t * t;
-        const x = center + (lane - 1.5) * 2 * (topHalf + (bottomHalf - topHalf) * t * t);
+        const x = center + (lane - 1.5) * (2 / 3) * (topHalf + (bottomHalf - topHalf) * t * t);
         const lineHeight = 3 + t * 24;
         const lineWidth = 1 + t * 2;
         ctx.fillStyle = '#f8f1d2';
@@ -129,29 +142,35 @@ export class Renderer2D {
     for (const zone of state.zones || []) {
       const depth = zone.depth;
       if (depth < 0.01 || depth > 1.2) continue;
-      const y = roadTop + (roadBottom - roadTop) * depth * depth;
-      const x = center + (zone.lane - 1) * 2 * (topHalf + (bottomHalf - topHalf) * depth * depth);
-      const size = 8 + depth * 29;
+      const t = projectRoadDepth(depth);
+      const halfAt = topHalf + (bottomHalf - topHalf) * t * t;
+      const y = roadTop + (roadBottom - roadTop) * t * t;
+      const x = zone.type === 'pothole'
+        ? center + (zone.lane - 1) * (2 / 3) * halfAt
+        : center + (zone.side || (zone.lane === 0 ? -1 : 1)) * Math.max(topHalf + 7, halfAt - (12 + t * 12));
+      const size = 8 + t * 29;
       ctx.fillStyle = zone.type === 'pickup' ? '#2bdb8b'
         : zone.type === 'drop' ? '#f5c542'
           : zone.type === 'fuel' ? '#55e8a3' : '#252c34';
-      ctx.globalAlpha = 0.4 + depth * 0.5;
+      ctx.globalAlpha = 0.4 + t * 0.5;
       ctx.beginPath();
       ctx.ellipse(x, y, size, size * 0.35, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.fillStyle = zone.type === 'pickup' ? '#063c2a' : zone.type === 'drop' ? '#3b2b00' : '#f5f7fa';
-      ctx.font = `900 ${Math.max(6, 8 * depth)}px sans-serif`;
+      ctx.font = `900 ${Math.max(6, 8 * t)}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(zone.type === 'pickup' ? 'PICK' : zone.type === 'drop' ? 'DROP' : zone.type === 'fuel' ? 'FUEL' : 'POT', x, y + 3 * depth);
+      ctx.fillText(zone.type === 'pickup' ? (zone.hub ? 'KEKE STOP' : 'PICK-UP') : zone.type === 'drop' ? 'DROP-OFF' : zone.type === 'fuel' ? 'FUEL' : 'POT', x, y + 3);
     }
 
     for (const vehicle of state.traffic || []) {
       const depth = vehicle.depth;
       if (depth < 0.01 || depth > 1.25) continue;
-      const y = roadTop + (roadBottom - roadTop) * depth * depth;
-      const x = center + (vehicle.lane - 1) * 2 * (topHalf + (bottomHalf - topHalf) * depth * depth);
-      const scale = 0.2 + depth * 0.92;
+      const t = projectRoadDepth(depth);
+      const halfAt = topHalf + (bottomHalf - topHalf) * t * t;
+      const y = roadTop + (roadBottom - roadTop) * t * t;
+      const x = center + (vehicle.lane - 1) * (2 / 3) * halfAt;
+      const scale = 0.2 + t * 0.92;
       ctx.save();
       ctx.translate(x, y);
       ctx.scale(scale, scale);
@@ -161,9 +180,9 @@ export class Renderer2D {
     }
 
     // Keep the three-wheeled player vehicle above the compact touch-control bar.
-    const playerX = center + (state.steer || 0) * width * 0.12;
-    const playerY = Math.min(height * 0.62, height - 145);
-    const playerScale = Math.min(1.3, width / 340);
+    const playerX = center + (state.steer || 0) * (2 / 3) * bottomHalf + (state.pullOverSide || 0) * Math.min(22, width * 0.055);
+    const playerY = Math.min(height * 0.585, height - 178);
+    const playerScale = Math.min(1.48, width / 275);
     ctx.save();
     ctx.translate(playerX, playerY);
     ctx.rotate((state.steer || 0) * 0.09);
@@ -183,6 +202,87 @@ export class Renderer2D {
     ctx.font = '900 10px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('KANO · ADAIDAITA SAHU', width * 0.5, horizon + 8);
+  }
+
+  drawLifeScene(state) {
+    const ctx = this.ctx;
+    const w = this.width;
+    const h = this.height;
+    ctx.clearRect(0, 0, w, h);
+    const isInside = this.lifeScene === 'bedroom' || this.lifeScene === 'household';
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, isInside ? '#c4a27b' : '#84c4da');
+    sky.addColorStop(0.54, isInside ? '#b28d67' : '#f2d5a2');
+    sky.addColorStop(0.55, '#a38a68');
+    sky.addColorStop(1, '#78664f');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+    const rect = (x, y, rw, rh, color) => { ctx.fillStyle = color; ctx.fillRect(x, y, rw, rh); };
+    const circle = (x, y, r, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+    const human = (x, y, scale = 1, clothes = '#254d3d', scarf = false) => {
+      ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+      // Feet, legs, torso, head, and Hausa clothing silhouette.
+      rect(-9, -4, 7, 20, '#2b2f2e'); rect(2, -4, 7, 20, '#2b2f2e');
+      rect(-14, -42, 28, 39, clothes); circle(0, -52, 10, '#805638');
+      if (scarf) { ctx.fillStyle = '#24342c'; ctx.beginPath(); ctx.ellipse(0, -55, 14, 14, 0, Math.PI, Math.PI * 2); ctx.lineTo(14, -41); ctx.lineTo(-13, -41); ctx.closePath(); ctx.fill(); }
+      else rect(-10, -62, 20, 4, '#c9aa74');
+      ctx.strokeStyle = clothes; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(-12, -35); ctx.lineTo(-23, -17); ctx.moveTo(12, -35); ctx.lineTo(21, -20); ctx.stroke();
+      ctx.restore();
+    };
+    const compound = (x, y, width, color, label = '') => {
+      rect(x, y, width, h * 0.30, color); rect(x - 3, y - 7, width + 6, 9, '#7e6549');
+      rect(x + width * 0.43, y + h * 0.095, width * 0.14, h * 0.205, '#634530');
+      rect(x + width * 0.12, y + h * 0.08, width * 0.16, h * 0.08, '#4e7375');
+      if (label) { rect(x + 7, y + 8, width - 14, 18, '#305441'); ctx.fillStyle = '#f6d88c'; ctx.font = 'bold 9px sans-serif'; ctx.fillText(label, x + 13, y + 21); }
+    };
+
+    if (this.lifeScene === 'bedroom') {
+      rect(0, h * 0.66, w, h * 0.34, '#8c6d50');
+      rect(w * 0.09, h * 0.11, w * 0.82, h * 0.55, '#d0b18b');
+      rect(w * 0.1, h * 0.105, w * 0.8, h * 0.025, '#70563d');
+      rect(w * 0.20, h * 0.20, w * 0.23, h * 0.17, '#5b827f');
+      rect(w * 0.31, h * 0.20, 3, h * 0.17, '#e0cca5'); rect(w * 0.20, h * 0.285, w * 0.23, 3, '#e0cca5');
+      rect(w * 0.20, h * 0.56, w * 0.44, h * 0.13, '#6d4a30');
+      rect(w * 0.20, h * 0.51, w * 0.44, h * 0.07, '#e5d8ba');
+      rect(w * 0.22, h * 0.50, w * 0.12, h * 0.07, '#d2b780');
+      rect(w * 0.69, h * 0.24, w * 0.13, h * 0.40, '#65482f'); rect(w * 0.68, h * 0.22, w * 0.15, 7, '#3a3027');
+      human(w * 0.52, h * 0.76, Math.min(1.3, w / 350), '#2b4e3c', false);
+      this.lifeLabel(ctx, w, '06:05 · BEDROOM IN KANO');
+    } else if (this.lifeScene === 'household') {
+      compound(w * 0.07, h * 0.20, w * 0.43, '#cdb38a', 'FAMILY COMPOUND');
+      compound(w * 0.58, h * 0.23, w * 0.33, '#bba078');
+      circle(w * 0.22, h * 0.71, w * 0.065, '#91553a'); rect(w * 0.16, h * 0.72, w * 0.12, h * 0.13, '#6d4830');
+      circle(w * 0.78, h * 0.73, w * 0.045, '#7b8586');
+      human(w * 0.42, h * 0.80, Math.min(1.2, w / 360), '#9d5b36');
+      human(w * 0.68, h * 0.80, Math.min(1.1, w / 380), '#425e90', true);
+      rect(w * 0.2, h * 0.88, w * 0.6, h * 0.04, '#d3bb93');
+      this.lifeLabel(ctx, w, 'HOME COMPOUND · GET READY FOR WORK');
+    } else if (this.lifeScene === 'street' || this.lifeScene === 'walk' || this.lifeScene === 'school') {
+      for (let i = 0; i < 4; i++) compound(w * (0.025 + i * 0.245), h * (0.22 + (i % 2) * 0.04), w * 0.22, ['#c9aa7a', '#a88361', '#d0bd98', '#b49775'][i], i === 1 ? 'PROVISIONS' : '');
+      rect(0, h * 0.70, w, h * 0.13, '#62635f'); rect(0, h * 0.84, w, h * 0.16, '#bea27d');
+      ctx.strokeStyle = '#f0d9a1'; ctx.lineWidth = 3; ctx.setLineDash([18, 15]); ctx.beginPath(); ctx.moveTo(0, h * 0.77); ctx.lineTo(w, h * 0.77); ctx.stroke(); ctx.setLineDash([]);
+      if (this.lifeScene === 'school') { rect(w * 0.32, h * 0.19, w * 0.36, h * 0.07, '#244b3c'); ctx.fillStyle = '#f5de9a'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PRIMARY SCHOOL · KANO', w * 0.5, h * 0.235); }
+      human(w * 0.24, h * 0.79, 0.88, '#365b86', true); human(w * 0.53, h * 0.82, 0.94, '#28483b'); human(w * 0.79, h * 0.80, 0.88, '#a45b37');
+      // Clearly readable yellow/green Adaidaita Sahu parked by the roadside.
+      ctx.save(); ctx.translate(w * 0.72, h * 0.64); ctx.scale(Math.min(0.68, w / 600), Math.min(0.68, w / 600)); this.drawKeke(ctx, '#e5b936'); ctx.restore();
+      this.lifeLabel(ctx, w, this.lifeScene === 'school' ? 'SCHOOL RUN · MORNING KANO' : this.lifeScene === 'walk' ? 'WALK TO THE KEKE PARK' : 'NEIGHBOURHOOD WAKES UP');
+    } else if (this.lifeScene === 'breakfast') {
+      compound(w * 0.02, h * 0.23, w * 0.30, '#cbb18a');
+      compound(w * 0.68, h * 0.20, w * 0.30, '#b59873');
+      rect(w * 0.20, h * 0.35, w * 0.60, h * 0.13, '#4b6047');
+      rect(w * 0.18, h * 0.47, w * 0.64, h * 0.16, '#845234');
+      rect(w * 0.13, h * 0.32, w * 0.74, h * 0.06, '#c7a05c');
+      circle(w * 0.45, h * 0.54, w * 0.07, '#bf7d32'); circle(w * 0.49, h * 0.52, w * 0.035, '#e0a34a');
+      circle(w * 0.60, h * 0.53, w * 0.045, '#bdc9c4');
+      human(w * 0.25, h * 0.81, 1, '#314e3b', true); human(w * 0.73, h * 0.81, 0.95, '#87563c');
+      rect(w * 0.32, h * 0.15, w * 0.36, h * 0.055, '#234a39'); ctx.fillStyle = '#f7df9a'; ctx.font = '900 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('AKARA · MASA · TEA · PAP', w * 0.50, h * 0.185);
+      this.lifeLabel(ctx, w, 'ROADSIDE BREAKFAST · KANO');
+    }
+  }
+
+  lifeLabel(ctx, width, label) {
+    ctx.fillStyle = '#122820e8'; ctx.fillRect(width * 0.06, this.height * 0.055, width * 0.88, this.height * 0.065);
+    ctx.fillStyle = '#f6dc95'; ctx.font = `900 ${Math.max(9, width * 0.025)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText(label, width * 0.5, this.height * 0.096);
   }
 
   drawGarage(state) {

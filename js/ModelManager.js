@@ -148,7 +148,7 @@ const CATALOG = {
     'environment/ground/photoscan_-_pothole_1.glb',
     'environment/ground/low_poly_dirt_ground.glb',
     'environment/ground/close_sand_with_tracks.glb',
-    'environment/ground/sand_with_handprints_tile.glb',
+    'environment/ground/sand_with_handprints_tile_texture.glb',
     'environment/ground/manhole_cover_on_broken_asphalt_road.glb',
   ],
   bench: ['world/props/Bench.glb'],
@@ -283,7 +283,9 @@ export class ModelManager {
           const wrapper = new THREE.Group();
           wrapper.add(source);
           wrapper.position.set(0, 0, 0);
-          if (!UPRIGHT_KEYS.has(key)) wrapper.rotation.y = Math.PI;
+          // Correct the imported mesh's local forward axis once. Keep the wrapper
+          // free so traffic/player root yaw can express travel direction consistently.
+          if (!UPRIGHT_KEYS.has(key)) source.rotation.y = Math.PI;
           wrapper.userData.modelPath = relativePath;
           wrapper.userData.targetHeight = targetHeight;
           this.cache.set(key, wrapper);

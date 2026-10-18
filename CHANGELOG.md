@@ -1,20 +1,26 @@
 # Changelog
 
+## 4.2.0 — Northern life scenes, aligned traffic physics and forgiving shoulder stops
+
+- Expanded the morning into seven scenes: bedroom wake-up, household/compound activity, neighbourhood shops, multiple breakfast options, market-road walk, school/mosque junction, and guarded keke park with Mallam security.
+- Corrected 2D depth projection so vehicles enter the visible player-keke contact plane rather than drifting under the mobile control row.
+- Tightened 3D collision depth to the near bumper-contact plane. Collision damage continues to scale by relative speed, with small scrapes remaining recoverable.
+- Applied vehicle local-forward correction in ModelManager so the traffic root, not the imported GLB's arbitrary forward axis, decides same-direction vs oncoming heading.
+- Reduced Career base speed cap to 38 km/h and Free roam to 36 km/h; Time Attack is separately capped at 150 km/h so the existing 3.5 km medal challenge is mathematically achievable.
+- Ordinary one-person roadside pickup/drop/fuel interactions now accept speeds up to 12 km/h. The marked General Checkpoint/Keke Stop remains a near-stop (≤6.5 km/h) for large passengers and groups of 2–4 seats. Large/group passengers no longer spawn at ordinary one-seat roadside stops.
+- Added legible 2D labels for roadside pickup/drop, fuel and the General Checkpoint stop.
+- Fixed the mirrored-side-window placement on procedural truck/bus/KAROTA bodies so each side window is on its own side.
+- Added regression coverage for stop rules, seat capacity policy, depth projection alignment, traffic direction, contact depth and heavy-vehicle visuals.
+- Verification: `npm run check` passed; 53/53 Node tests passed. Production build and real-browser/GLB QA remain unverified because Vite dependencies are not installed in this environment.
+
 ## 4.1.0 — Kano morning routine, realistic asset mapping, flyovers, calmer city driving
 
-- Added the opening life-sim sequence: wake up, step into the neighbourhood, buy roadside akara and pap, walk to the keke park, greet the security guard, and start the shift with the same visible player keke.
-- Added a dedicated 3D Kano keke parking-yard scene and a matching Canvas 2D garage fallback that displays the parked three-wheel keke and security guard.
-- Rebuilt the fallback player vehicle with three wheels, body shell, driver, open passenger bay, canopy, windshield, mirrors, and lamps; adjusted chase-camera aiming to keep the keke above touch controls.
-- Replaced obsolete model paths such as generic `sedan.glb` and `building-1.glb` with exact case-sensitive filenames from the current asset tree. Added more real traffic/person/road/prop mappings and progressive model replacement.
-- Added two mobile / three desktop flyover spans immediately, with real `kano_urban_flyover.glb` replacement when it finishes loading. Bridge scaling remains horizontal to avoid over-height models.
-- Slow-tuned city driving (27 km/h base cruise, 68 km/h base cap) and free roam (30/62); Time Attack retains a faster cap to support the 3.5 km Gold target.
-- Matched road-scene movement and game zone progression to the same speed-to-world scale; stopped zones no longer drift past a stationary keke.
-- Made roadside 2D scenery respond to travelled distance rather than wall-clock time and added a dedicated playable 2D garage scene.
-- Updated README and the asset directory guide to the real asset filenames; versioned package as 4.1.0.
-- Verification: 43/43 Node tests pass; `npm run check` passes. Vite production build and browser/asset QA are still outstanding because dependencies could not be installed in this environment.
+- Added the opening life-sim sequence and dedicated 3D/2D guarded parking yard.
+- Replaced generic model paths with exact case-sensitive filenames from the supplied asset tree and added progressive mobile model replacement.
+- Added immediate procedural flyover spans, replaced by real flyover GLBs when available.
+- Improved the procedural three-wheel keke, camera framing and fallback vehicle shapes.
+- Made world and zone motion use consistent speed-to-world conversion.
 
 ## 4.0.1 — Mission and checkpoint integrity
 
-- Fixed repeatable career mission counters so repeated actions can complete their targets, while combo and clean-distance objectives remain peak-based.
-- Fixed KAROTA checkpoint counting to record one resolution per encounter.
-- Added regression coverage for cumulative mission progress, peak objectives, and checkpoint counting.
+- Fixed repeatable career mission counters and KAROTA checkpoint counting.

@@ -84,11 +84,16 @@ export class Renderer3D {
     this.securityActor = null;
     this.securityUsingModel = false;
     this.driveFacingY = 0;
+    this.lifeDioramaRoot = null;
+    this.lifeSceneGroups = new Map();
+    this.lifeAssetSlots = [];
+    this.garageVehicleSlots = [];
     this.buildWorld();
     this.player = this.makeKeke();
     this.player.position.set(0, 0, 2);
     this.scene.add(this.player);
     this.buildGarageScene();
+    this.buildLifeDioramas();
     this.ready = true;
   }
 
@@ -338,6 +343,18 @@ export class Renderer3D {
     this.securityActor.rotation.y = -0.55;
     group.add(this.securityActor);
 
+    for (const parked of [
+      { x: -2.9, z: -2.8, rot: -0.22, scale: 0.72 },
+      { x: 3.05, z: -3.45, rot: 0.18, scale: 0.68 },
+    ]) {
+      const actor = this.makeKeke();
+      actor.position.set(parked.x, 0, parked.z);
+      actor.rotation.y = parked.rot;
+      actor.scale.setScalar(parked.scale);
+      group.add(actor);
+      this.garageVehicleSlots.push({ actor, ...parked, replaced: false });
+    }
+
     // Wheel stops and painted parking bays ground the scene in a working park.
     for (const x of [-2.1, 3.0]) {
       const stop = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 3.4), this.material(0xe0d5b1));
@@ -384,27 +401,261 @@ export class Renderer3D {
 
   setLifeScene(sceneName) {
     if (!this.ready || !this.player || !this.garageGroup) return;
-    const nextScene = sceneName === 'garage' ? 'garage' : 'road';
-    if (this.lifeScene === nextScene) return;
-    if (nextScene === 'garage') {
-      if (this.player.parent) this.player.parent.remove(this.player);
-      this.garageGroup.add(this.player);
-      this.player.position.set(0.7, 0, 1.45);
-      this.player.rotation.set(0, 0, 0);
-      this.world.visible = false;
-      this.garageGroup.visible = true;
-      this.lifeScene = 'garage';
-      this.camera.position.set(5.1, 3.35, 8.6);
-      this.camera.lookAt(0, 1.0, -0.4);
-      this.upgradeGarageAssets();
-    } else {
+    const valid = new Set(['road', 'garage', 'bedroom', 'household', 'street', 'breakfast', 'walk', 'school']);
+    const nextScene = valid.has(sceneName) ? sceneName : 'road';
+    this.lifeScene = nextScene;
+
+    if (nextScene === 'road') {
       if (this.player.parent) this.player.parent.remove(this.player);
       this.scene.add(this.player);
+      this.player.visible = true;
       this.player.position.set(0, 0, 2);
       this.player.rotation.set(0, this.driveFacingY, 0);
       this.garageGroup.visible = false;
+      if (this.lifeDioramaRoot) this.lifeDioramaRoot.visible = false;
       this.world.visible = true;
-      this.lifeScene = 'road';
+      return;
+    }
+
+    if (nextScene === 'garage') {
+      if (this.player.parent) this.player.parent.remove(this.player);
+      this.garageGroup.add(this.player);
+      this.player.visible = true;
+      this.player.position.set(0.7, 0, 1.45);
+      this.player.rotation.set(0, Math.PI, 0);
+      this.world.visible = false;
+      if (this.lifeDioramaRoot) this.lifeDioramaRoot.visible = false;
+      this.garageGroup.visible = true;
+      this.camera.position.set(5.1, 3.35, 8.6);
+      this.camera.lookAt(0, 1.0, -0.4);
+      this.upgradeGarageAssets();
+      this.upgradeGarageVehicles();
+      return;
+    }
+
+    // Life cut-scenes replace the road view entirely; no opaque road or HUD-only frame.
+    if (this.player.parent) this.player.parent.remove(this.player);
+    this.scene.add(this.player);
+    this.player.visible = false;
+    this.world.visible = false;
+    this.garageGroup.visible = false;
+    if (this.lifeDioramaRoot) this.lifeDioramaRoot.visible = true;
+    for (const [name, group] of this.lifeSceneGroups) group.visible = name === nextScene;
+    this.upgradeLifeSceneAssets();
+    this.camera.position.set(0, 4.15, 14.2);
+    this.camera.lookAt(0, 1.35, -0.4);
+  }
+
+  makeLocalCompoundFacade(color = 0xc4a77b) {
+    const group = new THREE.Group();
+    const wall = this.material(color);
+    const shadow = this.material(0x80674e);
+    const door = this.material(0x4b3929);
+    const window = this.material(0x536b70, 0.35);
+    const shell = new THREE.Mesh(new THREE.BoxGeometry(5.2, 3.35, 0.32), wall);
+    shell.position.y = 1.65;
+    group.add(shell);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.18, 0.52), shadow);
+    roof.position.set(0, 3.36, 0);
+    group.add(roof);
+    const entrance = new THREE.Mesh(new THREE.BoxGeometry(0.92, 2.15, 0.06), door);
+    entrance.position.set(0.35, 1.08, 0.2);
+    group.add(entrance);
+    for (const x of [-1.55, 1.72]) {
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.75, 0.1), shadow);
+      frame.position.set(x, 2.18, 0.2);
+      group.add(frame);
+      const pane = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.59, 0.035), window);
+      pane.position.set(x, 2.18, 0.27);
+      group.add(pane);
+    }
+    return group;
+  }
+
+  addLifeSlot(sceneName, key, position, { rotation = 0, scale = 1, fallback = 'person' } = {}) {
+    const sceneGroup = this.lifeSceneGroups.get(sceneName);
+    if (!sceneGroup) return null;
+    let actor;
+    if (fallback === 'vehicle') actor = this.makeKeke();
+    else if (fallback === 'building') actor = this.makeLocalCompoundFacade();
+    else actor = this.makeSecurityPlaceholder();
+    actor.position.set(position[0], position[1] || 0, position[2]);
+    actor.rotation.y = rotation;
+    actor.scale.multiplyScalar(scale);
+    sceneGroup.add(actor);
+    const slot = { sceneName, key, position: [...position], rotation, scale, fallbackType: fallback, actor, replaced: false };
+    this.lifeAssetSlots.push(slot);
+    return slot;
+  }
+
+  buildLifeDioramas() {
+    const root = new THREE.Group();
+    root.visible = false;
+    this.scene.add(root);
+    this.lifeDioramaRoot = root;
+
+    const floorFor = (group, color, size = [22, 22]) => {
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(size[0], size[1]), this.material(color));
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -0.08;
+      group.add(floor);
+    };
+    const localWall = (group, x, z, color = 0xc6aa7e) => {
+      const facade = this.makeLocalCompoundFacade(color);
+      facade.position.set(x, 0, z);
+      group.add(facade);
+      return facade;
+    };
+    const box = (group, dimensions, position, color, materialOptions = {}) => {
+      const material = new THREE.MeshStandardMaterial({ color, roughness: 0.9, side: THREE.DoubleSide, ...materialOptions });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(...dimensions), material);
+      mesh.position.set(...position);
+      group.add(mesh);
+      return mesh;
+    };
+
+    for (const name of ['bedroom', 'household', 'street', 'breakfast', 'walk', 'school']) {
+      const group = new THREE.Group();
+      group.visible = false;
+      root.add(group);
+      this.lifeSceneGroups.set(name, group);
+      floorFor(group, ['bedroom', 'household'].includes(name) ? 0x9d7e5e : 0xb7a17b, [24, 24]);
+    }
+
+    // Bedroom: tiled floor, sleeping mat/bed, mosquito-net frame, window and wardrobe.
+    {
+      const g = this.lifeSceneGroups.get('bedroom');
+      box(g, [18, 4.8, 0.28], [0, 2.35, -7.4], 0xd1b68a);
+      box(g, [0.28, 4.8, 13.8], [-8.9, 2.35, -0.3], 0xc8aa7f);
+      box(g, [3.5, 1.8, 0.5], [-3.0, 0.9, -1.7], 0x6c4d37);
+      box(g, [3.4, 0.25, 3.2], [-3.0, 1.45, -1.7], 0xeee0bf);
+      box(g, [1.15, 0.3, 0.85], [-3.85, 1.64, -2.4], 0xf2d59d);
+      box(g, [2.2, 3.25, 0.7], [5.2, 1.63, -5.2], 0x80583b);
+      box(g, [2.3, 0.15, 0.75], [5.2, 3.3, -5.2], 0x473629);
+      box(g, [2.3, 1.15, 0.12], [0.1, 2.65, -7.2], 0x594b3d);
+      box(g, [1.85, 0.85, 0.08], [0.1, 2.65, -7.1], 0x6c969a);
+      box(g, [0.05, 0.85, 0.04], [0.1, 2.65, -7.0], 0xe9d6a7);
+      box(g, [1.85, 0.05, 0.04], [0.1, 2.65, -7.0], 0xe9d6a7);
+      this.addLifeSlot('bedroom', 'passengerMan', [1.7, 0, 1.6], { rotation: -0.18, scale: 0.95 });
+    }
+
+    // Household compound: water pot, basin, broom and a second adult in a Hausa home yard.
+    {
+      const g = this.lifeSceneGroups.get('household');
+      localWall(g, -4.7, -6.0, 0xb99c71);
+      localWall(g, 3.5, -6.3, 0xd2b98b);
+      box(g, [15, 0.26, 0.22], [0, 2.95, -5.7], 0x73553b);
+      box(g, [1.0, 0.8, 0.9], [-4.7, 0.42, 1.0], 0x875b39);
+      const pot = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 12), this.material(0x8e5439));
+      pot.position.set(-4.3, 0.48, 1.0); pot.scale.y = 1.15; g.add(pot);
+      const basin = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.43, 0.25, 16), this.material(0x8f9b9d));
+      basin.position.set(4.2, 0.12, 1.2); g.add(basin);
+      box(g, [0.05, 1.4, 0.05], [4.8, 0.7, 1.7], 0x93683d).rotation.z = -0.28;
+      this.addLifeSlot('household', 'passengerWoman', [2.4, 0, 0.2], { rotation: -0.2 });
+      this.addLifeSlot('household', 'passengerMan', [-1.3, 0, 2.1], { rotation: 0.4, scale: 0.8 });
+    }
+
+    // Neighbourhood street: low shopfronts, verge, poles, keke and pedestrian traffic.
+    {
+      const g = this.lifeSceneGroups.get('street');
+      box(g, [24, 0.12, 7.5], [0, 0, -1.6], 0x555957);
+      box(g, [24, 0.08, 8.5], [0, -0.04, 6.5], 0xb3a07e);
+      localWall(g, -7.1, -5.2, 0xc4a376);
+      localWall(g, 7.0, -6.4, 0xd3b88b);
+      box(g, [4.2, 1.4, 1.9], [-7.0, 0.72, -1.5], 0x975e38);
+      box(g, [4.4, 0.15, 2.1], [-7.0, 1.5, -1.5], 0x426149);
+      box(g, [0.08, 4.1, 0.08], [6.4, 2.0, 1.3], 0x454e4d);
+      this.addLifeSlot('street', 'building', [-7.2, 0, -5.6], { scale: 1.05, fallback: 'building' });
+      this.addLifeSlot('street', 'keke', [1.0, 0, -2.4], { rotation: 0.08, scale: 0.96, fallback: 'vehicle' });
+      this.addLifeSlot('street', 'motorcycle', [4.3, 0, -0.4], { rotation: -0.1, scale: 0.85, fallback: 'vehicle' });
+      this.addLifeSlot('street', 'pedestrianWoman', [-2.9, 0, 0.8], { rotation: 0.2, scale: 0.86 });
+      this.addLifeSlot('street', 'pedestrian', [2.9, 0, 1.6], { rotation: -0.3, scale: 0.86 });
+    }
+
+    // Breakfast stall: frying station and enamel cups; real people/buildings replace slots.
+    {
+      const g = this.lifeSceneGroups.get('breakfast');
+      localWall(g, -6.8, -6.2, 0xc6a57a);
+      box(g, [8.2, 2.6, 0.32], [0.2, 1.3, -4.5], 0x8b5734);
+      box(g, [8.4, 0.18, 2.1], [0.2, 2.65, -4.5], 0x4a6548);
+      box(g, [7.3, 0.22, 1.4], [0.0, 0.98, -2.8], 0x77503a);
+      box(g, [0.95, 0.54, 0.95], [-1.7, 0.28, -2.7], 0x6d7470);
+      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.31, 0.24, 18), this.material(0xbfc3ba));
+      bowl.position.set(-0.3, 1.13, -2.6); g.add(bowl);
+      const pap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.17, 0.34, 16), this.material(0x8aa5ad));
+      pap.position.set(1.2, 1.17, -2.6); g.add(pap);
+      for (let i = 0; i < 5; i += 1) {
+        const akara = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), this.material(0xb9782d));
+        akara.position.set(-0.48 + (i % 3) * 0.24, 1.31, -2.56 + Math.floor(i / 3) * 0.24);
+        akara.scale.set(1.1, 0.55, 1); g.add(akara);
+      }
+      this.addLifeSlot('breakfast', 'passengerWoman', [-2.2, 0, -1.65], { rotation: -0.18, scale: 0.92 });
+      this.addLifeSlot('breakfast', 'passengerMan', [2.4, 0, 0.3], { rotation: 0.18, scale: 0.94 });
+      this.addLifeSlot('breakfast', 'building', [6.8, 0, -5.8], { scale: 0.78, fallback: 'building' });
+    }
+
+    // Walk to the park: school walls, pedestrian path, local shopfronts and traffic.
+    {
+      const g = this.lifeSceneGroups.get('walk');
+      box(g, [10.5, 0.08, 22], [-5.6, 0, -0.3], 0xc5b18d);
+      box(g, [8.2, 0.12, 22], [5.2, -0.01, -0.3], 0x535957);
+      localWall(g, -7.5, -7.2, 0xbda077);
+      box(g, [3.2, 1.1, 0.22], [-7.5, 2.9, -6.9], 0x8b603b);
+      this.addLifeSlot('walk', 'building', [6.9, 0, -7.4], { scale: 0.78, fallback: 'building' });
+      this.addLifeSlot('walk', 'pedestrianWoman', [-2.9, 0, -0.3], { rotation: 0.25, scale: 0.86 });
+      this.addLifeSlot('walk', 'pedestrian', [0.4, 0, 1.8], { rotation: -0.2, scale: 0.86 });
+      this.addLifeSlot('walk', 'keke', [4.7, 0, -3.8], { rotation: 0.12, scale: 0.78, fallback: 'vehicle' });
+    }
+
+    // School-run street activity: visible wall, gate, pupils/adults and parked motorcycle.
+    {
+      const g = this.lifeSceneGroups.get('school');
+      box(g, [19, 3.6, 0.34], [0, 1.8, -7.6], 0xc7b18a);
+      box(g, [4.3, 2.5, 0.18], [-0.3, 1.3, -7.34], 0x765536);
+      box(g, [4.9, 0.22, 0.25], [-0.3, 2.62, -7.27], 0x24453a);
+      box(g, [22, 0.12, 8.2], [0, 0, 0.4], 0x595d59);
+      box(g, [22, 0.08, 4.8], [0, 0, 7.0], 0xc0a984);
+      this.addLifeSlot('school', 'pedestrianWoman', [-3.8, 0, 0.6], { scale: 0.86 });
+      this.addLifeSlot('school', 'pedestrian', [-0.8, 0, 1.4], { scale: 0.8 });
+      this.addLifeSlot('school', 'passengerMan', [3.0, 0, 0.2], { rotation: -0.2, scale: 0.9 });
+      this.addLifeSlot('school', 'motorcycle', [5.0, 0, -2.7], { scale: 0.78, fallback: 'vehicle' });
+    }
+  }
+
+  upgradeLifeSceneAssets() {
+    if (!this.models || !this.lifeAssetSlots.length) return;
+    for (const slot of this.lifeAssetSlots) {
+      if (slot.replaced || !this.models.cache.has(slot.key)) continue;
+      const model = this.models.getInstance(slot.key);
+      if (!model) continue;
+      model.position.set(slot.position[0], slot.position[1] || 0, slot.position[2]);
+      model.rotation.y = slot.rotation;
+      model.scale.multiplyScalar(slot.scale);
+      model.userData.lifeSceneModel = true;
+      const parent = this.lifeSceneGroups.get(slot.sceneName);
+      parent?.remove(slot.actor);
+      disposeSceneTree(slot.actor);
+      parent?.add(model);
+      slot.actor = model;
+      slot.replaced = true;
+      console.info(`[Kano Life] scene model ${slot.key} installed in ${slot.sceneName}`);
+    }
+  }
+
+  upgradeGarageVehicles() {
+    if (!this.models?.cache.has('keke')) return;
+    for (const slot of this.garageVehicleSlots) {
+      if (slot.replaced) continue;
+      const model = this.models.getInstance('keke');
+      if (!model) continue;
+      model.position.set(slot.x, 0, slot.z);
+      model.rotation.y = slot.rot;
+      model.scale.setScalar(slot.scale);
+      this.garageGroup.remove(slot.actor);
+      disposeSceneTree(slot.actor);
+      this.garageGroup.add(model);
+      slot.actor = model;
+      slot.replaced = true;
     }
   }
 
@@ -857,18 +1108,19 @@ export class Renderer3D {
     const old = this.player;
     const parent = old?.parent || this.scene;
     object.position.copy(old?.position || new THREE.Vector3(0, 0, 2));
-    object.rotation.set(0, this.lifeScene === 'garage' ? 0 : Math.PI, old?.rotation?.z || 0);
+    object.rotation.set(0, 0, old?.rotation?.z || 0);
     object.userData.fallback = false;
+    object.visible = this.lifeScene === 'road' || this.lifeScene === 'garage';
     object.userData.vehicleType = 'keke';
     if (old?.parent) old.parent.remove(old);
     disposeSceneTree(old);
     const targetParent = this.lifeScene === 'garage' ? this.garageGroup : this.scene;
     (targetParent || parent || this.scene).add(object);
     this.player = object;
-    this.driveFacingY = Math.PI;
+    this.driveFacingY = 0;
     if (this.lifeScene === 'garage') {
       object.position.set(0.7, 0, 1.45);
-      object.rotation.set(0, 0, 0);
+      object.rotation.set(0, Math.PI, 0);
     } else {
       object.position.set(0, 0, 2);
       object.rotation.set(0, this.driveFacingY, 0);
@@ -945,31 +1197,112 @@ export class Renderer3D {
       model.userData.fallback = false;
       return model;
     }
+    if (vehicle.type === 'keke') {
+      const keke = this.makeKeke();
+      keke.userData.fallback = true;
+      return keke;
+    }
+
     const group = new THREE.Group();
     const colorMap = {
-      keke: 0xf5c542, taxi: 0xe8c64b, suv: 0x37465a, motorcycle: 0xc84a3b,
+      car: 0x8f9fa7, taxi: 0xe8c64b, suv: 0x37465a, motorcycle: 0xc84a3b,
       police: 0xe8edf3, karota: 0x328ac2, truck: 0x9e5544, bus: 0xd4ad46,
+      ambulance: 0xe8eceb,
     };
-    const bodyHeight = vehicle.type === 'bus' ? 1.5 : vehicle.type === 'motorcycle' ? 0.35 : 0.8;
-    const bodyWidth = vehicle.type === 'truck' ? 2.1 : vehicle.type === 'motorcycle' ? 0.55 : 1.5;
-    const bodyLength = vehicle.type === 'motorcycle' ? 1.1 : 2.2;
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(bodyWidth, bodyHeight, bodyLength),
-      this.material(colorMap[vehicle.type] || 0xd6dce1),
-    );
-    body.position.y = bodyHeight / 2 + 0.2;
-    group.add(body);
-    if (vehicle.type !== 'motorcycle') {
-      const cab = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.55, 0.7), this.material(0x23364a));
-      cab.position.set(0, bodyHeight + 0.32, -0.25);
-      group.add(cab);
-      for (const x of [-0.62, 0.62]) {
-        for (const z of [-0.7, 0.7]) {
-          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.13, 10), this.material(0x101820));
-          wheel.rotation.z = Math.PI / 2;
-          wheel.position.set(x, 0.25, z);
-          group.add(wheel);
-        }
+    const bodyMat = this.material(colorMap[vehicle.type] || 0xd6dce1, 0.6);
+    const windowMat = new THREE.MeshStandardMaterial({ color: 0x33505d, roughness: 0.22, metalness: 0.05, transparent: true, opacity: 0.84, side: THREE.DoubleSide });
+    const rubber = this.material(0x12171b, 0.95);
+    const alloy = this.material(0x9aa3a5, 0.55);
+    const frontLamp = this.material(0xffe6a4, 0.35);
+    const tailLamp = this.material(0xbd3830, 0.45);
+    const addWheel = (x, y, z, radius = 0.25) => {
+      const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.16, 12), rubber);
+      tire.rotation.z = Math.PI / 2;
+      tire.position.set(x, y, z);
+      group.add(tire);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.47, radius * 0.47, 0.17, 10), alloy);
+      hub.rotation.z = Math.PI / 2;
+      hub.position.set(x, y, z);
+      group.add(hub);
+    };
+    const addLampPair = (z, material) => {
+      for (const x of [-0.47, 0.47]) {
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), material);
+        lamp.scale.set(1.1, 0.68, 0.42);
+        lamp.position.set(x, 0.58, z);
+        group.add(lamp);
+      }
+    };
+
+    if (vehicle.type === 'motorcycle') {
+      // Motorcycle silhouette with separated wheels, tank, seat, forks and rider.
+      for (const z of [-0.52, 0.55]) {
+        const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.065, 8, 16), rubber);
+        wheel.rotation.y = Math.PI / 2;
+        wheel.position.set(0, 0.28, z);
+        group.add(wheel);
+        const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.7, 8), alloy);
+        axle.rotation.x = Math.PI / 2;
+        axle.position.set(0, 0.28, z);
+        group.add(axle);
+      }
+      const frame = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.95, 7), bodyMat);
+      frame.rotation.x = Math.PI / 2.9; frame.position.set(0, 0.48, 0.02); group.add(frame);
+      const tank = new THREE.Mesh(new THREE.SphereGeometry(0.31, 14, 10), bodyMat);
+      tank.scale.set(0.72, 0.62, 1.15); tank.position.set(0, 0.64, -0.04); group.add(tank);
+      const seat = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 3, 7), this.material(0x1d272c));
+      seat.rotation.x = Math.PI / 2; seat.position.set(0, 0.72, 0.33); group.add(seat);
+      const rider = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.47, 4, 8), this.material(0x2b5141));
+      rider.position.set(0, 1.13, 0.22); rider.rotation.x = -0.18; group.add(rider);
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), this.material(0x2d363b));
+      helmet.position.set(0, 1.48, -0.05); group.add(helmet);
+      addLampPair(-0.59, frontLamp);
+    } else {
+      const heavy = ['truck', 'bus', 'karota', 'ambulance'].includes(vehicle.type);
+      const bodyWidth = vehicle.type === 'truck' ? 2.0 : vehicle.type === 'bus' ? 1.85 : 1.55;
+      const bodyLength = vehicle.type === 'truck' ? 4.25 : vehicle.type === 'bus' ? 3.6 : 2.95;
+      const bodyHeight = vehicle.type === 'bus' ? 1.48 : vehicle.type === 'truck' ? 1.18 : 0.72;
+      const lower = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), bodyMat);
+      lower.scale.set(bodyWidth * 0.56, bodyHeight * 0.48, bodyLength * 0.54);
+      lower.position.set(0, 0.55, 0.02);
+      group.add(lower);
+      if (heavy) {
+        const cargo = new THREE.Mesh(new THREE.BoxGeometry(bodyWidth, bodyHeight * 0.92, bodyLength * 0.55), bodyMat);
+        cargo.position.set(0, 0.7 + bodyHeight * 0.28, bodyLength * 0.2);
+        group.add(cargo);
+        const cab = new THREE.Mesh(new THREE.BoxGeometry(bodyWidth * 0.92, bodyHeight * 0.84, bodyLength * 0.36), bodyMat);
+        cab.position.set(0, 0.76, -bodyLength * 0.31);
+        group.add(cab);
+        const windscreen = new THREE.Mesh(new THREE.BoxGeometry(bodyWidth * 0.76, bodyHeight * 0.34, 0.035), windowMat);
+        windscreen.position.set(0, 0.98, -bodyLength * 0.505);
+        group.add(windscreen);
+        const sideWindowGeometry = new THREE.BoxGeometry(bodyWidth * 0.04, bodyHeight * 0.38, bodyLength * 0.27);
+        const rightSideWindow = new THREE.Mesh(sideWindowGeometry, windowMat);
+        rightSideWindow.position.set(bodyWidth * 0.48, 0.98, -bodyLength * 0.31);
+        group.add(rightSideWindow);
+        const leftSideWindow = new THREE.Mesh(sideWindowGeometry, windowMat);
+        leftSideWindow.position.set(-bodyWidth * 0.48, 0.98, -bodyLength * 0.31);
+        group.add(leftSideWindow);
+        const wheelsZ = vehicle.type === 'truck' ? [-1.42, -0.55, 1.3] : [-1.05, 1.02];
+        for (const z of wheelsZ) for (const x of [-bodyWidth * 0.49, bodyWidth * 0.49]) addWheel(x, 0.28, z, vehicle.type === 'truck' ? 0.3 : 0.25);
+      } else {
+        const cabin = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), windowMat);
+        cabin.scale.set(0.62, 0.36, 0.47);
+        cabin.position.set(0, 0.95, -0.08);
+        group.add(cabin);
+        const roof = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), bodyMat);
+        roof.scale.set(0.55, 0.09, 0.40);
+        roof.position.set(0, 1.27, -0.08);
+        group.add(roof);
+        for (const x of [-0.63, 0.63]) for (const z of [-0.84, 0.84]) addWheel(x, 0.27, z, 0.24);
+        addLampPair(-1.12, frontLamp);
+      }
+      addLampPair(bodyLength * 0.51, tailLamp);
+      const bumper = new THREE.Mesh(new THREE.BoxGeometry(bodyWidth * 0.95, 0.12, 0.16), alloy);
+      bumper.position.set(0, 0.28, -bodyLength * 0.53); group.add(bumper);
+      if (vehicle.type === 'taxi') {
+        const roofSign = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.22), this.material(0xf1e4bd));
+        roofSign.position.set(0, 1.34, -0.06); group.add(roofSign);
       }
     }
     group.userData.fallback = true;
@@ -996,6 +1329,33 @@ export class Renderer3D {
           pump.position.set(0.75, 0.38, 0);
           actor.add(pump);
         }
+        if (zone.type !== 'pothole') {
+          const labelCanvas = document.createElement('canvas');
+          labelCanvas.width = 512; labelCanvas.height = 128;
+          const labelCtx = labelCanvas.getContext('2d');
+          labelCtx.fillStyle = zone.type === 'drop' ? '#6d5016' : zone.type === 'fuel' ? '#145a43' : '#13533c';
+          labelCtx.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
+          labelCtx.strokeStyle = '#f5d77b'; labelCtx.lineWidth = 8; labelCtx.strokeRect(4, 4, 504, 120);
+          labelCtx.fillStyle = '#fff4d0'; labelCtx.font = '900 30px Arial, sans-serif'; labelCtx.textAlign = 'center';
+          const labelText = zone.hub ? 'GENERAL CHECKPOINT · KEKE STOP' : zone.type === 'pickup' ? 'ROADSIDE PICK-UP' : zone.type === 'drop' ? 'ROADSIDE DROP-OFF' : 'FUEL STOP';
+          labelCtx.fillText(labelText, 256, 51, 486);
+          labelCtx.font = '700 24px Arial, sans-serif';
+          labelCtx.fillText(String(zone.dest || zone.label || '').slice(0, 36), 256, 91, 486);
+          const labelTexture = new THREE.CanvasTexture(labelCanvas);
+          labelTexture.colorSpace = THREE.SRGBColorSpace;
+          const sign = new THREE.Mesh(new THREE.PlaneGeometry(zone.hub ? 3.0 : 2.3, zone.hub ? 0.76 : 0.58), new THREE.MeshBasicMaterial({ map: labelTexture, side: THREE.DoubleSide }));
+          sign.position.set(0, 1.4, 0.15); actor.add(sign);
+          actor.userData.labelTexture = labelTexture;
+        }
+        if (zone.type === 'pickup') {
+          const waiting = this.makeSecurityPlaceholder();
+          waiting.scale.setScalar(zone.hub ? 0.86 : 0.78);
+          waiting.position.set(zone.side < 0 ? 1.35 : -1.35, 0, 0.15);
+          waiting.rotation.y = zone.side < 0 ? -0.28 : 0.28;
+          actor.add(waiting);
+          actor.userData.waitingActors = [waiting];
+          actor.userData.waitingModelKey = zone.hub ? 'passengerWoman' : (zone.id.length % 2 ? 'passengerWoman' : 'passengerMan');
+        }
         actor.userData.zoneType = zone.type;
         actor.userData.propKey = zone.prop || null;
         actor.userData.propAdded = false;
@@ -1003,6 +1363,22 @@ export class Renderer3D {
         this.zoneActors.set(zone.id, actor);
       }
       actor.userData.propKey = zone.prop || actor.userData.propKey || null;
+      if (actor.userData.waitingActors?.length && !actor.userData.waitingUsingModel) {
+        const personKey = this.models?.cache.has(actor.userData.waitingModelKey) ? actor.userData.waitingModelKey
+          : this.models?.cache.has('passenger') ? 'passenger' : null;
+        if (personKey) {
+          const oldPerson = actor.userData.waitingActors[0];
+          const person = this.models.getInstance(personKey);
+          if (person) {
+            person.position.copy(oldPerson.position);
+            person.scale.copy(oldPerson.scale);
+            person.rotation.copy(oldPerson.rotation);
+            actor.remove(oldPerson); disposeSceneTree(oldPerson); actor.add(person);
+            actor.userData.waitingActors = [person]; actor.userData.waitingUsingModel = true;
+            console.info(`[Kano Life] roadside passenger model active: ${personKey}`);
+          }
+        }
+      }
       if (actor.userData.propKey && !actor.userData.propAdded && this.models?.cache.has(actor.userData.propKey)) {
         const prop = this.models.getInstance(actor.userData.propKey);
         if (prop) {
@@ -1012,7 +1388,8 @@ export class Renderer3D {
           actor.userData.propAdded = true;
         }
       }
-      actor.position.set((zone.lane - 1) * 3, 0.035, -Math.max(-0.05, zone.depth) * 88);
+      const markerX = zone.type === 'pothole' ? (zone.lane - 1) * 3 : (zone.side || (zone.lane === 0 ? -1 : 1)) * 6.7;
+      actor.position.set(markerX, 0.035, -Math.max(-0.05, zone.depth) * 88);
     }
     for (const [id, actor] of this.zoneActors) {
       if (!activeIds.has(id)) {
@@ -1053,9 +1430,7 @@ export class Renderer3D {
         }
       }
       actor.position.set((vehicle.lane - 1) * 3, 0, -Math.max(-0.05, vehicle.depth) * 88);
-      actor.rotation.y = vehicle.direction === -1
-        ? (actor.userData.fallback ? Math.PI : 0)
-        : (actor.userData.fallback ? 0 : Math.PI);
+      actor.rotation.y = vehicle.direction === -1 ? Math.PI : 0;
     }
     for (const [id, actor] of this.trafficActors) {
       if (!activeIds.has(id)) {
@@ -1071,12 +1446,23 @@ export class Renderer3D {
     const dt = Math.min(Math.max(deltaSeconds || 0, 0), 0.05);
     if (this.lifeScene === 'garage') {
       this.upgradeGarageAssets();
+      this.upgradeGarageVehicles();
       this.applyPlayerPaint(state.paint);
       this.camera.position.set(5.1, 3.35, 8.6);
       this.camera.lookAt(0, 1.0, -0.4);
       this.renderer.render(this.scene, this.camera);
       return;
     }
+    if (this.lifeScene !== 'road') {
+      this.upgradeLifeSceneAssets();
+      this.lifeDioramaRoot.visible = true;
+      for (const [name, group] of this.lifeSceneGroups) group.visible = name === this.lifeScene;
+      this.camera.position.set(0, 4.15, 14.2);
+      this.camera.lookAt(0, 1.35, -0.4);
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    this.lifeDioramaRoot.visible = false;
     this.world.visible = true;
     this.garageGroup.visible = false;
     this.syncZones(state);
@@ -1089,8 +1475,8 @@ export class Renderer3D {
     this.scene.fog.near = state.environment === 'harmattan' ? 18 : 48;
     this.scene.fog.far = state.environment === 'harmattan' ? 100 : 195;
 
-    const laneX = state.steer * 3;
-    this.player.position.x += (laneX - this.player.position.x) * Math.min(1, dt * 8);
+    const laneX = state.steer * 3 + (state.pullOverSide || 0) * 2.35;
+    this.player.position.x += (laneX - this.player.position.x) * Math.min(1, dt * 5.4);
     this.player.rotation.z = -state.steer * 0.075;
     this.player.position.y = Math.sin(state.distance * 2.2) * 0.025;
     this.applyPlayerPaint(state.paint);
@@ -1120,9 +1506,11 @@ export class Renderer3D {
     const targetX = this.player.position.x * 0.45;
     const driverView = state.camera === 'driver';
     this.camera.position.x += ((driverView ? this.player.position.x * 0.25 : this.player.position.x * 0.45) - this.camera.position.x) * Math.min(1, dt * 2.2);
-    this.camera.position.y = driverView ? 1.65 : 3.85;
-    this.camera.position.z = driverView ? 4.7 : 10.5;
-    this.camera.lookAt(targetX, driverView ? 1.2 : 0.65, driverView ? -12 : -3.5);
+    this.camera.position.y = driverView ? 1.65 : 3.35;
+    this.camera.position.z = driverView ? 4.7 : 8.6;
+    const shake = Math.max(0, state.crashShake || 0);
+    this.camera.position.y += Math.sin(state.time * 41) * shake * 0.12;
+    this.camera.lookAt(targetX, driverView ? 1.2 : 0.72, driverView ? -12 : -1.8);
     this.renderer.render(this.scene, this.camera);
   }
 

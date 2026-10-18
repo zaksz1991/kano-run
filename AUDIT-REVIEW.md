@@ -1,67 +1,59 @@
-# Kano Life — Updated Scan, Audit and Review
+# Kano Life 4.2.0 — Audit, findings and verification
 
-## Scope and boundary
+## Release boundary
 
-Target repository: `https://github.com/zaksz1991/kano-run`.
-Reference deployment: `https://kano-run-nu.vercel.app`.
+Target repository: `https://github.com/zaksz1991/kano-run`  
+Reference deployment: `https://kano-run-nu.vercel.app`
 
-The package is a separate implementation candidate. No GitHub commit or Vercel deployment was made from this environment. The actual GLB pack supplied by the user is not bundled into this package; the catalog has been checked against their provided case-sensitive asset listing. Preserve `public/assets/models/` and existing audio assets when applying code changes.
+This is a local candidate and code overlay, not a GitHub deployment. The user's live repository/assets remain unchanged. The actual model pack was listed in the user message but not available as files in this execution sandbox. Model catalog paths match that supplied list; actual HTTP 200s, downloaded geometry, facing, and rendering have not been browser-verified.
 
-## Findings addressed in this pass
+## User-reported problems and addressed findings
 
-### Player visibility and road movement
+### Traffic facing the player during forward driving
 
-- The earlier chase camera aimed far ahead with a higher camera position, which pushed the player near the lower edge. The candidate now aims lower on the horizon so the keke occupies the middle/lower portion of the view and stays above the control row.
-- The procedural player fallback was upgraded from a primitive vehicle stand-in to a three-wheeled Adaidaita Sahu-like shape with a driver, open passenger bay, canopy, windshield, mirrors, and lamps.
-- Career cruise has been reduced to 27 km/h base with a 68 km/h base cap (driver modifiers still apply). Free roam is 30/62. Time Attack has a separate 140 km/h base cap because its 3.5 km Gold time of 95 seconds requires an average speed around 133 km/h.
-- Renderer road scrolling and game zone advancement now share the same km/h-to-world conversion. Zones stop moving while the player is stopped, making brake-to-load/drop/refuel interactions physically consistent.
-- Canvas 2D lane markings and roadside props now advance based on distance travelled, and the player keke remains clearly drawn above touch controls.
+**Likely root cause:** imported GLBs can use differing local forward axes; the renderer also sets the traffic actor's root yaw each frame. An earlier model-level root rotation could therefore be overwritten by traffic direction logic. The candidate applies the forward correction to the imported model source, preserving the actor root for same-way/oncoming traffic. Default one-way mode assigns all traffic the same travel direction; only explicit two-way mode spawns oncoming traffic.
 
-### Existing assets and vehicle boxes
+**Verification boundary:** source logic and automated tests verify the correction path, but visual orientation of each supplied GLB must still be confirmed in a browser, as actual GLB files were not available here.
 
-- Replaced incorrect/generic model catalog paths with actual filenames from the user's repository tree, including all `vehicles/keke/keke-1.glb` through `keke-8.glb`, actual cars/SUV/truck assets, special vehicles, passenger/pedestrian character assets, exact-case props, building folders, and flyover files.
-- Fixed URL encoding for filenames with spaces.
-- Added valid road-light and pothole candidates; retained a purpose-built procedural bus-stop shelter rather than treating a road-side mesh or bench as a bus stop.
-- Mobile's first-drive preload remains small; later models load in short batches and replace traffic/person/building fallbacks in place. KAROTA traffic now also appears on mobile.
-- Added multiple flyover spans that are visible immediately, then replaced by loaded `kano_urban_flyover.glb` instances when available. Only horizontal dimensions are expanded, preventing a narrow bridge mesh from scaling into an enormous tower.
-- Added market-stall texture use from the existing `environment/ground/market-stall.jpg`.
+### Poor collision feel and the invisible collision point in 2D
 
-### Kano morning life sequence
+- Traffic depth is now interpreted as relative closing speed: faster same-way traffic pulls away; slower same-way traffic is approached; oncoming traffic closes at the sum of speeds.
+- The 3D impact plane is near depth `0.022` with a tight `0.012–0.035` contact band, closer to bumper-to-bumper contact than the previous far-ahead impact plane.
+- Damage scales by relative speed, applies invulnerability frames, and does not immediately destroy the vehicle from a low-speed scrape.
+- Canvas 2D now maps the near collision plane to about 59% screen height, matching the visible keke, rather than sending near vehicles underneath the drive controls.
 
-- Added a staged 06:05–06:43 morning journey: wake up, step into the neighbourhood, buy akara + pap/pap only or skip, walk to the keke park, greet the security guard, and unlock the same player keke before driving.
-- Breakfast costs are charged from the saved banked wallet. Eating activates a small fare bonus during that run.
-- WebGL shows the actual player keke inside the guarded 3D parking yard. Canvas 2D has a dedicated garage scene with the same stylized keke and security guard, so forced fallback no longer leaves a road-only screen behind the garage stage.
+### Roadside passengers and large people/groups
 
-## Previous audited items retained
+- Pickup, drop and fuel zones spawn on the left/right shoulder with pads/signs at the road edge, never in the centre lane. Potholes remain in travel lanes.
+- Single roadside pickup uses one seat and can be completed at up to 12 km/h when aligned with the shoulder.
+- `GENERAL CHECKPOINT · KEKE STOP` is the explicitly marked group stop. It accepts 2–4 seats, is limited to 6.5 km/h or less, and is the only source of large/group passenger boarding. Ordinary roadside stops no longer randomly spawn large group passengers.
+- A stopped keke keeps its zones in place; missed stops scroll naturally and do not freeze the road or trap the player.
 
-- Valid single viewport declaration.
-- WebGL context failure/context loss replaces the active canvas before creating a Canvas 2D context.
-- `?force2d` and `?force3d` modes.
-- Mobile low-FPS fallback only after below 10 FPS for about eight continuous seconds.
-- Frame-level recovery, asset cache/clone cleanup, target-height normalization, model bounds checks, material repair, and road-grounding.
-- Run-mission progress accumulates repeatable actions; combo/clean-distance objectives are peak-based; each KAROTA decision counts once.
-- 60+ route names, drivers and paint progression, all six modes, save normalization, daily rewards/missions, local tribe boards, and existing career events remain in the candidate.
+### Excessive speed and rigid rules
 
-## Verification results
+- Career base cap: 38 km/h before driver modifiers.
+- Free roam base cap: 36 km/h.
+- Time Attack base cap: 150 km/h as an intentional separate arcade mode, making the existing 3.5 km/95-second Gold target reachable.
+- Stops are more forgiving at normal roadside zones; only multi-seat General Checkpoint boarding requires an almost complete stop.
+- Life activities include accept/pass options so school runs, market delivery, repair, fuel queue, water/top-up, wedding convoy and goat crossings do not become compulsory tasks.
 
-- `npm test`: **43/43 passing**.
-- `npm run check`: **passed**.
-- Package JSON/script validation: passed.
-- Static regression coverage includes the actual asset catalog names, progressive mobile preloads, morning routine, 2D garage, repeated flyover replacement, slower cruise tuning, stopped pickup zones, existing game/progression behavior, and canvas fallback.
+### Northern Kano life / model-backed scenes
 
-## Remaining release blockers
+The morning scene set covers a bedroom, compound chores and water carrying, neighbourhood shops, several breakfast choices, a market-road walk, school/mosque crossing activity, and guarded keke park with a security guard and the same player vehicle. Runtime content additionally includes school runs, market loads, vulcanizer, fuel queues, wedding traffic, roadside water/phone-credit, goat crossings, market day, Juma'a traffic, harmattan, rain/mud and broken roads.
 
-1. **Vite build unverified.** This environment currently has no `node_modules/vite`; an earlier install attempt could not resolve `registry.npmjs.org`. Run the production build from a network-enabled environment before deployment.
-2. **Actual GLB requests not verified.** Source catalog paths align with the user's supplied file tree, but the package does not include the assets. Verify HTTP 200 responses and `[ModelManager] OK ...` console logs in the real repository.
-3. **Browser/WebGL/mobile visuals not run.** The keke's actual asset facing, scale and screen position must be tested in a browser and on a physical phone. Node tests cannot prove visual correctness.
-4. **No live changes.** GitHub and Vercel remain unchanged; this output contains local candidate files only.
+The 3D morning scenes use model slots for the owner's existing keke, motorcycle, building, passenger/pedestrian and security GLBs. The road scene progressively replaces procedural vehicles, people, buildings, road props and flyovers when corresponding model keys load. Canvas 2D provides fully drawn versions of the morning, garage and drive scenes without trying to reuse a WebGL-backed canvas context.
 
-## Acceptance checklist before release
+## Automated verification
 
-- Preserve the existing GLB and audio folders while applying the code overlay.
-- Run `npm run check`, `npm test`, and `npm run build` in the repository root.
-- Test `/`, `/?force2d`, and `/?force3d` on desktop and mobile.
-- Verify `[ModelManager] OK keke`, loaded traffic/person/building messages, visible flyovers and no vehicle boxes remaining after preload.
-- Complete the morning sequence, purchase the meal, greet the guard, inspect the parked keke, start the shift, stop on a pickup pad, and test fare/drop/fuel/pothole interactions.
-- Test each continue/event button, portrait and landscape layouts, and reload persistence.
-- Deploy to Vercel only after the production build and browser QA pass.
+- `npm run check`: **PASS**.
+- `npm test`: **53/53 PASS**.
+- The tests cover gameplay startup, missions, saved-state normalization, daily/tribal features, mode starts, stop interactions, group seat policy, direction/closing speed, relative-speed collision damage, 2D projected contact position, viewport, fallback canvas, real asset path strings, scene callbacks, model replacement and flyover setup.
+- `npm run build`: **NOT VERIFIED**. It fails in this environment because `node_modules/vite/bin/vite.js` is absent. Dependency installation did not complete earlier due to registry networking failure.
+
+## Release blockers
+
+1. Restore/install dependencies in an environment with npm registry access, then run `npm run build`.
+2. Merge only code/config/test/docs changes into the existing repository; preserve the actual `public/assets/models`, `public/assets/environment`, `public/assets/audio`, and all unrelated live features.
+3. Check browser console/network requests for `[ModelManager] OK keke`, car/people/building/flyover assets and HTTP 200 responses.
+4. Test normal one-way orientation, two-way opposing lane, actual keke visibility, flyover height/scale, roadside stop positioning, contact alignment and all morning scenes on desktop and a physical mobile device.
+5. Only then commit/push and verify the Vercel deployment. No live change was made from this environment.

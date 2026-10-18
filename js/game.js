@@ -41,6 +41,8 @@ export class Game {
       fares: 0,
       breakfastEaten: false,
       breakfastCost: 0,
+      morale: 75,
+      fareMood: 1,
       guardedOvernight: false,
       distance: 0,
       speed: 0,
@@ -99,6 +101,10 @@ export class Game {
       karotaTimer: randomBetween(92, 115),
       lifeEventTimer: randomBetween(45, 75),
       eventCooldown: 0,
+      lifeActivityTimer: randomBetween(105, 145),
+      lastLifeActivity: '',
+      pullOverSide: 0,
+      crashShake: 0,
       environment: 'clear',
       environmentDuration: 0,
       roadMode: save.roadMode || 'oneway',
@@ -119,28 +125,30 @@ export class Game {
   spawnZone(initialIndex = null) {
     const roll = Math.random();
     let type;
-    if (this.s.environment === 'market' && roll < 0.60) type = 'pickup';
-    else if (this.s.environment === 'fuelQueue') type = roll < 0.43 ? 'pickup' : roll < 0.78 ? 'drop' : roll < 0.83 ? 'fuel' : 'pothole';
-    else type = roll < 0.43 ? 'pickup' : roll < 0.76 ? 'drop' : roll < 0.89 ? 'fuel' : 'pothole';
-    const hub = type === 'pickup' && Math.random() < 0.22;
-    const lane = type === 'pickup' && !hub
-      ? (Math.random() < 0.5 ? 0 : 2)
-      : type === 'pickup' && hub ? 1 : Math.floor(randomBetween(0, 3));
+    if ((this.s.environment === 'market' || this.s.environment === 'schoolGate') && roll < 0.62) type = 'pickup';
+    else if (this.s.environment === 'rainPuddles' && roll < 0.42) type = 'pothole';
+    else if (this.s.environment === 'fuelQueue') type = roll < 0.38 ? 'pickup' : roll < 0.64 ? 'drop' : roll < 0.82 ? 'fuel' : 'pothole';
+    else type = roll < 0.34 ? 'pickup' : roll < 0.61 ? 'drop' : roll < 0.76 ? 'fuel' : 'pothole';
+
+    // Passenger/fuel stops live on a shoulder pull-in, never in the centre of a live lane.
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const hub = type === 'pickup' && Math.random() < 0.32;
+    const lane = type === 'pothole'
+      ? Math.floor(randomBetween(0, 3))
+      : (side < 0 ? 0 : 2);
     const dest = this.chooseZoneDestination(type);
     const seats = type === 'pickup' ? (hub ? Math.floor(randomBetween(2, 5)) : 1) : 0;
     const depth = Number.isInteger(initialIndex)
-      ? 0.36 + initialIndex * 0.17
-      : randomBetween(1.1, 1.3);
+      ? 0.52 + initialIndex * 0.15
+      : randomBetween(1.05, 1.30);
+    const label = hub ? `GENERAL CHECKPOINT · KEKE STOP · ${dest}`
+      : type === 'pickup' ? `PICK UP · ${dest}`
+        : type === 'drop' ? `DROP OFF · ${dest}`
+          : type === 'fuel' ? 'FUEL STOP' : 'BAD ROAD';
     this.s.zones.push({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type,
-      lane,
-      depth,
-      dest,
-      seats,
-      hub,
-      label: hub ? `HUB · ${dest}` : '',
-      warned: false,
+      type, lane, side, roadside: type !== 'pothole', depth, dest, seats, hub,
+      label, warned: false, retryAt: 0,
     });
   }
 
@@ -154,22 +162,25 @@ export class Game {
   }
 
   spawnTraffic(initialIndex = null) {
-    const types = ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'police', 'karota'];
-    if (!this.mobile) types.push('truck', 'bus');
+    const types = ['keke', 'car', 'taxi', 'suv', 'motorcycle', 'keke', 'car'];
+    if (!this.mobile) types.push('truck', 'bus', 'police', 'karota');
     const type = choose(types);
     const lane = Math.floor(randomBetween(0, 3));
+    // In Nigeria's normal left-driving flow, traffic stays with us by default.
+    // Two-way mode reserves the far-right lane for visible oncoming traffic.
+    const direction = this.s.roadMode === 'twoway' && lane === 0 ? -1 : 1;
     const depth = Number.isInteger(initialIndex)
-      ? 0.35 + initialIndex * 0.15
-      : randomBetween(1.05, 1.35);
+      ? 0.68 + initialIndex * 0.12
+      : randomBetween(1.02, 1.34);
+    const speedKmh = direction === -1
+      ? randomBetween(24, 43)
+      : randomBetween(16, 34);
     this.s.traffic.push({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type,
-      lane,
-      direction: this.s.roadMode === 'twoway' && lane === 0 ? -1 : 1,
-      depth,
+      type, lane, direction, depth, speedKmh,
       color: choose(['#e4c24e', '#d7e1e9', '#bd5142', '#3983b9', '#36404d', '#f2f2f2']),
       passed: false,
-      speed: randomBetween(0.82, 1.12),
+      speed: randomBetween(0.92, 1.08),
     });
   }
 
@@ -280,24 +291,30 @@ export class Game {
 
     // A working Kano keke should cruise calmly between stops, not feel like a racing bike.
     // Gas gives a decisive but believable rise; Time Attack remains the fast mode.
-    const modeSpeed = this.mode === 'timeAttack' ? 140 : this.mode === 'freeRoam' ? 62 : 68;
+    const modeSpeed = this.mode === 'timeAttack' ? 150 : this.mode === 'freeRoam' ? 36 : 38;
     const maxSpeed = modeSpeed * (this.driver.speedMod || 1);
-    const cruiseBase = this.mode === 'timeAttack' ? 42 : this.mode === 'freeRoam' ? 30 : 27;
-    const cruiseSpeed = cruiseBase * (this.driver.speedMod || 1);
-    const desiredSpeed = s.gas ? maxSpeed : s.brake ? 0 : cruiseSpeed;
-    const acceleration = s.brake ? 7.5 : s.gas ? (this.mode === 'timeAttack' ? 2.5 : 1.65) : 1.05;
+    const desiredSpeed = s.gas ? maxSpeed : 0;
+    const acceleration = s.brake ? 5.8 : s.gas ? (this.mode === 'timeAttack' ? 1.8 : 1.0) : 1.6;
     s.speed += (desiredSpeed - s.speed) * Math.min(1, acceleration * dt);
-    if (s.brake) s.speed = Math.max(0, s.speed - 36 * dt);
-    const steeringRate = s.environment === 'muddy' ? 4.2 : 7.5;
+    if (s.brake) s.speed = Math.max(0, s.speed - 31 * dt);
+    const tyreHandling = 0.62 + 0.38 * (s.tyres / 100);
+    const steeringRate = (s.environment === 'muddy' ? 4.1 : 6.6) * tyreHandling;
     s.steer += (s.targetLane - s.steer) * Math.min(1, dt * steeringRate);
-    if (s.environment === 'muddy') s.speed = Math.min(s.speed, 48 * (this.driver.speedMod || 1));
+    s.crashShake = Math.max(0, s.crashShake - dt * 2.5);
+    if (s.speed > 7.5 || Math.abs(s.steer - s.targetLane) > 0.4) s.pullOverSide = 0;
+    if (s.environment === 'muddy') s.speed = Math.min(s.speed, 36 * (this.driver.speedMod || 1));
+    if (s.environment === 'rainPuddles') s.speed = Math.min(s.speed, 38 * (this.driver.speedMod || 1));
+    if (s.environment === 'schoolGate' || s.environment === 'mosqueJunction') s.speed = Math.min(s.speed, 28 * (this.driver.speedMod || 1));
     s.distance += (s.speed / 3600) * dt;
     const distanceSteps = Math.floor(s.distance * 10) - Math.floor(s.lastDailyDistance * 10);
     if (distanceSteps > 0) {
       this.dailyAdd('distance', distanceSteps / 10);
       s.lastDailyDistance = Math.floor(s.distance * 10) / 10;
     }
-    s.night = (Math.floor(s.elapsed / 52) % 2) === 1;
+    // In-game clock advances from the morning departure rather than flipping
+    // between night and day every few seconds. A complete day is about 22 real minutes.
+    s.gameClockMinutes = (408 + s.elapsed * 1.1) % 1440;
+    s.night = s.gameClockMinutes < 360 || s.gameClockMinutes >= 1140;
     s.level = 1 + Math.floor(s.distance / 1.5);
 
     const passengers = s.passengers.reduce((total, passenger) => total + passenger.seats, 0);
@@ -365,14 +382,22 @@ export class Game {
 
   moveZones(dt) {
     const s = this.s;
-    const laneIndex = s.targetLane + 1;
-    // A roadside zone should only move when the keke moves. Keeping the same
-    // km/h-to-world scale as Renderer3D makes stopping for fares genuinely possible.
-    const scroll = dt * (s.speed / 310);
+    const scroll = dt * (Math.max(0, s.speed) / 316.8);
+    const steerTarget = s.targetLane;
+
     for (let index = s.zones.length - 1; index >= 0; index -= 1) {
       const zone = s.zones[index];
-      const aligned = zone.lane === laneIndex;
-      const inInteractionRange = zone.depth <= 0.23 && zone.depth >= 0.12;
+      const targetForZone = zone.lane - 1;
+      const aligned = Math.abs(s.steer - targetForZone) <= (zone.type === 'pothole' ? 0.42 : 0.48);
+      const inInteractionRange = zone.depth <= 0.19 && zone.depth >= 0.055;
+      const approachRange = zone.depth <= 0.34 && zone.depth > 0.19;
+      const permittedStopSpeed = zone.hub ? 6.5 : 12;
+
+      if (approachRange && zone.type !== 'pothole' && aligned && s.speed > permittedStopSpeed && !zone.warned && zone.retryAt <= s.elapsed) {
+        this.ui.toast(zone.hub ? 'GENERAL CHECKPOINT AHEAD · brake and pull into the stop' : 'Roadside stop ahead · slow and pull to the shoulder');
+        zone.warned = true;
+        zone.retryAt = s.elapsed + 3.2;
+      }
 
       if (zone.type === 'pothole' && aligned && inInteractionRange) {
         this.hitPothole(zone);
@@ -381,15 +406,9 @@ export class Game {
         continue;
       }
 
-      if (aligned && inInteractionRange && zone.type !== 'pothole') {
-        if (s.speed > 8.5) {
-          zone.depth = 0.205;
-          if (!zone.warned) {
-            this.ui.toast('Brake to stop · then load, drop or refuel');
-            zone.warned = true;
-          }
-          continue;
-        }
+      if (zone.type !== 'pothole' && aligned && inInteractionRange && s.speed <= permittedStopSpeed) {
+        // Pull well onto the verge, rather than stopping in the middle of a traffic lane.
+        s.pullOverSide = zone.side || (zone.lane === 0 ? -1 : 1);
         let handled = true;
         if (zone.type === 'pickup') handled = this.pickup(zone);
         else if (zone.type === 'drop') this.drop(zone);
@@ -399,12 +418,12 @@ export class Game {
           this.spawnZone();
           continue;
         }
-        zone.depth = 0.205;
-        continue;
       }
 
+      // Markers always travel with the world. Missing a stop does not freeze the road
+      // or trap a player in a forced lane/stop condition.
       zone.depth -= scroll;
-      if (zone.depth < -0.08) {
+      if (zone.depth < -0.08 || zone.depth > 1.55) {
         s.zones.splice(index, 1);
         this.spawnZone();
       }
@@ -431,28 +450,44 @@ export class Game {
   hitPothole() {
     const s = this.s;
     s.potholeHits += 1;
-    s.tyres = Math.max(0, s.tyres - 14 * (this.driver.damageTakenMod || 1));
-    s.condition = Math.max(0, s.condition - 4 * (this.driver.damageTakenMod || 1));
-    s.engine = Math.max(0, s.engine - 2);
-    s.speed *= 0.72;
-    s.steer = clamp(s.steer + (Math.random() < 0.5 ? -0.12 : 0.12), -1, 1);
+    const severity = this.s.environment === 'badRoad' ? 1.15 : this.s.environment === 'muddy' ? 1.25 : 1;
+    s.tyres = Math.max(0, s.tyres - 7.5 * severity * (this.driver.damageTakenMod || 1));
+    s.condition = Math.max(0, s.condition - 2.2 * severity * (this.driver.damageTakenMod || 1));
+    s.engine = Math.max(0, s.engine - 0.8 * severity);
+    s.speed *= 0.86;
+    s.crashShake = Math.max(s.crashShake || 0, 0.24 * severity);
+    s.steer = clamp(s.steer + (Math.random() < 0.5 ? -0.055 : 0.055), -1, 1);
     this.audio.beep?.(105, 0.14);
     this.ui.toast(`POTHOLE! Tyres damaged · ${s.potholeHits} hit${s.potholeHits === 1 ? '' : 's'}`);
   }
 
   moveTraffic(dt) {
     const s = this.s;
-    const laneIndex = s.targetLane + 1;
+    const playerLane = s.steer + 1;
+
     for (let index = s.traffic.length - 1; index >= 0; index -= 1) {
       const vehicle = s.traffic[index];
+      const previousDepth = vehicle.depth;
+      const trafficSpeed = Number.isFinite(vehicle.speedKmh)
+        ? vehicle.speedKmh
+        : (vehicle.direction === -1 ? 30 : 22);
       const oncoming = vehicle.direction === -1;
-      const trafficSlowdown = s.environment === 'juma' ? 0.68 : 1;
-      vehicle.depth -= dt * (0.075 + s.speed / (oncoming ? 220 : 300)) * vehicle.speed * trafficSlowdown;
-      if (!vehicle.passed && vehicle.depth <= 0.22 && vehicle.depth >= 0.105) {
-        if (vehicle.lane === laneIndex && s.invuln <= 0) {
+      const roadFactor = s.environment === 'juma' ? 0.78 : s.environment === 'muddy' ? 0.84 : 1;
+      // depth is metres/88. Same-direction vehicles only approach when the player
+      // is actually closing the gap; faster traffic recedes. Oncoming traffic closes
+      // at the sum of both speeds. This fixes the old unconditional head-on motion.
+      const closingSpeed = oncoming ? s.speed + trafficSpeed : s.speed - trafficSpeed;
+      vehicle.depth -= (closingSpeed / 316.8) * dt * roadFactor;
+      const impactDepth = 0.022; // aligned with the visible bumper-to-bumper contact point
+      const crossedImpactPlane = previousDepth > impactDepth && vehicle.depth <= impactDepth;
+      const insideContactBand = vehicle.depth <= 0.035 && vehicle.depth >= 0.012;
+      const laneGap = Math.abs(vehicle.lane - playerLane);
+
+      if (!vehicle.passed && (crossedImpactPlane || insideContactBand && closingSpeed > 6)) {
+        if (laneGap <= 0.38 && s.invuln <= 0) {
           vehicle.passed = true;
           this.hit(vehicle);
-        } else if (Math.abs(vehicle.lane - laneIndex) === 1) {
+        } else if (laneGap <= 0.82 && closingSpeed > 4) {
           vehicle.passed = true;
           s.nearMisses += 1;
           this.dailyAdd('nearMisses', 1);
@@ -463,9 +498,12 @@ export class Game {
           this.ui.toast(`Near miss! +₦${bonus.toLocaleString()} · combo ×${s.combo}`);
           this.missionAdd('nearMisses', 1);
           this.missionAdd('combo', s.combo);
+        } else {
+          vehicle.passed = true;
         }
       }
-      if (vehicle.depth < -0.08) {
+
+      if (vehicle.depth < -0.12 || vehicle.depth > 1.58) {
         s.traffic.splice(index, 1);
         this.spawnTraffic();
       }
@@ -486,63 +524,71 @@ export class Game {
     s.collisions += 1;
     s.cleanDistance = 0;
     s.safeSpeedSeconds = 0;
-    const fast = s.speed >= 95;
-    const heavy = vehicle.type === 'truck' || vehicle.type === 'bus' || vehicle.type === 'suv';
+    const oncoming = vehicle.direction === -1;
+    const trafficSpeed = Number.isFinite(vehicle.speedKmh) ? vehicle.speedKmh : 25;
+    const relativeSpeed = oncoming ? s.speed + trafficSpeed : Math.abs(s.speed - trafficSpeed);
+    const heavy = ['truck', 'bus'].includes(vehicle.type);
+    const luxury = vehicle.type === 'suv' || vehicle.type === 'car';
     const mod = this.driver.damageTakenMod || 1;
-    s.speed *= fast ? 0.42 : 0.62;
-    s.condition = Math.max(0, s.condition - (heavy ? 23 : fast ? 17 : 10) * mod);
-    s.engine = Math.max(0, s.engine - (heavy ? 13 : fast ? 9 : 5) * mod);
-    s.tyres = Math.max(0, s.tyres - (heavy ? 10 : 6) * mod);
-    s.heat = Math.min(100, s.heat + (heavy ? 15 : 8));
-    s.invuln = 1.5;
+    const severity = clamp((relativeSpeed - 4) / 48, 0.08, 1.1);
+    const bodyBase = heavy ? 15 : vehicle.type === 'keke' ? 5 : 7.5;
+
+    // Low-speed scrapes are recoverable. High-relative-speed impacts cost more,
+    // but one bump should not instantly ruin an otherwise good run.
+    s.speed *= 1 - (heavy ? 0.28 : 0.16) * severity;
+    s.condition = Math.max(0, s.condition - bodyBase * severity * mod);
+    s.engine = Math.max(0, s.engine - (heavy ? 5.5 : 2.2) * severity * mod);
+    s.tyres = Math.max(0, s.tyres - (heavy ? 4.5 : 1.8) * severity * mod);
+    s.heat = Math.min(100, s.heat + (heavy ? 8 : 3) * severity);
+    s.invuln = 1.15;
     s.combo = 0;
+    s.crashShake = Math.max(s.crashShake, clamp(relativeSpeed / 65, 0.2, 1));
+    s.steer = clamp(s.steer + (Math.random() < 0.5 ? -1 : 1) * 0.06 * severity, -1, 1);
     this.audio.crash();
-    this.ui.toast(heavy ? 'Heavy collision · vehicle damaged' : 'Collision! Drive carefully');
-    if (vehicle.type === 'suv' || (vehicle.type === 'car' && Math.random() < 0.22)) {
+    this.ui.toast(heavy ? 'Heavy bump · check the keke, then keep going' : 'Traffic scrape · ease off and recover');
+
+    if (luxury && relativeSpeed > 32 && Math.random() < 0.12) {
       this.beginEvent('rich');
-    } else if (Math.random() < 0.09) {
+    } else if (Math.random() < 0.035) {
       this.beginEvent('robber');
     }
     if (s.condition < 25 || s.engine < 25 || s.tyres < 25) {
-      this.ui.toast('Condition critical · avoid further collisions');
+      this.ui.toast('Vehicle needs attention · look for a roadside mechanic');
     }
   }
 
   pickup(zone) {
     const s = this.s;
     const occupied = s.passengers.reduce((total, passenger) => total + passenger.seats, 0);
-    if (occupied + zone.seats > s.capacity) {
-      this.ui.toast('Keke full · drop a passenger first');
+    const special = Boolean(zone.hub) && Math.random() < 0.10 * (this.driver.flags?.luck || 1);
+    const female = Math.random() < 0.58;
+    // Ordinary shoulder stops board one seat only. A marked General Checkpoint
+    // can board either one large passenger, Aishat+Hibba, or a 2-4 person group.
+    const largePassenger = Boolean(zone.hub) && !special && Math.random() < 0.30;
+    const groupPickup = Boolean(zone.hub) && !special && !largePassenger;
+    const vip = Math.random() < 0.10;
+    const requestedSeats = zone.hub ? (special || largePassenger ? 2 : clamp(zone.seats || 2, 2, 4)) : 1;
+    if (occupied + requestedSeats > s.capacity) {
+      this.ui.toast(zone.hub ? 'Checkpoint group needs more seats · clear space first' : 'Keke full · drop a passenger first');
       return false;
     }
-
-    const special = Math.random() < 0.08 * (this.driver.flags?.luck || 1);
-    const female = Math.random() < 0.58;
     if (this.driver.id === 'mayen-mata' && !female && Math.random() < 0.25) {
       this.ui.toast('Mayen Mata prioritises women passengers · this pickup is skipped.');
       return true;
     }
-    const vip = Math.random() < 0.12;
-    const className = vip ? 'VIP' : female ? 'market woman' : 'worker';
-    const fareFactor = randomBetween(1, 2.3) * (s.night ? 1.42 : 1) * (vip ? 1.5 : 1) * (s.breakfastEaten ? 1.05 : 1);
+    const className = special ? 'family passenger' : groupPickup ? 'checkpoint group' : largePassenger ? 'large passenger' : vip ? 'VIP' : female ? 'market woman' : 'worker';
+    const fareFactor = randomBetween(1.0, 1.7) * (s.night ? 1.25 : 1) * (vip ? 1.45 : 1) * (zone.hub ? 1.15 : 1) * (s.breakfastEaten ? 1.05 : 1) * (s.fareMood || 1);
     const passenger = {
-      name: special
-        ? 'Aishat & Hibba'
-        : choose(['Malam Musa', 'Hajiya Zainab', 'Amina', 'Bello', 'Fatima', 'Abubakar', 'Student Ali', 'Businessman Sani']),
+      name: special ? 'Aishat & 2-year-old Hibba'
+        : largePassenger ? choose(['Malam Lawan (large passenger)', 'Hajiya Hauwa (large passenger)'])
+        : groupPickup ? choose(['Hajiya Zainab and family', 'Two market traders', 'Three students', 'Malam Musa and his children'])
+            : choose(['Malam Musa', 'Hajiya Zainab', 'Amina', 'Bello', 'Fatima', 'Abubakar', 'Student Ali', 'Businessman Sani']),
       dest: zone.dest,
-      seats: special ? Math.max(2, zone.seats) : zone.seats,
+      seats: requestedSeats,
       fare: Math.floor(this.route.baseFare * fareFactor * (this.driver.fareMult || 1)),
-      class: className,
-      female,
-      special,
+      class: className, female, special, group: Boolean(zone.hub),
     };
-    if (this.driver.flags?.womenBonus && female) {
-      passenger.fare = Math.floor(passenger.fare * this.driver.flags.womenBonus);
-    }
-    if (occupied + passenger.seats > s.capacity) {
-      this.ui.toast('Not enough seats for this passenger group');
-      return false;
-    }
+    if (this.driver.flags?.womenBonus && female) passenger.fare = Math.floor(passenger.fare * this.driver.flags.womenBonus);
     s.passengers.push(passenger);
     s.boards += 1;
     this.dailyAdd('boards', 1);
@@ -550,8 +596,12 @@ export class Game {
     if (special) {
       s.aishat += 1;
       this.dailyAdd('aishat', 1);
-      this.ui.toast('Aishat and 2-year-old Hibba boarded · Allah ya kiyaye!');
+      this.ui.toast('Aishat and little Hibba boarded · Allah ya kiyaye!');
       this.missionAdd('aishat', 1);
+    } else if (largePassenger) {
+      this.ui.toast(`GENERAL CHECKPOINT · ${passenger.name} boarded · 2 seats used`);
+    } else if (groupPickup) {
+      this.ui.toast(`KEKE STOP · ${passenger.name} loaded (${passenger.seats} seats)`);
     } else {
       this.ui.toast(`${passenger.name} boarded · ${passenger.dest}`);
     }
@@ -559,7 +609,7 @@ export class Game {
     this.missionAdd('boards', 1);
     if (vip) this.missionAdd('vip', 1);
     this.audio.pickup();
-    if (Math.random() < 0.2 && this.mode === 'career') {
+    if (Math.random() < 0.12 && this.mode === 'career') {
       window.setTimeout(() => {
         if (this.state === 'PLAY' && !s.event) this.beginEvent('fare');
       }, 0);
@@ -624,7 +674,18 @@ export class Game {
     }
     this.missionAdd('distance', s.distance);
     this.missionAdd('condition', s.condition);
-    if (this.mode === 'career') {
+    // Everyday Kano work happens between fares, but it should never become a modal every minute.
+    s.lifeActivityTimer = Math.max(0, (s.lifeActivityTimer || 0) - dt);
+    if (this.mode !== 'timeAttack' && s.distance >= 0.35 && s.lifeActivityTimer <= 0 && !s.event && s.eventCooldown <= 0) {
+      s.lifeActivityTimer = randomBetween(105, 150);
+      const activities = ['schoolRun', 'marketDelivery', 'vulcanizer', 'fuelQueueLife', 'weddingLife', 'waterSeller', 'goatCrossing'];
+      const next = activities.filter((name) => name !== s.lastLifeActivity);
+      const activity = choose(next.length ? next : activities);
+      s.lastLifeActivity = activity;
+      this.beginEvent(activity);
+      if (s.event || this.state !== 'PLAY') return;
+    }
+    if (this.mode === 'career' && !s.event && this.state === 'PLAY') {
       s.karotaTimer -= dt;
       if (s.karotaTimer <= 0 && s.eventCooldown <= 0) {
         s.karotaTimer = randomBetween(90, 118);
@@ -637,11 +698,11 @@ export class Game {
     const s = this.s;
     s.lifeEventTimer -= dt;
     if (s.lifeEventTimer > 0 || this.mode === 'timeAttack') return;
-    s.lifeEventTimer = randomBetween(48, 78);
-    const events = ['market', 'wedding', 'harmattan', 'badRoad', 'muddy', 'fuelQueue', 'juma'];
+    s.lifeEventTimer = randomBetween(72, 104);
+    const events = ['market', 'wedding', 'harmattan', 'badRoad', 'muddy', 'fuelQueue', 'juma', 'schoolGate', 'mosqueJunction', 'rainPuddles'];
     const event = choose(events);
     s.environment = event;
-    s.environmentDuration = randomBetween(20, 32);
+    s.environmentDuration = randomBetween(18, 28);
     const messages = {
       market: 'Market day · roadside pickups are busier',
       wedding: 'Bikin aure · wedding convoy ahead!',
@@ -650,20 +711,23 @@ export class Game {
       muddy: 'Muddy stretch · grip reduced',
       fuelQueue: 'Fuel scarcity · save your fuel',
       juma: 'Juma’a traffic · drive with patience',
+      schoolGate: 'School run rush · children near the gate, ease off',
+      mosqueJunction: 'Mosque junction is busy · give people room to cross',
+      rainPuddles: 'Rain puddles and broken drains · slow down, watch the edge',
     };
     if (event === 'wedding') {
       for (let i = 0; i < 3; i += 1) {
         this.s.traffic.push({
           id: `${Date.now()}-wedding-${i}-${Math.random()}`,
-          type: 'suv', lane: i, depth: 1.05 + i * 0.12,
-          color: '#303944', passed: false, speed: 0.55,
+          type: 'suv', lane: i, direction: 1, depth: 1.05 + i * 0.12,
+          speedKmh: 12 + i * 2, color: '#303944', passed: false, speed: 1,
         });
       }
     }
-    if (event === 'badRoad') {
-      for (let i = 0; i < 2; i += 1) {
+    if (event === 'badRoad' || event === 'rainPuddles') {
+      for (let i = 0; i < (event === 'rainPuddles' ? 1 : 2); i += 1) {
         const lane = Math.floor(randomBetween(0, 3));
-        this.s.zones.push({ id: `${Date.now()}-pothole-${i}-${Math.random()}`, type: 'pothole', prop: i === 0 ? 'dirtmound' : 'cone', lane, depth: 1.1 + i * 0.1, dest: this.route.name, seats: 0, hub: false, label: '', warned: false });
+        this.s.zones.push({ id: `${Date.now()}-pothole-${i}-${Math.random()}`, type: 'pothole', prop: i === 0 ? 'dirtmound' : 'cone', lane, side: lane === 0 ? -1 : 1, roadside: false, depth: 1.1 + i * 0.1, dest: this.route.name, seats: 0, hub: false, label: '', warned: false });
       }
     }
     this.ui.toast(messages[event]);
@@ -746,6 +810,48 @@ export class Game {
         copy: 'A robber blocks your way and demands cash. Respond and continue the run.',
         choices: [['GIVE ₦500', 'robPay'], ['HORN & ESCAPE', 'robRun']],
       },
+      schoolRun: {
+        kicker: 'SCHOOL GATE · MORNING RUSH',
+        title: 'A parent needs a school run.',
+        copy: 'A parent and two children are trying to reach school before the gate gets busy. This is a real fare, not a compulsory mission.',
+        choices: [['TAKE SCHOOL RUN', 'takeSchoolRun'], ['PASS THIS TIME', 'skipLife']],
+      },
+      marketDelivery: {
+        kicker: 'MARKET ERRAND',
+        title: 'Malam needs help with a market load.',
+        copy: 'A trader at the roadside wants a short trip to Kurmi Market with a small load. It uses one seat and pays a better fare.',
+        choices: [['TAKE THE LOAD', 'takeMarketLoad'], ['PASS THIS TIME', 'skipLife']],
+      },
+      vulcanizer: {
+        kicker: 'ROADSIDE VULCANIZER',
+        title: 'Tyre man has a free bay.',
+        copy: 'A vulcanizer beside the road can check the tyres before they get worse. Repairing costs in-game earnings; continuing is allowed.',
+        choices: [['REPAIR · ₦200', 'repairTyres'], ['KEEP DRIVING', 'skipLife']],
+      },
+      fuelQueueLife: {
+        kicker: 'PETROL STATION QUEUE',
+        title: 'The fuel queue is moving slowly.',
+        copy: 'A nearby filling station has a short queue. Buy a little fuel now or keep your place in traffic and move on.',
+        choices: [['BUY FUEL · ₦250', 'buyFuel'], ['SKIP QUEUE', 'skipLife']],
+      },
+      weddingLife: {
+        kicker: 'BIKIN AURE · WEDDING CONVOY',
+        title: 'A wedding convoy is turning ahead.',
+        copy: 'Decorated cars and family members are moving through the junction. Give them room or pass carefully.',
+        choices: [['YIELD RESPECTFULLY', 'yieldWedding'], ['PASS CAREFULLY', 'passWedding'], ['KEEP MOVING', 'skipLife']],
+      },
+      waterSeller: {
+        kicker: 'ROADSIDE KIOSK',
+        title: 'Pure water and phone top-up.',
+        copy: 'A roadside seller has cold sachet water and phone credit. A short stop can improve the next customer interaction.',
+        choices: [['WATER + TOP-UP · ₦100', 'buyWater'], ['SKIP', 'skipLife']],
+      },
+      goatCrossing: {
+        kicker: 'OUTSKIRTS · ANIMAL CROSSING',
+        title: 'Goats are crossing near the shoulder.',
+        copy: 'A small herd is moving across the road near the outskirts. Slow down for a moment or sound the horn and pass cautiously.',
+        choices: [['SLOW DOWN', 'slowForGoats'], ['HORN CAREFULLY', 'hornForGoats'], ['CONTINUE CAREFULLY', 'skipLife']],
+      },
     };
     const event = events[type];
     if (!event) {
@@ -820,8 +926,54 @@ export class Game {
       if (action === 'robPay') s.score = Math.max(0, s.score - 500);
       else {
         s.heat = Math.min(100, s.heat + 7);
-        s.speed = Math.max(s.speed, 60);
+        s.speed = Math.max(s.speed, 40);
       }
+    } else if (type === 'schoolRun') {
+      if (action === 'takeSchoolRun') {
+        const occupied = s.passengers.reduce((total, passenger) => total + passenger.seats, 0);
+        if (occupied + 2 <= s.capacity) {
+          const fare = Math.floor(this.route.baseFare * 1.65);
+          s.passengers.push({ name: 'School run · parent and children', dest: choose(['BUK Gate', 'Aminu Kano Teaching Hospital', 'Tarauni']), seats: 2, fare, class: 'school run', female: false, special: false, group: true });
+          s.boards += 1; this.dailyAdd('boards', 1); this.missionAdd('boards', 1);
+          this.ui.toast(`School run accepted · 2 seats · +₦${fare.toLocaleString()} on arrival`);
+        } else this.ui.toast('Keke is full · the school run can wait for another driver');
+      }
+    } else if (type === 'marketDelivery') {
+      if (action === 'takeMarketLoad') {
+        const occupied = s.passengers.reduce((total, passenger) => total + passenger.seats, 0);
+        if (occupied + 1 <= s.capacity) {
+          const fare = Math.floor(this.route.baseFare * 1.85);
+          s.passengers.push({ name: 'Malam Kabiru’s market load', dest: 'Kurmi Market', seats: 1, fare, class: 'market delivery', female: false, special: false, cargo: true });
+          s.boards += 1; this.dailyAdd('boards', 1); this.missionAdd('boards', 1);
+          this.ui.toast(`Market load accepted · destination Kurmi Market · +₦${fare.toLocaleString()} on delivery`);
+        } else this.ui.toast('No space for the market load · pass the job');
+      }
+    } else if (type === 'vulcanizer') {
+      if (action === 'repairTyres') {
+        if (s.score >= 200) {
+          s.score -= 200;
+          s.tyres = Math.min(100, s.tyres + 24);
+          s.condition = Math.min(100, s.condition + 5);
+          s.speed = Math.min(s.speed, 8);
+          this.ui.toast('Vulcanizer checked the tyres · back on the road');
+        } else this.ui.toast('Not enough run earnings for the repair · keep driving carefully');
+      }
+    } else if (type === 'fuelQueueLife') {
+      if (action === 'buyFuel') {
+        if (s.score >= 250) {
+          s.score -= 250;
+          s.fuel = Math.min(100, s.fuel + 28);
+          this.ui.toast('Fuel topped up · filling station queue cleared');
+        } else this.ui.toast('Not enough run earnings for the fuel top-up');
+      }
+    } else if (type === 'weddingLife') {
+      if (action === 'yieldWedding') { s.score += 45; s.speed = Math.min(s.speed, 7); this.ui.toast('Barka da aure · you gave the convoy room'); }
+      else if (action === 'passWedding') { if (Math.random() < 0.8) this.ui.toast('Passed the convoy carefully'); else { s.condition = Math.max(0, s.condition - 2); s.score = Math.max(0, s.score - 80); this.ui.toast('Mirror scrape · slow down near the convoy'); } }
+    } else if (type === 'waterSeller') {
+      if (action === 'buyWater') { if (s.score >= 100) { s.score -= 100; s.morale = Math.min(100, (s.morale ?? 75) + 15); s.fareMood = Math.min(1.12, (s.fareMood ?? 1) + 0.02); this.ui.toast('Water and phone top-up bought · morale lifted'); } else this.ui.toast('Keep your cash for fuel and repairs'); }
+    } else if (type === 'goatCrossing') {
+      if (action === 'slowForGoats') { s.speed = Math.min(s.speed, 6); s.score += 25; this.ui.toast('The goats crossed safely · careful driving bonus'); }
+      else if (action === 'hornForGoats') { s.speed = Math.min(s.speed, 12); this.audio.horn(); this.ui.toast('Horn sounded · goats moved to the shoulder'); }
     }
     if (type === 'rich') {
       s.richDramas += 1;

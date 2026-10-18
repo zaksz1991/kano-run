@@ -165,7 +165,7 @@ test('morning routine contains wake-up, roadside akara and pap, guarded garage a
   for (const id of ['life-routine-screen', 'life-scene-art', 'life-actions', 'life-wallet']) {
     assert.match(html, new RegExp(`id=["']${id}["']`));
   }
-  for (const content of ['06:05 AM', '06:22 AM', 'Akara and pap', 'AKARA + PAP · ₦450', 'GREET MALLAM SECURITY', 'UNLOCK KEKE · START SHIFT']) {
+  for (const content of ['06:05 AM', '06:27 AM', 'Akara and pap', 'AKARA + PAP · ₦450', 'MASA + TEA · ₦400', 'BREAD + TEA · ₦300', 'GREET MALLAM SECURITY', 'INSPECT KEKE · UNLOCK · START SHIFT']) {
     assert.ok(ui.includes(content), `morning stage is missing: ${content}`);
   }
   assert.match(ui, /breakfastEaten = this\.morning\.fed/);
@@ -186,9 +186,54 @@ test('flyovers repeat along the drive and swap procedural spans for loaded GLBs'
 test('roadside zones pause when the keke stops and traffic scroll matches the calmer speed tuning', () => {
   const game = read('js/game.js');
   const renderer = read('js/renderer3d.js');
-  assert.match(game, /const scroll = dt \* \(s\.speed \/ 310\)/);
-  assert.match(game, /this\.mode === 'timeAttack' \? 140 : this\.mode === 'freeRoam' \? 62 : 68/);
-  assert.match(game, /this\.mode === 'timeAttack' \? 42 : this\.mode === 'freeRoam' \? 30 : 27/);
+  assert.match(game, /const scroll = dt \* \(Math\.max\(0, s\.speed\) \/ 316\.8\)/);
+  assert.match(game, /this\.mode === 'timeAttack' \? 150 : this\.mode === 'freeRoam' \? 36 : 38/);
+  assert.match(game, /const desiredSpeed = s\.gas \? maxSpeed : 0/);
+  assert.match(game, /const closingSpeed = oncoming \? s\.speed \+ trafficSpeed : s\.speed - trafficSpeed/);
   assert.match(renderer, /const scroll = state\.speed \* dt \* 0\.28/);
-  assert.match(renderer, /this\.camera\.lookAt\(targetX, driverView \? 1\.2 : 0\.65/);
+  assert.match(renderer, /this\.camera\.lookAt\(targetX, driverView \? 1\.2 : 0\.72/);
+  assert.match(renderer, /zone\.side \|\| \(zone\.lane === 0 \? -1 : 1\)\) \* 6\.7/);
+});
+
+
+test('life routine now includes home chores, street, breakfast choices, school junction and guarded park scenes', () => {
+  const ui = read('js/ui.js');
+  const renderer3d = read('js/renderer3d.js');
+  const renderer2d = read('js/renderer2d.js');
+  for (const scene of ['bedroom', 'household', 'street', 'breakfast', 'walk', 'school', 'garage']) {
+    assert.ok(ui.includes(`scene: '${scene}'`), `missing morning scene ${scene}`);
+    assert.ok(renderer3d.includes(`'${scene}'`), `3D renderer missing ${scene}`);
+    assert.ok(renderer2d.includes(`'${scene}'`), `2D renderer missing ${scene}`);
+  }
+  assert.match(ui, /detail: \{ scene: data\.scene \}/);
+  assert.match(renderer3d, /assets\/environment\/ground\/market-stall\.jpg/);
+  assert.match(renderer3d, /scene model \$\{slot\.key\} installed in \$\{slot\.sceneName\}/);
+});
+
+test('vehicles face with the road flow and 2D perspective lane centers remain inside the road', () => {
+  const renderer3d = read('js/renderer3d.js');
+  const renderer2d = read('js/renderer2d.js');
+  assert.match(renderer3d, /actor\.rotation\.y = vehicle\.direction === -1 \? Math\.PI : 0/);
+  assert.match(renderer3d, /this\.driveFacingY = 0/);
+  assert.match(renderer2d, /\(vehicle\.lane - 1\) \* \(2 \/ 3\) \* halfAt/);
+  assert.match(renderer2d, /export function projectRoadDepth\(depth\)/);
+  assert.match(renderer2d, /0\.59 - \(value - 0\.045\) \* 0\.45/);
+});
+
+
+test('collision plane is tight enough to match visible vehicle contact and ordinary stops are forgiving', () => {
+  const game = read('js/game.js');
+  const renderer2d = read('js/renderer2d.js');
+  assert.match(game, /const impactDepth = 0\.022/);
+  assert.match(game, /vehicle\.depth <= 0\.035 && vehicle\.depth >= 0\.012/);
+  assert.match(game, /zone\.hub \? 6\.5 : 12/);
+  assert.match(game, /const largePassenger = Boolean\(zone\.hub\)/);
+  assert.match(game, /const requestedSeats = zone\.hub \? \(special \|\| largePassenger \? 2 : clamp\(zone\.seats \|\| 2, 2, 4\)\) : 1/);
+  assert.match(renderer2d, /projectRoadDepth\(depth\)/);
+});
+
+test('heavy procedural traffic has distinct left and right side windows', () => {
+  const renderer = read('js/renderer3d.js');
+  assert.match(renderer, /rightSideWindow\.position\.set\(bodyWidth \* 0\.48/);
+  assert.match(renderer, /leftSideWindow\.position\.set\(-bodyWidth \* 0\.48/);
 });

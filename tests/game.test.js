@@ -4,6 +4,7 @@ import { ROUTES, DRIVERS, PAINTS, MISSION_POOL, DAILY_MISSION_POOL } from '../js
 import { Game } from '../js/game.js';
 import { save, submitTribe, tribeStanding, getDailyMissions, addDailyMissionProgress, claimDailyMission, normaliseSave } from '../js/storage.js';
 import { purchaseDriver, purchasePaint, selectDriver, selectPaint } from '../js/progression.js';
+import { projectRoadDepth } from '../js/renderer2d.js';
 
 // Some gameplay events use window.setTimeout in browsers. Node-based tests use
 // the same timer API so the gameplay module can be exercised without a DOM.
@@ -408,15 +409,15 @@ test('Career starts at a calmer urban cruise and gas stays below racing-game spe
   game.gas(false);
   game.s.invuln = 100;
   for (let frame = 0; frame < 180; frame += 1) game.tick(1 / 60);
-  assert.ok(game.s.speed >= 20 && game.s.speed < 37, `calm cruise was ${game.s.speed} km/h`);
+  assert.ok(game.s.speed < 1, `keke should stop coasting when throttle is released, got ${game.s.speed} km/h`);
   game.gas(true);
   for (let frame = 0; frame < 180; frame += 1) game.tick(1 / 60);
-  assert.ok(game.s.speed > 55 && game.s.speed < 82, `accelerated city speed was ${game.s.speed} km/h`);
+  assert.ok(game.s.speed > 35 && game.s.speed < 50, `accelerated city speed was ${game.s.speed} km/h`);
   game.start('timeAttack');
   game.s.invuln = 100;
   game.gas(true);
   for (let frame = 0; frame < 180; frame += 1) game.tick(1 / 60);
-  assert.ok(game.s.speed > 115, `Time Attack speed should support a Gold run when driven cleanly: ${game.s.speed} km/h`);
+  assert.ok(game.s.speed > 125 && game.s.speed <= 170, `Time Attack should reach its separate race-mode speed: ${game.s.speed} km/h`);
 });
 
 test('roadside pickup zones stop advancing when the keke is fully stopped', () => {
@@ -427,4 +428,94 @@ test('roadside pickup zones stop advancing when the keke is fully stopped', () =
   game.moveZones(1.5);
   const after = game.s.zones.map((zone) => zone.depth);
   assert.deepEqual(after, before, 'a stationary driver must be able to wait at a pickup without the pad drifting away');
+});
+
+
+test('same-direction traffic recedes when faster than the keke; overtaking and oncoming traffic close gaps', () => {
+  const { game } = createHarness();
+  game.start('career');
+  game.s.traffic = [{ id: 'receding', type: 'car', lane: 1, direction: 1, depth: 1, speedKmh: 24, passed: false }];
+  game.s.speed = 0;
+  game.moveTraffic(1);
+  assert.ok(game.s.traffic[0].depth > 1, 'stationary keke should watch same-way traffic pull away');
+  game.s.traffic = [{ id: 'overtake', type: 'car', lane: 1, direction: 1, depth: 1, speedKmh: 12, passed: false }];
+  game.s.speed = 38;
+  game.moveTraffic(1);
+  assert.ok(game.s.traffic[0].depth < 1, 'faster player should close the gap to slower traffic');
+  game.s.traffic = [{ id: 'oncoming', type: 'car', lane: 0, direction: -1, depth: 1, speedKmh: 32, passed: false }];
+  game.s.speed = 22;
+  game.moveTraffic(1);
+  assert.ok(game.s.traffic[0].depth < 1, 'oncoming vehicle should close the gap from the opposing lane');
+});
+
+test('collision damage scales with relative speed and low-speed scrapes remain recoverable', () => {
+  const { game } = createHarness();
+  game.start('career');
+  game.s.speed = 20;
+  const before = game.s.condition;
+  game.hit({ type: 'car', direction: 1, speedKmh: 19 });
+  assert.ok(before - game.s.condition < 1.5, 'near-matching traffic speeds should cause a light scrape');
+  assert.ok(game.s.invuln > 0, 'contact must still grant recovery frames');
+});
+
+test('all passenger and fuel zones are roadside stops; potholes stay in a travel lane', () => {
+  const { game } = createHarness();
+  game.start('career');
+  for (const zone of game.s.zones) {
+    if (zone.type === 'pothole') continue;
+    assert.ok(zone.lane === 0 || zone.lane === 2, `stop lane ${zone.lane} should be an outer lane`);
+    assert.ok(zone.side === -1 || zone.side === 1);
+    assert.equal(zone.roadside, true);
+  }
+});
+
+
+test('ordinary roadside pickups use one seat; large and group passengers appear at General Checkpoint only', () => {
+  const { game } = createHarness();
+  game.start('career');
+  const originalRandom = Math.random;
+  try {
+    Math.random = () => 0.99;
+    assert.equal(game.pickup({ hub: false, seats: 1, dest: 'Kurmi Market' }), true);
+    assert.equal(game.s.passengers[0].seats, 1, 'a roadside pickup is a single seat');
+    assert.doesNotMatch(game.s.passengers[0].name, /large passenger/i);
+    game.s.passengers = [];
+    assert.equal(game.pickup({ hub: true, seats: 3, dest: 'Sabon Gari' }), true);
+    assert.equal(game.s.passengers[0].seats, 3, 'the General Checkpoint loads a group by the marked seat count');
+    assert.match(game.s.passengers[0].class, /checkpoint group/);
+    game.s.passengers = [];
+    const values = [0.99, 0.99, 0.1, 0.99, 0.99, 0.99, 0.99, 0.99];
+    Math.random = () => values.length ? values.shift() : 0.99;
+    assert.equal(game.pickup({ hub: true, seats: 4, dest: 'Kumbotso' }), true);
+    assert.equal(game.s.passengers[0].seats, 2, 'a large individual uses two seats at the checkpoint');
+    assert.match(game.s.passengers[0].class, /large passenger/);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test('roadside pickup is forgiving at walking speed, while checkpoint groups require a real stop', () => {
+  const { game } = createHarness();
+  game.start('career');
+  game.s.zones = [{ id: 'shoulder-pickup', type: 'pickup', lane: 2, side: 1, roadside: true, depth: 0.1, dest: 'Hotoro', seats: 1, hub: false, label: 'PICK UP', warned: false, retryAt: 0 }];
+  game.s.steer = 1;
+  game.s.targetLane = 1;
+  game.s.speed = 10;
+  game.moveZones(0.001);
+  assert.equal(game.s.passengers.length, 1, 'single roadside pickup accepts a slow roll under 12 km/h');
+  assert.equal(game.s.pullOverSide, 1);
+
+  game.s.passengers = [];
+  game.s.zones = [{ id: 'general-checkpoint', type: 'pickup', lane: 2, side: 1, roadside: true, depth: 0.1, dest: 'Sabon Gari', seats: 3, hub: true, label: 'GENERAL CHECKPOINT', warned: false, retryAt: 0 }];
+  game.s.speed = 9;
+  game.moveZones(0.001);
+  assert.equal(game.s.passengers.length, 0, 'group boarding must wait until almost stopped');
+});
+
+test('2D depth projection places a collision at the visible player-keke height', () => {
+  const impactT = projectRoadDepth(0.022);
+  const farT = projectRoadDepth(1.25);
+  const projectedY = 0.36 + (1.02 - 0.36) * impactT * impactT;
+  assert.ok(Math.abs(projectedY - 0.585) < 0.012, `impact rendered at ${(projectedY * 100).toFixed(1)}% screen height`);
+  assert.ok(farT < 0.06, 'far traffic stays near the horizon');
 });
