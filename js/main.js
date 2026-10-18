@@ -8,6 +8,7 @@ import { ModelManager } from './ModelManager.js';
 import { createModelAuditPanel } from './ModelAuditPanel.js';
 import { save } from './storage.js';
 import { KanoProductionBridge } from './KanoProductionBridge.js';
+import { KekeDynamics } from './KekeDynamics.js';
 
 // ============================================================
 // KANO LIFE — APPLICATION ENTRY POINT
@@ -39,6 +40,7 @@ const audio = new AudioManager();
 
 let renderer = null;
 let productionBridge = null;
+let kekeDynamics = null;
 let controls = null;
 let game = null;
 let renderMode = '2D';
@@ -80,6 +82,13 @@ function disposeRenderer() {
     console.warn('[Kano Life] production bridge disposal warning', error);
   }
   productionBridge = null;
+
+  try {
+    kekeDynamics?.dispose?.();
+  } catch (error) {
+    console.warn('[Kano Life] Keke dynamics disposal warning', error);
+  }
+  kekeDynamics = null;
 
   if (!renderer) return;
 
@@ -240,6 +249,15 @@ async function start3D() {
       // Renderer became stale during initialization.
     }
     return;
+  }
+
+  // Bind visual-only Keke dynamics. It follows renderer.player automatically
+  // when applyModel replaces the procedural tricycle with a GLB instance.
+  try {
+    kekeDynamics = new KekeDynamics({ renderer: webglRenderer, mobile });
+  } catch (error) {
+    kekeDynamics = null;
+    console.warn('[Kano Life] optional Keke dynamics unavailable', error);
   }
 
   setRenderMode('3D');
@@ -515,6 +533,11 @@ function frame(now) {
 
   try {
     game?.tick(dt);
+    // Apply Keke chassis/suspension/wheel visuals before the current frame renders.
+    // This never changes authoritative game physics or creates another road/traffic system.
+    if (renderMode === '3D' && kekeDynamics) {
+      kekeDynamics.update(dt, game?.s || {});
+    }
     // Update optional, 3D-only narrative and hawker features once per frame.
     // The bridge is disposed whenever the renderer is replaced or falls back.
     productionBridge?.update?.(dt);
