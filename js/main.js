@@ -19,6 +19,7 @@ import { KanoAdaptiveQuality } from './KanoAdaptiveQuality.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
 import { KanoInteractionReliability } from './KanoInteractionReliability.js';
 import '../css/kano-responsive-upgrade.css';
+import { KanoWorkshopPanel } from './KanoWorkshopPanel.js';
 
 // ============================================================
 // KANO LIFE — APPLICATION ENTRY POINT
@@ -572,6 +573,19 @@ function boot() {
 
   game = new Game(ui, audio, { mobile });
   ui.bind?.(game);
+
+try {
+  window.kanoWorkshopPanel = new KanoWorkshopPanel({
+    game,
+    container,
+    mobile,
+  });
+} catch (error) {
+  console.warn(
+    '[Kano Life] Workshop panel could not start:',
+    error
+  );
+}
 
   // Interaction prompts and stopped-at-stop compatibility run independently
   // of the renderer, so passenger/fuel stops remain usable in both 3D and 2D.
