@@ -1,45 +1,71 @@
-# Integration guide — Dynamic Passenger & Street-Life AI
+# Integration Guide — Traffic Intelligence
 
-This is an **additive standalone module**. It is not wired into the live Kano Life deployment. Integrate it with the game's existing passenger spawner, trip events, UI and world/traffic systems.
+This is an additive, standalone JavaScript module. It does not import Three.js and does not replace the game's existing physics, rendering, spawning, or collision detection.
 
-## 1. Create the director
+## 1. Import and create
 
 ```js
-import { KanoStreetLifeDirector } from './js/KanoStreetLifeDirector.js';
+import { KanoTrafficIntelligenceDirector } from './js/KanoTrafficIntelligenceDirector.js';
 
-const streetLife = new KanoStreetLifeDirector({
+const trafficAI = new KanoTrafficIntelligenceDirector({
+  laneCount: 3,
+  targetMix: { keke: 0.4, motorcycle: 0.3, car: 0.3 },
   onEvent: ({ type, detail }) => {
-    // Route these events to your existing HUD, animation and sound systems.
-    // Examples: passenger_spawned, passenger_boarded, trip_completed,
-    // street_event_started, complaint_filed, word_of_mouth.
-    console.debug('[Kano Life]', type, detail);
+    // Connect selected events to your existing UI/audio/economy systems.
   },
 });
 ```
 
-## 2. Connect the game loop
+## 2. Spawn traffic
 
-Call `streetLife.tick(deltaSeconds, { dayPhase })` from the existing simulation loop. Do not create a second animation loop. Use `getWorldModifiers()` to adjust existing traffic, pedestrian, road-risk and demand systems; it does not spawn 3D models by itself.
+```js
+trafficAI.spawnWave(8, { startDistance: 30, spacing: 14 });
+const trafficVehicle = trafficAI.spawnVehicle({ type: 'keke', lane: 1 });
+```
 
-## 3. Passenger pickup flow
+The returned objects are simulation data only. Use your existing model catalog/GLTF loader to create the corresponding 3D models and maintain a mapping from the returned `id` to each rendered vehicle.
 
-1. Call `createPassenger({ personality, destination })` when your existing world spawner creates a passenger. Avoid double-spawning by choosing one system as authoritative.
-2. Use `getQueue()` to populate a passenger list or pickup interaction.
-3. Call `getFareQuote(passenger.id, { baseFare, distanceFactor, rain, dayPhase })` to show fare guidance.
-4. Call `negotiateFare(passenger.id, offeredFare, context)`. Only proceed if `accepted` is true.
-5. Play the existing boarding animation, then call `boardPassenger(passenger.id)`.
-6. Send collision, hard-braking, delay and distance metrics to `updateTrip()`.
-7. On arrival, play the existing drop-off animation and call `completeTrip({ fairFare, polite, helpedPassenger })`.
+## 3. Update from the existing game loop
 
-## 4. Market, school, rain and celebration events
+Call once per frame with delta time in seconds. Feed obstacle distances measured in the same world-distance convention as the module, and translate returned decisions into your current physics/movement code.
 
-`spawnStreetEvent({ type })` supports `market_surge`, `school_closing`, `rain_shower`, `roadside_trade`, `event_convoy`, and `quiet_period`. The returned modifiers are intended for existing world systems. Do not use them to overwrite your own traffic composition target (about 40% keke, 30% motorcycles, 30% cars); apply them as density/risk multipliers while preserving that ratio where feasible.
+```js
+const decisions = trafficAI.update(deltaSeconds, {
+  obstacles: [
+    { type: 'pothole', lane: 1, distance: 9 },
+    { type: 'pedestrian', lane: 2, distance: 14 },
+    { type: 'goat', lane: 0, distance: 11 },
+  ],
+  player: { lane: playerLane, speed: playerSpeed, distanceAhead: 10 },
+});
 
-## 5. Important integration notes
+for (const decision of decisions) {
+  // Find the existing 3D vehicle by decision.id.
+  // Apply lane/targetLane, speed, indicator and state through your own physics.
+}
+trafficAI.tickCooldowns(deltaSeconds);
+```
 
-- This module uses `localStorage` when available and emits `storage_error` if saving fails.
-- It does not replace your career wallet, passenger relationship module, route logic, physics, rendering, or traffic manager.
-- Avoid duplicate persistence keys and select one authoritative source for cash and trip completion.
-- The passenger list and event outputs are plain data; your current Three.js scene must render/animate the characters and props.
-- If passenger relationships are already managed by `KanoPassengerRelationshipDirector`, connect its trust/loyalty results to this module rather than keeping conflicting duplicate relationship values.
-- Module syntax is ES module syntax; your Vite project should already support this.
+## 4. World conditions
+
+```js
+trafficAI.setConditions({
+  trafficPressure: 0.7, // 0..1
+  weather: 'rain',     // 'clear', 'rain', or 'dust'
+  event: 'celebration_convoy',
+});
+```
+
+Use `getTrafficMix()` to inspect the actual spawned distribution. The 40/30/30 target is a weighted spawn target, not a guarantee for every finite sample. Buses and trucks are available profiles but have zero default spawn weight; add weights explicitly if desired.
+
+## 5. Collision consequences
+
+Your game engine must detect actual collisions. When it does, call `recordCollision(vehicleId, severity, context)` to track simulated damage and emit an event. Do not use this module as a substitute for collision geometry or physical response.
+
+## Important integration notes
+
+- This package has not been integrated into the production site or repository.
+- Lane numbers are integers from `0` to `laneCount - 1`; lane centers are available in `laneCenters`.
+- `longitudinal` and obstacle `distance` must use a consistent scale. Calibrate the profile speed/gap values against the game's actual world units before release.
+- The update method returns AI decisions; it does not move Three.js objects or perform collision detection.
+- Connect only one authoritative traffic manager to avoid duplicate vehicles or competing movement systems.

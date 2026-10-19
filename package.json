@@ -1,7 +1,7 @@
 {
-  "name": "kano-life-street-life-ai-upgrade",
+  "name": "kano-life-traffic-intelligence-upgrade",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Additive passenger and street-life simulation module for Kano Life"
+  "description": "Standalone traffic intelligence AI module for Kano Life"
 }

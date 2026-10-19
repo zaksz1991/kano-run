@@ -1,16 +1,21 @@
-# Kano Life — Dynamic Passenger & Street-Life AI Upgrade
+# Kano Life — Traffic Intelligence Upgrade
 
-A standalone ES module that adds personality-driven passengers, destination variety, fare negotiation, passenger waiting patience, trip-quality evaluation, complaints, word-of-mouth recommendations, and timed Kano street events.
+A standalone traffic-AI module for the Kano Life / Kano Run browser game.
 
 ## Included
-- `js/KanoStreetLifeDirector.js` — complete module
-- `INTEGRATION.md` — connection guide
+- Weighted traffic spawning targeting 40% keke, 30% motorcycles, and 30% cars.
+- Different speed, acceleration, braking, gap, lane-change, and risk profiles.
+- Following distance and lane-change decisions.
+- Reactions to potholes, pedestrians, goats, market stalls, parked vehicles, checkpoints, and celebration convoys.
+- Rain/dust and traffic-pressure modifiers.
+- Player-aware yielding and emergency-braking decisions.
+- Collision consequence tracking hooks.
+- Traffic-mix telemetry and state snapshots.
+- Integration guide.
 
-## Compatibility
-- Browser/Vite ES modules
-- No extra dependencies
-- Uses `localStorage` where available
-- Does not require Three.js; connect emitted events and modifiers to your existing 3D systems
+## Files
+- `js/KanoTrafficIntelligenceDirector.js` — complete module.
+- `INTEGRATION.md` — integration instructions and example calls.
 
-## Status
-Syntax and isolated logic smoke tests should be run before integrating. This package has not been connected to the production site and does not itself change the live game.
+## Validation
+Syntax and isolated smoke tests are performed on the standalone module. This package does not claim production integration, visual verification, or live deployment.
