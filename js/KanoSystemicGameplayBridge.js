@@ -20,6 +20,7 @@ export class KanoSystemicGameplayBridge {
     this.disposed = false;
     this.elapsed = 0;
     this.previousDistance = null;
+    this.drivingSampleElapsed = 0;
     this.playerVehicleId = 'player-keke';
     this.disposers = [];
     if (!this.enabled) return;
@@ -100,16 +101,48 @@ export class KanoSystemicGameplayBridge {
     const delta = clamp(dt, 0, 0.25);
     this.elapsed += delta;
     const state = context.state || this.game?.s || {};
-    this.market.update(delta, {
-      day: context.day,
-      minuteOfDay: context.minuteOfDay,
-    });
+    // Read the existing Game clock instead of freezing the market schedule at its default.
+    const minuteOfDay = Number.isFinite(Number(context.minuteOfDay))
+      ? Number(context.minuteOfDay)
+      : Number.isFinite(Number(state.gameClockMinutes)) ? Number(state.gameClockMinutes) : 408;
+    const day = Number.isFinite(Number(context.day))
+      ? Number(context.day)
+      : Number.isFinite(Number(state.gameDay ?? state.day)) ? Number(state.gameDay ?? state.day) : 1;
+    this.market.update(delta, { day, minuteOfDay });
     this.convoy.update(delta, {
       inWorld: this.game?.state === 'PLAY',
       congestion: context.congestion,
       locations: context.locations,
       spectatorDensity: context.spectatorDensity,
     });
+    // Sample vehicle wear at 1 Hz, not every render frame, to avoid excessive localStorage writes.
+    this.drivingSampleElapsed += delta;
+    if (this.drivingSampleElapsed >= 1) {
+      const sampleSeconds = this.drivingSampleElapsed;
+      this.drivingSampleElapsed = 0;
+      const distance = Number(state.distance);
+      const previous = this.previousDistance;
+      this.previousDistance = Number.isFinite(distance) ? distance : previous;
+      const distanceKm = Number.isFinite(distance) && Number.isFinite(previous)
+        ? Math.max(0, distance - previous) : 0;
+      if (distanceKm > 0 && this.vehicles.getVehicle(this.playerVehicleId)) {
+        const occupiedSeats = Array.isArray(state.passengers)
+          ? state.passengers.reduce((total, passenger) => total + (Number(passenger?.seats) || 0), 0) : 0;
+        try {
+          this.vehicles.recordDriving({
+            vehicleId: this.playerVehicleId,
+            distanceKm,
+            speedKmh: Math.abs(Number(state.signedSpeed ?? state.speed) || 0),
+            roughRoad: ['roughRoad', 'pothole', 'badRoad'].includes(state.environment),
+            heavyLoad: occupiedSeats >= 3,
+            harshBraking: Boolean(state.brake),
+            deltaSeconds: sampleSeconds,
+          });
+        } catch (error) {
+          this.emit({ type: 'vehicle_telemetry_error', message: String(error?.message || error) });
+        }
+      }
+    }
     const snapshot = {
       market: this.market.snapshot(),
       convoy: this.convoy.getSnapshot(),

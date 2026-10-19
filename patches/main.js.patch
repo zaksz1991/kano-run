@@ -1,31 +1,44 @@
-*** Begin Patch
-*** Update File: js/main.js
+--- a/js/main.js
++++ b/js/main.js
 @@
  import { KanoInteractionReliability } from './KanoInteractionReliability.js';
-+import { KanoCommercialIntegration } from './KanoCommercialIntegration.js';
++import { KanoSystemicGameplayBridge } from './KanoSystemicGameplayBridge.js';
  import '../css/kano-responsive-upgrade.css';
 @@
  let interactionReliability = null;
-+let commercialIntegration = null;
++let systemicGameplay = null;
  let controls = null;
 @@
    game = new Game(ui, audio, { mobile });
    ui.bind?.(game);
-+  // Optional commercial/narrative event coordinator. It does not own gameplay
-+  // rules, saves, rendering, touch controls, or the live-user count.
++  // Systemic simulation is attached to the existing Game state, not a second game loop.
 +  try {
-+    commercialIntegration = new KanoCommercialIntegration({ root: container, game });
++    systemicGameplay = new KanoSystemicGameplayBridge({
++      game,
++      root: container,
++      onEvent: (event) => {
++        if (event?.type === 'vehicle_telemetry_error') {
++          console.warn('[Kano Life] vehicle telemetry skipped', event.message);
++        }
++      },
++    });
 +  } catch (error) {
-+    commercialIntegration = null;
-+    console.warn('[Kano Life] commercial integration unavailable', error);
++    systemicGameplay = null;
++    console.warn('[Kano Life] systemic gameplay integration unavailable', error);
 +  }
+   // Interaction prompts and stopped-at-stop compatibility run independently
 @@
      trafficDirector?.update?.(dt);
      game?.tick(dt);
-+    commercialIntegration?.update?.(dt, game?.s || {});
++    // Supply the live in-game clock and state after Game has advanced this frame.
++    systemicGameplay?.update?.(dt, {
++      state: game?.s || {},
++      day: game?.s?.gameDay ?? game?.s?.day ?? 1,
++      minuteOfDay: game?.s?.gameClockMinutes,
++    });
      interactionReliability?.update?.(dt, game?.s || {});
 @@
  window.addEventListener('pagehide', () => {
-+  try { commercialIntegration?.dispose?.(); } catch { /* page is closing */ }
++  try { systemicGameplay?.dispose?.(); } catch { /* page is closing */ }
    try { trafficDirector?.dispose?.(); } catch { /* page is closing */ }
 *** End Patch
