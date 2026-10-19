@@ -1,7 +1,7 @@
 {
-  "name": "kano-life-traffic-intelligence-upgrade",
+  "name": "kano-life-world-environment-upgrade",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Standalone traffic intelligence AI module for Kano Life"
+  "description": "Additive world environment simulation module for Kano Life"
 }

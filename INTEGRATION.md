@@ -1,71 +1,99 @@
-# Integration Guide — Traffic Intelligence
+# Integration guide — World Environment Director
 
-This is an additive, standalone JavaScript module. It does not import Three.js and does not replace the game's existing physics, rendering, spawning, or collision detection.
+This package is additive. It does not replace the existing Three.js scene, physics, traffic spawner, collision system, or UI. Connect it to those existing systems deliberately.
 
-## 1. Import and create
+## 1. Import and create the director
 
 ```js
-import { KanoTrafficIntelligenceDirector } from './js/KanoTrafficIntelligenceDirector.js';
+import { KanoWorldEnvironmentDirector } from './js/KanoWorldEnvironmentDirector.js';
 
-const trafficAI = new KanoTrafficIntelligenceDirector({
-  laneCount: 3,
-  targetMix: { keke: 0.4, motorcycle: 0.3, car: 0.3 },
-  onEvent: ({ type, detail }) => {
-    // Connect selected events to your existing UI/audio/economy systems.
-  },
+const worldEnvironment = new KanoWorldEnvironmentDirector({
+  maxActors: 90,
+  eventChancePerMinute: 0.22,
+  persist: true,
 });
 ```
 
-## 2. Spawn traffic
+Use one shared instance for the current game session. If another module already owns day phase or weather, synchronize those values rather than creating competing clocks.
+
+## 2. Register route segments
 
 ```js
-trafficAI.spawnWave(8, { startDistance: 30, spacing: 14 });
-const trafficVehicle = trafficAI.spawnVehicle({ type: 'keke', lane: 1 });
-```
-
-The returned objects are simulation data only. Use your existing model catalog/GLTF loader to create the corresponding 3D models and maintain a mapping from the returned `id` to each rendered vehicle.
-
-## 3. Update from the existing game loop
-
-Call once per frame with delta time in seconds. Feed obstacle distances measured in the same world-distance convention as the module, and translate returned decisions into your current physics/movement code.
-
-```js
-const decisions = trafficAI.update(deltaSeconds, {
-  obstacles: [
-    { type: 'pothole', lane: 1, distance: 9 },
-    { type: 'pedestrian', lane: 2, distance: 14 },
-    { type: 'goat', lane: 0, distance: 11 },
-  ],
-  player: { lane: playerLane, speed: playerSpeed, distanceAhead: 10 },
+worldEnvironment.registerRoadSegment({
+  id: 'kantin-market-road',
+  type: 'market-road',
+  name: 'Kantin Kwari market road',
+  marketDensity: 0.9,
+  pedestrianDensity: 0.85,
+  potholeRisk: 0.35,
+  parkingObstruction: 0.45,
+  speedLimit: 30,
 });
 
-for (const decision of decisions) {
-  // Find the existing 3D vehicle by decision.id.
-  // Apply lane/targetLane, speed, indicator and state through your own physics.
-}
-trafficAI.tickCooldowns(deltaSeconds);
-```
-
-## 4. World conditions
-
-```js
-trafficAI.setConditions({
-  trafficPressure: 0.7, // 0..1
-  weather: 'rain',     // 'clear', 'rain', or 'dust'
-  event: 'celebration_convoy',
+worldEnvironment.registerRoadSegment({
+  id: 'kwankwasiyya-flyover',
+  type: 'flyover',
+  flyover: true,
+  potholeRisk: 0.05,
+  speedLimit: 50,
 });
 ```
 
-Use `getTrafficMix()` to inspect the actual spawned distribution. The 40/30/30 target is a weighted spawn target, not a guarantee for every finite sample. Buses and trucks are available profiles but have zero default spawn weight; add weights explicitly if desired.
+Segment IDs should match the route/world identifiers your game already uses. These are example IDs, not a claim that those exact segments exist in your current route data.
 
-## 5. Collision consequences
+## 3. Update it from the existing game loop
 
-Your game engine must detect actual collisions. When it does, call `recordCollision(vehicleId, severity, context)` to track simulated damage and emit an event. Do not use this module as a substitute for collision geometry or physical response.
+```js
+const worldState = worldEnvironment.update(deltaSeconds);
+const segmentState = worldEnvironment.getWorldState(currentSegmentId);
 
-## Important integration notes
+// Pass modifiers into existing systems; don't move Three.js meshes here.
+trafficDirector?.setEnvironmentModifiers?.(segmentState.modifiers);
+passengerDirector?.setDemandMultiplier?.(segmentState.modifiers.passengerDemand);
+```
 
-- This package has not been integrated into the production site or repository.
-- Lane numbers are integers from `0` to `laneCount - 1`; lane centers are available in `laneCenters`.
-- `longitudinal` and obstacle `distance` must use a consistent scale. Calibrate the profile speed/gap values against the game's actual world units before release.
-- The update method returns AI decisions; it does not move Three.js objects or perform collision detection.
-- Connect only one authoritative traffic manager to avoid duplicate vehicles or competing movement systems.
+Adapt method names to your existing modules. The optional calls above are integration examples, not APIs guaranteed to exist in the current game.
+
+## 4. Render actors with existing models
+
+Spawn simulation records and let the existing model catalog / actor manager create their visuals:
+
+```js
+const actor = worldEnvironment.spawnActor('pedestrian', {
+  segmentId: currentSegmentId,
+  lane: 1,
+  distance: 22,
+  metadata: { activity: 'market-shopping' },
+});
+```
+
+Supported types: `pedestrian`, `goat`, `roadsideSeller`, `parkedVehicle`, `marketStall`, and `karotaOfficer`. Subscribe to `actorSpawned`, `actorDespawned`, and `actorBehaviourChanged` to keep visual objects in sync. Your scene system must still provide actual 3D models, animation, transforms, and cleanup.
+
+## 5. World events and hazards
+
+```js
+worldEnvironment.on('worldEventStarted', ({ event }) => {
+  // Display UI/audio and notify existing traffic/passenger systems.
+});
+
+worldEnvironment.on('hazardResolved', (result) => {
+  // Feed reputation/damage results into your authoritative career/wallet system.
+});
+
+worldEnvironment.startEvent('marketRush', { segmentId: currentSegmentId });
+const checkpointResult = worldEnvironment.assessCheckpoint({
+  speed: playerSpeed,
+  speedLimit: 40,
+  dangerousDriving: recentDangerousDriving,
+});
+```
+
+Avoid double-charging fines or duplicating reputation if another game system already owns those outcomes. The director reports results; connect them to one authoritative system.
+
+## Important
+
+- This module is not connected to the production game by this package alone.
+- Do not run a second physics simulation; use the current game's physics and collision results.
+- Call `update(deltaSeconds)` once per frame (it clamps individual updates to one second); do not call it from multiple render callbacks.
+- `localStorage` persistence is browser-only and gracefully disabled in non-browser tests.
+- Actor records do not create rendered meshes automatically.
