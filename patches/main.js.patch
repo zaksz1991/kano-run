@@ -1,44 +1,19 @@
 --- a/js/main.js
 +++ b/js/main.js
 @@
- import { KanoInteractionReliability } from './KanoInteractionReliability.js';
-+import { KanoSystemicGameplayBridge } from './KanoSystemicGameplayBridge.js';
- import '../css/kano-responsive-upgrade.css';
+   controls = new Controls(container, {
 @@
- let interactionReliability = null;
-+let systemicGameplay = null;
- let controls = null;
-@@
-   game = new Game(ui, audio, { mobile });
-   ui.bind?.(game);
-+  // Systemic simulation is attached to the existing Game state, not a second game loop.
-+  try {
-+    systemicGameplay = new KanoSystemicGameplayBridge({
-+      game,
-+      root: container,
-+      onEvent: (event) => {
-+        if (event?.type === 'vehicle_telemetry_error') {
-+          console.warn('[Kano Life] vehicle telemetry skipped', event.message);
-+        }
-+      },
-+    });
-+  } catch (error) {
-+    systemicGameplay = null;
-+    console.warn('[Kano Life] systemic gameplay integration unavailable', error);
-+  }
-   // Interaction prompts and stopped-at-stop compatibility run independently
-@@
-     trafficDirector?.update?.(dt);
-     game?.tick(dt);
-+    // Supply the live in-game clock and state after Game has advanced this frame.
-+    systemicGameplay?.update?.(dt, {
-+      state: game?.s || {},
-+      day: game?.s?.gameDay ?? game?.s?.day ?? 1,
-+      minuteOfDay: game?.s?.gameClockMinutes,
-+    });
-     interactionReliability?.update?.(dt, game?.s || {});
-@@
- window.addEventListener('pagehide', () => {
-+  try { systemicGameplay?.dispose?.(); } catch { /* page is closing */ }
-   try { trafficDirector?.dispose?.(); } catch { /* page is closing */ }
+     },
+   });
++
++  // Desktop shortcut for the workshop service screen. Ignore text fields so
++  // the shortcut never interrupts name entry or other form interactions.
++  window.addEventListener('keydown', (event) => {
++    if (event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
++    if (String(event.key).toLowerCase() !== 'w') return;
++    const target = event.target;
++    if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
++    event.preventDefault();
++    game?.openWorkshopService?.();
++  });
 *** End Patch
