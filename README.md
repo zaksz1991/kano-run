@@ -1,10 +1,16 @@
-# Kano Life — Vehicle Visual Animation Upgrade
+# Kano Life — Animation Director Upgrade
 
-An additive Three.js visual layer for the existing Keke/traffic vehicles. It adds subtle suspension, chassis roll/pitch, wheel spin, front wheel steering, steering-wheel motion, and optional smoothed camera follow.
+A lightweight orchestration layer for the game's existing Three.js character and vehicle visual animators.
 
-## Files
-- `js/KanoVehicleVisualAnimator.js` — complete ES module.
-- `INTEGRATION.md` — integration notes and complete usage example.
+### Coordinates
+- Player vehicle visual animation
+- Driver pose synchronization
+- Existing character animation and pedestrian routes
+- Reduced-motion preference
+- Pausing updates while the browser tab is hidden
+- Animation diagnostics for a developer HUD
 
-## Important
-This module does not replace the current driving physics, collision system, traffic AI, or camera controller. Register the vehicle once and feed it motion values from the existing game loop. Do not run its camera-follow option at the same time as another camera controller. Wheel mesh axis and vehicle model orientation vary by asset, so inspect each model and configure wheel references accordingly.
+### Safety boundaries
+This is an additive module. It does not implement or replace driving physics, collisions, traffic AI, GLB assets, or the render loop. It must be integrated with the real game code and actual loaded model references before its effects appear in-game.
+
+See `INTEGRATION.md` for the full wiring guide.

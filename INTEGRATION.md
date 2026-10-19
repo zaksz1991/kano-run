@@ -1,68 +1,88 @@
-# Integration — existing Kano Life project
+# Integration guide — KanoAnimationDirector
 
-Copy `js/KanoVehicleVisualAnimator.js` into the game's existing `js/` directory. It uses the project's existing `three` dependency.
+This module coordinates the two additive animation modules:
+- `KanoCharacterAnimation.js`
+- `KanoVehicleVisualAnimator.js`
 
-## 1. Import and create one manager
+It does not replace the game loop, vehicle physics, collision detection, model loader, or scene management.
+
+## 1. Copy the files
+
+Place `KanoAnimationDirector.js` beside the other animation modules in the project's `js/` directory. Keep the two existing modules in the same directory, or adjust import paths to match your project.
+
+## 2. Create one director
+
+After your existing character and vehicle animators are initialized, create one director and pass those instances to it. Do not create a second Three.js renderer or a second game loop.
 
 ```js
-import { KanoVehicleVisualAnimator } from './KanoVehicleVisualAnimator.js';
+import { KanoAnimationDirector } from './KanoAnimationDirector.js';
 
-const vehicleVisuals = new KanoVehicleVisualAnimator({
-  suspensionTravel: 0.075,
-  vibration: true,
+const animationDirector = new KanoAnimationDirector({
+  characterAnimator,
+  vehicleAnimator,
+  camera: renderer3D.camera,
 });
 ```
 
-Create the manager once during game initialization, not inside the animation loop.
+Use the actual variable names from your game; the names above are illustrative.
 
-## 2. Register the existing player Keke
+## 3. Register the loaded Keke
 
-After the current GLB loader has added the Keke model to the scene, identify the actual wheel meshes from that model and register them. Do not invent node names; use the model's real mesh references.
+Only call this after the real Keke GLB has loaded and been added to the existing scene. Pass the model root, not the scene. If wheel meshes are known, pass references to those actual meshes with their approximate radii. Do not invent mesh names; inspect the loaded GLB hierarchy first.
 
 ```js
-vehicleVisuals.register('player-keke', kekeRoot, {
+animationDirector.registerPlayerVehicle('player-keke', kekeRoot, {
+  body: kekeBodyMeshOrGroup,
   wheels: [
-    { object: frontLeftWheel, axle: 'front', radius: 0.28, steering: true },
-    { object: frontRightWheel, axle: 'front', radius: 0.28, steering: true },
-    { object: rearLeftWheel, axle: 'rear', radius: 0.28 },
-    { object: rearRightWheel, axle: 'rear', radius: 0.28 },
+    { object: actualFrontWheel, axle: 'front', radius: 0.28, steering: true },
+    { object: actualRearWheel, axle: 'rear', radius: 0.28, steering: false },
   ],
-  // Optional, only if there is no other active camera controller:
-  // camera: rendererCamera,
-  // followCamera: true,
-  // cameraOffset: new THREE.Vector3(0, 2.8, 6.5),
+  steeringPivot: actualHandlebarPivot,
 });
 ```
 
-If a wheel mesh is not available or the asset has a single combined mesh, pass `wheels: []`. The chassis motion still works. The `body` option can point to a child mesh if the root transform is controlled by gameplay; use `{ body: visualBody }` and ensure its baseline is correct.
+If the model has no separate body/wheel meshes, pass only `kekeRoot` and omit unknown mesh references. Body animation will still work, but wheel spin requires actual wheel objects and correctly oriented axes.
 
-## 3. Feed real motion from the existing game loop
+## 4. Link the driver
 
-After the existing game/physics update calculates current values, call:
+After registering the driver with `KanoCharacterAnimation`, link its ID to the player Keke:
 
 ```js
-vehicleVisuals.setMotion('player-keke', {
-  speed: currentSpeed,
-  steering: steeringInput,
-  acceleration: accelerationInput,
-  braking: brakeAmount,
-  roadRoughness: 0.25,
-  distanceDelta: signedDistanceTravelledThisFrame,
-});
-vehicleVisuals.update(dt);
+animationDirector.linkDriver('player-driver', 'player-keke');
 ```
 
-`distanceDelta` is the signed world-distance moved during this frame. If omitted, the module estimates a small increment from speed; supplying real distance is preferable. Keep this call in the existing render loop—do not create a second loop.
+The driver model must already be positioned and scaled correctly in the Keke seat. This module does not reposition an incorrectly authored driver model.
 
-## 4. Cleanup
+## 5. Update from the existing game loop
 
-On vehicle removal call `vehicleVisuals.unregister('player-keke')`. On full game teardown call `vehicleVisuals.dispose()`.
+Call `update` once per frame using real measurements from the existing physics/game state. Do not create a separate `requestAnimationFrame` loop.
 
-## QA
-- Check each wheel's local spin axis; some GLBs use Z rather than X.
-- Confirm the visual body is not the same root that the physics system continually overwrites. If it is, use a dedicated visual child.
-- Do not enable camera follow while the existing camera follow system is active.
-- Tune suspension travel conservatively for the Keke model scale.
-- Test on mobile and desktop before deployment.
+```js
+animationDirector.update(dt, {
+  speed: currentSpeed,
+  steering: steeringInput,       // -1 to 1
+  acceleration: accelerationInput, // -1 to 1
+  braking: brakeAmount,          // 0 to 1
+  roadRoughness: roadRoughness,  // 0 to 1
+  distanceDelta: travelledDistanceThisFrame,
+});
+```
 
-This is a standalone module and has not been wired into the live repository or browser-tested against the current deployed assets.
+Use the project's actual variable names and units. `distanceDelta` should be the distance travelled during that frame in the same units as the wheel radius. If unavailable, omit it; the animator uses its existing fallback.
+
+## 6. Pedestrians and lifecycle
+
+Register pedestrians only after each GLB loads. Supply its animation clips when available. Use `setPedestrianRoute(id, points, { speed, loop: true })` for routes in the existing world coordinate system. Remove characters through the character animator when despawning them. Keep crowd counts within the character animator's configured cap on mobile.
+
+On game teardown call `animationDirector.dispose()`. Set `{ disposeSystems: true }` only if the director owns those animation systems; otherwise dispose them separately according to existing lifecycle ownership.
+
+## Validation checklist
+
+- Confirm imported file paths and module capitalization match the repository.
+- Confirm `dt` is seconds, not milliseconds.
+- Confirm the player's speed and distance use consistent units.
+- Check wheel rotation axis and sign against the real GLB.
+- Confirm steering values are normalized to -1..1.
+- Confirm character seat position, model scale, and facing direction in-game.
+- Test browser tab switching, desktop, and mobile.
+- Verify no duplicate animation update calls are running.
