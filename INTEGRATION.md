@@ -1,88 +1,70 @@
-# Integration guide — KanoAnimationDirector
+# Integration guide — Kano Cinematic Camera Director
 
-This module coordinates the two additive animation modules:
-- `KanoCharacterAnimation.js`
-- `KanoVehicleVisualAnimator.js`
+This is an additive camera polish module. It does not replace vehicle physics, collision detection, controls, or the existing renderer.
 
-It does not replace the game loop, vehicle physics, collision detection, model loader, or scene management.
+## 1. Add the file
 
-## 1. Copy the files
+Copy `js/KanoCinematicCameraDirector.js` into the game's `js` folder. It imports Three.js using the same bare import convention used by a Vite/Three.js project.
 
-Place `KanoAnimationDirector.js` beside the other animation modules in the project's `js/` directory. Keep the two existing modules in the same directory, or adjust import paths to match your project.
+## 2. Create the director
 
-## 2. Create one director
-
-After your existing character and vehicle animators are initialized, create one director and pass those instances to it. Do not create a second Three.js renderer or a second game loop.
+In the existing 3D renderer/game initialization code, after the Three.js camera and the player's loaded Keke root are available:
 
 ```js
-import { KanoAnimationDirector } from './KanoAnimationDirector.js';
+import { KanoCinematicCameraDirector } from './KanoCinematicCameraDirector.js';
 
-const animationDirector = new KanoAnimationDirector({
-  characterAnimator,
-  vehicleAnimator,
-  camera: renderer3D.camera,
+const cameraDirector = new KanoCinematicCameraDirector(camera, {
+  mobile: window.matchMedia('(max-width: 760px)').matches,
+});
+cameraDirector.setTarget(playerKekeRoot);
+```
+
+Use the real loaded Keke root variable; do not create a placeholder vehicle just for this module.
+
+## 3. Update it once per frame
+
+Call this after the existing vehicle physics update and before `renderer.render(scene, camera)`:
+
+```js
+cameraDirector.update(deltaSeconds, {
+  speed: normalizedSpeed,       // 0..1 recommended
+  steering: normalizedSteering // -1..1
 });
 ```
 
-Use the actual variable names from your game; the names above are illustrative.
+Map `normalizedSpeed` and `normalizedSteering` to the project's existing state. Do not feed raw speed in km/h without normalizing it.
 
-## 3. Register the loaded Keke
+## 4. Collision feedback (optional)
 
-Only call this after the real Keke GLB has loaded and been added to the existing scene. Pass the model root, not the scene. If wheel meshes are known, pass references to those actual meshes with their approximate radii. Do not invent mesh names; inspect the loaded GLB hierarchy first.
-
-```js
-animationDirector.registerPlayerVehicle('player-keke', kekeRoot, {
-  body: kekeBodyMeshOrGroup,
-  wheels: [
-    { object: actualFrontWheel, axle: 'front', radius: 0.28, steering: true },
-    { object: actualRearWheel, axle: 'rear', radius: 0.28, steering: false },
-  ],
-  steeringPivot: actualHandlebarPivot,
-});
-```
-
-If the model has no separate body/wheel meshes, pass only `kekeRoot` and omit unknown mesh references. Body animation will still work, but wheel spin requires actual wheel objects and correctly oriented axes.
-
-## 4. Link the driver
-
-After registering the driver with `KanoCharacterAnimation`, link its ID to the player Keke:
+When the existing collision system reports an impact, call:
 
 ```js
-animationDirector.linkDriver('player-driver', 'player-keke');
+cameraDirector.impact(0.3, 0.18);
 ```
 
-The driver model must already be positioned and scaled correctly in the Keke seat. This module does not reposition an incorrectly authored driver model.
+Only call this from the existing collision event; do not add a second collision detector.
 
-## 5. Update from the existing game loop
+## 5. Opening reveal (optional)
 
-Call `update` once per frame using real measurements from the existing physics/game state. Do not create a separate `requestAnimationFrame` loop.
+After setting the target and before driving starts:
 
 ```js
-animationDirector.update(dt, {
-  speed: currentSpeed,
-  steering: steeringInput,       // -1 to 1
-  acceleration: accelerationInput, // -1 to 1
-  braking: brakeAmount,          // 0 to 1
-  roadRoughness: roadRoughness,  // 0 to 1
-  distanceDelta: travelledDistanceThisFrame,
-});
+cameraDirector.playIntro(2.0);
 ```
 
-Use the project's actual variable names and units. `distanceDelta` should be the distance travelled during that frame in the same units as the wheel radius. If unavailable, omit it; the animator uses its existing fallback.
+Avoid triggering the intro on every respawn or every frame.
 
-## 6. Pedestrians and lifecycle
+## 6. Cleanup
 
-Register pedestrians only after each GLB loads. Supply its animation clips when available. Use `setPedestrianRoute(id, points, { speed, loop: true })` for routes in the existing world coordinate system. Remove characters through the character animator when despawning them. Keep crowd counts within the character animator's configured cap on mobile.
+When disposing the 3D scene:
 
-On game teardown call `animationDirector.dispose()`. Set `{ disposeSystems: true }` only if the director owns those animation systems; otherwise dispose them separately according to existing lifecycle ownership.
+```js
+cameraDirector.dispose();
+```
 
-## Validation checklist
+## Notes
 
-- Confirm imported file paths and module capitalization match the repository.
-- Confirm `dt` is seconds, not milliseconds.
-- Confirm the player's speed and distance use consistent units.
-- Check wheel rotation axis and sign against the real GLB.
-- Confirm steering values are normalized to -1..1.
-- Confirm character seat position, model scale, and facing direction in-game.
-- Test browser tab switching, desktop, and mobile.
-- Verify no duplicate animation update calls are running.
+- The director smooths camera position and uses speed-responsive look-ahead/FOV.
+- Motion is reduced when `prefers-reduced-motion` is enabled.
+- The camera director must be the sole owner of camera positioning while active. If the existing renderer also moves the camera every frame, integrate this call into that existing camera-follow section rather than running two competing camera controllers.
+- The module was syntax-checked, but has not been run against the production game's camera/model variables. Verify the follow offset and camera ownership in the actual game before deployment.
