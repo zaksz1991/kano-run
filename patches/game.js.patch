@@ -1,0 +1,83 @@
+--- a/js/game.js
++++ b/js/game.js
+@@
+   spawnTraffic(initialIndex = null) {
+-    const types = [
+-      'keke',
+-      'car',
+-      'taxi',
+-      'suv',
+-      'motorcycle',
+-      'keke',
+-      'car',
+-    ];
+-
+-    if (!this.mobile) {
+-      types.push(
+-        'truck',
+-        'bus',
+-        'police',
+-        'karota',
+-      );
+-    }
+-
+-    const type = choose(types);
++    // Target the requested Kano street-traffic mix: approximately
++    // 40% keke, 30% motorcycles and 30% cars/taxis/SUVs.
++    // Heavy and enforcement vehicles are rare special traffic on desktop.
++    const roll = Math.random();
++    let type;
++    if (roll < 0.40) {
++      type = 'keke';
++    } else if (roll < 0.70) {
++      type = 'motorcycle';
++    } else {
++      type = choose(['car', 'taxi', 'suv']);
++    }
++
++    if (!this.mobile && Math.random() < 0.055) {
++      type = choose(['truck', 'bus', 'police', 'karota']);
++    }
+@@
+-    const fareFactor =
++    // Busy market periods increase real passenger fares, not just scenery.
++    // Keep the uplift bounded so it does not overwhelm route/driver bonuses.
++    const marketDemandFactor = s.environment === 'market'
++      ? (s.gameClockMinutes >= 360 && s.gameClockMinutes < 600 ? 1.22 : 1.12)
++      : s.environment === 'schoolGate'
++        ? 1.08
++        : 1;
++
++    const fareFactor =
+       randomBetween(1.0, 1.7) *
+       (s.night ? 1.25 : 1) *
+       (vip ? 1.45 : 1) *
+       (zone.hub ? 1.15 : 1) *
+       (s.breakfastEaten ? 1.05 : 1) *
++      marketDemandFactor *
+       (s.fareMood || 1);
+@@
+-    if (event === 'wedding') {
+-      for (let index = 0; index < 3; index += 1) {
++    if (event === 'wedding') {
++      // Wedding celebrations in Kano commonly travel as keke groups.
++      // Spread a small convoy across lanes and stagger depth to avoid spawning
++      // all vehicles in one collision point.
++      for (let index = 0; index < 5; index += 1) {
+         s.traffic.push({
+           id: `${Date.now()}-wedding-${index}-${Math.random()}`,
+ 
+-          type: 'suv',
+-          lane: index,
++          type: 'keke',
++          lane: index % 3,
+           direction: 1,
+ 
+-          depth: 1.05 + index * 0.12,
+-          speedKmh: 12 + index * 2,
++          depth: 0.98 + index * 0.105,
++          speedKmh: 18 + (index % 3) * 3,
+ 
+-          color: '#303944',
++          color: ['#168447', '#e5bd32', '#f3f0e6', '#168447', '#cf4336'][index],
+*** End Patch
