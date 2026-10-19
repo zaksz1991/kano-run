@@ -12,6 +12,8 @@ import { KekeDynamics } from './KekeDynamics.js';
 import { KanoVisualEffects } from './KanoVisualEffects.js';
 import { LiveUserCounter } from './LiveUserCounter.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
+import { KanoTrafficDirector, KanoGLBAnimationManager } from './KanoAnimationTrafficUpgrade.js';
+import { KanoPerformanceMonitor } from './KanoPerformanceMonitor.js';
 import '../css/kano-responsive-upgrade.css';
 
 // ============================================================
@@ -57,6 +59,9 @@ let sceneUpgrade = null;
 let kekeDynamics = null;
 let visualEffects = null;
 let liveUserCounter = null;
+let animationManager = null;
+let trafficDirector = null;
+let performanceMonitor = null;
 let controls = null;
 let game = null;
 let renderMode = '2D';
@@ -97,6 +102,14 @@ function setRenderMode(mode) {
 // ============================================================
 
 function disposeRenderer() {
+  // Stop AnimationMixers and restore model-instance cloning before model actors are removed.
+  try {
+    animationManager?.dispose?.();
+  } catch (error) {
+    console.warn('[Kano Life] GLB animation disposal warning', error);
+  }
+  animationManager = null;
+
   // Dispose per-renderer effects before their scene/world is destroyed.
   try {
     visualEffects?.dispose?.();
@@ -292,6 +305,20 @@ async function start3D() {
     return;
   }
 
+  // Preserve embedded skeletal clips where GLB character assets provide them.
+  // Character cloning uses SkeletonUtils so each animated pedestrian owns a safe skeleton.
+  try {
+    animationManager = new KanoGLBAnimationManager({
+      renderer: webglRenderer,
+      models,
+      mobile,
+      debug: debugMode || query.has('debugPerf'),
+    });
+  } catch (error) {
+    animationManager = null;
+    console.warn('[Kano Life] GLB animation manager unavailable', error);
+  }
+
   // Dense Kano market, animated roadside pedestrians, life-scene action rigs,
   // passenger walking animations, and a calibrated seated-driver fallback.
   // This is an additive visual layer: Game remains the authority for fares,
@@ -441,6 +468,17 @@ async function start3D() {
 // ============================================================
 
 function boot() {
+  // FPS/frame-time telemetry is player-invisible unless ?debugPerf=1 is requested.
+  try {
+    performanceMonitor = new KanoPerformanceMonitor({
+      container,
+      enabled: query.has('debugPerf'),
+    });
+  } catch (error) {
+    performanceMonitor = null;
+    console.warn('[Kano Life] performance monitor unavailable', error);
+  }
+
   // The counter reports recent sessions from the server-backed presence API.
   // It displays UNAVAILABLE rather than inventing a local-only global count.
   try {
@@ -461,6 +499,15 @@ function boot() {
 
   game = new Game(ui, audio, { mobile });
   ui.bind?.(game);
+
+  // Add lane-aware traffic behaviours while retaining Game's original movement
+  // and collision handling as the single authority.
+  try {
+    trafficDirector = new KanoTrafficDirector({ game, mobile });
+  } catch (error) {
+    trafficDirector = null;
+    console.warn('[Kano Life] traffic AI upgrade unavailable', error);
+  }
 
   controls = new Controls(container, {
     lane: (direction) => game.lane(direction),
@@ -577,6 +624,7 @@ function boot() {
 // ============================================================
 
 function frame(now) {
+  performanceMonitor?.beginFrame?.(now);
   const dt = Math.min(Math.max((now - lastFrame) / 1000, 0), 0.05);
   lastFrame = now;
   fpsFrames += 1;
@@ -604,6 +652,8 @@ function frame(now) {
   }
 
   try {
+    // Traffic chooses its lane and speed before Game processes this frame's collisions.
+    trafficDirector?.update?.(dt);
     game?.tick(dt);
     // Keep stalls, ambient pedestrians, morning actions, passenger boarding and
     // passenger alighting on the same frame clock as the existing world.
@@ -619,6 +669,9 @@ function frame(now) {
     // The bridge is disposed whenever the renderer is replaced or falls back.
     productionBridge?.update?.(dt);
     visualEffects?.update?.(dt, game?.s || {});
+    // Update mixers before drawing. If renderer.draw creates a new GLB actor,
+    // it is detected and attached on the following frame.
+    animationManager?.update?.(dt, game?.s || {});
     renderer?.draw?.(game?.s, dt);
     visualEffects?.render2DOverlay?.(game?.s || {});
     runtimeFailureCount = 0;
@@ -643,9 +696,16 @@ function frame(now) {
       ui.toast('Game paused after a runtime error. Check the console before continuing.');
     }
   } finally {
+    performanceMonitor?.endFrame?.(performance.now(), renderMode, renderer);
     requestAnimationFrame(frame);
   }
 }
+
+window.addEventListener('pagehide', () => {
+  try { trafficDirector?.dispose?.(); } catch { /* page is closing */ }
+  try { performanceMonitor?.dispose?.(); } catch { /* page is closing */ }
+  try { disposeRenderer(); } catch { /* page is closing */ }
+}, { once: true });
 
 // ============================================================
 // START
