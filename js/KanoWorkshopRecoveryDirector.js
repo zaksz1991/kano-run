@@ -2,6 +2,8 @@
 // KANO LIFE — WORKSHOP & RECOVERY DIRECTOR
 // File: js/KanoWorkshopRecoveryDirector.js
 //
+// Corrected integration version.
+//
 // Responsibilities:
 // - Kano workshop directory and operating status
 // - Repair estimates, bookings, and repair progress
@@ -9,27 +11,32 @@
 // - Roadside recovery requests, dispatch, and arrival
 // - Persistent simulation state
 //
-// This module does NOT:
-// - Charge the player's wallet
-// - Move or render Three.js vehicles
-// - Contact real recovery providers
-//
 // The wallet bridge remains responsible for charging money.
+// This module never charges the player's wallet.
+//
+// Compatibility:
+// - Preserves the existing public method names.
+// - Preserves storage version 1.
+// - Preserves existing recovery status values.
+// - Preserves existing event callback structure.
 // ============================================================
 
 const clamp = (value, min, max) => {
-  const number = Number(value);
-  return Math.max(min, Math.min(max, Number.isFinite(number) ? number : 0));
+  const parsed = Number(value);
+  return Math.max(
+    min,
+    Math.min(max, Number.isFinite(parsed) ? parsed : 0),
+  );
 };
 
-const makeId = (prefix = 'job') => {
-  const random = Math.random().toString(36).slice(2, 9);
-  return `${prefix}_${Date.now().toString(36)}_${random}`;
-};
+const makeId = (prefix = 'job') =>
+  `${prefix}_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 9)}`;
 
 const timestamp = () => Date.now();
 
-const clone = value => {
+const clone = (value) => {
   if (value === undefined || value === null) return value;
 
   try {
@@ -42,6 +49,12 @@ const clone = value => {
 const COMPONENTS = Object.freeze({
   tyre: {
     label: 'Tyre / tube',
+    base: 1800,
+    minutes: 12,
+    parts: 'Tyre, tube, patch kit',
+  },
+  tyres: {
+    label: 'Tyres',
     base: 1800,
     minutes: 12,
     parts: 'Tyre, tube, patch kit',
@@ -116,7 +129,7 @@ const DEFAULT_WORKSHOPS = [
     id: 'kano-central',
     name: 'Kano Central Mechanics',
     district: 'central',
-    quality: 1.0,
+    quality: 1,
     stock: 0.95,
     recovery: 0.9,
   },
@@ -125,7 +138,7 @@ const DEFAULT_WORKSHOPS = [
     name: 'Sabon Gari Workshop Row',
     district: 'market',
     quality: 0.92,
-    stock: 1.0,
+    stock: 1,
     recovery: 0.82,
   },
   {
@@ -146,10 +159,37 @@ const DEFAULT_WORKSHOPS = [
   },
 ];
 
+const VALID_JOB_STATUSES = new Set([
+  'awaiting_payment',
+  'in_progress',
+  'ready_for_pickup',
+  'completed',
+]);
+
+const VALID_RECOVERY_STATUSES = new Set([
+  'awaiting_confirmation',
+  'dispatched',
+  'arrived',
+  'completed',
+]);
+
+const normaliseComponent = (value) => {
+  const component = String(value || '')
+    .trim()
+    .toLowerCase();
+
+  if (component === 'tyre' || component === 'tyres') {
+    return 'tyres';
+  }
+
+  return component;
+};
+
 export class KanoWorkshopRecoveryDirector {
   constructor(options = {}) {
     this.storageKey =
-      options.storageKey || 'kano-life-workshop-recovery-v1';
+      options.storageKey ||
+      'kano-life-workshop-recovery-v1';
 
     this.onEvent =
       typeof options.onEvent === 'function'
@@ -171,13 +211,13 @@ export class KanoWorkshopRecoveryDirector {
   }
 
   // ----------------------------------------------------------
-  // Lifecycle and event handling
+  // Lifecycle and events
   // ----------------------------------------------------------
 
   assertActive() {
     if (this.destroyed) {
       throw new Error(
-        'KanoWorkshopRecoveryDirector has been disposed.'
+        'KanoWorkshopRecoveryDirector has been disposed.',
       );
     }
   }
@@ -195,15 +235,16 @@ export class KanoWorkshopRecoveryDirector {
     try {
       this.onEvent(event);
     } catch (error) {
-      // Observer failures must not break game simulation.
       console.error(
         '[KanoWorkshopRecoveryDirector] Event callback failed:',
-        error
+        error,
       );
     }
   }
 
   dispose() {
+    if (this.destroyed) return;
+
     this.destroyed = true;
     this.onEvent = () => {};
   }
@@ -213,7 +254,7 @@ export class KanoWorkshopRecoveryDirector {
   // ----------------------------------------------------------
 
   registerDefaultWorkshops() {
-    DEFAULT_WORKSHOPS.forEach(workshop => {
+    DEFAULT_WORKSHOPS.forEach((workshop) => {
       this.registerWorkshop(workshop);
     });
   }
@@ -235,13 +276,15 @@ export class KanoWorkshopRecoveryDirector {
       priceMultiplier: clamp(
         data.priceMultiplier ?? 1,
         0.5,
-        2.5
+        2.5,
       ),
       open: data.open !== false,
       reputation: clamp(data.reputation ?? 50, 0, 100),
     };
 
     this.workshops.set(workshop.id, workshop);
+
+    this.save();
 
     return { ...workshop };
   }
@@ -258,8 +301,8 @@ export class KanoWorkshopRecoveryDirector {
     this.assertActive();
 
     return [...this.workshops.values()]
-      .filter(workshop => !openOnly || workshop.open)
-      .map(workshop => ({ ...workshop }));
+      .filter((workshop) => !openOnly || workshop.open)
+      .map((workshop) => ({ ...workshop }));
   }
 
   setWorkshopOpen(workshopId, open) {
@@ -281,10 +324,11 @@ export class KanoWorkshopRecoveryDirector {
       open: workshop.open,
     });
 
-    this.save();
+    const persisted = this.save();
 
     return {
       ok: true,
+      persisted,
       workshop: { ...workshop },
     };
   }
@@ -313,7 +357,8 @@ export class KanoWorkshopRecoveryDirector {
       return { ok: false, reason: 'workshop_closed' };
     }
 
-    const spec = COMPONENTS[component];
+    const normalizedComponent = normaliseComponent(component);
+    const spec = COMPONENTS[normalizedComponent];
 
     if (!spec) {
       return { ok: false, reason: 'unknown_component' };
@@ -349,28 +394,30 @@ export class KanoWorkshopRecoveryDirector {
 
     const partsCost = Math.round(
       spec.base *
-      (0.45 + normalizedSeverity * 0.55) *
-      stockPenalty
+        (0.45 + normalizedSeverity * 0.55) *
+        stockPenalty,
     );
 
     const labourCost = Math.round(
       spec.base *
-      0.45 *
-      workshop.priceMultiplier *
-      roadsideMultiplier *
-      urgencyMultiplier *
-      qualityMultiplier
+        0.45 *
+        workshop.priceMultiplier *
+        roadsideMultiplier *
+        urgencyMultiplier *
+        qualityMultiplier,
     );
 
     const durationMinutes = Math.max(
       5,
       Math.round(
-        spec.minutes *
-        (0.6 + normalizedSeverity * 0.8) /
-        Math.max(0.55, workshop.quality) *
-        (roadside ? 1.25 : 1)
-      )
+        (spec.minutes *
+          (0.6 + normalizedSeverity * 0.8)) /
+          Math.max(0.55, workshop.quality) *
+          (roadside ? 1.25 : 1),
+      ),
     );
+
+    const createdAt = timestamp();
 
     return {
       ok: true,
@@ -378,7 +425,7 @@ export class KanoWorkshopRecoveryDirector {
       workshopId: workshop.id,
       workshopName: workshop.name,
       vehicleId: vehicleId ? String(vehicleId) : null,
-      component,
+      component: normalizedComponent,
       componentLabel: spec.label,
       severity: normalizedSeverity,
       parts: spec.parts,
@@ -390,10 +437,10 @@ export class KanoWorkshopRecoveryDirector {
       urgency: normalizedUrgency,
       estimatedQualityGain: Math.round(
         (18 + workshop.quality * 22) *
-        (1 - normalizedSeverity * 0.25)
+          (1 - normalizedSeverity * 0.25),
       ),
-      createdAt: timestamp(),
-      expiresAt: timestamp() + 5 * 60_000,
+      createdAt,
+      expiresAt: createdAt + 5 * 60_000,
       paymentRequired: true,
     };
   }
@@ -409,14 +456,12 @@ export class KanoWorkshopRecoveryDirector {
       !quote?.ok ||
       !quote.quoteId ||
       !quote.workshopId ||
-      !COMPONENTS[quote.component]
+      !COMPONENTS[normaliseComponent(quote.component)]
     ) {
       return { ok: false, reason: 'invalid_quote' };
     }
 
-    const workshop = this.workshops.get(
-      String(quote.workshopId)
-    );
+    const workshop = this.workshops.get(String(quote.workshopId));
 
     if (!workshop) {
       return { ok: false, reason: 'workshop_not_found' };
@@ -434,25 +479,27 @@ export class KanoWorkshopRecoveryDirector {
     }
 
     const alreadyBooked = [...this.jobs.values()].some(
-      job => job.quoteId === quote.quoteId
+      (job) => job.quoteId === quote.quoteId,
     );
 
     if (alreadyBooked) {
       return { ok: false, reason: 'already_booked' };
     }
 
-    const paymentConfirmed =
-      options.paymentConfirmed === true;
+    const paymentConfirmed = options.paymentConfirmed === true;
+    const paymentReference = options.paymentReference;
 
-    if (
-      paymentConfirmed &&
-      !options.paymentReference
-    ) {
+    if (paymentConfirmed && !paymentReference) {
       return {
         ok: false,
         reason: 'payment_reference_required',
       };
     }
+
+    const durationMinutes = Math.max(
+      1,
+      Math.round(Number(quote.durationMinutes) || 1),
+    );
 
     const job = {
       id: makeId('repair'),
@@ -460,28 +507,24 @@ export class KanoWorkshopRecoveryDirector {
       workshopId: workshop.id,
       workshopName: workshop.name,
       vehicleId: quote.vehicleId || null,
-      component: quote.component,
-      componentLabel: quote.componentLabel,
+      component: normaliseComponent(quote.component),
+      componentLabel:
+        quote.componentLabel ||
+        COMPONENTS[normaliseComponent(quote.component)].label,
       cost: Math.max(0, Math.round(Number(quote.totalCost) || 0)),
-      durationMinutes: Math.max(
-        1,
-        Math.round(Number(quote.durationMinutes) || 1)
-      ),
-      remainingMinutes: Math.max(
-        1,
-        Math.round(Number(quote.durationMinutes) || 1)
-      ),
+      durationMinutes,
+      remainingMinutes: durationMinutes,
       status: paymentConfirmed
         ? 'in_progress'
         : 'awaiting_payment',
       paymentReference: paymentConfirmed
-        ? String(options.paymentReference)
+        ? String(paymentReference)
         : null,
       createdAt: timestamp(),
       updatedAt: timestamp(),
       qualityGain: Math.max(
         0,
-        Math.round(Number(quote.estimatedQualityGain) || 0)
+        Math.round(Number(quote.estimatedQualityGain) || 0),
       ),
       roadside: Boolean(quote.roadside),
     };
@@ -489,12 +532,14 @@ export class KanoWorkshopRecoveryDirector {
     this.jobs.set(job.id, job);
 
     this.emit('repair_booked', { job });
-    this.save();
+
+    const persisted = this.save();
 
     return {
       ok: true,
       job: { ...job },
       paymentRequired: job.status === 'awaiting_payment',
+      persisted,
     };
   }
 
@@ -527,11 +572,13 @@ export class KanoWorkshopRecoveryDirector {
     job.updatedAt = timestamp();
 
     this.emit('repair_started', { job });
-    this.save();
+
+    const persisted = this.save();
 
     return {
       ok: true,
       job: { ...job },
+      persisted,
     };
   }
 
@@ -546,23 +593,19 @@ export class KanoWorkshopRecoveryDirector {
 
       job.remainingMinutes = Math.max(
         0,
-        job.remainingMinutes - elapsed
+        job.remainingMinutes - elapsed,
       );
 
       job.updatedAt = timestamp();
 
       if (job.remainingMinutes === 0) {
         job.status = 'ready_for_pickup';
-
         completed.push({ ...job });
-
         this.emit('repair_ready', { job });
       }
     }
 
-    if (elapsed > 0) {
-      this.save();
-    }
+    const persisted = elapsed <= 0 ? true : this.save();
 
     return {
       elapsedMinutes: elapsed,
@@ -570,6 +613,7 @@ export class KanoWorkshopRecoveryDirector {
       activeJobs: this.listJobs({
         statuses: ['in_progress'],
       }).length,
+      persisted,
     };
   }
 
@@ -612,9 +656,13 @@ export class KanoWorkshopRecoveryDirector {
     };
 
     this.emit('repair_completed', result);
-    this.save();
 
-    return result;
+    const persisted = this.save();
+
+    return {
+      ...result,
+      persisted,
+    };
   }
 
   // ----------------------------------------------------------
@@ -643,9 +691,16 @@ export class KanoWorkshopRecoveryDirector {
 
     const reasonSpec = RECOVERY_REASONS[reason];
 
+    // Prefer the strongest available recovery rating.
+    // Use lower price and then name as deterministic tie-breakers.
     const availableWorkshops = [...this.workshops.values()]
-      .filter(workshop => workshop.open)
-      .sort((a, b) => a.recovery - b.recovery);
+      .filter((workshop) => workshop.open)
+      .sort(
+        (a, b) =>
+          b.recovery - a.recovery ||
+          a.priceMultiplier - b.priceMultiplier ||
+          a.name.localeCompare(b.name),
+      );
 
     const workshop = availableWorkshops[0];
 
@@ -661,19 +716,15 @@ export class KanoWorkshopRecoveryDirector {
     const afterHours = hour < 6 || hour >= 22;
 
     const fee = Math.round(
-      (
-        reasonSpec.baseFee + distance * 450
-      ) *
-      (afterHours ? 1.3 : 1) /
-      Math.max(0.6, workshop.recovery)
+      ((reasonSpec.baseFee + distance * 450) *
+        (afterHours ? 1.3 : 1)) /
+        Math.max(0.6, workshop.recovery),
     );
 
     const call = {
       id: makeId('recovery'),
       vehicleId: String(vehicleId),
-      location: String(
-        location || 'Unknown roadside location'
-      ),
+      location: String(location || 'Unknown roadside location'),
       severity: reason,
       severityLabel: reasonSpec.label,
       distanceKm: distance,
@@ -684,9 +735,7 @@ export class KanoWorkshopRecoveryDirector {
       createdAt: timestamp(),
       etaMinutes: Math.max(
         5,
-        Math.round(
-          8 + distance * 3 / workshop.recovery
-        )
+        Math.round((8 + (distance * 3) / workshop.recovery)),
       ),
       paymentRequired: true,
     };
@@ -694,11 +743,13 @@ export class KanoWorkshopRecoveryDirector {
     this.recoveryCalls.set(call.id, call);
 
     this.emit('recovery_requested', { call });
-    this.save();
+
+    const persisted = this.save();
 
     return {
       ok: true,
       call: { ...call },
+      persisted,
       walletActionRequired:
         'Obtain explicit player confirmation, then process the fee through the existing wallet.',
     };
@@ -736,11 +787,13 @@ export class KanoWorkshopRecoveryDirector {
     call.dispatchedAt = timestamp();
 
     this.emit('recovery_dispatched', { call });
-    this.save();
+
+    const persisted = this.save();
 
     return {
       ok: true,
       call: { ...call },
+      persisted,
     };
   }
 
@@ -755,7 +808,7 @@ export class KanoWorkshopRecoveryDirector {
 
       call.etaMinutes = Math.max(
         0,
-        call.etaMinutes - elapsed
+        call.etaMinutes - elapsed,
       );
 
       if (call.etaMinutes === 0) {
@@ -763,20 +816,18 @@ export class KanoWorkshopRecoveryDirector {
         call.arrivedAt = timestamp();
 
         arrived.push({ ...call });
-
         this.emit('recovery_arrived', { call });
       }
     }
 
-    if (elapsed > 0) {
-      this.save();
-    }
+    const persisted = elapsed <= 0 ? true : this.save();
 
     return {
       arrived,
       active: [...this.recoveryCalls.values()].filter(
-        call => call.status === 'dispatched'
+        (call) => call.status === 'dispatched',
       ).length,
+      persisted,
     };
   }
 
@@ -804,11 +855,13 @@ export class KanoWorkshopRecoveryDirector {
     call.completedAt = timestamp();
 
     this.emit('recovery_completed', { call });
-    this.save();
+
+    const persisted = this.save();
 
     return {
       ok: true,
       call: { ...call },
+      persisted,
     };
   }
 
@@ -820,9 +873,15 @@ export class KanoWorkshopRecoveryDirector {
     this.assertActive();
 
     return [...this.jobs.values()]
-      .filter(job => !vehicleId || job.vehicleId === vehicleId)
-      .filter(job => !statuses || statuses.includes(job.status))
-      .map(job => ({ ...job }));
+      .filter(
+        (job) =>
+          !vehicleId ||
+          String(job.vehicleId) === String(vehicleId),
+      )
+      .filter(
+        (job) => !statuses || statuses.includes(job.status),
+      )
+      .map((job) => ({ ...job }));
   }
 
   getJob(jobId) {
@@ -838,9 +897,11 @@ export class KanoWorkshopRecoveryDirector {
 
     return [...this.recoveryCalls.values()]
       .filter(
-        call => !vehicleId || call.vehicleId === vehicleId
+        (call) =>
+          !vehicleId ||
+          String(call.vehicleId) === String(vehicleId),
       )
-      .map(call => ({ ...call }));
+      .map((call) => ({ ...call }));
   }
 
   getRecoveryCall(callId) {
@@ -910,7 +971,7 @@ export class KanoWorkshopRecoveryDirector {
           priceMultiplier: clamp(
             item.priceMultiplier ?? 1,
             0.5,
-            2.5
+            2.5,
           ),
           open: item.open !== false,
           reputation: clamp(item.reputation ?? 50, 0, 100),
@@ -922,13 +983,7 @@ export class KanoWorkshopRecoveryDirector {
       for (const item of data.jobs) {
         if (
           !item?.id ||
-          !item?.status ||
-          ![
-            'awaiting_payment',
-            'in_progress',
-            'ready_for_pickup',
-            'completed',
-          ].includes(item.status)
+          !VALID_JOB_STATUSES.has(item.status)
         ) {
           continue;
         }
@@ -939,13 +994,7 @@ export class KanoWorkshopRecoveryDirector {
       for (const item of data.recoveryCalls) {
         if (
           !item?.id ||
-          !item?.status ||
-          ![
-            'awaiting_confirmation',
-            'dispatched',
-            'arrived',
-            'completed',
-          ].includes(item.status)
+          !VALID_RECOVERY_STATUSES.has(item.status)
         ) {
           continue;
         }
@@ -964,13 +1013,14 @@ export class KanoWorkshopRecoveryDirector {
       this.jobs = jobs;
       this.recoveryCalls = recoveryCalls;
 
-      this.save();
+      const persisted = this.save();
 
       return {
         ok: true,
         workshops: this.workshops.size,
         jobs: this.jobs.size,
         recoveryCalls: this.recoveryCalls.size,
+        persisted,
       };
     } catch (error) {
       return {
@@ -991,7 +1041,7 @@ export class KanoWorkshopRecoveryDirector {
 
       localStorage.setItem(
         this.storageKey,
-        this.exportState()
+        this.exportState(),
       );
 
       return true;
@@ -1028,7 +1078,8 @@ export class KanoWorkshopRecoveryDirector {
 
       if (!result.ok) {
         this.emit('storage_error', {
-          message: result.reason || 'State could not be loaded.',
+          message:
+            result.reason || 'State could not be loaded.',
         });
       }
 
@@ -1041,6 +1092,7 @@ export class KanoWorkshopRecoveryDirector {
       return {
         ok: false,
         reason: 'storage_error',
+        message: String(error?.message || error),
       };
     }
   }
@@ -1048,3 +1100,5 @@ export class KanoWorkshopRecoveryDirector {
 
 export { COMPONENTS as KANO_REPAIR_COMPONENTS };
 export { RECOVERY_REASONS as KANO_RECOVERY_REASONS };
+
+export default KanoWorkshopRecoveryDirector;
