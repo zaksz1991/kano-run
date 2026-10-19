@@ -1,14 +1,5 @@
-# Kano Life — Commercial Integration Release
+# Kano Life — Commercial Integration Release 1.1
 
-This release adds a small coordinator intended to integrate commercial features into the existing Kano Run lifecycle without duplicating the existing game systems.
+This release corrects the coordinator's in-repository import path and supplies a minimal `main.js` patch for the current published Kano Run source. It preserves existing game architecture and is designed to be additive.
 
-## Important architecture decisions
-
-- `storage.js` remains the canonical local save implementation.
-- `controls.js` remains the canonical keyboard/touch control implementation.
-- `KanoAdaptiveQuality.js` remains the canonical render-quality scaler.
-- `LiveUserCounter.js` remains the existing online-session counter.
-- The current `radio.js` / `audio.js` remain authoritative until their APIs are audited.
-- `Game` remains authoritative for economy, physics, traffic, collision and route progression.
-
-Read `INTEGRATION.md` before copying the new file into the repository. The coordinator is optional and does not by itself finish all the integrations listed in the roadmap.
+Read `INTEGRATION.md` before applying. The module does not by itself complete 3D passenger projection, transactional hotspot gameplay, or online leaderboard backend configuration.

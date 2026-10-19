@@ -6,7 +6,7 @@
  * Emits integration events for existing gameplay systems and manages optional
  * passenger speech anchors without requiring passenger DOM to exist.
  */
-import { PassengerDialogueManager, installPassengerDialogueStyles } from '../../js/PassengerDialogueManager.js';
+import { PassengerDialogueManager, installPassengerDialogueStyles } from './PassengerDialogueManager.js';
 
 export class KanoCommercialIntegration {
   constructor({ root = document.getElementById('game-container') || document.body, game = null, enabled = true } = {}) {

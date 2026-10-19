@@ -1,75 +1,23 @@
-# Kano Life Commercial Integration Release
+# Kano Life Commercial Integration — Release 1.1
 
-## Repository audit observations
+## Files
 
-The current `main.js` already imports `KanoAdaptiveQuality`, `LiveUserCounter`, `KanoProductionBridge`, and the existing renderer/game lifecycle. `controls.js` already supports touch buttons, swipe steering, reverse, and automatic release of held controls. `storage.js` already owns the game's v4 save format and validates driver/route/paint unlocks.
+- `js/KanoCommercialIntegration.js` — additive lifecycle/event coordinator.
+- `patches/main.js.patch` — minimal integration patch for the current published `js/main.js`.
 
-Therefore, do not replace those with `AdaptivePerformanceScaler.js`, `MobileTouchControls.js`, `SaveSystem.js`, or a second live counter. That would create competing sources of truth and could break saved progression.
+## Apply using the GitHub website
 
-## New additive coordinator
+1. Open the `js` folder in the repository.
+2. Create `KanoCommercialIntegration.js` and paste the complete file from this package.
+3. Open `js/main.js` and apply the four small changes shown in `patches/main.js.patch`: add the import, add the module variable, initialise the coordinator after `new Game(...)`, update it after `game.tick(dt)`, and dispose it on `pagehide`.
+4. Commit the changes through GitHub. Vercel should deploy the commit if the repository is connected to the project.
 
-`js/KanoCommercialIntegration.js` provides optional passenger dialogue lifecycle and documented custom-event seams for hotspot requests and systemic events. It intentionally does not fabricate passenger actors, alter game money, write Supabase data, or create fake player counts.
+## Important compatibility notes
 
-### Integration into `js/main.js`
+The coordinator imports `./PassengerDialogueManager.js` because both files live in `js/`. This path is intentionally relative to the destination repository, not the ZIP folder.
 
-1. Add this import with the other imports:
+It does not create Three.js passenger anchors or execute hotspot purchases. It only handles real DOM anchors/events supplied by existing systems. The current game remains the authority for physics, money, routes, progression, touch controls, adaptive quality, and live-user count. Do not replace those systems with the duplicate standalone modules.
 
-```js
-import { KanoCommercialIntegration } from './KanoCommercialIntegration.js';
-```
+## Verification
 
-2. Add a module-level variable beside the other optional systems:
-
-```js
-let commercialIntegration = null;
-```
-
-3. In `boot()`, after `game = new Game(ui, audio, { mobile });`, initialise it:
-
-```js
-try {
-  commercialIntegration = new KanoCommercialIntegration({ root: container, game });
-} catch (error) {
-  commercialIntegration = null;
-  console.warn('[Kano Life] commercial integration unavailable', error);
-}
-```
-
-4. In `frame(now)`, after `game?.tick(dt);`, add:
-
-```js
-commercialIntegration?.update?.(dt, game?.s || {});
-```
-
-5. In `disposeRenderer()`, do not dispose this coordinator: it is renderer-independent. If the app adds a full application shutdown path, call `commercialIntegration?.dispose?.()` there.
-
-## Hooking real passenger actors
-
-When the actual passenger renderer creates a DOM anchor, pass that anchor to:
-
-```js
-commercialIntegration?.attachPassengerAnchor(anchor);
-```
-
-Then emit an event when dialogue is appropriate:
-
-```js
-window.dispatchEvent(new CustomEvent('kano:passenger-nearby', { detail: { anchor } }));
-```
-
-The event's `anchor` must be a real connected DOM element. This does not automatically bind to Three.js meshes; projecting 3D world positions requires the actual passenger actor and camera API.
-
-## Hotspot UI contract
-
-A hotspot UI button can opt into event routing with `data-kano-hotspot="fuel"`, `"mechanic"`, `"mosque"`, `"vulcanizer"`, or `"spare-parts"`. The coordinator emits `kano:hotspot-interaction-request`. A trusted gameplay handler must validate player proximity, cost, inventory and vehicle state before changing gameplay.
-
-## Events exposed
-
-- `kano:commercial-event` with `type: market-day`, `wedding-convoy`, or `vehicle-breakdown` when the corresponding source event is emitted.
-- `kano:hotspot-interaction-request` for explicitly marked hotspot controls.
-
-This coordinator is an integration seam, not a replacement for the authoritative game economy, traffic, physics, storage, Supabase, Redis, or radio systems.
-
-## Validation status
-
-The module is syntax-checked independently. A full Vite build and in-browser regression test require the complete repository checkout. No changes are pushed to GitHub or deployed by this package.
+`KanoCommercialIntegration.js` passed a Node syntax check. The integration patch was checked against the current published `main.js` import/boot/frame/pagehide anchors. A full Vite build and browser gameplay test were not possible without the full repository checkout. No repository change or deployment has been performed by this package.

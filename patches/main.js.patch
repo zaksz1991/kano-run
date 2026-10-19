@@ -1,0 +1,31 @@
+*** Begin Patch
+*** Update File: js/main.js
+@@
+ import { KanoInteractionReliability } from './KanoInteractionReliability.js';
++import { KanoCommercialIntegration } from './KanoCommercialIntegration.js';
+ import '../css/kano-responsive-upgrade.css';
+@@
+ let interactionReliability = null;
++let commercialIntegration = null;
+ let controls = null;
+@@
+   game = new Game(ui, audio, { mobile });
+   ui.bind?.(game);
++  // Optional commercial/narrative event coordinator. It does not own gameplay
++  // rules, saves, rendering, touch controls, or the live-user count.
++  try {
++    commercialIntegration = new KanoCommercialIntegration({ root: container, game });
++  } catch (error) {
++    commercialIntegration = null;
++    console.warn('[Kano Life] commercial integration unavailable', error);
++  }
+@@
+     trafficDirector?.update?.(dt);
+     game?.tick(dt);
++    commercialIntegration?.update?.(dt, game?.s || {});
+     interactionReliability?.update?.(dt, game?.s || {});
+@@
+ window.addEventListener('pagehide', () => {
++  try { commercialIntegration?.dispose?.(); } catch { /* page is closing */ }
+   try { trafficDirector?.dispose?.(); } catch { /* page is closing */ }
+*** End Patch
