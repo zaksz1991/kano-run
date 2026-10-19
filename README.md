@@ -1,10 +1,13 @@
-# Kano Life — World Animation Upgrade
+# Kano Life — Systemic Simulation Upgrade
 
-Adds a reusable Three.js `KanoWorldAnimationDirector` for subtle ambient motion on already-loaded pedestrian, goat, flag, sign, stall, tree, and dust objects.
+Three additive JavaScript modules for deeper driver-life gameplay, pooled procedural traffic, and dynamic audio mixing.
 
-## Included
-- `js/KanoWorldAnimationDirector.js` — complete ES module
-- `INTEGRATION.md` — integration examples and constraints
+- `js/KanoLifeSimDirector.js`: persistent cash/fuel/hunger/fatigue/reputation, day clock, trip start/completion, refuelling, meals, rest, fines, and autosave.
+- `js/KanoProceduralTrafficDirector.js`: pooled keke/motorcycle/car traffic with configurable 40/30/30 mix, lane placement, recycling, and near-miss/collision hooks. Uses caller-provided Three.js Object3D factory.
+- `js/KanoDynamicSoundDirector.js`: user-gesture audio unlock, buffered playback, looping ambience, one-shots, engine telemetry modulation, volume controls, and mute.
 
-## Important
-This is a standalone upgrade package, not a commit to the GitHub repository. It will not change the production site until the module is added to the project, imported, registered against actual loaded objects, and called from the existing game loop. The module does not create missing 3D models.
+## Scope and validation
+
+These modules are not yet connected to the live `kano-run.vercel.app` game. They were designed to avoid assumptions about current asset paths, HUD elements, and game entry-point variables. See `INTEGRATION.md` before enabling them.
+
+All files are ES modules. `KanoProceduralTrafficDirector.js` expects Three.js Object3D instances from the caller; it does not import Three.js itself.

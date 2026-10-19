@@ -1,57 +1,101 @@
-# Integration guide — Kano World Animation Director
+# Integration guide — Kano Life systemic simulation upgrade
 
-This is an additive module for animating **existing** market and roadside assets. It does not create pedestrians, stalls, goats, or models, and is not wired into the live game automatically.
+This is an additive module package. It is not wired into the live game because the current game entry point and its scene/vehicle variables were not supplied.
 
-## 1. Import
+## 1. Add the files
+
+Copy the three JavaScript files into your existing `js/` directory. Keep your existing game files and asset paths.
+
+## 2. Driver-life simulation
 
 ```js
-import { KanoWorldAnimationDirector } from './KanoWorldAnimationDirector.js';
+import { KanoLifeSimDirector } from './KanoLifeSimDirector.js';
+
+const lifeSim = new KanoLifeSimDirector({
+  onChange: (state, reason) => {
+    // Update your existing HUD here; do not replace the whole HUD.
+    // Example: cashText.textContent = `₦${Math.round(state.cash).toLocaleString()}`;
+  },
+  onEvent: ({ type, detail }) => {
+    // Trigger existing UI/audio feedback for trip_started, refuelled, fine, etc.
+  },
+});
+
+// Call once per frame with your actual measured frame delta.
+lifeSim.update(deltaSeconds, {
+  speedKmh: playerSpeedKmh,
+  distanceKm: distanceTravelledThisFrame,
+  engineRunning: isEngineRunning,
+  passengerOnboard: hasPassenger,
+});
+
+// Connect existing interaction buttons to lifeSim.startTrip(), completeTrip(),
+// refuel(), eat(), and rest(). Dispose on game teardown with lifeSim.dispose().
 ```
 
-Adjust the import path to the actual location of the module in your project.
+Default fuel price and fare values are game-balance placeholders; tune them to the existing economy before release. Avoid advancing `distanceKm` with total cumulative distance each frame: pass the incremental distance for that frame.
 
-## 2. Create once after your Three.js scene exists
+## 3. Procedural traffic
 
 ```js
-const worldAnimator = new KanoWorldAnimationDirector({
+import { KanoProceduralTrafficDirector } from './KanoProceduralTrafficDirector.js';
+
+const traffic = new KanoProceduralTrafficDirector({
   scene,
-  isMobile: window.matchMedia('(max-width: 760px)').matches,
+  lanes: [-3.2, 0, 3.2],
+  poolSize: isMobile ? 8 : 18,
+  mix: { keke: 0.4, motorcycle: 0.3, car: 0.3 },
+  createVehicle: ({ type, laneIndex }) => {
+    // Return an existing Three.js Object3D cloned from your model catalog.
+    // Do not return a shared scene root. Add type-switching/reloading in your
+    // model manager if the GLB geometry differs across vehicle types.
+    return modelManager.createTrafficVehicle(type, laneIndex);
+  },
+  onNearMiss: () => soundDirector.oneShot('near_miss'),
+  onCollision: ({ actor }) => { /* feed your existing collision system */ },
+});
+
+// In your existing animation loop:
+traffic.update(deltaSeconds, {
+  playerZ: player.position.z,
+  playerX: player.position.x,
+  playerSpeed: playerSpeedWorldUnitsPerSecond,
+  paused: isPaused,
 });
 ```
 
-## 3. Register existing loaded objects
+**Important:** this director expects traffic to approach along +Z while the player's position is used as the reference. If your current game moves the world in the opposite direction, invert the Z convention before enabling it. It is a separate traffic pool and must not run alongside an existing traffic spawner unless that duplication is intentional. Collision callbacks are hooks, not a replacement for your collision solver.
 
-Call these after your own model loader has added the objects to the scene. Replace the example object names with references from your game.
+## 4. Dynamic audio
 
 ```js
-worldAnimator.register(pedestrianRoot, {
-  id: 'market-pedestrian-01', type: 'pedestrian', wander: true,
-  radius: 1.4, speed: 0.5,
-  bounds: { minX: -12, maxX: 12, minZ: -40, maxZ: 20 },
+import { KanoDynamicSoundDirector } from './KanoDynamicSoundDirector.js';
+
+const soundDirector = new KanoDynamicSoundDirector({
+  sounds: {
+    engine: { src: '/audio/engine.mp3', loop: true, bus: 'sfx', volume: 0.75 },
+    road_ambience: { src: '/audio/road-ambience.mp3', loop: true, bus: 'ambience' },
+    horn: { src: '/audio/horn.mp3', bus: 'sfx', volume: 0.9 },
+    near_miss: { src: '/audio/near-miss.mp3', bus: 'sfx' },
+  },
 });
-worldAnimator.register(goatRoot, { id: 'roadside-goat-01', type: 'goat', wander: true, radius: 2.2 });
-worldAnimator.register(flagRoot, { id: 'market-flag-01', type: 'flag', amplitude: 0.2, speed: 1.7 });
-worldAnimator.register(treeRoot, { id: 'roadside-tree-01', type: 'tree' });
-worldAnimator.register(signRoot, { id: 'stall-sign-01', type: 'sign' });
+
+// Call from the Start/Play button click (required by browser autoplay policies).
+await soundDirector.unlock();
+await soundDirector.setAmbience('road_ambience');
+
+// Update engine from your real vehicle telemetry:
+await soundDirector.setEngineState({ rpm, throttle, running: isEngineRunning });
+// User interactions: await soundDirector.oneShot('horn');
+// On teardown: soundDirector.dispose();
 ```
 
-Register a *root/group* for each actor, not each mesh inside one model. Do not register the player vehicle with this director; use the vehicle animator for that.
+Use your existing audio asset paths rather than adding duplicate sound files. Avoid calling async `setEngineState` more often than needed if your game has a very high frame rate; a 10–15 Hz audio telemetry update is usually sufficient. Sound playback fails gracefully if a file is absent or audio has not been unlocked.
 
-## 4. Update in your existing animation loop
+## Required before production
 
-```js
-worldAnimator.update(deltaSeconds, {
-  playerPosition: playerKeke.position,
-  maxDistance: isMobile ? 55 : 95,
-});
-```
-
-`deltaSeconds` must be seconds, not milliseconds. Reuse the same game-loop delta you already calculate. Do not create a second requestAnimationFrame loop.
-
-## Notes
-
-- Desktop actor cap defaults to 60; mobile cap defaults to 24. Increase only after profiling on real devices.
-- Wandering is intentionally small and should be constrained to walkable sidewalk/market bounds. Do not set bounds across the active road unless road crossing is intentional.
-- The director does not dispose registered geometry or materials, because GLB assets may share cached resources.
-- Reduced-motion preference disables ambient motion. The module skips distant actors and pauses when the browser tab is hidden.
-- This module passed a JavaScript syntax check; it has not been connected to or tested against the production game.
+- Connect these modules to the real entry point and actual variable names.
+- Confirm the traffic direction, lane coordinates, player scale, and collision conventions.
+- Tune economy, fuel drain, needs decay, and audio levels with playtesting.
+- Test mobile touch controls, performance, pause/resume, reload persistence, and audio unlock.
+- Run a production build and verify that the existing spawner/camera/UI are not duplicated.

@@ -1,26 +1,7 @@
 {
-  "name": "kano-life",
-  "version": "4.2.0",
+  "name": "kano-life-systemic-simulation-upgrade",
+  "version": "1.0.0",
   "private": true,
-  "description": "Kano Life — morning-to-shift Adaidaita Sahu street-life game set in Kano State. Game Developer: Hassan Zakariya",
-  "author": "Hassan Zakariya",
-  "license": "MIT",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "node ./node_modules/vite/bin/vite.js build",
-    "preview": "vite preview",
-    "test": "node --test",
-    "check:syntax": "node ./scripts/check-syntax.mjs",
-    "verify": "node ./scripts/verify-release.mjs",
-    "verify:dist": "node ./scripts/verify-release.mjs --dist",
-    "check": "npm run check:syntax && npm run verify",
-    "release:verify": "npm run check && npm test && npm run build && npm run verify:dist"
-  },
-  "dependencies": {
-    "three": "^0.170.0"
-  },
-  "devDependencies": {
-    "vite": "^5.4.0"
-  }
+  "description": "Additive life simulation, procedural traffic, and dynamic audio modules for Kano Life"
 }
