@@ -1,62 +1,74 @@
-# Integration guide
+# Integration Guide — Market Day + Driver Society + Ownership
 
-This module is deliberately engine-agnostic. It does not spawn 3D objects, change physics, or replace the current route/mission system. Connect its events to the game's existing UI, traffic, audio, and life-simulation systems.
+These modules are additive ES modules. They are **not automatically connected** to the deployed Kano Life game.
 
-## 1. Import and construct
+## 1. Import and initialize
 
 ```js
-import { KanoSystemicEventDirector, KANO_EVENT_COPY } from './KanoSystemicEventDirector.js';
+import { KanoMarketDayDirector } from './js/KanoMarketDayDirector.js';
+import { KanoDriverSociety } from './js/KanoDriverSociety.js';
+import { KanoVehicleOwnership } from './js/KanoVehicleOwnership.js';
 
-const eventDirector = new KanoSystemicEventDirector({
-  onEvent(event, state) {
-    const copy = KANO_EVENT_COPY[event.id];
-    if (copy) showGameNotification(copy.title, copy.message, copy.action);
-    playEventSound?.(event.id);
-    // Trigger existing systems here; do not create a second traffic or physics loop.
-  },
+const marketDirector = new KanoMarketDayDirector({
+  onEvent: event => {
+    // Connect passenger_demand_pulse to your EXISTING passenger spawn/pickup system.
+    // Do not create a second traffic or animation loop here.
+    gameEvents?.emit?.(event.type, event);
+  }
+});
+const driverSociety = new KanoDriverSociety();
+const ownership = new KanoVehicleOwnership({
+  onEvent: event => gameEvents?.emit?.(event.type, event)
 });
 ```
 
-Replace `showGameNotification` and `playEventSound` with functions already present in the project. Remove optional chaining if your build target does not support it.
+The optional `gameEvents` symbol above is a placeholder for your existing event bus; replace it with the actual API in your project.
 
-## 2. Update once per frame
-
-Inside the existing animation loop, call the director exactly once:
+## 2. Update once per existing frame
 
 ```js
-eventDirector.update(deltaSeconds, {
-  speed: playerSpeed,
-  fuel: driverState.fuel,
-  money: driverState.money,
-  hunger: driverState.hunger,
-  fatigue: driverState.fatigue,
-  distance: routeDistance,
-  routeId: activeRouteId,
-  shiftActive: gameState === 'driving',
+// In the existing animation/update loop, not a new requestAnimationFrame loop:
+marketDirector.update(deltaSeconds, {
+  day: gameState.day,
+  minuteOfDay: gameState.minuteOfDay
 });
 ```
 
-Use the actual variable names from the project. Do not add a second `requestAnimationFrame` loop just for this module.
+Use `marketDirector.snapshot()` to update your existing HUD. Use `getFareMultiplier()` only where the current fare calculation is made, and clamp the final fare using your existing rules.
 
-## 3. Event handlers
+## 3. Driver NPCs
 
-Use `event.id` to connect existing systems:
-- `passenger_demand`: ask the current passenger/pickup system to offer a roadside pickup.
-- `fuel_reminder`: show a notification and optionally play the existing warning sound.
-- `karota_checkpoint`: activate an existing checkpoint if one is available; otherwise show a warning only.
-- `road_hazard`: ask the road-hazard system to place a hazard within the current forward scene window.
-- `market_congestion`: raise density in the existing traffic/crowd spawner temporarily.
-- `fare_negotiation`: open the existing fare interaction only while safely stopped.
-- `rest_opportunity`: show a meal/rest prompt using existing driver-life state.
+```js
+const npc = driverSociety.createDriver({ id: 'npc-driver-001', trait: 'professional' });
+const decisions = driverSociety.behaviourFor(npc.id, { crowded: true, rushing: false });
+// Pass decisions to the existing traffic AI. These values do not move models by themselves.
+driverSociety.recordOutcome(npc.id, { trip: true, cashDelta: 1800, reputationDelta: 1, fatigueDelta: 5 });
+driverSociety.save();
+```
 
-Do not treat an event notification as proof that a physical object was spawned. Connect to existing world systems for actual scene changes.
+Traits are behaviour inputs, not assumptions based on a character's appearance, education, or background.
 
-## 4. Test controls
+## 4. Ownership contracts
 
-`eventDirector.trigger('fuel_reminder', { debug: true })` emits an event immediately for UI testing. `getSnapshot()` provides basic diagnostics. `reset()` clears elapsed time and cooldowns.
+```js
+const contract = ownership.createContract({
+  vehicleId: 'keke-001', driverId: npc.id, ownerId: 'owner-001',
+  type: 'hire_purchase', purchasePrice: 900000, deposit: 150000,
+  paymentAmount: 12000, period: 'weekly'
+});
+ownership.recordEarnings(contract.id, 18000, 5000);
+ownership.makePayment(contract.id, 12000, gameState.day);
+```
 
-## Safety and integration notes
-- Scheduler callbacks are isolated so UI/audio errors do not stop the scheduler.
-- Event timing uses simulation seconds and pauses naturally if `update()` is not called.
-- Event names and UI copy are suggestions; align them with your current game terminology.
-- Test event frequency and accessibility on mobile before shipping.
+All prices are example tuning values, not claims about current market prices. Connect payment results to the existing wallet/save system to avoid maintaining two competing balances.
+
+For a shared vehicle, use `type: 'shared_shift'` and `setSharedShifts()` to assign driver IDs and time ranges.
+
+## 5. Integration safeguards
+
+- Keep the existing Three.js renderer, physics, traffic system, model manager, and animation loop authoritative.
+- Use the market director as a demand modifier and event source; don't spawn duplicate traffic.
+- The society module supplies data/decision hints; existing AI must apply them to actual models.
+- The ownership module keeps its own contract records. Before production, connect it to the canonical player save/profile store and add schema migration/versioning.
+- Add UI, localisation, save migration, and balancing after wiring callbacks.
+- Verify that the game's local-day numbering matches this module's day convention before relying on market-day schedules.

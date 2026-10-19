@@ -1,14 +1,13 @@
-# Kano Life — Systemic Events Upgrade
+# Kano Life — Market Society Upgrade
 
-A lightweight event scheduler for dynamic transport-life gameplay: passenger demand, fuel reminders, KAROTA checkpoint warnings, road hazards, market congestion, fare negotiation, and rest opportunities.
+Three modular systems for the next simulation milestone:
 
-## Contents
-- `js/KanoSystemicEventDirector.js` — complete ES module
-- `INTEGRATION.md` — integration steps and example wiring
-- `tests/smoke-test.mjs` — deterministic smoke test
+1. `KanoMarketDayDirector.js` — market-day schedule, time-of-day demand, congestion and demand pulses.
+2. `KanoDriverSociety.js` — persistent NPC identities, personality-weighted driving/social decision hints, reputation, fatigue and outcomes.
+3. `KanoVehicleOwnership.js` — owner-driver, hire-purchase, remittance, shared-shift records, payments and transfer-on-final-payment.
 
-## Important
-This is an additive module, not a modification of the live Kano Run site. It does not create visual objects by itself. Connect callbacks to the existing game UI, model/traffic systems, sound director, and driver state. Avoid creating duplicate physics, traffic, or animation loops.
+## Validation
 
-## Run the smoke test
-From this package directory, run `node tests/smoke-test.mjs` in an environment with Node.js installed. No third-party dependency is required.
+JavaScript syntax checks are required after changes. The modules are designed to be testable in isolation, but they have not been connected to or tested against the production game. No live site changes are made by this package.
+
+See `INTEGRATION.md` for the connection points and safeguards.
