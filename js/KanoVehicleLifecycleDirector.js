@@ -1,24 +1,39 @@
 // ============================================================
 // KANO LIFE — VEHICLE LIFECYCLE DIRECTOR
 //
-// Maintenance, vehicle wear, breakdowns, roadside repairs,
-// workshop service, health synchronisation and hire-purchase.
+// Complete vehicle maintenance and ownership simulation.
 //
-// This module does not render or move vehicles and does not
-// own the player's wallet.
+// Includes:
+// - Vehicle creation and persistent state
+// - Component health synchronisation
+// - Driving wear and overheating
+// - Pothole and collision damage
+// - Repair quotes and repair processing
+// - Breakdown recovery
+// - Routine maintenance
+// - Hire-purchase contracts
+// - Payment history and overdue assessment
+// - Event handling and cleanup
 //
+// This module does not render or move vehicles.
+// It does not own the player's wallet.
 // ============================================================
 
 const clamp = (value, min, max) =>
   Math.min(max, Math.max(min, value));
 
-const number = (value, fallback = 0) =>
-  Number.isFinite(Number(value))
-    ? Number(value)
-    : fallback;
+const number = (value, fallback = 0) => {
+  const parsed = Number(value);
 
-const clone = (value) =>
-  JSON.parse(JSON.stringify(value));
+  return Number.isFinite(parsed)
+    ? parsed
+    : fallback;
+};
+
+const clone = (value) => {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+};
 
 const DEFAULT_PROFILES = {
   keke: {
@@ -58,7 +73,7 @@ const DEFAULT_PROFILES = {
     tyreWear: 1.3,
     suspensionWear: 1.15,
     serviceCost: 2.5,
-    fuelStress: 2.0,
+    fuelStress: 2,
   },
 };
 
@@ -114,27 +129,57 @@ const DEFAULT_CONFIG = {
   },
 };
 
+const cloneProfiles = () =>
+  Object.fromEntries(
+    Object.entries(DEFAULT_PROFILES).map(
+      ([key, profile]) => [
+        key,
+        { ...profile },
+      ],
+    ),
+  );
+
+const cloneDefaultParts = () =>
+  Object.fromEntries(
+    Object.entries(DEFAULT_PARTS).map(
+      ([key, part]) => [
+        key,
+        { ...part },
+      ],
+    ),
+  );
+
+// ============================================================
+// DIRECTOR
+// ============================================================
+
 export class KanoVehicleLifecycleDirector {
   constructor(options = {}) {
     this.config = {
-      ...clone(DEFAULT_CONFIG),
+      ...DEFAULT_CONFIG,
       ...options,
+
+      baseRepairPrices: {
+        ...DEFAULT_CONFIG.baseRepairPrices,
+        ...(options.baseRepairPrices || {}),
+      },
+
+      hirePurchase: {
+        ...DEFAULT_CONFIG.hirePurchase,
+        ...(options.hirePurchase || {}),
+      },
     };
 
-    this.config.baseRepairPrices = {
-      ...DEFAULT_CONFIG.baseRepairPrices,
-      ...(options.baseRepairPrices || {}),
-    };
+    this.profiles = cloneProfiles();
 
-    this.config.hirePurchase = {
-      ...DEFAULT_CONFIG.hirePurchase,
-      ...(options.hirePurchase || {}),
-    };
-
-    this.profiles = {
-      ...clone(DEFAULT_PROFILES),
-      ...(options.profiles || {}),
-    };
+    for (const [type, profile] of Object.entries(
+      options.profiles || {},
+    )) {
+      this.profiles[type] = {
+        ...(this.profiles[type] || {}),
+        ...profile,
+      };
+    }
 
     this.callbacks = options.callbacks || {};
 
@@ -146,7 +191,9 @@ export class KanoVehicleLifecycleDirector {
     this.vehicles = new Map();
     this.contracts = new Map();
     this.events = [];
+
     this._nextId = 1;
+    this._destroyed = false;
 
     if (options.state) {
       this.importState(options.state);
@@ -156,26 +203,53 @@ export class KanoVehicleLifecycleDirector {
   }
 
   // ==========================================================
+  // INTERNAL GUARDS
+  // ==========================================================
+
+  _assertActive() {
+    if (this._destroyed) {
+      throw new Error(
+        'KanoVehicleLifecycleDirector has been disposed.',
+      );
+    }
+  }
+
+  _timestamp() {
+    return number(this.now(), Date.now());
+  }
+
+  _profile(type) {
+    return this.profiles[type] ||
+      this.profiles.keke ||
+      DEFAULT_PROFILES.keke;
+  }
+
+  // ==========================================================
   // EVENTS
   // ==========================================================
 
-  on(type, payload) {
+  on(type, payload = {}) {
+    if (this._destroyed) return null;
+
     const event = {
       type,
-      at: this.now(),
-      ...clone(payload || {}),
+      at: this._timestamp(),
+      ...clone(payload),
     };
 
     this.events.push(event);
 
     if (this.events.length > 250) {
-      this.events.shift();
+      this.events.splice(
+        0,
+        this.events.length - 250,
+      );
     }
 
     try {
       this.callbacks.onEvent?.(clone(event));
     } catch (_) {
-      // Event callbacks must not interrupt gameplay.
+      // Event consumers must not interrupt gameplay.
     }
 
     const callbackName =
@@ -184,7 +258,7 @@ export class KanoVehicleLifecycleDirector {
     try {
       this.callbacks[callbackName]?.(clone(event));
     } catch (_) {
-      // Isolate callback errors.
+      // Isolate individual callbacks.
     }
 
     return event;
@@ -196,6 +270,7 @@ export class KanoVehicleLifecycleDirector {
 
   save() {
     if (
+      this._destroyed ||
       !this.config.autoSave ||
       typeof localStorage === 'undefined'
     ) {
@@ -219,6 +294,8 @@ export class KanoVehicleLifecycleDirector {
   }
 
   load() {
+    this._assertActive();
+
     if (typeof localStorage === 'undefined') {
       return false;
     }
@@ -228,9 +305,7 @@ export class KanoVehicleLifecycleDirector {
         this.config.storageKey,
       );
 
-      if (!raw) {
-        return false;
-      }
+      if (!raw) return false;
 
       this.importState(JSON.parse(raw));
 
@@ -245,9 +320,11 @@ export class KanoVehicleLifecycleDirector {
   }
 
   exportState() {
+    this._assertActive();
+
     return {
-      version: 1,
-      exportedAt: this.now(),
+      version: 2,
+      exportedAt: this._timestamp(),
       nextId: this._nextId,
 
       vehicles: [
@@ -269,6 +346,8 @@ export class KanoVehicleLifecycleDirector {
   }
 
   importState(state) {
+    this._assertActive();
+
     if (
       !state ||
       !Array.isArray(state.vehicles) ||
@@ -279,19 +358,47 @@ export class KanoVehicleLifecycleDirector {
       );
     }
 
-    this.vehicles = new Map(
-      state.vehicles.map(([key, vehicle]) => [
+    const vehicles = new Map();
+    const contracts = new Map();
+
+    for (const entry of state.vehicles) {
+      if (
+        !Array.isArray(entry) ||
+        entry.length !== 2 ||
+        !entry[1] ||
+        typeof entry[1] !== 'object'
+      ) {
+        continue;
+      }
+
+      const [key, vehicle] = entry;
+
+      vehicles.set(
         String(key),
         clone(vehicle),
-      ]),
-    );
+      );
+    }
 
-    this.contracts = new Map(
-      state.contracts.map(([key, contract]) => [
+    for (const entry of state.contracts) {
+      if (
+        !Array.isArray(entry) ||
+        entry.length !== 2 ||
+        !entry[1] ||
+        typeof entry[1] !== 'object'
+      ) {
+        continue;
+      }
+
+      const [key, contract] = entry;
+
+      contracts.set(
         String(key),
         clone(contract),
-      ]),
-    );
+      );
+    }
+
+    this.vehicles = vehicles;
+    this.contracts = contracts;
 
     this.events = Array.isArray(state.events)
       ? clone(state.events.slice(-250))
@@ -299,14 +406,14 @@ export class KanoVehicleLifecycleDirector {
 
     this._nextId = Math.max(
       1,
-      number(state.nextId, 1),
+      Math.floor(number(state.nextId, 1)),
     );
 
     return true;
   }
 
   // ==========================================================
-  // VEHICLE CREATION AND RETRIEVAL
+  // VEHICLE CREATION
   // ==========================================================
 
   createVehicle({
@@ -318,6 +425,8 @@ export class KanoVehicleLifecycleDirector {
     temperature = this.config.normalTemperature,
     condition = 'used',
   } = {}) {
+    this._assertActive();
+
     const vehicleId = String(
       id || `kano-vehicle-${this._nextId++}`,
     );
@@ -328,10 +437,11 @@ export class KanoVehicleLifecycleDirector {
       );
     }
 
+    const partDefaults = cloneDefaultParts();
     const baseParts = {};
 
     for (const [part, defaults] of Object.entries(
-      DEFAULT_PARTS,
+      partDefaults,
     )) {
       const incoming = parts?.[part] || {};
 
@@ -342,12 +452,18 @@ export class KanoVehicleLifecycleDirector {
           100,
         ),
 
-        critical: number(
-          incoming.critical,
-          defaults.critical,
+        critical: clamp(
+          number(incoming.critical, defaults.critical),
+          0,
+          100,
         ),
       };
     }
+
+    const odometer = Math.max(
+      0,
+      number(odometerKm),
+    );
 
     const vehicle = {
       id: vehicleId,
@@ -357,12 +473,9 @@ export class KanoVehicleLifecycleDirector {
         : 'keke',
 
       name: String(name),
-      condition,
+      condition: String(condition),
 
-      odometerKm: Math.max(
-        0,
-        number(odometerKm),
-      ),
+      odometerKm: odometer,
 
       parts: baseParts,
 
@@ -375,19 +488,16 @@ export class KanoVehicleLifecycleDirector {
         180,
       ),
 
-      serviceOdometerKm: Math.max(
-        0,
-        number(odometerKm),
-      ),
-
+      serviceOdometerKm: odometer,
       serviceDue: false,
+
       breakdown: null,
       totalRepairCost: 0,
       tripsSinceService: 0,
       lastMaintenanceAt: null,
 
-      createdAt: this.now(),
-      updatedAt: this.now(),
+      createdAt: this._timestamp(),
+      updatedAt: this._timestamp(),
     };
 
     this.vehicles.set(vehicleId, vehicle);
@@ -395,7 +505,7 @@ export class KanoVehicleLifecycleDirector {
     this.on('vehicleCreated', {
       vehicleId,
       vehicleType: vehicle.type,
-      condition,
+      condition: vehicle.condition,
     });
 
     this.save();
@@ -404,6 +514,8 @@ export class KanoVehicleLifecycleDirector {
   }
 
   getVehicle(id) {
+    this._assertActive();
+
     const vehicle = this.vehicles.get(String(id));
 
     return vehicle
@@ -412,28 +524,30 @@ export class KanoVehicleLifecycleDirector {
   }
 
   listVehicles() {
+    this._assertActive();
+
     return [
       ...this.vehicles.values(),
-    ].map(clone);
+    ].map((vehicle) => clone(vehicle));
   }
 
   _vehicle(id) {
+    this._assertActive();
+
     const vehicle = this.vehicles.get(String(id));
 
     if (!vehicle) {
-      throw new Error(
-        `Unknown vehicle: ${id}`,
-      );
+      throw new Error(`Unknown vehicle: ${id}`);
     }
 
     return vehicle;
   }
 
   // ==========================================================
-  // GAMEPLAY HEALTH SYNCHRONISATION
+  // GAME HEALTH SYNCHRONISATION
   //
-  // Updates tracked part health from observed game health.
-  // Does not invent additional damage.
+  // Mirrors observed game health.
+  // Never creates extra damage during synchronisation.
   // ==========================================================
 
   syncPartHealth({
@@ -444,13 +558,10 @@ export class KanoVehicleLifecycleDirector {
     const changes = [];
 
     for (const [part, incoming] of Object.entries(parts)) {
-      if (!vehicle.parts[part]) {
-        continue;
-      }
+      if (!vehicle.parts[part]) continue;
 
       const rawHealth =
-        incoming &&
-        typeof incoming === 'object'
+        incoming && typeof incoming === 'object'
           ? incoming.health
           : incoming;
 
@@ -461,17 +572,14 @@ export class KanoVehicleLifecycleDirector {
         continue;
       }
 
+      const previousHealth =
+        vehicle.parts[part].health;
+
       const health = clamp(
-        number(
-          rawHealth,
-          vehicle.parts[part].health,
-        ),
+        number(rawHealth, previousHealth),
         0,
         100,
       );
-
-      const previousHealth =
-        vehicle.parts[part].health;
 
       if (
         Math.abs(previousHealth - health) < 0.001
@@ -492,7 +600,7 @@ export class KanoVehicleLifecycleDirector {
     }
 
     if (changes.length > 0) {
-      vehicle.updatedAt = this.now();
+      vehicle.updatedAt = this._timestamp();
 
       this._checkCritical(vehicle);
 
@@ -511,7 +619,7 @@ export class KanoVehicleLifecycleDirector {
   }
 
   // ==========================================================
-  // DRIVING WEAR AND ENGINE TEMPERATURE
+  // DRIVING WEAR AND TEMPERATURE
   // ==========================================================
 
   recordDriving({
@@ -526,10 +634,7 @@ export class KanoVehicleLifecycleDirector {
     ambientC = 30,
   } = {}) {
     const vehicle = this._vehicle(vehicleId);
-
-    const profile =
-      this.profiles[vehicle.type] ||
-      DEFAULT_PROFILES.keke;
+    const profile = this._profile(vehicle.type);
 
     const distance = Math.max(
       0,
@@ -614,12 +719,8 @@ export class KanoVehicleLifecycleDirector {
 
     const overheatingRisk =
       (speed > 45 ? 0.7 : 0.25) +
-      (vehicle.parts.cooling.health < 50
-        ? 0.9
-        : 0) +
-      (vehicle.parts.engine.health < 35
-        ? 0.65
-        : 0);
+      (vehicle.parts.cooling.health < 50 ? 0.9 : 0) +
+      (vehicle.parts.engine.health < 35 ? 0.65 : 0);
 
     const engineLoad = clamp(
       overheatingRisk,
@@ -627,13 +728,12 @@ export class KanoVehicleLifecycleDirector {
       2,
     );
 
-    vehicle.temperature +=
-      (
-        this.config.temperatureRisePerSecond *
-          engineLoad -
-        this.config.coolingPerSecond *
-          (vehicle.parts.cooling.health / 100)
-      ) * dt;
+    vehicle.temperature += (
+      this.config.temperatureRisePerSecond *
+        engineLoad -
+      this.config.coolingPerSecond *
+        (vehicle.parts.cooling.health / 100)
+    ) * dt;
 
     vehicle.temperature +=
       (number(ambientC, 30) - 30) *
@@ -663,23 +763,23 @@ export class KanoVehicleLifecycleDirector {
             1,
           ),
 
-          at: this.now(),
+          at: this._timestamp(),
           resolved: false,
         };
-      }
 
-      this.on('overheating', {
-        vehicleId: vehicle.id,
-        temperature: Math.round(
-          vehicle.temperature,
-        ),
-        severity: vehicle.breakdown.severity,
-      });
+        this.on('overheating', {
+          vehicleId: vehicle.id,
+          temperature: Math.round(
+            vehicle.temperature,
+          ),
+          severity: vehicle.breakdown.severity,
+        });
+      }
     }
 
     this._checkCritical(vehicle);
 
-    vehicle.updatedAt = this.now();
+    vehicle.updatedAt = this._timestamp();
 
     this.save();
 
@@ -696,13 +796,11 @@ export class KanoVehicleLifecycleDirector {
   }
 
   _wear(vehicle, part, amount) {
-    if (!vehicle.parts[part]) {
-      return;
-    }
+    if (!vehicle.parts[part]) return;
 
     vehicle.parts[part].health = clamp(
       vehicle.parts[part].health -
-        Math.max(0, amount),
+        Math.max(0, number(amount)),
       0,
       100,
     );
@@ -728,14 +826,13 @@ export class KanoVehicleLifecycleDirector {
           1,
         ),
 
-        at: this.now(),
+        at: this._timestamp(),
         resolved: false,
       };
 
       this.on('breakdown', {
         vehicleId: vehicle.id,
-        breakdownType:
-          vehicle.breakdown.type,
+        breakdownType: vehicle.breakdown.type,
         part: partName,
         health: part.health,
       });
@@ -743,7 +840,7 @@ export class KanoVehicleLifecycleDirector {
   }
 
   // ==========================================================
-  // POTHOLES AND COLLISIONS
+  // IMPACT DAMAGE
   // ==========================================================
 
   recordImpact({
@@ -774,19 +871,11 @@ export class KanoVehicleLifecycleDirector {
     this._wear(vehicle, target, loss);
 
     if (collision) {
-      this._wear(
-        vehicle,
-        'body',
-        loss * 0.7,
-      );
+      this._wear(vehicle, 'body', loss * 0.7);
     }
 
     if (pothole) {
-      this._wear(
-        vehicle,
-        'tyres',
-        loss * 0.35,
-      );
+      this._wear(vehicle, 'tyres', loss * 0.35);
     }
 
     this.on('impact', {
@@ -800,7 +889,7 @@ export class KanoVehicleLifecycleDirector {
 
     this._checkCritical(vehicle);
 
-    vehicle.updatedAt = this.now();
+    vehicle.updatedAt = this._timestamp();
 
     this.save();
 
@@ -822,51 +911,58 @@ export class KanoVehicleLifecycleDirector {
     const vehicle = this._vehicle(vehicleId);
 
     const efficiency = workshop
-      ? this.config.workshopRepairEfficiency
-      : this.config.roadsideRepairEfficiency;
+      ? clamp(
+          number(this.config.workshopRepairEfficiency, 1),
+          0.1,
+          1,
+        )
+      : clamp(
+          number(this.config.roadsideRepairEfficiency, 0.42),
+          0.1,
+          1,
+        );
 
-    const profile =
-      this.profiles[vehicle.type] ||
-      DEFAULT_PROFILES.keke;
+    const profile = this._profile(vehicle.type);
+    const requestedParts = Array.isArray(parts)
+      ? [...new Set(parts)]
+      : Object.keys(DEFAULT_PARTS);
 
     const items = [];
     let total = 0;
 
-    for (const part of [...new Set(parts)]) {
-      if (!vehicle.parts[part]) {
-        continue;
-      }
+    for (const part of requestedParts) {
+      if (!vehicle.parts[part]) continue;
 
       const missing =
         100 - vehicle.parts[part].health;
 
-      if (missing <= 0) {
-        continue;
-      }
+      if (missing <= 0) continue;
 
       const base = number(
         this.config.baseRepairPrices[part],
         5000,
-      ) * profile.serviceCost;
+      ) * number(profile.serviceCost, 1);
 
       const cost = Math.ceil(
         base *
           missing /
           100 /
-          Math.max(0.1, efficiency),
+          efficiency,
+      );
+
+      const healthRestored = Math.min(
+        missing,
+        missing * efficiency,
       );
 
       items.push({
         part,
-
         health: Math.round(
           vehicle.parts[part].health,
         ),
-
         healthRestored: Math.round(
-          missing * efficiency,
+          healthRestored,
         ),
-
         cost,
       });
 
@@ -879,19 +975,28 @@ export class KanoVehicleLifecycleDirector {
     ) {
       items.push({
         part: 'routine_service',
-        cost: this.config.serviceBaseCost,
+        cost: Math.max(
+          0,
+          number(this.config.serviceBaseCost, 3500),
+        ),
       });
 
-      total += this.config.serviceBaseCost;
+      total += Math.max(
+        0,
+        number(this.config.serviceBaseCost, 3500),
+      );
     }
 
     if (!workshop && items.length > 0) {
-      total += this.config.roadsideCalloutCost;
+      total += Math.max(
+        0,
+        number(this.config.roadsideCalloutCost, 2500),
+      );
     }
 
     return {
       vehicleId: vehicle.id,
-      workshop,
+      workshop: Boolean(workshop),
       items,
       total,
 
@@ -912,9 +1017,11 @@ export class KanoVehicleLifecycleDirector {
     includeService = false,
     paymentConfirmed = false,
   } = {}) {
+    this._assertActive();
+
     if (!paymentConfirmed) {
       throw new Error(
-        'Repair requires paymentConfirmed: true after the existing wallet confirms payment.',
+        'Repair requires paymentConfirmed: true after wallet confirmation.',
       );
     }
 
@@ -930,13 +1037,19 @@ export class KanoVehicleLifecycleDirector {
     );
 
     const efficiency = workshop
-      ? this.config.workshopRepairEfficiency
-      : this.config.roadsideRepairEfficiency;
+      ? clamp(
+          number(this.config.workshopRepairEfficiency, 1),
+          0.1,
+          1,
+        )
+      : clamp(
+          number(this.config.roadsideRepairEfficiency, 0.42),
+          0.1,
+          1,
+        );
 
     for (const item of quote.items) {
-      if (!vehicle.parts[item.part]) {
-        continue;
-      }
+      if (!vehicle.parts[item.part]) continue;
 
       vehicle.parts[item.part].health = clamp(
         vehicle.parts[item.part].health +
@@ -946,13 +1059,13 @@ export class KanoVehicleLifecycleDirector {
       );
     }
 
-    if (includeService) {
+    if (includeService && vehicle.serviceDue) {
       vehicle.serviceOdometerKm =
         vehicle.odometerKm;
 
       vehicle.serviceDue = false;
-
-      vehicle.lastMaintenanceAt = this.now();
+      vehicle.tripsSinceService = 0;
+      vehicle.lastMaintenanceAt = this._timestamp();
     }
 
     vehicle.totalRepairCost += quote.total;
@@ -966,25 +1079,39 @@ export class KanoVehicleLifecycleDirector {
     ].every((part) => {
       const component = vehicle.parts[part];
 
-      return component.health >
-        component.critical;
+      return component.health > component.critical;
     });
+
+    const overheatingResolved =
+      vehicle.breakdown?.type === 'overheating' &&
+      vehicle.temperature <
+        this.config.overheatingThreshold;
 
     if (
       vehicle.breakdown &&
-      criticalPartsHealthy
+      criticalPartsHealthy &&
+      overheatingResolved
     ) {
       vehicle.breakdown = null;
 
-      vehicle.temperature = Math.min(
-        vehicle.temperature,
-        this.config.normalTemperature + 5,
-      );
+      this.on('breakdownResolved', {
+        vehicleId: vehicle.id,
+        method: 'repair',
+      });
+    } else if (
+      vehicle.breakdown &&
+      criticalPartsHealthy &&
+      vehicle.breakdown.type !== 'overheating'
+    ) {
+      vehicle.breakdown = null;
 
       this.on('breakdownResolved', {
         vehicleId: vehicle.id,
+        method: 'repair',
       });
     }
+
+    vehicle.updatedAt = this._timestamp();
 
     this.on('vehicleRepaired', {
       vehicleId: vehicle.id,
@@ -996,11 +1123,11 @@ export class KanoVehicleLifecycleDirector {
       ),
     });
 
-    vehicle.updatedAt = this.now();
-
     this.save();
 
+    // Keep the existing result contract used by the bridge.
     return {
+      ok: true,
       quote,
       vehicle: this.getVehicle(vehicleId),
       efficiency,
@@ -1008,25 +1135,30 @@ export class KanoVehicleLifecycleDirector {
   }
 
   // ==========================================================
-  // ENGINE COOLING
+  // COOLING AND BREAKDOWN RECOVERY
   // ==========================================================
 
   coolDown(vehicleId, seconds = 10) {
     const vehicle = this._vehicle(vehicleId);
 
+    const duration = Math.max(
+      0,
+      number(seconds),
+    );
+
     vehicle.temperature = clamp(
       vehicle.temperature -
         this.config.coolingPerSecond *
-          Math.max(0, number(seconds)) *
+          duration *
           (vehicle.parts.cooling.health / 100),
       20,
       160,
     );
 
     if (
+      vehicle.breakdown?.type === 'overheating' &&
       vehicle.temperature <
         this.config.overheatingThreshold &&
-      vehicle.breakdown?.type === 'overheating' &&
       vehicle.parts.engine.health >
         vehicle.parts.engine.critical
     ) {
@@ -1038,12 +1170,31 @@ export class KanoVehicleLifecycleDirector {
       });
     }
 
-    vehicle.updatedAt = this.now();
+    vehicle.updatedAt = this._timestamp();
 
     this.save();
 
     return {
       temperature: vehicle.temperature,
+      vehicle: this.getVehicle(vehicleId),
+    };
+  }
+
+  // ==========================================================
+  // ROUTINE MAINTENANCE
+  // ==========================================================
+
+  recordTrip(vehicleId) {
+    const vehicle = this._vehicle(vehicleId);
+
+    vehicle.tripsSinceService += 1;
+    vehicle.updatedAt = this._timestamp();
+
+    this.save();
+
+    return {
+      tripsSinceService: vehicle.tripsSinceService,
+      serviceDue: vehicle.serviceDue,
       vehicle: this.getVehicle(vehicleId),
     };
   }
@@ -1061,8 +1212,10 @@ export class KanoVehicleLifecycleDirector {
     installment,
     intervalDays,
     defaultLimit,
-    startAt = this.now(),
+    startAt = this._timestamp(),
   } = {}) {
+    this._assertActive();
+
     const id = String(
       contractId || `hp-${this._nextId++}`,
     );
@@ -1070,6 +1223,12 @@ export class KanoVehicleLifecycleDirector {
     if (this.contracts.has(id)) {
       throw new Error(
         `Contract already exists: ${id}`,
+      );
+    }
+
+    if (!this.vehicles.has(String(vehicleId))) {
+      throw new Error(
+        `Unknown vehicle: ${vehicleId}`,
       );
     }
 
@@ -1092,11 +1251,20 @@ export class KanoVehicleLifecycleDirector {
 
     if (deposit < requiredDeposit) {
       throw new Error(
-        `Deposit insufficient: ${
-          requiredDeposit - deposit
-        } more required.`,
+        `Deposit insufficient: ${requiredDeposit - deposit} more required.`,
       );
     }
+
+    if (deposit > price) {
+      throw new Error(
+        'Deposit cannot exceed the total vehicle price.',
+      );
+    }
+
+    const interval = Math.max(
+      1,
+      number(intervalDays, terms.intervalDays),
+    );
 
     const contract = {
       id,
@@ -1116,10 +1284,7 @@ export class KanoVehicleLifecycleDirector {
         number(installment, terms.installment),
       ),
 
-      intervalDays: Math.max(
-        1,
-        number(intervalDays, terms.intervalDays),
-      ),
+      intervalDays: interval,
 
       defaultLimit: Math.max(
         1,
@@ -1130,20 +1295,15 @@ export class KanoVehicleLifecycleDirector {
       paymentsMade: 0,
 
       nextDueAt:
-        number(startAt) +
-        Math.max(
-          1,
-          number(intervalDays, terms.intervalDays),
-        ) *
-          86400000,
+        number(startAt, this._timestamp()) +
+        interval * 86400000,
 
-      status:
-        deposit >= price
-          ? 'owned'
-          : 'active',
+      status: deposit >= price
+        ? 'owned'
+        : 'active',
 
-      createdAt: number(startAt),
-      updatedAt: number(startAt),
+      createdAt: number(startAt, this._timestamp()),
+      updatedAt: number(startAt, this._timestamp()),
 
       paymentHistory: [],
     };
@@ -1153,8 +1313,7 @@ export class KanoVehicleLifecycleDirector {
     this.on('hirePurchaseCreated', {
       contractId: id,
       vehicleId: contract.vehicleId,
-      principalRemaining:
-        contract.principalRemaining,
+      principalRemaining: contract.principalRemaining,
       status: contract.status,
     });
 
@@ -1164,8 +1323,9 @@ export class KanoVehicleLifecycleDirector {
   }
 
   getContract(id) {
-    const contract =
-      this.contracts.get(String(id));
+    this._assertActive();
+
+    const contract = this.contracts.get(String(id));
 
     return contract
       ? clone(contract)
@@ -1173,25 +1333,30 @@ export class KanoVehicleLifecycleDirector {
   }
 
   listContracts() {
+    this._assertActive();
+
     return [
       ...this.contracts.values(),
-    ].map(clone);
+    ].map((contract) => clone(contract));
   }
 
   makeInstallment({
     contractId,
     amount,
     paymentConfirmed = false,
-    paidAt = this.now(),
+    paidAt = this._timestamp(),
   } = {}) {
+    this._assertActive();
+
     if (!paymentConfirmed) {
       throw new Error(
         'Installment requires paymentConfirmed: true after wallet confirmation.',
       );
     }
 
-    const contract =
-      this.contracts.get(String(contractId));
+    const contract = this.contracts.get(
+      String(contractId),
+    );
 
     if (!contract) {
       throw new Error(
@@ -1201,15 +1366,19 @@ export class KanoVehicleLifecycleDirector {
 
     if (contract.status === 'owned') {
       return {
+        ok: true,
         contract: clone(contract),
         amountApplied: 0,
         message: 'Vehicle is already fully paid.',
       };
     }
 
-    if (contract.status === 'repossessed') {
+    if (
+      contract.status === 'repossessed' ||
+      contract.status === 'cancelled'
+    ) {
       throw new Error(
-        'Contract is repossessed and cannot accept normal installments.',
+        `Contract cannot accept payments while ${contract.status}.`,
       );
     }
 
@@ -1234,10 +1403,10 @@ export class KanoVehicleLifecycleDirector {
     contract.missedPayments = 0;
 
     contract.nextDueAt =
-      number(paidAt) +
+      number(paidAt, this._timestamp()) +
       contract.intervalDays * 86400000;
 
-    contract.updatedAt = number(paidAt);
+    contract.updatedAt = number(paidAt, this._timestamp());
 
     contract.paymentHistory.push({
       amount: paid,
@@ -1261,62 +1430,63 @@ export class KanoVehicleLifecycleDirector {
     this.on('installmentPaid', {
       contractId: contract.id,
       amount: paid,
-      principalRemaining:
-        contract.principalRemaining,
+      principalRemaining: contract.principalRemaining,
       status: contract.status,
     });
 
     this.save();
 
     return {
+      ok: true,
       contract: clone(contract),
       amountApplied: paid,
     };
   }
 
   assessOverduePayments({
-    at = this.now(),
+    at = this._timestamp(),
   } = {}) {
+    this._assertActive();
+
+    const timestamp = number(at, this._timestamp());
     const changed = [];
 
     for (const contract of this.contracts.values()) {
       if (
         contract.status !== 'active' ||
-        number(at) <= contract.nextDueAt
+        timestamp <= contract.nextDueAt
       ) {
         continue;
       }
 
+      const periodMs =
+        contract.intervalDays * 86400000;
+
       const periodsLate = Math.max(
         1,
         Math.floor(
-          (
-            number(at) -
-            contract.nextDueAt
-          ) /
-            (
-              contract.intervalDays *
-              86400000
-            ),
+          (timestamp - contract.nextDueAt) /
+            periodMs,
         ) + 1,
       );
 
-      const add = Math.min(
-        periodsLate,
+      const remainingDefaults = Math.max(
+        0,
         contract.defaultLimit -
           contract.missedPayments,
       );
 
-      if (add > 0) {
-        contract.missedPayments += add;
-      }
+      const addedMisses = Math.min(
+        periodsLate,
+        remainingDefaults,
+      );
+
+      contract.missedPayments += addedMisses;
 
       contract.nextDueAt +=
-        periodsLate *
-        contract.intervalDays *
-        86400000;
+        periodsLate * periodMs;
 
-      contract.updatedAt = number(at);
+      contract.updatedAt = timestamp;
 
       if (
         contract.missedPayments >=
@@ -1329,8 +1499,7 @@ export class KanoVehicleLifecycleDirector {
 
       this.on('installmentOverdue', {
         contractId: contract.id,
-        missedPayments:
-          contract.missedPayments,
+        missedPayments: contract.missedPayments,
         status: contract.status,
       });
     }
@@ -1347,8 +1516,11 @@ export class KanoVehicleLifecycleDirector {
     action,
     paymentConfirmed = false,
   } = {}) {
-    const contract =
-      this.contracts.get(String(contractId));
+    this._assertActive();
+
+    const contract = this.contracts.get(
+      String(contractId),
+    );
 
     if (!contract) {
       throw new Error(
@@ -1357,11 +1529,7 @@ export class KanoVehicleLifecycleDirector {
     }
 
     if (
-      ![
-        'catch_up',
-        'repossess',
-        'grace',
-      ].includes(action)
+      !['catch_up', 'repossess', 'grace'].includes(action)
     ) {
       throw new Error(
         'Action must be catch_up, repossess, or grace.',
@@ -1393,7 +1561,7 @@ export class KanoVehicleLifecycleDirector {
       }
     }
 
-    contract.updatedAt = this.now();
+    contract.updatedAt = this._timestamp();
 
     this.on('defaultResolved', {
       contractId: contract.id,
@@ -1417,10 +1585,7 @@ export class KanoVehicleLifecycleDirector {
       vehicle.parts,
     ).map(([part, component]) => ({
       part,
-
-      health: Math.round(
-        component.health,
-      ),
+      health: Math.round(component.health),
 
       urgency:
         component.health <= component.critical
@@ -1440,8 +1605,7 @@ export class KanoVehicleLifecycleDirector {
         part: 'temperature',
         health: Math.round(vehicle.temperature),
         urgency: 'critical',
-        message:
-          'Stop safely and let the engine cool.',
+        message: 'Stop safely and let the engine cool.',
       });
     }
 
@@ -1449,22 +1613,32 @@ export class KanoVehicleLifecycleDirector {
       advice.push({
         part: 'routine_service',
         urgency: 'high',
-        message:
-          'Scheduled maintenance is overdue.',
+        message: 'Scheduled maintenance is overdue.',
       });
     }
 
     return {
       vehicleId: vehicle.id,
-
       odometerKm: Math.round(
         vehicle.odometerKm * 10,
       ) / 10,
-
       serviceDue: vehicle.serviceDue,
       breakdown: clone(vehicle.breakdown),
       advice,
     };
+  }
+
+  // ==========================================================
+  // CLEANUP
+  // ==========================================================
+
+  dispose() {
+    if (this._destroyed) return;
+
+    this._destroyed = true;
+
+    this.callbacks = {};
+    this.events = [];
   }
 }
 
