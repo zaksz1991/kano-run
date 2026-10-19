@@ -1,22 +1,10 @@
-# Kano Life — Driver Economy Upgrade
+# Kano Life — Driver Model Audit & Alignment Upgrade
 
-Standalone JavaScript simulation for a keke driver's working finances in Kano.
+An additive Three.js helper for auditing existing GLB models, anchoring the player driver to the keke, suggesting camera framing, and showing a compact WebGL status line.
 
-## Includes
-- Daily fare revenue and operating expenses
-- Fuel price changes, purchases, and consumption
-- Household, food, mobile data, and permit budget estimates
-- Savings deposits and withdrawals
-- Emergency costs and optional controlled borrowing
-- Debt repayment and hire-purchase instalments
-- Daily reports, alerts, ledger entries, and persistent state
-- Event callbacks for HUD and finance-screen integration
+## Files
+- `js/KanoDriverModelAudit.js` — complete module.
+- `INTEGRATION.md` — integration guide and test checklist.
 
-## File
-- `js/KanoDriverEconomyDirector.js` — complete ES module.
-
-## Compatibility
-Designed for modern browsers and Vite/ES modules. It uses browser `localStorage` when available and can be tested in Node by passing `{ autoLoad: false }`.
-
-## Status
-Standalone add-on. It is not connected to the production game wallet, UI, or deployed site. Read `INTEGRATION.md` before connecting it to avoid duplicate wallet deductions.
+## Scope
+This package does not include or modify the game's actual GLB assets and does not automatically change the live game. The developer must connect the module to the real loaded model roots and tune the seat anchor for the specific keke asset. It does not replace physics, camera smoothing, controls, or the existing render loop.

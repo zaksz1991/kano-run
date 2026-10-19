@@ -1,7 +1,6 @@
 {
-  "name": "kano-life-driver-economy-upgrade",
-  "version": "1.0.0",
+  "name": "kano-life-driver-model-audit-upgrade",
   "private": true,
   "type": "module",
-  "description": "Standalone driver economy simulation module for Kano Life"
+  "description": "Additive Three.js driver seating, model audit, and WebGL status helper"
 }

@@ -1,69 +1,95 @@
-# Integration Guide — Kano Driver Economy
+# Integration Guide — Driver Model Audit & Alignment
 
-## Purpose
-`js/KanoDriverEconomyDirector.js` is an additive economy module for Kano Life. It models daily earnings, operating costs, fuel, savings, emergencies, debt, and keke hire-purchase. It does **not** directly change your game's wallet or render UI.
+This is an **additive helper**, not a replacement for the game's model catalog, scene, controls, camera controller, or physics. Do not integrate it by creating a second player vehicle or a second render loop.
 
-## Important wallet rule
-Keep the existing game's wallet as the single source of truth. For a fare, repair, fuel purchase, or instalment:
-1. Ask the authoritative wallet/economy layer to validate and commit the transaction.
-2. Only after that succeeds, record the confirmed result in this module.
-3. Do not independently subtract the same amount from both this module and the game's wallet.
-
-Examples of the module API:
+## 1. Import the helper
 
 ```js
-import { KanoDriverEconomyDirector } from './KanoDriverEconomyDirector.js';
-const economy = new KanoDriverEconomyDirector({ startingCash: 2500 });
+import { KanoDriverModelAudit, renderKano3DStatus } from './KanoDriverModelAudit.js';
+```
 
-// Call only after the main wallet has confirmed a fare payment.
-economy.recordRevenue(850, 'passenger_fare', { route: 'Kano market run' });
+Use the correct relative path for your project structure.
 
-// Ask this module whether the cash ledger can cover fuel; coordinate the actual
-// wallet transaction in your integration layer before committing both systems.
-const fuelQuote = 5 * economy.getSnapshot().fuelPricePerLitre;
-if (economy.getSnapshot().cash >= fuelQuote) {
-  // Main wallet transaction must succeed first.
-  economy.buyFuel(5, economy.getSnapshot().fuelPricePerLitre);
-}
+## 2. Audit the real models after loading
 
-// Track actual fuel use from the driving simulation.
-economy.consumeFuel(0.8, 12);
+Call `audit()` on the existing loaded GLB scene roots:
 
-// Subscribe UI to changes.
-const unsubscribe = economy.on('change', snapshot => {
-  // Update HUD/finance screen with snapshot.cash, snapshot.savings, snapshot.debt.
+```js
+const modelAudit = new KanoDriverModelAudit({
+  onDiagnostic: (event) => {
+    // Route to your existing debug logger or UI if desired.
+    // Avoid logging every frame; these events are lifecycle events.
+  },
+});
+
+modelAudit.audit(existingKekeModel, 'vehicle', 'player-keke');
+modelAudit.audit(existingDriverModel, 'driver', 'player-driver');
+const report = modelAudit.getReport();
+```
+
+Do not pass a URL or loader result wrapper. Pass the actual `gltf.scene` (or the game's existing clone of it).
+
+## 3. Seat the driver relative to the keke
+
+The default anchor coordinates are examples only. Different GLB assets use different origins, scales, and orientations. Adjust them after inspecting the model in-game.
+
+```js
+const seat = modelAudit.createSeatAnchor(existingKekeModel, {
+  position: { x: 0, y: 0.82, z: -0.18 },
+  rotation: { x: 0, y: 0, z: 0 },
+});
+modelAudit.attachDriver(existingDriverModel, seat, {
+  x: 0, y: 0, z: 0,
+  scale: 1,
+  rotationY: 0,
 });
 ```
 
-The snippet is an API illustration, not a drop-in patch to your current game. Match the authoritative wallet transaction flow before wiring it into live gameplay.
+Important:
+- Ensure the driver is not also separately added to the scene or attached to a second parent.
+- Keep the vehicle physics root authoritative. Do not move the driver independently every frame; parenting makes it follow the vehicle.
+- Check the model's forward axis and seat pivot. GLB assets may face `+Z`, `-Z`, or another direction.
+- If the model uses a skeleton, keep its animation mixer updates in the existing animation loop.
+- Avoid sharing one mutable driver object between traffic vehicles. Clone the model for each independent actor.
 
-## Key methods
-- `recordRevenue(amount, source, details)` — record confirmed income.
-- `recordExpense(category, amount, details)` — records an expense only if the module's cash ledger can cover it.
-- `buyFuel(litres, pricePerLitre)` / `consumeFuel(litres, kilometres)` — track fuel purchases and usage.
-- `setFuelPrice(pricePerLitre, reason)` — update pump prices.
-- `estimateDailyBudget()` / `settleDailyExpenses(options)` — calculate or process household, food, data, permit, and instalment costs. Use `settleDailyExpenses` only if its payments have been coordinated with the primary wallet.
-- `startHirePurchase({ principal, deposit, dailyInstalment, totalDays })` — start a simulated hire-purchase agreement after confirming deposit affordability.
-- `payHirePurchaseInstalment()` / `makeExtraHirePurchasePayment(amount)` — process simulated instalments.
-- `depositSavings(amount)` / `withdrawSavings(amount)` / `repayDebt(amount)` — track personal finance.
-- `recordEmergency(name, cost, { canBorrow, debtLimit })` — handle financial emergencies.
-- `closeDay({ settleExpenses })` — archive daily totals and advance the day.
-- `getSnapshot()` / `exportState()` / `importState(data)` / `reset()` — reporting and persistence.
+## 4. Camera framing
 
-## Events
-Use `economy.on(eventName, callback)`; it returns an unsubscribe function. Events include `change`, `transaction`, `revenue`, `expense`, `fuel`, `fuel_price`, `budget`, `hire_purchase`, `payment_missed`, `ownership_complete`, `alert`, `day_closed`, `savings`, `debt`, `emergency`, `restore`, and `reset`.
+Use `getVehicleCameraTarget(vehicleRoot)` as a suggested target for the existing camera controller. Do not create another camera loop or overwrite camera smoothing already in the game.
 
-## Persistence
-Browser `localStorage` is used when available. Configure `storageKey` if separate save slots are needed. The module can also export/import JSON for a central save system.
+```js
+const framing = modelAudit.getVehicleCameraTarget(existingKekeModel, {
+  targetHeightOffset: 0.35,
+  distance: 5,
+});
+// Feed framing.target into the existing camera target/smoothing system.
+```
 
-## Integration checklist
-- [ ] Decide which existing wallet owns the canonical cash balance.
-- [ ] Connect confirmed fare income and operating expenses without double-charging.
-- [ ] Connect actual litres consumed from the vehicle/fuel system.
-- [ ] Show fuel price, cash, savings, debt, daily budget, and instalment status in the finance HUD.
-- [ ] Decide whether household costs are automatic or player-confirmed.
-- [ ] Add explicit UI confirmation before starting hire-purchase or paying instalments.
-- [ ] Connect repair invoices from `KanoWorkshopRecoveryDirector` through one payment service.
-- [ ] Test save/load and day rollover on desktop and mobile.
+Tune distance and target height for the actual camera angle and mobile viewport.
 
-This module is not yet integrated into or deployed to the production game.
+## 5. 3D/WebGL status badge
+
+Create or reuse an existing status element, then call this helper after rendering or at a low update frequency (e.g. 2–4 times per second):
+
+```js
+renderKano3DStatus(statusElement, renderer, scene, camera, {
+  assetStatus: 'ready',
+});
+```
+
+Do not call `renderer.render()` from this helper. It only reads status and writes text to the supplied element.
+
+## 6. Placeholder detection limitations
+
+The audit flags suspicious patterns such as unnamed meshes with one material, but it cannot reliably prove that a model is a placeholder. Some legitimate GLBs have unnamed meshes. Review `likelyPlaceholder` and issue lists rather than automatically deleting assets.
+
+## 7. Suggested test checklist
+
+- Player keke appears exactly once.
+- Driver appears seated inside the vehicle, not standing in front of it.
+- Driver follows vehicle movement and rotation.
+- Camera keeps the full keke visible on desktop and mobile.
+- Passenger boarding positions still match the vehicle's seating geometry.
+- GLB models have plausible bounds and scale.
+- No duplicate road, duplicate player, or extra render loop is introduced.
+- WebGL status badge remains readable on narrow screens.
+- Existing controls, physics, collisions, routes, and game HUD remain intact.
