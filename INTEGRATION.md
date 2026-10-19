@@ -1,70 +1,57 @@
-# Integration guide — Kano Cinematic Camera Director
+# Integration guide — Kano World Animation Director
 
-This is an additive camera polish module. It does not replace vehicle physics, collision detection, controls, or the existing renderer.
+This is an additive module for animating **existing** market and roadside assets. It does not create pedestrians, stalls, goats, or models, and is not wired into the live game automatically.
 
-## 1. Add the file
-
-Copy `js/KanoCinematicCameraDirector.js` into the game's `js` folder. It imports Three.js using the same bare import convention used by a Vite/Three.js project.
-
-## 2. Create the director
-
-In the existing 3D renderer/game initialization code, after the Three.js camera and the player's loaded Keke root are available:
+## 1. Import
 
 ```js
-import { KanoCinematicCameraDirector } from './KanoCinematicCameraDirector.js';
-
-const cameraDirector = new KanoCinematicCameraDirector(camera, {
-  mobile: window.matchMedia('(max-width: 760px)').matches,
-});
-cameraDirector.setTarget(playerKekeRoot);
+import { KanoWorldAnimationDirector } from './KanoWorldAnimationDirector.js';
 ```
 
-Use the real loaded Keke root variable; do not create a placeholder vehicle just for this module.
+Adjust the import path to the actual location of the module in your project.
 
-## 3. Update it once per frame
-
-Call this after the existing vehicle physics update and before `renderer.render(scene, camera)`:
+## 2. Create once after your Three.js scene exists
 
 ```js
-cameraDirector.update(deltaSeconds, {
-  speed: normalizedSpeed,       // 0..1 recommended
-  steering: normalizedSteering // -1..1
+const worldAnimator = new KanoWorldAnimationDirector({
+  scene,
+  isMobile: window.matchMedia('(max-width: 760px)').matches,
 });
 ```
 
-Map `normalizedSpeed` and `normalizedSteering` to the project's existing state. Do not feed raw speed in km/h without normalizing it.
+## 3. Register existing loaded objects
 
-## 4. Collision feedback (optional)
-
-When the existing collision system reports an impact, call:
+Call these after your own model loader has added the objects to the scene. Replace the example object names with references from your game.
 
 ```js
-cameraDirector.impact(0.3, 0.18);
+worldAnimator.register(pedestrianRoot, {
+  id: 'market-pedestrian-01', type: 'pedestrian', wander: true,
+  radius: 1.4, speed: 0.5,
+  bounds: { minX: -12, maxX: 12, minZ: -40, maxZ: 20 },
+});
+worldAnimator.register(goatRoot, { id: 'roadside-goat-01', type: 'goat', wander: true, radius: 2.2 });
+worldAnimator.register(flagRoot, { id: 'market-flag-01', type: 'flag', amplitude: 0.2, speed: 1.7 });
+worldAnimator.register(treeRoot, { id: 'roadside-tree-01', type: 'tree' });
+worldAnimator.register(signRoot, { id: 'stall-sign-01', type: 'sign' });
 ```
 
-Only call this from the existing collision event; do not add a second collision detector.
+Register a *root/group* for each actor, not each mesh inside one model. Do not register the player vehicle with this director; use the vehicle animator for that.
 
-## 5. Opening reveal (optional)
-
-After setting the target and before driving starts:
+## 4. Update in your existing animation loop
 
 ```js
-cameraDirector.playIntro(2.0);
+worldAnimator.update(deltaSeconds, {
+  playerPosition: playerKeke.position,
+  maxDistance: isMobile ? 55 : 95,
+});
 ```
 
-Avoid triggering the intro on every respawn or every frame.
-
-## 6. Cleanup
-
-When disposing the 3D scene:
-
-```js
-cameraDirector.dispose();
-```
+`deltaSeconds` must be seconds, not milliseconds. Reuse the same game-loop delta you already calculate. Do not create a second requestAnimationFrame loop.
 
 ## Notes
 
-- The director smooths camera position and uses speed-responsive look-ahead/FOV.
-- Motion is reduced when `prefers-reduced-motion` is enabled.
-- The camera director must be the sole owner of camera positioning while active. If the existing renderer also moves the camera every frame, integrate this call into that existing camera-follow section rather than running two competing camera controllers.
-- The module was syntax-checked, but has not been run against the production game's camera/model variables. Verify the follow offset and camera ownership in the actual game before deployment.
+- Desktop actor cap defaults to 60; mobile cap defaults to 24. Increase only after profiling on real devices.
+- Wandering is intentionally small and should be constrained to walkable sidewalk/market bounds. Do not set bounds across the active road unless road crossing is intentional.
+- The director does not dispose registered geometry or materials, because GLB assets may share cached resources.
+- Reduced-motion preference disables ambient motion. The module skips distant actors and pauses when the browser tab is hidden.
+- This module passed a JavaScript syntax check; it has not been connected to or tested against the production game.

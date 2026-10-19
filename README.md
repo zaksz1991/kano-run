@@ -1,9 +1,10 @@
-# Kano Life — Cinematic Camera Upgrade
+# Kano Life — World Animation Upgrade
 
-A small Three.js camera director intended to make driving animation feel more polished through smoother chase-camera motion, speed-aware look-ahead, subtle FOV response, optional intro reveal, and bounded impact shake.
+Adds a reusable Three.js `KanoWorldAnimationDirector` for subtle ambient motion on already-loaded pedestrian, goat, flag, sign, stall, tree, and dust objects.
 
-## Files
-- `js/KanoCinematicCameraDirector.js` — complete module
-- `INTEGRATION.md` — integration steps and ownership warnings
+## Included
+- `js/KanoWorldAnimationDirector.js` — complete ES module
+- `INTEGRATION.md` — integration examples and constraints
 
-This package is not a live-site deployment. It must be connected to the existing game loop and the actual player Keke root. Keep the existing physics and collision systems authoritative.
+## Important
+This is a standalone upgrade package, not a commit to the GitHub repository. It will not change the production site until the module is added to the project, imported, registered against actual loaded objects, and called from the existing game loop. The module does not create missing 3D models.
