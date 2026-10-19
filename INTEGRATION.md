@@ -1,57 +1,98 @@
-# Integration guide — Road Physics & Collision Response
+# Integration Guide — Vehicle Lifecycle
 
-## Important
-This is an additive simulation module. It does not replace the game's current physics engine, Three.js scene, collision detection, wallet, or vehicle controller. Use it to calculate handling and consequences, then apply its returned values through existing systems.
+This package is additive and is not connected to the live game. Integrate it in small steps.
 
-## 1. Import and create
-
-```js
-import { KanoRoadPhysicsDirector } from './js/KanoRoadPhysicsDirector.js';
-
-const roadPhysics = new KanoRoadPhysicsDirector({
-  emit: (eventName, payload) => {
-    // Route to your existing HUD, sound, haptics, or event bus.
-    console.debug('[RoadPhysics]', eventName, payload);
-  },
-});
-
-roadPhysics.registerVehicle('player-keke', 'keke');
-```
-
-Register AI vehicles too if you want vehicle-specific handling or collision records. Use stable IDs and unregister vehicles when they are removed from the scene.
-
-## 2. Evaluate grip and braking each physics tick
+## 1. Import and initialize
 
 ```js
-const handling = roadPhysics.evaluateRoad('player-keke', {
-  speed: playerSpeed,
-  dt,
-  road: { wetness: rainIntensity, dust: dustIntensity, surface: isPotholeRoad ? 'rough' : 'asphalt' },
-  controls: { brake: brakeInput, throttle: throttleInput, steering: steeringInput },
-});
+import { KanoVehicleLifecycleDirector } from './js/KanoVehicleLifecycleDirector.js';
 
-// Adapt these to your existing controller; don't create a second movement system.
-// Example: cap desired speed and use handling.brakingDeceleration in your brake model.
+const vehicleLifecycle = new KanoVehicleLifecycleDirector({
+  callbacks: {
+    onEvent(event) {
+      // Connect to existing HUD/audio/mission systems as needed.
+    },
+    onOverheating(event) {
+      // Show a warning; do not move the 3D vehicle here.
+    },
+    onBreakdown(event) {
+      // Tell the existing driving controller to safely restrict driving.
+    }
+  }
+});
 ```
 
-`recommendedSpeed`, `brakingDistance`, `grip`, and `slide` are guidance values. Your current controller should remain authoritative for actual velocity and position.
+## 2. Register the player's vehicle
 
-## 3. Pothole impacts and body animation
+Create one record when a vehicle is acquired or a new career begins:
 
-Call `hitPothole()` only when the current collision/road system confirms the player crossed a pothole. Apply `speedPenalty` through the current speed controller, animate body bounce using `shake`, and use `updateSuspension()` each tick to obtain `offset` and `bodyPitch` for the rendered vehicle body. Do not move the whole world or chassis twice.
+```js
+vehicleLifecycle.createVehicle({
+  id: 'player-keke',
+  type: 'keke',
+  name: 'Adaidaita Sahu',
+  odometerKm: 0
+});
+```
 
-## 4. Collision consequences
+Use a stable ID and avoid creating a duplicate record on every scene reload. If a record already exists, call `getVehicle(id)` first.
 
-When existing collision detection fires, call `resolveCollision()` with relative speed, angle, obstacle type, and approximate other mass. Apply returned `speedLoss` and damage to your existing systems. For pedestrian collisions, pause or stop the vehicle and trigger the game's appropriate safety response; `injuryRisk` is a gameplay signal, not a medical prediction.
+## 3. Update from the existing game loop
 
-## 5. Repairs and wallet
+Call `recordDriving()` with distance travelled during that frame or trip, not total odometer distance. Keep delta values bounded and do not update from multiple loops.
 
-`getRepairEstimate()` returns a configurable in-game estimate, not a real-world quote. Connect it to the game's single authoritative wallet. `repair(id, amount)` updates this module's vehicle condition only; deduct currency in your wallet layer and ensure the player can afford the payment before calling it.
+```js
+vehicleLifecycle.recordDriving({
+  vehicleId: 'player-keke',
+  distanceKm: frameDistanceKm,
+  speedKmh: currentSpeedKmh,
+  harshBraking: hardBrakeThisFrame,
+  sharpTurning: sharpTurnThisFrame,
+  roughRoad: onRoughRoad,
+  heavyLoad: passengerCount >= 3,
+  deltaSeconds: deltaSeconds,
+  ambientC: worldTemperatureC
+});
+```
 
-## 6. Persistence
+Call `recordImpact()` once per impact event, not every frame while two collision boxes overlap. Your current physics engine remains responsible for movement and collision detection.
 
-Use `getSnapshot()` and `restoreSnapshot()` with your existing save system. Avoid a second independent save slot if the game already owns vehicle state; merge only the fields your existing save schema does not already store.
+## 4. Repair flow and wallet safety
 
-## 7. Mobile performance
+Use `calculateRepair()` to show the quote. Have the existing authoritative wallet validate and deduct the amount. Only after that succeeds, call `repair({ ..., paymentConfirmed: true })`. This module deliberately does not deduct cash or create another wallet.
 
-The module is lightweight and has no rendering dependencies. Call it from the existing fixed-step physics loop, clamp `dt`, and avoid registering transient particles or visual effects as vehicles.
+```js
+const quote = vehicleLifecycle.calculateRepair('player-keke', {
+  parts: ['engine', 'tyres', 'brakes'],
+  workshop: true,
+  includeService: true
+});
+// Existing wallet confirms and deducts quote.total here.
+vehicleLifecycle.repair({
+  vehicleId: 'player-keke',
+  parts: ['engine', 'tyres', 'brakes'],
+  workshop: true,
+  includeService: true,
+  paymentConfirmed: true
+});
+```
+
+The caller should prevent duplicate deductions and repeated repair actions while a payment is pending.
+
+## 5. Hire-purchase
+
+`createHirePurchase()` checks the configured deposit amount against `depositPaid`. The caller must deduct the deposit through the authoritative wallet first. Each `makeInstallment()` call requires `paymentConfirmed: true` after the wallet confirms payment. Call `assessOverduePayments({ at: gameTime })` from the game's in-world calendar, not from every animation frame.
+
+The example defaults are fictional balancing values. Tune deposit, total price, installment amount, and intervals to your economy. The module tracks a contract; it does not implement legal contracts, banking, or actual payments.
+
+## 6. UI hooks
+
+Use `getMaintenanceAdvice(id)` for the vehicle-condition panel and `calculateRepair(id)` for a mechanic quote. Render temperature, wear, warnings, and workshop UI through your existing interface.
+
+## 7. Important integration notes
+
+- This module is not yet deployed or integrated into `kano-run.vercel.app`.
+- It does not create 3D smoke, dashboard gauges, breakdown animations, or mechanic shops; those require scene/UI integration.
+- It does not own the wallet. Never treat `paymentConfirmed: true` as payment processing; it is an explicit signal from your trusted game flow.
+- If `autoSave` is enabled, browser `localStorage` is used when available. For server-backed saves, disable auto-save and connect `exportState()`/`importState()` to your existing save system.
+- Hire-purchase is a local gameplay simulation; validate all state if the game becomes multiplayer or server-authoritative.

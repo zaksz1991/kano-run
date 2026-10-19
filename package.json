@@ -1,6 +1,7 @@
 {
-  "name": "kano-life-road-physics-upgrade",
-  "private": true,
+  "name": "kano-life-vehicle-lifecycle-upgrade",
+  "version": "1.0.0",
   "type": "module",
-  "description": "Standalone road physics and collision response module for Kano Life"
+  "private": true,
+  "scripts": { "check": "node --check js/KanoVehicleLifecycleDirector.js" }
 }

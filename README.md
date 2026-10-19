@@ -1,21 +1,14 @@
-# Kano Life — Road Physics & Collision Response Upgrade
+# Kano Life — Vehicle Lifecycle & Ownership Upgrade
 
-Standalone JavaScript module for adding road-handling calculations and vehicle damage consequences to Kano Life.
+A standalone ES module for persistent vehicle wear, maintenance warnings, overheating, breakdowns, repair quotes, workshop/roadside repairs, and hire-purchase progression.
 
-## Features
-- Vehicle-specific profiles for keke, motorcycles, cars, buses, and trucks.
-- Wet-road, dust, gravel, and rough-road grip modifiers.
-- Braking-deceleration and braking-distance estimates.
-- Steering slide/traction-loss signal.
-- Spring-damper suspension response.
-- Pothole impact and tyre-health consequences.
-- Collision damage, speed-loss, and repair estimates.
-- Vehicle condition snapshots and restore.
-- Event callbacks for UI, sound, haptics, and game systems.
+## Included
+- `js/KanoVehicleLifecycleDirector.js` — complete module.
+- `INTEGRATION.md` — integration guide and wallet-safety examples.
+- `package.json` — package metadata and syntax-check command.
 
-## Files
-- `js/KanoRoadPhysicsDirector.js` — complete module.
-- `INTEGRATION.md` — integration guide.
+## Safety of integration
+This module does not move 3D vehicles, detect collisions, or deduct currency. Connect it to the existing physics and wallet systems. Repair and installment methods require an explicit `paymentConfirmed: true` flag after the authoritative wallet has confirmed payment.
 
 ## Status
-Additive module; not wired into the production game. It does not detect collisions or render effects. Connect it to the existing game loop, collision system, model animation, and authoritative wallet.
+Standalone package. Not integrated into the live Kano Run game.
