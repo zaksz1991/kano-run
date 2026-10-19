@@ -14,6 +14,8 @@ import { LiveUserCounter } from './LiveUserCounter.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
 import { KanoTrafficDirector, KanoGLBAnimationManager } from './KanoAnimationTrafficUpgrade.js';
 import { KanoPerformanceMonitor } from './KanoPerformanceMonitor.js';
+import { KanoCinematicCamera } from './KanoCinematicCamera.js';
+import { KanoAdaptiveQuality } from './KanoAdaptiveQuality.js';
 import '../css/kano-responsive-upgrade.css';
 
 // ============================================================
@@ -62,6 +64,8 @@ let liveUserCounter = null;
 let animationManager = null;
 let trafficDirector = null;
 let performanceMonitor = null;
+let cinematicCamera = null;
+let adaptiveQuality = null;
 let controls = null;
 let game = null;
 let renderMode = '2D';
@@ -102,6 +106,21 @@ function setRenderMode(mode) {
 // ============================================================
 
 function disposeRenderer() {
+  // Restore the original WebGL render call before destroying the renderer.
+  try {
+    cinematicCamera?.dispose?.();
+  } catch (error) {
+    console.warn('[Kano Life] cinematic camera cleanup warning', error);
+  }
+  cinematicCamera = null;
+
+  try {
+    adaptiveQuality?.dispose?.();
+  } catch (error) {
+    console.warn('[Kano Life] adaptive quality cleanup warning', error);
+  }
+  adaptiveQuality = null;
+
   // Stop AnimationMixers and restore model-instance cloning before model actors are removed.
   try {
     animationManager?.dispose?.();
@@ -303,6 +322,33 @@ async function start3D() {
       // Renderer became stale during initialization.
     }
     return;
+  }
+
+  // Speed-dependent field of view, subtle chassis-follow camera bank, and
+  // collision vibration. Camera transforms are restored after each render.
+  try {
+    cinematicCamera = new KanoCinematicCamera({
+      renderer: webglRenderer,
+      game,
+      mobile,
+      enabled: !query.has('disableCameraFX'),
+    });
+  } catch (error) {
+    cinematicCamera = null;
+    console.warn('[Kano Life] cinematic camera effects unavailable', error);
+  }
+
+  // Automatically adjust WebGL drawing resolution when frame rate remains
+  // low on mobile or mid-range hardware. Game physics and CSS layout are unchanged.
+  try {
+    adaptiveQuality = new KanoAdaptiveQuality({
+      renderer: webglRenderer,
+      mobile,
+      enabled: !query.has('fixedQuality'),
+    });
+  } catch (error) {
+    adaptiveQuality = null;
+    console.warn('[Kano Life] adaptive render quality unavailable', error);
   }
 
   // Preserve embedded skeletal clips where GLB character assets provide them.
@@ -655,6 +701,14 @@ function frame(now) {
     // Traffic chooses its lane and speed before Game processes this frame's collisions.
     trafficDirector?.update?.(dt);
     game?.tick(dt);
+
+    // Apply visual-only camera polish and an optional adaptive WebGL resolution
+    // tier before the renderer submits this frame. Neither modifies game rules.
+    if (renderMode === '3D') {
+      cinematicCamera?.update?.(dt, game?.s || {});
+      adaptiveQuality?.update?.(now, renderMode, game?.state);
+    }
+
     // Keep stalls, ambient pedestrians, morning actions, passenger boarding and
     // passenger alighting on the same frame clock as the existing world.
     if (renderMode === '3D' && sceneUpgrade) {
