@@ -1,1 +1,7 @@
-{"name":"kano-life-systemic-events-upgrade","private":true,"type":"module","scripts":{"test":"node tests/smoke-test.mjs"}}
+{
+  "name": "kano-life-street-life-ai-upgrade",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Additive passenger and street-life simulation module for Kano Life"
+}

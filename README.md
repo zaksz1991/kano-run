@@ -1,13 +1,16 @@
-# Kano Life — Market Society Upgrade
+# Kano Life — Dynamic Passenger & Street-Life AI Upgrade
 
-Three modular systems for the next simulation milestone:
+A standalone ES module that adds personality-driven passengers, destination variety, fare negotiation, passenger waiting patience, trip-quality evaluation, complaints, word-of-mouth recommendations, and timed Kano street events.
 
-1. `KanoMarketDayDirector.js` — market-day schedule, time-of-day demand, congestion and demand pulses.
-2. `KanoDriverSociety.js` — persistent NPC identities, personality-weighted driving/social decision hints, reputation, fatigue and outcomes.
-3. `KanoVehicleOwnership.js` — owner-driver, hire-purchase, remittance, shared-shift records, payments and transfer-on-final-payment.
+## Included
+- `js/KanoStreetLifeDirector.js` — complete module
+- `INTEGRATION.md` — connection guide
 
-## Validation
+## Compatibility
+- Browser/Vite ES modules
+- No extra dependencies
+- Uses `localStorage` where available
+- Does not require Three.js; connect emitted events and modifiers to your existing 3D systems
 
-JavaScript syntax checks are required after changes. The modules are designed to be testable in isolation, but they have not been connected to or tested against the production game. No live site changes are made by this package.
-
-See `INTEGRATION.md` for the connection points and safeguards.
+## Status
+Syntax and isolated logic smoke tests should be run before integrating. This package has not been connected to the production site and does not itself change the live game.

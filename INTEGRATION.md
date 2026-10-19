@@ -1,74 +1,45 @@
-# Integration Guide — Market Day + Driver Society + Ownership
+# Integration guide — Dynamic Passenger & Street-Life AI
 
-These modules are additive ES modules. They are **not automatically connected** to the deployed Kano Life game.
+This is an **additive standalone module**. It is not wired into the live Kano Life deployment. Integrate it with the game's existing passenger spawner, trip events, UI and world/traffic systems.
 
-## 1. Import and initialize
+## 1. Create the director
 
 ```js
-import { KanoMarketDayDirector } from './js/KanoMarketDayDirector.js';
-import { KanoDriverSociety } from './js/KanoDriverSociety.js';
-import { KanoVehicleOwnership } from './js/KanoVehicleOwnership.js';
+import { KanoStreetLifeDirector } from './js/KanoStreetLifeDirector.js';
 
-const marketDirector = new KanoMarketDayDirector({
-  onEvent: event => {
-    // Connect passenger_demand_pulse to your EXISTING passenger spawn/pickup system.
-    // Do not create a second traffic or animation loop here.
-    gameEvents?.emit?.(event.type, event);
-  }
-});
-const driverSociety = new KanoDriverSociety();
-const ownership = new KanoVehicleOwnership({
-  onEvent: event => gameEvents?.emit?.(event.type, event)
+const streetLife = new KanoStreetLifeDirector({
+  onEvent: ({ type, detail }) => {
+    // Route these events to your existing HUD, animation and sound systems.
+    // Examples: passenger_spawned, passenger_boarded, trip_completed,
+    // street_event_started, complaint_filed, word_of_mouth.
+    console.debug('[Kano Life]', type, detail);
+  },
 });
 ```
 
-The optional `gameEvents` symbol above is a placeholder for your existing event bus; replace it with the actual API in your project.
+## 2. Connect the game loop
 
-## 2. Update once per existing frame
+Call `streetLife.tick(deltaSeconds, { dayPhase })` from the existing simulation loop. Do not create a second animation loop. Use `getWorldModifiers()` to adjust existing traffic, pedestrian, road-risk and demand systems; it does not spawn 3D models by itself.
 
-```js
-// In the existing animation/update loop, not a new requestAnimationFrame loop:
-marketDirector.update(deltaSeconds, {
-  day: gameState.day,
-  minuteOfDay: gameState.minuteOfDay
-});
-```
+## 3. Passenger pickup flow
 
-Use `marketDirector.snapshot()` to update your existing HUD. Use `getFareMultiplier()` only where the current fare calculation is made, and clamp the final fare using your existing rules.
+1. Call `createPassenger({ personality, destination })` when your existing world spawner creates a passenger. Avoid double-spawning by choosing one system as authoritative.
+2. Use `getQueue()` to populate a passenger list or pickup interaction.
+3. Call `getFareQuote(passenger.id, { baseFare, distanceFactor, rain, dayPhase })` to show fare guidance.
+4. Call `negotiateFare(passenger.id, offeredFare, context)`. Only proceed if `accepted` is true.
+5. Play the existing boarding animation, then call `boardPassenger(passenger.id)`.
+6. Send collision, hard-braking, delay and distance metrics to `updateTrip()`.
+7. On arrival, play the existing drop-off animation and call `completeTrip({ fairFare, polite, helpedPassenger })`.
 
-## 3. Driver NPCs
+## 4. Market, school, rain and celebration events
 
-```js
-const npc = driverSociety.createDriver({ id: 'npc-driver-001', trait: 'professional' });
-const decisions = driverSociety.behaviourFor(npc.id, { crowded: true, rushing: false });
-// Pass decisions to the existing traffic AI. These values do not move models by themselves.
-driverSociety.recordOutcome(npc.id, { trip: true, cashDelta: 1800, reputationDelta: 1, fatigueDelta: 5 });
-driverSociety.save();
-```
+`spawnStreetEvent({ type })` supports `market_surge`, `school_closing`, `rain_shower`, `roadside_trade`, `event_convoy`, and `quiet_period`. The returned modifiers are intended for existing world systems. Do not use them to overwrite your own traffic composition target (about 40% keke, 30% motorcycles, 30% cars); apply them as density/risk multipliers while preserving that ratio where feasible.
 
-Traits are behaviour inputs, not assumptions based on a character's appearance, education, or background.
+## 5. Important integration notes
 
-## 4. Ownership contracts
-
-```js
-const contract = ownership.createContract({
-  vehicleId: 'keke-001', driverId: npc.id, ownerId: 'owner-001',
-  type: 'hire_purchase', purchasePrice: 900000, deposit: 150000,
-  paymentAmount: 12000, period: 'weekly'
-});
-ownership.recordEarnings(contract.id, 18000, 5000);
-ownership.makePayment(contract.id, 12000, gameState.day);
-```
-
-All prices are example tuning values, not claims about current market prices. Connect payment results to the existing wallet/save system to avoid maintaining two competing balances.
-
-For a shared vehicle, use `type: 'shared_shift'` and `setSharedShifts()` to assign driver IDs and time ranges.
-
-## 5. Integration safeguards
-
-- Keep the existing Three.js renderer, physics, traffic system, model manager, and animation loop authoritative.
-- Use the market director as a demand modifier and event source; don't spawn duplicate traffic.
-- The society module supplies data/decision hints; existing AI must apply them to actual models.
-- The ownership module keeps its own contract records. Before production, connect it to the canonical player save/profile store and add schema migration/versioning.
-- Add UI, localisation, save migration, and balancing after wiring callbacks.
-- Verify that the game's local-day numbering matches this module's day convention before relying on market-day schedules.
+- This module uses `localStorage` when available and emits `storage_error` if saving fails.
+- It does not replace your career wallet, passenger relationship module, route logic, physics, rendering, or traffic manager.
+- Avoid duplicate persistence keys and select one authoritative source for cash and trip completion.
+- The passenger list and event outputs are plain data; your current Three.js scene must render/animate the characters and props.
+- If passenger relationships are already managed by `KanoPassengerRelationshipDirector`, connect its trust/loyalty results to this module rather than keeping conflicting duplicate relationship values.
+- Module syntax is ES module syntax; your Vite project should already support this.
