@@ -1,0 +1,9 @@
+/** Legal-source radio playlist manager. Supply licensed/local audio URLs; no tracks are bundled. */
+export class HausaRadioManager {
+ constructor({ audioFactory=()=>new Audio(), stations=[], onStation=()=>{}, onError=()=>{} }={}) { this.audioFactory=audioFactory;this.stations=stations;this.onStation=onStation;this.onError=onError;this.audio=null;this.index=-1;this.enabled=true; }
+ setStations(stations){this.stations=stations.filter(s=>s&&s.name&&Array.isArray(s.tracks));}
+ async tune(index){if(!this.enabled||!this.stations.length)return {ok:false,reason:'No radio stations configured'};this.index=(index+this.stations.length)%this.stations.length;const station=this.stations[this.index];const track=station.tracks.find(t=>typeof t==='string'||t?.url);if(!track)return {ok:false,reason:'Station has no valid tracks'};this.audio?.pause();this.audio=this.audioFactory();this.audio.src=typeof track==='string'?track:track.url;this.audio.loop=station.tracks.length===1;this.audio.onended=()=>this.nextTrack(station);this.audio.onerror=()=>this.onError(new Error(`Radio stream failed: ${station.name}`));try{await this.audio.play();this.onStation({station,track});return {ok:true,station};}catch(e){this.onError(e);return {ok:false,reason:e.message};}}
+ async nextTrack(station=this.stations[this.index]){if(!station?.tracks?.length)return;const pos=station.tracks.findIndex(t=>(typeof t==='string'?t:t.url)===this.audio?.src);const next=station.tracks[(pos+1)%station.tracks.length];this.audio.src=typeof next==='string'?next:next.url;try{await this.audio.play();}catch(e){this.onError(e);}}
+ async nextStation(){return this.tune(this.index+1)} setVolume(v){if(this.audio)this.audio.volume=Math.max(0,Math.min(1,Number(v)||0));} pause(){this.audio?.pause()} resume(){return this.audio?.play().catch(e=>{this.onError(e);return null})} stop(){this.audio?.pause();if(this.audio)this.audio.src='';this.audio=null;}
+}
+export default HausaRadioManager;

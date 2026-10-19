@@ -1,6 +1,1 @@
-{
-  "name": "kano-life-driver-model-audit-upgrade",
-  "private": true,
-  "type": "module",
-  "description": "Additive Three.js driver seating, model audit, and WebGL status helper"
-}
+{"name":"kano-life-commercial-systems-upgrade","version":"1.0.0","type":"module","private":true,"description":"Additive systems for Kano Life browser simulation"}
