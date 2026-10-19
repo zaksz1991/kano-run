@@ -5,15 +5,16 @@
 // Connects the active game, vehicle lifecycle, workshops,
 // roadside recovery, and the player's existing wallet.
 //
-// Responsibilities:
-// - Keep the existing game wallet as the source of funds.
-// - Require explicit confirmation before charging.
-// - Coordinate repair and recovery payments.
-// - Synchronise vehicle condition without treating estimated
-//   condition values as independently measured damage.
-// - Guard against duplicate payment operations.
-// - Report persistence failures instead of silently ignoring
-//   them.
+// Transaction safeguards:
+// - The existing game wallet remains the source of funds.
+// - Payment requires explicit player confirmation.
+// - Wallet persistence must succeed before an operation runs.
+// - Failed operations restore wallet and director snapshots
+//   where the directors support state import/export.
+// - Failed director persistence triggers compensation.
+// - Duplicate payment operations are guarded.
+// - Estimated game-condition readings do not overwrite
+//   granular lifecycle damage during routine synchronisation.
 // ============================================================
 
 import { save, persist } from './storage.js';
@@ -23,11 +24,8 @@ import KanoVehicleLifecycleDirector from './KanoVehicleLifecycleDirector.js';
 
 const VEHICLE_ID = 'player-keke';
 
-const RECOVERY_STORAGE_KEY =
-  'kano-life-workshop-recovery-v1';
-
-const LIFECYCLE_STORAGE_KEY =
-  'kano-life-player-vehicle-v1';
+const RECOVERY_STORAGE_KEY = 'kano-life-workshop-recovery-v1';
+const LIFECYCLE_STORAGE_KEY = 'kano-life-player-vehicle-v1';
 
 const COMPONENT_MAP = Object.freeze({
   tyre: 'tyre',
@@ -38,17 +36,6 @@ const COMPONENT_MAP = Object.freeze({
   suspension: 'suspension',
   electrical: 'electrical',
   body: 'body',
-});
-
-const COMPONENT_NAMES = Object.freeze({
-  tyre: 'Tyre / tube',
-  tyres: 'Tyre / tube',
-  engine: 'Engine',
-  cooling: 'Cooling system',
-  brakes: 'Brakes',
-  suspension: 'Suspension',
-  electrical: 'Electrical system',
-  body: 'Bodywork',
 });
 
 const clamp = (value, min, max) =>
@@ -68,10 +55,7 @@ const clone = (value) => {
 };
 
 const normaliseComponent = (component) => {
-  const key = String(component || '')
-    .trim()
-    .toLowerCase();
-
+  const key = String(component || '').trim().toLowerCase();
   return COMPONENT_MAP[key] || null;
 };
 
@@ -85,9 +69,7 @@ export class KanoWorkshopWalletBridge {
     this.game = game || null;
 
     this.onUpdate =
-      typeof onUpdate === 'function'
-        ? onUpdate
-        : () => {};
+      typeof onUpdate === 'function' ? onUpdate : () => {};
 
     this.destroyed = false;
     this.busyOperations = new Set();
@@ -156,9 +138,7 @@ export class KanoWorkshopWalletBridge {
   _beginOperation(key) {
     this._assertActive();
 
-    if (this.busyOperations.has(key)) {
-      return false;
-    }
+    if (this.busyOperations.has(key)) return false;
 
     this.busyOperations.add(key);
     return true;
@@ -166,6 +146,128 @@ export class KanoWorkshopWalletBridge {
 
   _endOperation(key) {
     this.busyOperations.delete(key);
+  }
+
+  // ----------------------------------------------------------
+  // Director snapshots and compensation
+  // ----------------------------------------------------------
+
+  _captureDirectorState(director) {
+    if (
+      !director ||
+      typeof director.exportState !== 'function'
+    ) {
+      return {
+        supported: false,
+        state: null,
+      };
+    }
+
+    try {
+      return {
+        supported: true,
+        state: clone(director.exportState()),
+      };
+    } catch (error) {
+      console.warn(
+        '[KanoWorkshopWalletBridge] Could not capture director state:',
+        error,
+      );
+
+      return {
+        supported: false,
+        state: null,
+      };
+    }
+  }
+
+  _restoreDirectorState(director, snapshot) {
+    if (
+      !director ||
+      !snapshot?.supported ||
+      typeof director.importState !== 'function'
+    ) {
+      return {
+        ok: false,
+        reason: 'director_snapshot_restore_unavailable',
+      };
+    }
+
+    try {
+      const restored = director.importState(
+        clone(snapshot.state),
+      );
+
+      if (restored?.ok === false) {
+        return {
+          ok: false,
+          reason: restored.reason || 'director_restore_rejected',
+        };
+      }
+
+      if (typeof director.save === 'function') {
+        const saved = director.save();
+
+        if (saved === false) {
+          return {
+            ok: false,
+            reason: 'director_rollback_persistence_failed',
+          };
+        }
+      }
+
+      return {
+        ok: true,
+      };
+    } catch (error) {
+      console.error(
+        '[KanoWorkshopWalletBridge] Director rollback failed:',
+        error,
+      );
+
+      return {
+        ok: false,
+        reason: String(error?.message || error),
+      };
+    }
+  }
+
+  async _rollbackTransaction({
+    director,
+    directorSnapshot,
+    walletMoneyBefore,
+  }) {
+    let directorRollback = {
+      ok: true,
+      skipped: true,
+    };
+
+    if (directorSnapshot?.supported) {
+      directorRollback = this._restoreDirectorState(
+        director,
+        directorSnapshot,
+      );
+    }
+
+    save.money = walletMoneyBefore;
+
+    let walletRollbackPersisted = false;
+
+    try {
+      walletRollbackPersisted = this._persistWallet();
+    } catch (error) {
+      console.error(
+        '[KanoWorkshopWalletBridge] Wallet rollback persistence failed:',
+        error,
+      );
+    }
+
+    return {
+      walletRollbackPersisted,
+      directorRollback,
+      rollbackComplete:
+        walletRollbackPersisted && directorRollback.ok,
+    };
   }
 
   // ----------------------------------------------------------
@@ -177,9 +279,7 @@ export class KanoWorkshopWalletBridge {
 
     const existing = this.lifecycle.getVehicle?.(VEHICLE_ID);
 
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
 
     if (typeof this.lifecycle.createVehicle === 'function') {
       return this.lifecycle.createVehicle({
@@ -212,8 +312,8 @@ export class KanoWorkshopWalletBridge {
     const condition = clamp(state.condition ?? 100, 0, 100);
     const heat = clamp(state.heat ?? 0, 0, 100);
 
-    // These are estimates based on aggregate game state.
-    // They are not independent damage measurements.
+    // These values are aggregate estimates, not independent
+    // measurements of every component.
     return {
       engine,
       tyre: tyres,
@@ -259,8 +359,6 @@ export class KanoWorkshopWalletBridge {
       },
     );
 
-    // Do not overwrite existing, more granular lifecycle damage
-    // with aggregate condition estimates during routine updates.
     if (hasRecordedPartDamage && !force) {
       this.lastSyncAt = Date.now();
 
@@ -271,10 +369,41 @@ export class KanoWorkshopWalletBridge {
       };
     }
 
+    const before = this._captureDirectorState(this.lifecycle);
+
     const result = this.lifecycle.syncPartHealth({
       vehicleId: VEHICLE_ID,
       parts: readings,
     });
+
+    if (!result?.ok) {
+      if (before.supported) {
+        this._restoreDirectorState(this.lifecycle, before);
+      }
+
+      return {
+        ok: false,
+        reason: result?.reason || 'lifecycle_sync_failed',
+        result,
+      };
+    }
+
+    if (result.persisted === false) {
+      const rollback = before.supported
+        ? this._restoreDirectorState(this.lifecycle, before)
+        : {
+            ok: false,
+            reason: 'director_snapshot_restore_unavailable',
+          };
+
+      this.lastError = 'Vehicle condition could not be saved.';
+
+      return {
+        ok: false,
+        reason: 'lifecycle_persistence_failed',
+        rollback,
+      };
+    }
 
     this.lastSyncAt = Date.now();
 
@@ -299,17 +428,28 @@ export class KanoWorkshopWalletBridge {
       : 0;
   }
 
-  async _persistWallet() {
+  _persistWallet() {
     if (typeof persist !== 'function') {
       throw new Error('Wallet persistence is unavailable.');
     }
 
-    await persist();
+    const result = persist();
+
+    if (result === false) {
+      throw new Error('Wallet could not be saved.');
+    }
 
     return true;
   }
 
-  async _chargeWallet(amount, operation) {
+  async _chargeWallet(
+    amount,
+    operation,
+    {
+      director = null,
+      directorSnapshot = null,
+    } = {},
+  ) {
     this._assertActive();
 
     const cost = money(amount);
@@ -337,20 +477,23 @@ export class KanoWorkshopWalletBridge {
     try {
       save.money = balanceBefore - cost;
 
-      await this._persistWallet();
+      // Do not execute a paid operation if the debit cannot
+      // be persisted.
+      this._persistWallet();
 
-      let operationResult;
-
-      try {
-        operationResult = await operation();
-      } catch (error) {
-        throw error;
-      }
+      const operationResult = await operation();
 
       if (!operationResult?.ok) {
         throw new Error(
           operationResult?.reason ||
             'The workshop operation was not accepted.',
+        );
+      }
+
+      if (operationResult.persisted === false) {
+        throw new Error(
+          operationResult.reason ||
+            'The workshop operation could not be saved.',
         );
       }
 
@@ -360,6 +503,7 @@ export class KanoWorkshopWalletBridge {
         balanceAfter: this.getBalance(),
         at: Date.now(),
         status: 'completed',
+        reference: operationResult.paymentReference || null,
       };
 
       this.lastError = null;
@@ -376,22 +520,11 @@ export class KanoWorkshopWalletBridge {
         transaction: { ...this.lastTransaction },
       };
     } catch (error) {
-      // Restore the in-memory wallet and try to persist the
-      // rollback. The caller must also reverse its own pending
-      // workshop state when the director has already changed it.
-      save.money = moneyBefore;
-
-      let rollbackPersisted = false;
-
-      try {
-        await this._persistWallet();
-        rollbackPersisted = true;
-      } catch (rollbackError) {
-        console.error(
-          '[KanoWorkshopWalletBridge] Wallet rollback persistence failed:',
-          rollbackError,
-        );
-      }
+      const rollback = await this._rollbackTransaction({
+        director,
+        directorSnapshot,
+        walletMoneyBefore: moneyBefore,
+      });
 
       this.lastTransaction = {
         amount: cost,
@@ -399,17 +532,27 @@ export class KanoWorkshopWalletBridge {
         balanceAfter: this.getBalance(),
         at: Date.now(),
         status: 'failed',
-        rollbackPersisted,
+        rollbackPersisted: rollback.walletRollbackPersisted,
+        rollbackComplete: rollback.rollbackComplete,
+        directorRollback: rollback.directorRollback,
       };
 
-      this._setError(error);
+      const failure = new Error(
+        String(error?.message || error),
+      );
+
+      failure.rollback = rollback;
+
+      this._setError(failure);
 
       return {
         ok: false,
         reason: 'transaction_failed',
-        message: String(error?.message || error),
+        message: failure.message,
         balance: this.getBalance(),
-        rollbackPersisted,
+        rollbackPersisted: rollback.walletRollbackPersisted,
+        rollbackComplete: rollback.rollbackComplete,
+        directorRollback: rollback.directorRollback,
       };
     }
   }
@@ -457,8 +600,7 @@ export class KanoWorkshopWalletBridge {
 
     const selectedWorkshop =
       workshopId ||
-      workshops
-        .sort((a, b) => b.quality - a.quality)[0]?.id;
+      [...workshops].sort((a, b) => b.quality - a.quality)[0]?.id;
 
     if (!selectedWorkshop) {
       return {
@@ -498,16 +640,20 @@ export class KanoWorkshopWalletBridge {
     }
 
     try {
-      this.syncLifecycleFromGame();
+      const sync = this.syncLifecycleFromGame();
 
-      const quote = this.lifecycle.calculateRepair(
-        VEHICLE_ID,
-        {
-          parts,
-          workshop,
-          includeService,
-        },
-      );
+      if (!sync.ok) {
+        return {
+          ok: false,
+          reason: sync.reason || 'lifecycle_sync_failed',
+        };
+      }
+
+      const quote = this.lifecycle.calculateRepair(VEHICLE_ID, {
+        parts,
+        workshop,
+        includeService,
+      });
 
       if (!quote || !Array.isArray(quote.items)) {
         return {
@@ -541,6 +687,9 @@ export class KanoWorkshopWalletBridge {
         };
       }
 
+      const lifecycleSnapshot =
+        this._captureDirectorState(this.lifecycle);
+
       const transaction = await this._chargeWallet(
         quote.total,
         async () => {
@@ -559,7 +708,18 @@ export class KanoWorkshopWalletBridge {
             };
           }
 
+          if (result.persisted === false) {
+            return {
+              ok: false,
+              reason: 'lifecycle_persistence_failed',
+            };
+          }
+
           return result;
+        },
+        {
+          director: this.lifecycle,
+          directorSnapshot: lifecycleSnapshot,
         },
       );
 
@@ -568,6 +728,7 @@ export class KanoWorkshopWalletBridge {
           ok: false,
           reason: transaction.reason,
           message: transaction.message,
+          rollbackComplete: transaction.rollbackComplete,
           quote,
           balance: this.getBalance(),
         };
@@ -626,12 +787,19 @@ export class KanoWorkshopWalletBridge {
     }
 
     try {
-      const amount = money(quote.totalCost);
-
       if (!paymentConfirmed) {
         return this.workshop.bookRepair(quote, {
           paymentConfirmed: false,
         });
+      }
+
+      const amount = money(quote.totalCost);
+
+      if (amount <= 0) {
+        return {
+          ok: false,
+          reason: 'invalid_amount',
+        };
       }
 
       const confirmed = this._confirmPayment({
@@ -648,30 +816,54 @@ export class KanoWorkshopWalletBridge {
         };
       }
 
+      const workshopSnapshot =
+        this._captureDirectorState(this.workshop);
+
       const reference = makePaymentReference('REPAIR');
 
-      return await this._chargeWallet(amount, async () => {
-        const booking = this.workshop.bookRepair(quote, {
-          paymentConfirmed: true,
-          paymentReference: reference,
-        });
+      const transaction = await this._chargeWallet(
+        amount,
+        async () => {
+          const booking = this.workshop.bookRepair(quote, {
+            paymentConfirmed: true,
+            paymentReference: reference,
+          });
 
-        if (!booking?.ok) {
+          if (!booking?.ok) {
+            return {
+              ok: false,
+              reason: booking?.reason || 'booking_failed',
+            };
+          }
+
+          if (booking.persisted === false) {
+            return {
+              ok: false,
+              reason: 'workshop_persistence_failed',
+            };
+          }
+
           return {
-            ok: false,
-            reason: booking?.reason || 'booking_failed',
+            ...booking,
+            paymentReference: reference,
           };
-        }
+        },
+        {
+          director: this.workshop,
+          directorSnapshot: workshopSnapshot,
+        },
+      );
 
-        if (booking.persisted === false) {
-          return {
-            ok: false,
-            reason: 'workshop_persistence_failed',
-          };
-        }
+      if (!transaction.ok) {
+        return transaction;
+      }
 
-        return booking;
+      this._emitUpdate({
+        type: 'workshop_repair_booked',
+        booking: transaction.result,
       });
+
+      return transaction;
     } catch (error) {
       this._setError(error);
 
@@ -696,25 +888,58 @@ export class KanoWorkshopWalletBridge {
   } = {}) {
     this._assertActive();
 
-    const result = this.workshop.requestRecovery({
-      vehicleId: VEHICLE_ID,
-      location,
-      severity,
-      distanceKm,
-      timeOfDay: new Date().getHours(),
-    });
+    const operationKey = 'recovery-request';
 
-    if (!result?.ok) {
-      this.lastError = result?.reason || 'recovery_request_failed';
-      return result;
+    if (!this._beginOperation(operationKey)) {
+      return {
+        ok: false,
+        reason: 'operation_in_progress',
+      };
     }
 
-    this._emitUpdate({
-      type: 'recovery_requested',
-      call: result.call,
-    });
+    try {
+      const snapshot = this._captureDirectorState(this.workshop);
 
-    return result;
+      const result = this.workshop.requestRecovery({
+        vehicleId: VEHICLE_ID,
+        location,
+        severity,
+        distanceKm,
+        timeOfDay: new Date().getHours(),
+      });
+
+      if (!result?.ok || result.persisted === false) {
+        if (snapshot.supported) {
+          this._restoreDirectorState(this.workshop, snapshot);
+        }
+
+        const failure = {
+          ok: false,
+          reason: result?.reason ||
+            'recovery_request_persistence_failed',
+        };
+
+        this.lastError = failure.reason;
+        return failure;
+      }
+
+      this._emitUpdate({
+        type: 'recovery_requested',
+        call: result.call,
+      });
+
+      return result;
+    } catch (error) {
+      this._setError(error);
+
+      return {
+        ok: false,
+        reason: 'recovery_request_error',
+        message: String(error?.message || error),
+      };
+    } finally {
+      this._endOperation(operationKey);
+    }
   }
 
   // ----------------------------------------------------------
@@ -769,6 +994,9 @@ export class KanoWorkshopWalletBridge {
         };
       }
 
+      const workshopSnapshot =
+        this._captureDirectorState(this.workshop);
+
       const reference = makePaymentReference('RECOVERY');
 
       const transaction = await this._chargeWallet(
@@ -787,22 +1015,20 @@ export class KanoWorkshopWalletBridge {
           }
 
           if (result.persisted === false) {
-            // Restore the pending state in memory. This is a
-            // best-effort rollback because browser storage and
-            // wallet persistence are not a single atomic system.
-            call.status = 'awaiting_confirmation';
-            delete call.paymentReference;
-            delete call.dispatchedAt;
-
-            this.workshop.save();
-
             return {
               ok: false,
               reason: 'recovery_persistence_failed',
             };
           }
 
-          return result;
+          return {
+            ...result,
+            paymentReference: reference,
+          };
+        },
+        {
+          director: this.workshop,
+          directorSnapshot: workshopSnapshot,
         },
       );
 
@@ -811,7 +1037,8 @@ export class KanoWorkshopWalletBridge {
           ok: false,
           reason: transaction.reason,
           message: transaction.message,
-          call: this.workshop.getRecoveryCall(call.id),
+          rollbackComplete: transaction.rollbackComplete,
+          call: this.workshop.getRecoveryCall?.(call.id) || null,
           balance: this.getBalance(),
         };
       }
@@ -873,6 +1100,7 @@ export class KanoWorkshopWalletBridge {
     };
 
     state.engine = readHealth('engine', state.engine ?? 100);
+
     state.tyres = readHealth(
       'tyre',
       readHealth('tyres', state.tyres ?? 100),
@@ -929,6 +1157,7 @@ export class KanoWorkshopWalletBridge {
         lastSyncAt: this.lastSyncAt,
         lastError: this.lastError,
         lastTransaction: clone(this.lastTransaction),
+        busy: [],
       };
     }
 
