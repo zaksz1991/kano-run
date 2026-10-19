@@ -1,7 +1,6 @@
 {
-  "name": "kano-life-world-environment-upgrade",
-  "version": "1.0.0",
+  "name": "kano-life-road-physics-upgrade",
   "private": true,
   "type": "module",
-  "description": "Additive world environment simulation module for Kano Life"
+  "description": "Standalone road physics and collision response module for Kano Life"
 }

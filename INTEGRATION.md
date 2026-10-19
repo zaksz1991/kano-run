@@ -1,99 +1,57 @@
-# Integration guide — World Environment Director
-
-This package is additive. It does not replace the existing Three.js scene, physics, traffic spawner, collision system, or UI. Connect it to those existing systems deliberately.
-
-## 1. Import and create the director
-
-```js
-import { KanoWorldEnvironmentDirector } from './js/KanoWorldEnvironmentDirector.js';
-
-const worldEnvironment = new KanoWorldEnvironmentDirector({
-  maxActors: 90,
-  eventChancePerMinute: 0.22,
-  persist: true,
-});
-```
-
-Use one shared instance for the current game session. If another module already owns day phase or weather, synchronize those values rather than creating competing clocks.
-
-## 2. Register route segments
-
-```js
-worldEnvironment.registerRoadSegment({
-  id: 'kantin-market-road',
-  type: 'market-road',
-  name: 'Kantin Kwari market road',
-  marketDensity: 0.9,
-  pedestrianDensity: 0.85,
-  potholeRisk: 0.35,
-  parkingObstruction: 0.45,
-  speedLimit: 30,
-});
-
-worldEnvironment.registerRoadSegment({
-  id: 'kwankwasiyya-flyover',
-  type: 'flyover',
-  flyover: true,
-  potholeRisk: 0.05,
-  speedLimit: 50,
-});
-```
-
-Segment IDs should match the route/world identifiers your game already uses. These are example IDs, not a claim that those exact segments exist in your current route data.
-
-## 3. Update it from the existing game loop
-
-```js
-const worldState = worldEnvironment.update(deltaSeconds);
-const segmentState = worldEnvironment.getWorldState(currentSegmentId);
-
-// Pass modifiers into existing systems; don't move Three.js meshes here.
-trafficDirector?.setEnvironmentModifiers?.(segmentState.modifiers);
-passengerDirector?.setDemandMultiplier?.(segmentState.modifiers.passengerDemand);
-```
-
-Adapt method names to your existing modules. The optional calls above are integration examples, not APIs guaranteed to exist in the current game.
-
-## 4. Render actors with existing models
-
-Spawn simulation records and let the existing model catalog / actor manager create their visuals:
-
-```js
-const actor = worldEnvironment.spawnActor('pedestrian', {
-  segmentId: currentSegmentId,
-  lane: 1,
-  distance: 22,
-  metadata: { activity: 'market-shopping' },
-});
-```
-
-Supported types: `pedestrian`, `goat`, `roadsideSeller`, `parkedVehicle`, `marketStall`, and `karotaOfficer`. Subscribe to `actorSpawned`, `actorDespawned`, and `actorBehaviourChanged` to keep visual objects in sync. Your scene system must still provide actual 3D models, animation, transforms, and cleanup.
-
-## 5. World events and hazards
-
-```js
-worldEnvironment.on('worldEventStarted', ({ event }) => {
-  // Display UI/audio and notify existing traffic/passenger systems.
-});
-
-worldEnvironment.on('hazardResolved', (result) => {
-  // Feed reputation/damage results into your authoritative career/wallet system.
-});
-
-worldEnvironment.startEvent('marketRush', { segmentId: currentSegmentId });
-const checkpointResult = worldEnvironment.assessCheckpoint({
-  speed: playerSpeed,
-  speedLimit: 40,
-  dangerousDriving: recentDangerousDriving,
-});
-```
-
-Avoid double-charging fines or duplicating reputation if another game system already owns those outcomes. The director reports results; connect them to one authoritative system.
+# Integration guide — Road Physics & Collision Response
 
 ## Important
+This is an additive simulation module. It does not replace the game's current physics engine, Three.js scene, collision detection, wallet, or vehicle controller. Use it to calculate handling and consequences, then apply its returned values through existing systems.
 
-- This module is not connected to the production game by this package alone.
-- Do not run a second physics simulation; use the current game's physics and collision results.
-- Call `update(deltaSeconds)` once per frame (it clamps individual updates to one second); do not call it from multiple render callbacks.
-- `localStorage` persistence is browser-only and gracefully disabled in non-browser tests.
-- Actor records do not create rendered meshes automatically.
+## 1. Import and create
+
+```js
+import { KanoRoadPhysicsDirector } from './js/KanoRoadPhysicsDirector.js';
+
+const roadPhysics = new KanoRoadPhysicsDirector({
+  emit: (eventName, payload) => {
+    // Route to your existing HUD, sound, haptics, or event bus.
+    console.debug('[RoadPhysics]', eventName, payload);
+  },
+});
+
+roadPhysics.registerVehicle('player-keke', 'keke');
+```
+
+Register AI vehicles too if you want vehicle-specific handling or collision records. Use stable IDs and unregister vehicles when they are removed from the scene.
+
+## 2. Evaluate grip and braking each physics tick
+
+```js
+const handling = roadPhysics.evaluateRoad('player-keke', {
+  speed: playerSpeed,
+  dt,
+  road: { wetness: rainIntensity, dust: dustIntensity, surface: isPotholeRoad ? 'rough' : 'asphalt' },
+  controls: { brake: brakeInput, throttle: throttleInput, steering: steeringInput },
+});
+
+// Adapt these to your existing controller; don't create a second movement system.
+// Example: cap desired speed and use handling.brakingDeceleration in your brake model.
+```
+
+`recommendedSpeed`, `brakingDistance`, `grip`, and `slide` are guidance values. Your current controller should remain authoritative for actual velocity and position.
+
+## 3. Pothole impacts and body animation
+
+Call `hitPothole()` only when the current collision/road system confirms the player crossed a pothole. Apply `speedPenalty` through the current speed controller, animate body bounce using `shake`, and use `updateSuspension()` each tick to obtain `offset` and `bodyPitch` for the rendered vehicle body. Do not move the whole world or chassis twice.
+
+## 4. Collision consequences
+
+When existing collision detection fires, call `resolveCollision()` with relative speed, angle, obstacle type, and approximate other mass. Apply returned `speedLoss` and damage to your existing systems. For pedestrian collisions, pause or stop the vehicle and trigger the game's appropriate safety response; `injuryRisk` is a gameplay signal, not a medical prediction.
+
+## 5. Repairs and wallet
+
+`getRepairEstimate()` returns a configurable in-game estimate, not a real-world quote. Connect it to the game's single authoritative wallet. `repair(id, amount)` updates this module's vehicle condition only; deduct currency in your wallet layer and ensure the player can afford the payment before calling it.
+
+## 6. Persistence
+
+Use `getSnapshot()` and `restoreSnapshot()` with your existing save system. Avoid a second independent save slot if the game already owns vehicle state; merge only the fields your existing save schema does not already store.
+
+## 7. Mobile performance
+
+The module is lightweight and has no rendering dependencies. Call it from the existing fixed-step physics loop, clamp `dt`, and avoid registering transient particles or visual effects as vehicles.

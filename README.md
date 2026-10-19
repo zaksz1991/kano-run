@@ -1,22 +1,21 @@
-# Kano Life — World Environment Upgrade
+# Kano Life — Road Physics & Collision Response Upgrade
 
-Standalone environment simulation module for a Kano-themed driving/life simulation built with Vite and Three.js.
+Standalone JavaScript module for adding road-handling calculations and vehicle damage consequences to Kano Life.
 
 ## Features
-- Shared world state for weather, day phase, traffic pressure, passenger demand, and road risk.
-- Road-segment metadata for market density, pedestrian density, potholes, parking obstructions, flyovers, and KAROTA checkpoints.
-- Environment actors for pedestrians, goats, roadside sellers, parked vehicles, market stalls, and KAROTA officers.
-- Timed events for market rush, school closing, rain bursts, wedding convoys, checkpoints, and quiet periods.
-- Hazard resolution outcomes and checkpoint assessment records.
-- Event callbacks and localStorage save/export/import support.
-- Actor caps to help avoid unbounded simulation growth on mobile devices.
+- Vehicle-specific profiles for keke, motorcycles, cars, buses, and trucks.
+- Wet-road, dust, gravel, and rough-road grip modifiers.
+- Braking-deceleration and braking-distance estimates.
+- Steering slide/traction-loss signal.
+- Spring-damper suspension response.
+- Pothole impact and tyre-health consequences.
+- Collision damage, speed-loss, and repair estimates.
+- Vehicle condition snapshots and restore.
+- Event callbacks for UI, sound, haptics, and game systems.
 
 ## Files
-- `js/KanoWorldEnvironmentDirector.js` — complete module.
-- `INTEGRATION.md` — setup and integration examples.
-
-## Validation
-Run `node --check` against the module in an environment configured for ES modules. Runtime smoke tests should cover event modifiers, actor lifecycle, checkpoint results, and save-state round trips.
+- `js/KanoRoadPhysicsDirector.js` — complete module.
+- `INTEGRATION.md` — integration guide.
 
 ## Status
-Additive module only. It has not been merged into or deployed to the live Kano Run game. Actual rendering, physics, UI, audio, and integration with the game's existing route/traffic/career systems remain host-game responsibilities.
+Additive module; not wired into the production game. It does not detect collisions or render effects. Connect it to the existing game loop, collision system, model animation, and authoritative wallet.
