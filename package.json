@@ -1,1 +1,7 @@
-{"name":"kano-life-commercial-systems-upgrade","version":"1.0.0","type":"module","private":true,"description":"Additive systems for Kano Life browser simulation"}
+{
+  "name": "kano-life-commercial-integration-release",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Additive integration coordinator for Kano Life commercial systems"
+}
