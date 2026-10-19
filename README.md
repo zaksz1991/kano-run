@@ -1,12 +1,45 @@
-# Kano Life Release Safety Upgrade
+# Kano Life — Dynamic Weather & Day/Night Atmosphere Upgrade
 
-Add these files to the root of the existing Kano Run repository. This is a pre-deploy safety upgrade, not a game feature replacement.
+## What's added
 
-Included:
-- `scripts/check-syntax.mjs`: syntax-check all project JavaScript modules without adding dependencies.
-- `scripts/verify-release.mjs`: catches malformed/corrupted `index.html`, missing local imports, missing script/style assets, and common pasted-JavaScript regressions.
-- `package.json`: complete project manifest with `check`, `verify`, and `release:verify` scripts; preserves Three.js and Vite dependencies.
-- `.github/workflows/kano-release-check.yml`: validates pushes and pull requests before they reach production.
-- `docs/RELEASE-CHECKLIST.md`: usage instructions and validation limits.
+- **Night lighting profile** based on `game.s.night`.
+- **Harmattan haze and suspended dust** when `game.s.environment === 'harmattan'`.
+- **Rain streaks** when `game.s.environment === 'rainPuddles'`.
+- **Subdued overcast lighting** for muddy and bad-road events.
+- **Mobile-aware fixed particle pools** (86 rain streaks / 64 dust particles on mobile; 190 / 142 on desktop).
+- **Safe render-wrapper composition** with the existing cinematic camera; scene colors and light values are restored after each WebGL render.
+- **No additional game state, collision, traffic, fare, or audio simulation**. `Game` remains the gameplay authority.
+- `?disableAtmosphere=1` disables atmospheric effects for comparison. `?disableCameraFX=1` disables camera polish. `?fixedQuality=1` disables adaptive render-resolution changes.
 
-See `docs/RELEASE-CHECKLIST.md` before copying these files into the repository.
+## Install
+
+1. Back up the repository.
+2. Extract this package at the `kano-run` repository root and merge its `js/` directory.
+3. Replace `js/main.js` with the supplied complete entry point.
+4. Add or replace `js/KanoAtmosphere.js`, `js/KanoCinematicCamera.js`, and `js/KanoAdaptiveQuality.js`.
+5. Keep the existing `index.html`, `game.js`, `renderer3d.js`, `renderer2d.js`, `ModelManager.js`, `KanoProductionBridge.js`, `KekeDynamics.js`, `KanoVisualEffects.js`, `LiveUserCounter.js`, `KanoSceneUpgrade.js`, `KanoAnimationTrafficUpgrade.js`, `KanoPerformanceMonitor.js`, `ui.js`, `controls.js`, `audio.js`, `storage.js`, CSS, models, and other assets.
+6. Do not replace `package.json` or `package-lock.json` for this upgrade.
+
+The supplied `main.js` retains the previously integrated scene, coin/smoke, live-user, traffic, Keke dynamics, animation, cinematic-camera, adaptive-quality, model-audit, and performance-monitor hooks. It expects those existing companion modules to be present in the repository.
+
+## Verify
+
+From the repository root, run:
+
+```bash
+npm run check
+npm test
+npm run build
+```
+
+Then test `https://kano-run.vercel.app/` on desktop and on a real phone. For diagnostics:
+
+- `?debugModels=1` — show model auditing.
+- `?debugPerf=1` — show frame-time and renderer counters.
+- `?disableAtmosphere=1` — disable rain/dust/weather lighting.
+- `?disableCameraFX=1` — disable cinematic camera effects.
+- `?fixedQuality=1` — disable adaptive rendering resolution.
+
+## Validation status
+
+The supplied JavaScript files passed `node --check` syntax validation. This package has **not** been executed against the full repository, and production build success or 60 FPS has not been verified here. Weather effects are intentionally limited to the existing 3D road scene; the pre-existing 2D renderer remains the fallback on devices without WebGL.

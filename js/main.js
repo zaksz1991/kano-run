@@ -16,6 +16,7 @@ import { KanoTrafficDirector, KanoGLBAnimationManager } from './KanoAnimationTra
 import { KanoPerformanceMonitor } from './KanoPerformanceMonitor.js';
 import { KanoCinematicCamera } from './KanoCinematicCamera.js';
 import { KanoAdaptiveQuality } from './KanoAdaptiveQuality.js';
+import { KanoAtmosphere } from './KanoAtmosphere.js';
 import '../css/kano-responsive-upgrade.css';
 
 // ============================================================
@@ -66,6 +67,7 @@ let trafficDirector = null;
 let performanceMonitor = null;
 let cinematicCamera = null;
 let adaptiveQuality = null;
+let atmosphere = null;
 let controls = null;
 let game = null;
 let renderMode = '2D';
@@ -106,6 +108,15 @@ function setRenderMode(mode) {
 // ============================================================
 
 function disposeRenderer() {
+  // Atmospheric rendering wraps the cinematic camera render wrapper, so unwind
+  // atmosphere first and the camera second to restore the native WebGL render.
+  try {
+    atmosphere?.dispose?.();
+  } catch (error) {
+    console.warn('[Kano Life] atmosphere cleanup warning', error);
+  }
+  atmosphere = null;
+
   // Restore the original WebGL render call before destroying the renderer.
   try {
     cinematicCamera?.dispose?.();
@@ -349,6 +360,20 @@ async function start3D() {
   } catch (error) {
     adaptiveQuality = null;
     console.warn('[Kano Life] adaptive render quality unavailable', error);
+  }
+
+  // Time-of-day lighting, rain, and harmattan dust. It wraps the already
+  // installed cinematic render layer and is disposed before that layer.
+  try {
+    atmosphere = new KanoAtmosphere({
+      renderer: webglRenderer,
+      game,
+      mobile,
+      enabled: !query.has('disableAtmosphere'),
+    });
+  } catch (error) {
+    atmosphere = null;
+    console.warn('[Kano Life] weather/day-night atmosphere unavailable', error);
   }
 
   // Preserve embedded skeletal clips where GLB character assets provide them.
@@ -705,6 +730,7 @@ function frame(now) {
     // Apply visual-only camera polish and an optional adaptive WebGL resolution
     // tier before the renderer submits this frame. Neither modifies game rules.
     if (renderMode === '3D') {
+      atmosphere?.update?.(dt, game?.s || {}, game?.state);
       cinematicCamera?.update?.(dt, game?.s || {});
       adaptiveQuality?.update?.(now, renderMode, game?.state);
     }
