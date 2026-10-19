@@ -1,14 +1,16 @@
-# Kano Life — Vehicle Lifecycle & Ownership Upgrade
+# Kano Life — Workshop & Recovery Upgrade
 
-A standalone ES module for persistent vehicle wear, maintenance warnings, overheating, breakdowns, repair quotes, workshop/roadside repairs, and hire-purchase progression.
+A standalone ES module for playable repair-workshop and breakdown-recovery workflows.
 
 ## Included
-- `js/KanoVehicleLifecycleDirector.js` — complete module.
-- `INTEGRATION.md` — integration guide and wallet-safety examples.
-- `package.json` — package metadata and syntax-check command.
+- Four configurable logical workshop records in Kano districts.
+- Component repair quotations for tyres, engine, cooling, brakes, suspension, electrical, and bodywork.
+- Repair booking, payment-confirmation boundary, in-game repair timers, and pickup completion.
+- Recovery quotations with distance, incident severity, after-hours pricing, dispatch, and ETA.
+- Event callbacks, job/recovery history, and export/import persistence.
 
-## Safety of integration
-This module does not move 3D vehicles, detect collisions, or deduct currency. Connect it to the existing physics and wallet systems. Repair and installment methods require an explicit `paymentConfirmed: true` flag after the authoritative wallet has confirmed payment.
+## Validation
+Syntax and isolated workflow smoke tests should be run in the target project. This package is an additive module; it is not automatically integrated into the live game and does not contain 3D workshop assets.
 
-## Status
-Standalone package. Not integrated into the live Kano Run game.
+## Safety against duplicate money systems
+The module deliberately never deducts cash. Charge through the game's existing wallet and pass the confirmed transaction reference into the module. Never treat a quote or booking as proof that payment occurred.

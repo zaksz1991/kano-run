@@ -1,7 +1,1 @@
-{
-  "name": "kano-life-vehicle-lifecycle-upgrade",
-  "version": "1.0.0",
-  "type": "module",
-  "private": true,
-  "scripts": { "check": "node --check js/KanoVehicleLifecycleDirector.js" }
-}
+{"name":"kano-life-workshop-recovery-upgrade","version":"1.0.0","type":"module","private":true,"description":"Standalone workshop and recovery simulation module for Kano Life"}

@@ -1,98 +1,54 @@
-# Integration Guide — Vehicle Lifecycle
+# Integration guide — Workshop & Recovery
 
-This package is additive and is not connected to the live game. Integrate it in small steps.
+## Files
+- `js/KanoWorkshopRecoveryDirector.js` — complete ES module.
 
-## 1. Import and initialize
+## Important boundary
+This module does **not** deduct currency, move 3D meshes, spawn workshop buildings, or tow a vehicle. The host game remains authoritative for wallet transactions, vehicle physics, world placement, and animations.
+
+## 1. Create the director
 
 ```js
-import { KanoVehicleLifecycleDirector } from './js/KanoVehicleLifecycleDirector.js';
+import { KanoWorkshopRecoveryDirector } from './js/KanoWorkshopRecoveryDirector.js';
 
-const vehicleLifecycle = new KanoVehicleLifecycleDirector({
-  callbacks: {
-    onEvent(event) {
-      // Connect to existing HUD/audio/mission systems as needed.
-    },
-    onOverheating(event) {
-      // Show a warning; do not move the 3D vehicle here.
-    },
-    onBreakdown(event) {
-      // Tell the existing driving controller to safely restrict driving.
-    }
-  }
+const workshopRecovery = new KanoWorkshopRecoveryDirector({
+  onEvent: ({ type, detail }) => {
+    // Connect to your existing HUD, sound, scene and notification systems.
+    // Do not charge money in this callback without a confirmed player action.
+  },
 });
 ```
 
-## 2. Register the player's vehicle
-
-Create one record when a vehicle is acquired or a new career begins:
+## 2. Quote and book a repair
 
 ```js
-vehicleLifecycle.createVehicle({
-  id: 'player-keke',
-  type: 'keke',
-  name: 'Adaidaita Sahu',
-  odometerKm: 0
+const quote = workshopRecovery.quoteRepair({
+  workshopId: 'kano-central',
+  vehicleId: playerVehicleId,
+  component: 'tyre',
+  severity: 0.65,
 });
+
+// Display quote.totalCost and quote.durationMinutes in your repair UI.
+// On explicit player confirmation, charge using the existing authoritative wallet.
+// Only after that wallet transaction succeeds:
+const booking = workshopRecovery.bookRepair(quote, { paymentConfirmed: true, paymentReference: walletTransactionId });
 ```
 
-Use a stable ID and avoid creating a duplicate record on every scene reload. If a record already exists, call `getVehicle(id)` first.
+If you prefer a two-step payment flow, call `bookRepair(quote)` and after the wallet confirms success call `confirmRepairPayment(booking.job.id, walletTransactionId)`. Do not call the confirmation method before the wallet succeeds.
 
-## 3. Update from the existing game loop
+## 3. Advance time and collect repaired vehicle
 
-Call `recordDriving()` with distance travelled during that frame or trip, not total odometer distance. Keep delta values bounded and do not update from multiple loops.
+Call `advanceWorkshopTime(elapsedInGameMinutes)` when game time advances. When the job becomes `ready_for_pickup`, show a notification. After the player collects the vehicle, call `completeRepair(jobId)`, then apply `result.qualityGain` to the matching component in your existing vehicle lifecycle model. The returned maintenance record is for history; it does not charge the wallet.
 
-```js
-vehicleLifecycle.recordDriving({
-  vehicleId: 'player-keke',
-  distanceKm: frameDistanceKm,
-  speedKmh: currentSpeedKmh,
-  harshBraking: hardBrakeThisFrame,
-  sharpTurning: sharpTurnThisFrame,
-  roughRoad: onRoughRoad,
-  heavyLoad: passengerCount >= 3,
-  deltaSeconds: deltaSeconds,
-  ambientC: worldTemperatureC
-});
-```
+## 4. Recovery
 
-Call `recordImpact()` once per impact event, not every frame while two collision boxes overlap. Your current physics engine remains responsible for movement and collision detection.
+Call `requestRecovery({ vehicleId, location, severity, distanceKm, timeOfDay })` after the player chooses recovery. Show the fee and ETA and request confirmation. Charge through the existing wallet, then call `confirmRecoveryPayment(call.id, walletTransactionId)`. Advance `advanceRecoveryTime(elapsedInGameMinutes)` as the game clock advances. On `recovery_arrived`, animate your existing tow/recovery vehicle and move the broken vehicle using your existing scene/physics implementation.
 
-## 4. Repair flow and wallet safety
+## 5. Workshop placement
 
-Use `calculateRepair()` to show the quote. Have the existing authoritative wallet validate and deduct the amount. Only after that succeeds, call `repair({ ..., paymentConfirmed: true })`. This module deliberately does not deduct cash or create another wallet.
+The module registers four logical workshop locations (`kano-central`, `sabon-gari`, `kumbotso`, `naibawa`). These are data records, not 3D buildings. Place them at appropriate route/world coordinates in your existing world builder. Additional locations can be registered with `registerWorkshop`.
 
-```js
-const quote = vehicleLifecycle.calculateRepair('player-keke', {
-  parts: ['engine', 'tyres', 'brakes'],
-  workshop: true,
-  includeService: true
-});
-// Existing wallet confirms and deducts quote.total here.
-vehicleLifecycle.repair({
-  vehicleId: 'player-keke',
-  parts: ['engine', 'tyres', 'brakes'],
-  workshop: true,
-  includeService: true,
-  paymentConfirmed: true
-});
-```
+## 6. Browser storage
 
-The caller should prevent duplicate deductions and repeated repair actions while a payment is pending.
-
-## 5. Hire-purchase
-
-`createHirePurchase()` checks the configured deposit amount against `depositPaid`. The caller must deduct the deposit through the authoritative wallet first. Each `makeInstallment()` call requires `paymentConfirmed: true` after the wallet confirms payment. Call `assessOverduePayments({ at: gameTime })` from the game's in-world calendar, not from every animation frame.
-
-The example defaults are fictional balancing values. Tune deposit, total price, installment amount, and intervals to your economy. The module tracks a contract; it does not implement legal contracts, banking, or actual payments.
-
-## 6. UI hooks
-
-Use `getMaintenanceAdvice(id)` for the vehicle-condition panel and `calculateRepair(id)` for a mechanic quote. Render temperature, wear, warnings, and workshop UI through your existing interface.
-
-## 7. Important integration notes
-
-- This module is not yet deployed or integrated into `kano-run.vercel.app`.
-- It does not create 3D smoke, dashboard gauges, breakdown animations, or mechanic shops; those require scene/UI integration.
-- It does not own the wallet. Never treat `paymentConfirmed: true` as payment processing; it is an explicit signal from your trusted game flow.
-- If `autoSave` is enabled, browser `localStorage` is used when available. For server-backed saves, disable auto-save and connect `exportState()`/`importState()` to your existing save system.
-- Hire-purchase is a local gameplay simulation; validate all state if the game becomes multiplayer or server-authoritative.
+By default, state uses `localStorage` under `kano-life-workshop-recovery-v1`. Supply a different `storageKey` to isolate a test save. If the game already has a unified save system, set `autoLoad: false`, then use `exportState`/`importState` to connect it.
