@@ -1,18 +1,17 @@
 /**
  * KANO LIFE — WORKSHOP WALLET BRIDGE
  *
- * Connects:
- * - The active Game instance.
- * - The existing banked wallet in storage.js.
- * - Vehicle lifecycle and component health.
- * - Workshop and roadside recovery systems.
- *
- * IMPORTANT:
+ * Responsibilities:
+ * - Connects the active Game instance to vehicle lifecycle systems.
  * - Uses save.money and persist() for banked funds.
- * - Never uses run score as banked money.
- * - Requires explicit payment confirmation.
- * - Synchronises real component health without inventing damage.
- * - Does not render or move vehicles.
+ * - Synchronises game vehicle health without inventing damage.
+ * - Quotes and processes lifecycle repairs.
+ * - Quotes workshop jobs and manages roadside recovery.
+ * - Requires explicit confirmation before charging the player.
+ * - Protects wallet consistency when operations fail.
+ * - Supports clean disposal.
+ *
+ * Does not render, move, or directly simulate vehicles.
  */
 
 import { save, persist } from './storage.js';
@@ -26,10 +25,18 @@ import {
 } from './KanoVehicleLifecycleDirector.js';
 
 // ============================================================
-// COMPONENT MAPPING
+// CONFIGURATION
 // ============================================================
 
-const COMPONENT_MAP = {
+const VEHICLE_ID = 'player-keke';
+
+const RECOVERY_STORAGE_KEY =
+  'kano-life-workshop-recovery-v1';
+
+const LIFECYCLE_STORAGE_KEY =
+  'kano-life-player-vehicle-v1';
+
+const COMPONENT_MAP = Object.freeze({
   tyre: 'tyres',
   tyres: 'tyres',
   engine: 'engine',
@@ -38,18 +45,51 @@ const COMPONENT_MAP = {
   suspension: 'suspension',
   electrical: 'body',
   body: 'body',
-};
+});
 
-const safeNumber = (value, fallback = 0) =>
-  Number.isFinite(Number(value))
-    ? Number(value)
-    : fallback;
+const COMPONENT_NAMES = Object.freeze({
+  engine: 'Engine',
+  tyres: 'Tyres',
+  cooling: 'Cooling system',
+  brakes: 'Brakes',
+  suspension: 'Suspension',
+  body: 'Body',
+});
 
 const clamp = (value, min, max) =>
   Math.min(max, Math.max(min, value));
 
+const safeNumber = (value, fallback = 0) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : fallback;
+};
+
 const formatMoney = (amount) =>
-  `₦${Math.max(0, safeNumber(amount)).toLocaleString()}`;
+  `₦${Math.round(
+    Math.max(0, safeNumber(amount, 0)),
+  ).toLocaleString('en-NG')}`;
+
+const normaliseHealth = (value, fallback = 100) =>
+  clamp(safeNumber(value, fallback), 0, 100);
+
+const normaliseComponent = (component) => {
+  const key = String(component || '')
+    .trim()
+    .toLowerCase();
+
+  return COMPONENT_MAP[key] || key;
+};
 
 // ============================================================
 // BRIDGE
@@ -71,15 +111,19 @@ export class KanoWorkshopWalletBridge {
     this.onUpdate = onUpdate;
     this.onMessage = onMessage;
 
-    this.vehicleId = 'player-keke';
+    this.vehicleId = VEHICLE_ID;
 
     this._syncing = false;
+    this._destroyed = false;
     this._lastSyncAt = 0;
+    this._lastError = null;
 
     this.workshop = new KanoWorkshopRecoveryDirector({
-      storageKey: 'kano-life-workshop-recovery-v1',
+      storageKey: RECOVERY_STORAGE_KEY,
 
       onEvent: (event) => {
+        if (this._destroyed) return;
+
         this._emitUpdate({
           type: 'workshop_event',
           event,
@@ -88,7 +132,7 @@ export class KanoWorkshopWalletBridge {
     });
 
     this.lifecycle = new KanoVehicleLifecycleDirector({
-      storageKey: 'kano-life-player-vehicle-v1',
+      storageKey: LIFECYCLE_STORAGE_KEY,
       autoSave: true,
     });
 
@@ -96,10 +140,20 @@ export class KanoWorkshopWalletBridge {
   }
 
   // ==========================================================
-  // SAFE CALLBACKS
+  // LIFECYCLE GUARDS
   // ==========================================================
 
+  _assertActive() {
+    if (this._destroyed) {
+      throw new Error(
+        'KanoWorkshopWalletBridge has been destroyed.',
+      );
+    }
+  }
+
   _emitUpdate(payload = {}) {
+    if (this._destroyed) return;
+
     try {
       this.onUpdate({
         ...payload,
@@ -114,6 +168,8 @@ export class KanoWorkshopWalletBridge {
   }
 
   _message(message) {
+    if (this._destroyed) return;
+
     try {
       this.onMessage(String(message));
     } catch (error) {
@@ -124,11 +180,21 @@ export class KanoWorkshopWalletBridge {
     }
   }
 
+  _failure(reason, extra = {}) {
+    return {
+      ok: false,
+      reason,
+      ...extra,
+    };
+  }
+
   // ==========================================================
   // PLAYER VEHICLE
   // ==========================================================
 
   ensureVehicle() {
+    this._assertActive();
+
     let vehicle = this.lifecycle.getVehicle(
       this.vehicleId,
     );
@@ -141,46 +207,40 @@ export class KanoWorkshopWalletBridge {
         parts: this.partsFromGame(),
       });
     } else {
-      this.syncLifecycleFromGame();
-      vehicle = this.lifecycle.getVehicle(
-        this.vehicleId,
-      );
+      vehicle = this.syncLifecycleFromGame() || vehicle;
     }
 
     return vehicle;
   }
 
+  getVehicle() {
+    this._assertActive();
+
+    return this.lifecycle.getVehicle(
+      this.vehicleId,
+    );
+  }
+
   // ==========================================================
   // READ GAME HEALTH
   //
-  // The current game state exposes:
-  // s.engine, s.tyres, s.condition and s.heat.
+  // Known game fields:
+  // - game.s.engine
+  // - game.s.tyres
+  // - game.s.condition
+  // - game.s.heat
   //
-  // Since the game may not expose individual brake,
-  // suspension, body and cooling health, those values are
-  // derived conservatively from the available game fields.
+  // Missing component-specific values are estimated from the
+  // general condition field. The estimates are not presented
+  // as independently measured component damage.
   // ==========================================================
 
   partsFromGame() {
     const state = this.game?.s || {};
 
-    const engine = clamp(
-      safeNumber(state.engine, 100),
-      0,
-      100,
-    );
-
-    const tyres = clamp(
-      safeNumber(state.tyres, 100),
-      0,
-      100,
-    );
-
-    const condition = clamp(
-      safeNumber(state.condition, 100),
-      0,
-      100,
-    );
+    const engine = normaliseHealth(state.engine);
+    const tyres = normaliseHealth(state.tyres);
+    const condition = normaliseHealth(state.condition);
 
     const heat = clamp(
       safeNumber(state.heat, 0),
@@ -210,11 +270,7 @@ export class KanoWorkshopWalletBridge {
       },
 
       cooling: {
-        health: clamp(
-          100 - heat * 0.25,
-          0,
-          100,
-        ),
+        health: clamp(100 - heat * 0.25, 0, 100),
       },
     };
   }
@@ -222,14 +278,14 @@ export class KanoWorkshopWalletBridge {
   // ==========================================================
   // SYNCHRONISE GAME HEALTH INTO LIFECYCLE
   //
-  // Requires syncPartHealth() in
-  // KanoVehicleLifecycleDirector.js.
-  //
-  // This records the actual health values. It does not call
-  // recordImpact(), because doing so would apply extra damage.
+  // Requires lifecycle.syncPartHealth().
+  // Does not call recordImpact(), because the game already
+  // calculates its own damage.
   // ==========================================================
 
   syncLifecycleFromGame() {
+    if (this._destroyed) return null;
+
     if (this._syncing) {
       return this.lifecycle.getVehicle(
         this.vehicleId,
@@ -249,25 +305,39 @@ export class KanoWorkshopWalletBridge {
       });
     }
 
+    if (
+      typeof this.lifecycle.syncPartHealth !== 'function'
+    ) {
+      this._lastError =
+        'Lifecycle director is missing syncPartHealth().';
+
+      console.warn(
+        `[Kano Life] ${this._lastError}`,
+      );
+
+      return vehicle;
+    }
+
     this._syncing = true;
 
     try {
-      const incoming = this.partsFromGame();
-
       const result = this.lifecycle.syncPartHealth({
         vehicleId: this.vehicleId,
-        parts: incoming,
+        parts: this.partsFromGame(),
       });
 
       vehicle = result?.vehicle ||
-        this.lifecycle.getVehicle(
-          this.vehicleId,
-        );
+        this.lifecycle.getVehicle(this.vehicleId);
 
       this._lastSyncAt = Date.now();
+      this._lastError = null;
 
       return vehicle;
     } catch (error) {
+      this._lastError = String(
+        error?.message || error,
+      );
+
       console.warn(
         '[Kano Life] Vehicle health synchronisation failed:',
         error,
@@ -282,7 +352,7 @@ export class KanoWorkshopWalletBridge {
   }
 
   // ==========================================================
-  // BALANCE
+  // BANKED WALLET
   // ==========================================================
 
   getBalance() {
@@ -292,11 +362,140 @@ export class KanoWorkshopWalletBridge {
     );
   }
 
+  _setBalance(amount) {
+    save.money = Math.max(
+      0,
+      safeNumber(amount, 0),
+    );
+  }
+
+  _persistWallet() {
+    persist();
+  }
+
+  /**
+   * Runs a wallet transaction.
+   *
+   * The operation must return successfully before the wallet
+   * change is considered complete. If persistence fails, the
+   * previous in-memory balance is restored and persistence
+   * is attempted again.
+   *
+   * Note: this cannot automatically roll back side effects
+   * already committed by an external director.
+   */
+  _chargeWallet(amount, operation) {
+    this._assertActive();
+
+    const charge = Math.max(
+      0,
+      safeNumber(amount, 0),
+    );
+
+    const previousBalance = this.getBalance();
+
+    if (previousBalance < charge) {
+      return this._failure('insufficient_funds', {
+        balance: previousBalance,
+        fee: charge,
+        shortfall: charge - previousBalance,
+      });
+    }
+
+    this._setBalance(previousBalance - charge);
+
+    let result;
+
+    try {
+      result = operation();
+
+      if (!result || result.ok === false) {
+        throw new Error(
+          result?.reason || 'Payment operation failed.',
+        );
+      }
+
+      this._persistWallet();
+
+      return {
+        ok: true,
+        result,
+        balance: this.getBalance(),
+      };
+    } catch (error) {
+      this._setBalance(previousBalance);
+
+      try {
+        this._persistWallet();
+      } catch (rollbackError) {
+        console.error(
+          '[Kano Life] Wallet rollback persistence failed:',
+          rollbackError,
+        );
+      }
+
+      return this._failure('payment_failed', {
+        message: String(error?.message || error),
+        balance: previousBalance,
+      });
+    }
+  }
+
+  _confirmPayment({
+    title,
+    items = [],
+    total,
+    balance = this.getBalance(),
+    extraLines = [],
+  }) {
+    if (typeof globalThis.confirm !== 'function') {
+      return {
+        available: false,
+        confirmed: false,
+      };
+    }
+
+    const itemLines = items.map((item) => {
+      const label =
+        COMPONENT_NAMES[item.part] ||
+        String(item.part || 'Repair');
+
+      return `${label}: ${formatMoney(item.cost)}`;
+    });
+
+    const message = [
+      title,
+      '',
+      ...itemLines,
+      ...extraLines,
+      '',
+      `Total: ${formatMoney(total)}`,
+      `Banked balance: ${formatMoney(balance)}`,
+    ].join('\n');
+
+    return {
+      available: true,
+      confirmed: globalThis.confirm(message),
+    };
+  }
+
   // ==========================================================
-  // SNAPSHOT FOR THE WORKSHOP UI
+  // WORKSHOP SNAPSHOT
   // ==========================================================
 
   snapshot() {
+    if (this._destroyed) {
+      return {
+        destroyed: true,
+        balance: this.getBalance(),
+        vehicle: null,
+        workshops: [],
+        jobs: [],
+        recoveryCalls: [],
+        repairQuote: null,
+      };
+    }
+
     const vehicle = this.lifecycle.getVehicle(
       this.vehicleId,
     );
@@ -308,32 +507,33 @@ export class KanoWorkshopWalletBridge {
         repairQuote = this.lifecycle.calculateRepair(
           this.vehicleId,
         );
-      } catch (_) {
-        repairQuote = null;
+      } catch (error) {
+        console.warn(
+          '[Kano Life] Could not calculate repair quote:',
+          error,
+        );
       }
     }
 
     return {
+      destroyed: false,
       balance: this.getBalance(),
-
       vehicle,
-
       workshops: this.workshop.listWorkshops(),
-
       jobs: this.workshop.listJobs({
         vehicleId: this.vehicleId,
       }),
-
       recoveryCalls: this.workshop.listRecoveryCalls({
         vehicleId: this.vehicleId,
       }),
-
       repairQuote,
+      lastSyncAt: this._lastSyncAt,
+      lastError: this._lastError,
     };
   }
 
   // ==========================================================
-  // REPAIR QUOTE
+  // LIFECYCLE REPAIR QUOTE
   // ==========================================================
 
   quoteLifecycleRepair({
@@ -341,6 +541,8 @@ export class KanoWorkshopWalletBridge {
     workshop = true,
     includeService = false,
   } = {}) {
+    this._assertActive();
+
     this.syncLifecycleFromGame();
 
     return this.lifecycle.calculateRepair(
@@ -354,9 +556,7 @@ export class KanoWorkshopWalletBridge {
   }
 
   // ==========================================================
-  // PAY FOR VEHICLE REPAIRS
-  //
-  // Payment comes from save.money, not run score.
+  // PAY FOR LIFECYCLE REPAIRS
   // ==========================================================
 
   payLifecycleRepair({
@@ -364,126 +564,129 @@ export class KanoWorkshopWalletBridge {
     workshop = true,
     includeService = false,
   } = {}) {
+    this._assertActive();
+
     this.syncLifecycleFromGame();
 
-    const quote = this.lifecycle.calculateRepair(
-      this.vehicleId,
-      {
-        parts,
-        workshop,
-        includeService,
-      },
-    );
+    let quote;
+
+    try {
+      quote = this.lifecycle.calculateRepair(
+        this.vehicleId,
+        {
+          parts,
+          workshop,
+          includeService,
+        },
+      );
+    } catch (error) {
+      return this._failure('repair_quote_failed', {
+        message: String(error?.message || error),
+      });
+    }
 
     if (
-      !quote.items.length ||
-      quote.total <= 0
+      !quote ||
+      !Array.isArray(quote.items) ||
+      quote.items.length === 0 ||
+      safeNumber(quote.total, 0) <= 0
     ) {
-      return {
-        ok: false,
-        reason: 'no_repair_needed',
+      return this._failure('no_repair_needed', {
         quote,
-      };
+      });
     }
 
     const balance = this.getBalance();
+    const total = safeNumber(quote.total, 0);
 
-    if (balance < quote.total) {
-      return {
-        ok: false,
-        reason: 'insufficient_funds',
+    if (balance < total) {
+      return this._failure('insufficient_funds', {
         quote,
         balance,
-        shortfall: quote.total - balance,
-      };
+        shortfall: total - balance,
+      });
     }
 
-    if (typeof globalThis.confirm !== 'function') {
-      return {
-        ok: false,
-        reason: 'confirmation_unavailable',
+    const confirmation = this._confirmPayment({
+      title: 'Confirm keke repair?',
+      items: quote.items,
+      total,
+      balance,
+    });
+
+    if (!confirmation.available) {
+      return this._failure(
+        'confirmation_unavailable',
+        { quote, balance },
+      );
+    }
+
+    if (!confirmation.confirmed) {
+      return this._failure('cancelled', {
         quote,
         balance,
-      };
+      });
     }
 
-    const itemLines = quote.items
-      .map(
-        (item) =>
-          `${item.part}: ${formatMoney(item.cost)}`,
-      )
-      .join('\n');
+    const transaction = this._chargeWallet(
+      total,
+      () => {
+        const result = this.lifecycle.repair({
+          vehicleId: this.vehicleId,
+          parts,
+          workshop,
+          includeService,
+          paymentConfirmed: true,
+        });
 
-    const confirmed = globalThis.confirm(
-      `Confirm keke repair?\n\n` +
-      `${itemLines}\n\n` +
-      `Total: ${formatMoney(quote.total)}\n` +
-      `Banked balance: ${formatMoney(balance)}`,
+        if (!result || result.ok === false) {
+          throw new Error(
+            result?.reason || 'Lifecycle repair failed.',
+          );
+        }
+
+        const repairedVehicle =
+          result.vehicle ||
+          this.lifecycle.getVehicle(this.vehicleId);
+
+        if (!repairedVehicle) {
+          throw new Error(
+            'Repair completed without a retrievable vehicle record.',
+          );
+        }
+
+        this.applyVehicleToGame(repairedVehicle);
+
+        return {
+          ...result,
+          vehicle: repairedVehicle,
+        };
+      },
     );
 
-    if (!confirmed) {
+    if (!transaction.ok) {
       return {
-        ok: false,
-        reason: 'cancelled',
+        ...transaction,
+        reason: 'repair_payment_failed',
         quote,
-        balance,
       };
     }
 
-    // Preserve the existing banked balance for rollback.
-    const previousBalance = balance;
+    this._message(
+      `Repair completed. ${formatMoney(total)} paid.`,
+    );
 
-    save.money = balance - quote.total;
+    this._emitUpdate({
+      type: 'repair_paid',
+      result: transaction.result,
+    });
 
-    try {
-      const result = this.lifecycle.repair({
-        vehicleId: this.vehicleId,
-        parts,
-        workshop,
-        includeService,
-        paymentConfirmed: true,
-      });
-
-      // Apply the repaired component health to gameplay.
-      this.applyVehicleToGame(result.vehicle);
-
-      // Persist the wallet after the repair succeeds.
-      persist();
-
-      this._message(
-        `Repair completed. ${formatMoney(quote.total)} paid.`,
-      );
-
-      this._emitUpdate({
-        type: 'repair_paid',
-        result,
-      });
-
-      return {
-        ok: true,
-        ...result,
-        balance: this.getBalance(),
-      };
-    } catch (error) {
-      // Restore the balance if repair processing fails.
-      save.money = previousBalance;
-
-      try {
-        persist();
-      } catch (_) {
-        // Preserve the original repair error.
-      }
-
-      return {
-        ok: false,
-        reason: 'repair_failed',
-        message: String(
-          error?.message || error,
-        ),
-        quote,
-        balance: previousBalance,
-      };
-    }
+    return {
+      ok: true,
+      ...transaction.result,
+      balance: this.getBalance(),
+      quote,
+    };
   }
 
   // ==========================================================
@@ -491,7 +694,7 @@ export class KanoWorkshopWalletBridge {
   // ==========================================================
 
   applyVehicleToGame(vehicle) {
-    if (!vehicle || !this.game?.s) {
+    if (this._destroyed || !vehicle || !this.game?.s) {
       return false;
     }
 
@@ -499,18 +702,14 @@ export class KanoWorkshopWalletBridge {
     const parts = vehicle.parts || {};
 
     if (parts.engine) {
-      state.engine = clamp(
-        safeNumber(parts.engine.health, 100),
-        0,
-        100,
+      state.engine = normaliseHealth(
+        parts.engine.health,
       );
     }
 
     if (parts.tyres) {
-      state.tyres = clamp(
-        safeNumber(parts.tyres.health, 100),
-        0,
-        100,
+      state.tyres = normaliseHealth(
+        parts.tyres.health,
       );
     }
 
@@ -521,11 +720,7 @@ export class KanoWorkshopWalletBridge {
     ]
       .filter(Boolean)
       .map((part) =>
-        clamp(
-          safeNumber(part.health, 100),
-          0,
-          100,
-        ),
+        normaliseHealth(part.health),
       );
 
     if (conditionParts.length > 0) {
@@ -534,19 +729,21 @@ export class KanoWorkshopWalletBridge {
       );
     }
 
-    // Convert engine temperature to the game's heat scale.
-    state.heat = clamp(
-      (
-        safeNumber(vehicle.temperature, 82) -
-        82
-      ) * 2,
-      0,
-      100,
-    );
+    // Preserve a valid game heat value unless the lifecycle
+    // record exposes a finite temperature.
+    if (
+      Number.isFinite(Number(vehicle.temperature))
+    ) {
+      state.heat = clamp(
+        (Number(vehicle.temperature) - 82) * 2,
+        0,
+        100,
+      );
+    }
 
     if (vehicle.breakdown) {
       state.engine = Math.min(
-        safeNumber(state.engine, 100),
+        normaliseHealth(state.engine),
         18,
       );
     }
@@ -580,24 +777,27 @@ export class KanoWorkshopWalletBridge {
     urgency = 'normal',
     roadside = false,
   } = {}) {
-    const mappedComponent =
-      COMPONENT_MAP[component] || component;
+    this._assertActive();
 
     return this.workshop.quoteRepair({
       workshopId,
       vehicleId: this.vehicleId,
-      component: mappedComponent,
-      severity,
+      component: normaliseComponent(component),
+      severity: clamp(
+        safeNumber(severity, 0.5),
+        0,
+        1,
+      ),
       urgency,
-      roadside,
+      roadside: Boolean(roadside),
     });
   }
 
   // ==========================================================
-  // BOOK A WORKSHOP REPAIR
+  // BOOK WORKSHOP REPAIR
   //
-  // This method prepares a quote/job only.
-  // It does not deduct money.
+  // Booking alone does not deduct money. The calling UI must
+  // complete its own payment flow before booking.
   // ==========================================================
 
   bookWorkshopRepair(
@@ -606,18 +806,14 @@ export class KanoWorkshopWalletBridge {
       paymentConfirmed = false,
     } = {},
   ) {
+    this._assertActive();
+
     if (!quote) {
-      return {
-        ok: false,
-        reason: 'missing_quote',
-      };
+      return this._failure('missing_quote');
     }
 
     if (!paymentConfirmed) {
-      return {
-        ok: false,
-        reason: 'payment_not_confirmed',
-      };
+      return this._failure('payment_not_confirmed');
     }
 
     return this.workshop.bookRepair(
@@ -629,7 +825,7 @@ export class KanoWorkshopWalletBridge {
   }
 
   // ==========================================================
-  // REQUEST ROADSIDE RECOVERY
+  // ROADSIDE RECOVERY REQUEST
   // ==========================================================
 
   requestRecovery({
@@ -637,15 +833,22 @@ export class KanoWorkshopWalletBridge {
     location = 'Kano roadside',
     distanceKm = 3,
   } = {}) {
+    this._assertActive();
+
     return this.workshop.requestRecovery({
       vehicleId: this.vehicleId,
       severity,
       location,
-      distanceKm,
-
+      distanceKm: Math.max(
+        0,
+        safeNumber(distanceKm, 3),
+      ),
       timeOfDay:
         this.game?.s?.gameClockMinutes != null
-          ? this.game.s.gameClockMinutes / 60
+          ? safeNumber(
+              this.game.s.gameClockMinutes,
+              720,
+            ) / 60
           : 12,
     });
   }
@@ -655,6 +858,8 @@ export class KanoWorkshopWalletBridge {
   // ==========================================================
 
   payRecovery(callId) {
+    this._assertActive();
+
     const calls = this.workshop.listRecoveryCalls({
       vehicleId: this.vehicleId,
     });
@@ -667,10 +872,7 @@ export class KanoWorkshopWalletBridge {
       !call ||
       call.status !== 'awaiting_confirmation'
     ) {
-      return {
-        ok: false,
-        reason: 'recovery_not_payable',
-      };
+      return this._failure('recovery_not_payable');
     }
 
     const balance = this.getBalance();
@@ -680,91 +882,75 @@ export class KanoWorkshopWalletBridge {
     );
 
     if (balance < fee) {
-      return {
-        ok: false,
-        reason: 'insufficient_funds',
+      return this._failure('insufficient_funds', {
         balance,
         fee,
         shortfall: fee - balance,
-      };
+      });
     }
 
-    if (typeof globalThis.confirm !== 'function') {
-      return {
-        ok: false,
-        reason: 'confirmation_unavailable',
-      };
+    const confirmation = this._confirmPayment({
+      title: `Dispatch recovery to ${call.location || 'your location'}?`,
+      total: fee,
+      balance,
+      extraLines: [
+        `Estimated arrival: ${safeNumber(call.etaMinutes, 0)} minutes`,
+      ],
+    });
+
+    if (!confirmation.available) {
+      return this._failure(
+        'confirmation_unavailable',
+      );
     }
 
-    const confirmed = globalThis.confirm(
-      `Dispatch recovery to ${call.location}?\n\n` +
-      `Fee: ${formatMoney(fee)}\n` +
-      `Estimated arrival: ${call.etaMinutes} minutes\n` +
-      `Banked balance: ${formatMoney(balance)}`,
+    if (!confirmation.confirmed) {
+      return this._failure('cancelled');
+    }
+
+    const reference = `KANO-RECOVERY-${call.id}`;
+
+    const transaction = this._chargeWallet(
+      fee,
+      () => {
+        const result =
+          this.workshop.confirmRecoveryPayment(
+            call.id,
+            reference,
+          );
+
+        if (!result || result.ok === false) {
+          throw new Error(
+            result?.reason ||
+            'Could not confirm recovery payment.',
+          );
+        }
+
+        return result;
+      },
     );
 
-    if (!confirmed) {
+    if (!transaction.ok) {
       return {
-        ok: false,
-        reason: 'cancelled',
-      };
-    }
-
-    const previousBalance = balance;
-
-    const reference =
-      `KANO-RECOVERY-${call.id}`;
-
-    save.money = balance - fee;
-
-    try {
-      const result =
-        this.workshop.confirmRecoveryPayment(
-          call.id,
-          reference,
-        );
-
-      if (!result || result.ok === false) {
-        throw new Error(
-          result?.reason ||
-          'Could not dispatch recovery.',
-        );
-      }
-
-      persist();
-
-      this._emitUpdate({
-        type: 'recovery_paid',
-        result,
-      });
-
-      this._message(
-        `Recovery dispatched. Estimated arrival: ${call.etaMinutes} minutes.`,
-      );
-
-      return {
-        ok: true,
-        ...result,
-        balance: this.getBalance(),
-      };
-    } catch (error) {
-      save.money = previousBalance;
-
-      try {
-        persist();
-      } catch (_) {
-        // Preserve the original error.
-      }
-
-      return {
-        ok: false,
+        ...transaction,
         reason: 'recovery_payment_failed',
-        message: String(
-          error?.message || error,
-        ),
-        balance: previousBalance,
       };
     }
+
+    this._emitUpdate({
+      type: 'recovery_paid',
+      result: transaction.result,
+    });
+
+    this._message(
+      `Recovery dispatched. Estimated arrival: ${safeNumber(call.etaMinutes, 0)} minutes.`,
+    );
+
+    return {
+      ok: true,
+      ...transaction.result,
+      balance: this.getBalance(),
+    };
   }
 
   // ==========================================================
@@ -772,6 +958,8 @@ export class KanoWorkshopWalletBridge {
   // ==========================================================
 
   getWorkshopStatus() {
+    this._assertActive();
+
     return {
       workshops: this.workshop.listWorkshops(),
 
@@ -790,9 +978,33 @@ export class KanoWorkshopWalletBridge {
   // ==========================================================
 
   destroy() {
+    if (this._destroyed) return;
+
+    this._destroyed = true;
     this._syncing = false;
+
     this.onUpdate = () => {};
     this.onMessage = () => {};
+
+    try {
+      this.workshop.dispose?.();
+    } catch (error) {
+      console.warn(
+        '[Kano Life] Recovery director cleanup failed:',
+        error,
+      );
+    }
+
+    try {
+      this.lifecycle.dispose?.();
+    } catch (error) {
+      console.warn(
+        '[Kano Life] Vehicle lifecycle cleanup failed:',
+        error,
+      );
+    }
+
+    this.game = null;
   }
 }
 
