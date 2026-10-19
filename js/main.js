@@ -17,6 +17,7 @@ import { KanoPerformanceMonitor } from './KanoPerformanceMonitor.js';
 import { KanoCinematicCamera } from './KanoCinematicCamera.js';
 import { KanoAdaptiveQuality } from './KanoAdaptiveQuality.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
+import { KanoInteractionReliability } from './KanoInteractionReliability.js';
 import '../css/kano-responsive-upgrade.css';
 
 // ============================================================
@@ -68,6 +69,7 @@ let performanceMonitor = null;
 let cinematicCamera = null;
 let adaptiveQuality = null;
 let atmosphere = null;
+let interactionReliability = null;
 let controls = null;
 let game = null;
 let renderMode = '2D';
@@ -571,6 +573,21 @@ function boot() {
   game = new Game(ui, audio, { mobile });
   ui.bind?.(game);
 
+  // Interaction prompts and stopped-at-stop compatibility run independently
+  // of the renderer, so passenger/fuel stops remain usable in both 3D and 2D.
+  try {
+    interactionReliability = new KanoInteractionReliability({
+      game,
+      container,
+      getRenderer: () => renderer,
+      getSceneUpgrade: () => sceneUpgrade,
+      debug: query.has('debugScene'),
+    });
+  } catch (error) {
+    interactionReliability = null;
+    console.warn('[Kano Life] interaction reliability layer unavailable', error);
+  }
+
   // Add lane-aware traffic behaviours while retaining Game's original movement
   // and collision handling as the single authority.
   try {
@@ -726,6 +743,7 @@ function frame(now) {
     // Traffic chooses its lane and speed before Game processes this frame's collisions.
     trafficDirector?.update?.(dt);
     game?.tick(dt);
+    interactionReliability?.update?.(dt, game?.s || {});
 
     // Apply visual-only camera polish and an optional adaptive WebGL resolution
     // tier before the renderer submits this frame. Neither modifies game rules.
