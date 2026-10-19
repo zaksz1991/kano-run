@@ -1,83 +1,74 @@
 --- a/js/game.js
 +++ b/js/game.js
 @@
-   spawnTraffic(initialIndex = null) {
--    const types = [
--      'keke',
--      'car',
--      'taxi',
--      'suv',
--      'motorcycle',
--      'keke',
--      'car',
--    ];
--
--    if (!this.mobile) {
--      types.push(
--        'truck',
--        'bus',
--        'police',
--        'karota',
--      );
--    }
--
--    const type = choose(types);
-+    // Target the requested Kano street-traffic mix: approximately
-+    // 40% keke, 30% motorcycles and 30% cars/taxis/SUVs.
-+    // Heavy and enforcement vehicles are rare special traffic on desktop.
-+    const roll = Math.random();
-+    let type;
-+    if (roll < 0.40) {
-+      type = 'keke';
-+    } else if (roll < 0.70) {
-+      type = 'motorcycle';
-+    } else {
-+      type = choose(['car', 'taxi', 'suv']);
-+    }
+ import {
+   save,
+@@
+ } from './storage.js';
 +
-+    if (!this.mobile && Math.random() < 0.055) {
-+      type = choose(['truck', 'bus', 'police', 'karota']);
++import { KanoVehicleLifecycleDirector } from './KanoVehicleLifecycleDirector.js';
+@@
+   constructor(ui, audio, { mobile = false } = {}) {
+     this.ui = ui;
+     this.audio = audio;
+     this.mobile = mobile;
++
++    // Persistent player-vehicle wear. This augments the game's existing
++    // collision physics; it does not replace traffic collision detection.
++    this.vehicleLifecycle = new KanoVehicleLifecycleDirector();
++    this.playerVehicleId = 'kano-life-player-keke';
++    if (!this.vehicleLifecycle.getVehicle(this.playerVehicleId)) {
++      this.vehicleLifecycle.createVehicle({
++        id: this.playerVehicleId,
++        type: 'keke',
++        name: 'Adaidaita Sahu',
++      });
 +    }
 @@
--    const fareFactor =
-+    // Busy market periods increase real passenger fares, not just scenery.
-+    // Keep the uplift bounded so it does not overwhelm route/driver bonuses.
-+    const marketDemandFactor = s.environment === 'market'
-+      ? (s.gameClockMinutes >= 360 && s.gameClockMinutes < 600 ? 1.22 : 1.12)
-+      : s.environment === 'schoolGate'
-+        ? 1.08
-+        : 1;
+-    this.spawnInitial();
++    // Carry persistent component wear into the new run instead of restoring
++    // a damaged vehicle to 100% whenever the player restarts.
++    const lifecycleVehicle = this.vehicleLifecycle.getVehicle(this.playerVehicleId);
++    if (lifecycleVehicle?.parts) {
++      this.s.condition = lifecycleVehicle.parts.body.health;
++      this.s.engine = lifecycleVehicle.parts.engine.health;
++      this.s.tyres = lifecycleVehicle.parts.tyres.health;
++    }
 +
-+    const fareFactor =
-       randomBetween(1.0, 1.7) *
-       (s.night ? 1.25 : 1) *
-       (vip ? 1.45 : 1) *
-       (zone.hub ? 1.15 : 1) *
-       (s.breakfastEaten ? 1.05 : 1) *
-+      marketDemandFactor *
-       (s.fareMood || 1);
++    this.spawnInitial();
 @@
--    if (event === 'wedding') {
--      for (let index = 0; index < 3; index += 1) {
-+    if (event === 'wedding') {
-+      // Wedding celebrations in Kano commonly travel as keke groups.
-+      // Spread a small convoy across lanes and stagger depth to avoid spawning
-+      // all vehicles in one collision point.
-+      for (let index = 0; index < 5; index += 1) {
-         s.traffic.push({
-           id: `${Date.now()}-wedding-${index}-${Math.random()}`,
- 
--          type: 'suv',
--          lane: index,
-+          type: 'keke',
-+          lane: index % 3,
-           direction: 1,
- 
--          depth: 1.05 + index * 0.12,
--          speedKmh: 12 + index * 2,
-+          depth: 0.98 + index * 0.105,
-+          speedKmh: 18 + (index % 3) * 3,
- 
--          color: '#303944',
-+          color: ['#168447', '#e5bd32', '#f3f0e6', '#168447', '#cf4336'][index],
+     s.tyres = Math.max(
+       0,
+       s.tyres -
+         (heavy ? 4.5 : 1.8) *
+         severity *
+         damageModifier,
+     );
++
++    // Record the same collision in the persistent vehicle lifecycle ledger.
++    // No money is deducted here: the existing wallet/workshop flow must
++    // confirm payment before any repair can be completed.
++    try {
++      const lifecycleVehicle = this.vehicleLifecycle.recordImpact({
++        vehicleId: this.playerVehicleId,
++        part: heavy ? 'suspension' : 'body',
++        severity: clamp(severity, 0, 1),
++        collision: true,
++      });
++      if (lifecycleVehicle?.parts) {
++        s.condition = Math.min(s.condition, lifecycleVehicle.parts.body.health);
++        s.engine = Math.min(s.engine, lifecycleVehicle.parts.engine.health);
++        s.tyres = Math.min(s.tyres, lifecycleVehicle.parts.tyres.health);
++      }
++      const repairQuote = this.vehicleLifecycle.calculateRepair(
++        this.playerVehicleId,
++        { workshop: true },
++      );
++      if (repairQuote.total > 0) {
++        s.estimatedRepairCost = repairQuote.total;
++      }
++    } catch (error) {
++      // Lifecycle persistence must never interrupt the active driving loop.
++      console.warn('[Kano Life] Vehicle lifecycle collision sync failed:', error);
++    }
 *** End Patch
