@@ -1,16 +1,10 @@
-# Kano Life — 3D Animation Upgrade
+# Kano Life — Vehicle Visual Animation Upgrade
 
-A modular Three.js animation runtime for the existing Kano Life game. It supports GLTF skeletal clips, smooth cross-fades, walking/running state changes, waypoint movement for pedestrians, passenger boarding/alighting transitions, driver lean from steering/acceleration, mobile actor limits, and a restrained procedural fallback when a character asset has no animation clips.
+An additive Three.js visual layer for the existing Keke/traffic vehicles. It adds subtle suspension, chassis roll/pitch, wheel spin, front wheel steering, steering-wheel motion, and optional smoothed camera follow.
 
-## Included
+## Files
+- `js/KanoVehicleVisualAnimator.js` — complete ES module.
+- `INTEGRATION.md` — integration notes and complete usage example.
 
-- `js/KanoCharacterAnimation.js` — complete animation manager.
-- `INTEGRATION.md` — integration points and safety checklist.
-
-## Important integration note
-
-This is an additive subsystem, not a claim that the live game has already been changed. The existing `main.js`, model loader, and game loop were not available in this workspace, so this package does not overwrite them or guess their exact method names. Integrate it at the existing GLTF character-load and frame-update points described in `INTEGRATION.md`.
-
-## Asset quality determines the ceiling
-
-For high-quality human motion, use rigged GLB/GLTF character models with correctly retargeted clips such as Idle, Walk, Run, Sit/Drive, Board, Alight, Talk, and Wave. This manager cannot invent believable skeletal limb motion for a static, unrigged mesh; its fallback is intentionally subtle. Keep your existing Keke model and seat positions as the source of truth.
+## Important
+This module does not replace the current driving physics, collision system, traffic AI, or camera controller. Register the vehicle once and feed it motion values from the existing game loop. Do not run its camera-follow option at the same time as another camera controller. Wheel mesh axis and vehicle model orientation vary by asset, so inspect each model and configure wheel references accordingly.

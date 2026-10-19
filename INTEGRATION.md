@@ -1,113 +1,68 @@
-# Integration guide — existing Kano Life project
+# Integration — existing Kano Life project
 
-## 1. Add the module
+Copy `js/KanoVehicleVisualAnimator.js` into the game's existing `js/` directory. It uses the project's existing `three` dependency.
 
-Copy `js/KanoCharacterAnimation.js` into the game's existing `js/` folder. It imports Three.js using the project's existing Vite dependency: `import * as THREE from 'three';`.
-
-## 2. Create one manager
-
-In the existing game entry module, add this import:
+## 1. Import and create one manager
 
 ```js
-import { KanoCharacterAnimation } from './KanoCharacterAnimation.js';
-```
+import { KanoVehicleVisualAnimator } from './KanoVehicleVisualAnimator.js';
 
-Create one instance during game initialization, not once per character:
-
-```js
-const characterAnimation = new KanoCharacterAnimation({
-  mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent),
-  maxActors: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 18 : 40,
+const vehicleVisuals = new KanoVehicleVisualAnimator({
+  suspensionTravel: 0.075,
+  vibration: true,
 });
 ```
 
-## 3. Register a loaded character
+Create the manager once during game initialization, not inside the animation loop.
 
-At the existing GLTF loader success callback, after the character root has been scaled/oriented and added to the scene:
+## 2. Register the existing player Keke
+
+After the current GLB loader has added the Keke model to the scene, identify the actual wheel meshes from that model and register them. Do not invent node names; use the model's real mesh references.
 
 ```js
-characterAnimation.registerCharacter('pedestrian-unique-id', gltf.scene, gltf.animations, {
-  crowd: true,
-  important: false,
-  scale: 1,
+vehicleVisuals.register('player-keke', kekeRoot, {
+  wheels: [
+    { object: frontLeftWheel, axle: 'front', radius: 0.28, steering: true },
+    { object: frontRightWheel, axle: 'front', radius: 0.28, steering: true },
+    { object: rearLeftWheel, axle: 'rear', radius: 0.28 },
+    { object: rearRightWheel, axle: 'rear', radius: 0.28 },
+  ],
+  // Optional, only if there is no other active camera controller:
+  // camera: rendererCamera,
+  // followCamera: true,
+  // cameraOffset: new THREE.Vector3(0, 2.8, 6.5),
 });
 ```
 
-Use a unique ID for every actor. Do not register the same root repeatedly. Do not multiply `scale` if the loader has already applied the intended model scale; leave `scale: 1` in that case. The clip names should include recognizable words (e.g. `Idle`, `Walk`, `Run`, `Sit`, `Board`, `Alight`, `Talk`, `Wave`) for automatic mapping.
+If a wheel mesh is not available or the asset has a single combined mesh, pass `wheels: []`. The chassis motion still works. The `body` option can point to a child mesh if the root transform is controlled by gameplay; use `{ body: visualBody }` and ensure its baseline is correct.
 
-## 4. Update it in the existing frame loop
+## 3. Feed real motion from the existing game loop
 
-After computing the frame delta, call once per frame:
-
-```js
-characterAnimation.update(dt);
-```
-
-Do not create a second animation loop. If the game pauses, pass `0` or skip updates while paused.
-
-## 5. Pedestrian route
+After the existing game/physics update calculates current values, call:
 
 ```js
-characterAnimation.moveAlongPath('pedestrian-unique-id', [
-  { x: 3, y: 0, z: 5 },
-  { x: 6, y: 0, z: 2 },
-  { x: 4, y: 0, z: -2 },
-], { speed: 1.1, loop: true });
-```
-
-Route coordinates are world coordinates. Set `y` to the actual ground height for uneven terrain. Use the game's existing pedestrian/collision system to prevent pedestrians from entering the road; this animation module does not replace collision or navigation.
-
-## 6. Driver pose
-
-Call from the existing vehicle update, using the driver's registered ID:
-
-```js
-characterAnimation.drivePose('player-driver', {
-  steering: steeringInput,       // -1 to +1
-  acceleration: accelerationInput, // -1 to +1
+vehicleVisuals.setMotion('player-keke', {
   speed: currentSpeed,
+  steering: steeringInput,
+  acceleration: accelerationInput,
+  braking: brakeAmount,
+  roadRoughness: 0.25,
+  distanceDelta: signedDistanceTravelledThisFrame,
 });
+vehicleVisuals.update(dt);
 ```
 
-The driver model must be placed in the existing Keke seat. This module adds only subtle lean; it does not reposition the driver or change vehicle physics.
+`distanceDelta` is the signed world-distance moved during this frame. If omitted, the module estimates a small increment from speed; supplying real distance is preferable. Keep this call in the existing render loop—do not create a second loop.
 
-## 7. Passenger transitions
+## 4. Cleanup
 
-Resolve the seat/exit positions from the existing Keke model and game logic:
+On vehicle removal call `vehicleVisuals.unregister('player-keke')`. On full game teardown call `vehicleVisuals.dispose()`.
 
-```js
-characterAnimation.boardPassenger('passenger-id', seatWorldPosition, {
-  duration: 0.85,
-  onComplete: () => { /* existing game: attach passenger to seat / update fare state */ },
-});
+## QA
+- Check each wheel's local spin axis; some GLBs use Z rather than X.
+- Confirm the visual body is not the same root that the physics system continually overwrites. If it is, use a dedicated visual child.
+- Do not enable camera follow while the existing camera follow system is active.
+- Tune suspension travel conservatively for the Keke model scale.
+- Test on mobile and desktop before deployment.
 
-characterAnimation.alightPassenger('passenger-id', roadsideWorldPosition, {
-  duration: 0.8,
-  onComplete: () => { /* existing game: resume pedestrian route */ },
-});
-```
-
-The callback must handle the game's current parenting and passenger state. The module deliberately does not guess seat offsets or rewrite fare logic.
-
-## 8. Cleanup
-
-When a character is permanently removed:
-
-```js
-characterAnimation.removeCharacter('pedestrian-unique-id');
-```
-
-On game teardown:
-
-```js
-characterAnimation.dispose();
-```
-
-## QA checklist
-
-- Confirm the GLB contains a rig and animation clips before expecting full-body motion.
-- Confirm driver feet/hands and seat alignment visually; correct the model's seat transform in the existing vehicle code, not in this animation manager.
-- Test boarding/alighting on both sides of the Keke, and ensure the existing game logic changes passenger state only once.
-- Test 15–20 animated actors on a mid-range phone; lower `maxActors` if frame rate drops.
-- Test pause/resume, scene restart, and actor removal for duplicate mixers or orphaned objects.
-- Check Vercel build before publishing. This package has not been connected to or deployed to the live repository.
+This is a standalone module and has not been wired into the live repository or browser-tested against the current deployed assets.
