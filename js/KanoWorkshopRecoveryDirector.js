@@ -1,201 +1,1050 @@
-/**
- * KANO LIFE — Workshop & Recovery Director
- * Standalone simulation module. It does not move Three.js meshes or charge a wallet.
- * The host game must confirm payment before calling completeRepair().
- */
-const clamp = (n, min, max) => Math.max(min, Math.min(max, Number(n) || 0));
-const uid = (prefix = 'job') => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+// ============================================================
+// KANO LIFE — WORKSHOP & RECOVERY DIRECTOR
+// File: js/KanoWorkshopRecoveryDirector.js
+//
+// Responsibilities:
+// - Kano workshop directory and operating status
+// - Repair estimates, bookings, and repair progress
+// - Explicitly confirmed repair payment tracking
+// - Roadside recovery requests, dispatch, and arrival
+// - Persistent simulation state
+//
+// This module does NOT:
+// - Charge the player's wallet
+// - Move or render Three.js vehicles
+// - Contact real recovery providers
+//
+// The wallet bridge remains responsible for charging money.
+// ============================================================
 
-const COMPONENTS = {
-  tyre: { label: 'Tyre / tube', base: 1800, minutes: 12, parts: 'tyre, tube, patch kit' },
-  engine: { label: 'Engine', base: 8500, minutes: 75, parts: 'engine parts, oil' },
-  cooling: { label: 'Cooling system', base: 3200, minutes: 30, parts: 'coolant, hose, clamps' },
-  brakes: { label: 'Brakes', base: 2800, minutes: 25, parts: 'brake cable, pads' },
-  suspension: { label: 'Suspension', base: 4200, minutes: 45, parts: 'spring, bushings' },
-  electrical: { label: 'Electrical', base: 2600, minutes: 35, parts: 'wiring, connectors' },
-  body: { label: 'Bodywork', base: 2200, minutes: 40, parts: 'panels, fasteners' },
+const clamp = (value, min, max) => {
+  const number = Number(value);
+  return Math.max(min, Math.min(max, Number.isFinite(number) ? number : 0));
 };
+
+const makeId = (prefix = 'job') => {
+  const random = Math.random().toString(36).slice(2, 9);
+  return `${prefix}_${Date.now().toString(36)}_${random}`;
+};
+
+const timestamp = () => Date.now();
+
+const clone = value => {
+  if (value === undefined || value === null) return value;
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+};
+
+const COMPONENTS = Object.freeze({
+  tyre: {
+    label: 'Tyre / tube',
+    base: 1800,
+    minutes: 12,
+    parts: 'Tyre, tube, patch kit',
+  },
+  engine: {
+    label: 'Engine',
+    base: 8500,
+    minutes: 75,
+    parts: 'Engine parts, oil',
+  },
+  cooling: {
+    label: 'Cooling system',
+    base: 3200,
+    minutes: 30,
+    parts: 'Coolant, hose, clamps',
+  },
+  brakes: {
+    label: 'Brakes',
+    base: 2800,
+    minutes: 25,
+    parts: 'Brake cable, pads',
+  },
+  suspension: {
+    label: 'Suspension',
+    base: 4200,
+    minutes: 45,
+    parts: 'Springs, bushings',
+  },
+  electrical: {
+    label: 'Electrical system',
+    base: 2600,
+    minutes: 35,
+    parts: 'Wiring, connectors',
+  },
+  body: {
+    label: 'Bodywork',
+    base: 2200,
+    minutes: 40,
+    parts: 'Panels, fasteners',
+  },
+});
+
+const RECOVERY_REASONS = Object.freeze({
+  breakdown: {
+    label: 'Mechanical breakdown',
+    baseFee: 3000,
+  },
+  engine_failure: {
+    label: 'Engine failure',
+    baseFee: 5000,
+  },
+  crash: {
+    label: 'Serious crash',
+    baseFee: 6500,
+  },
+  collision: {
+    label: 'Collision damage',
+    baseFee: 4500,
+  },
+  stuck: {
+    label: 'Vehicle stuck',
+    baseFee: 3500,
+  },
+  overheating: {
+    label: 'Overheating',
+    baseFee: 3200,
+  },
+});
+
+const DEFAULT_WORKSHOPS = [
+  {
+    id: 'kano-central',
+    name: 'Kano Central Mechanics',
+    district: 'central',
+    quality: 1.0,
+    stock: 0.95,
+    recovery: 0.9,
+  },
+  {
+    id: 'sabon-gari',
+    name: 'Sabon Gari Workshop Row',
+    district: 'market',
+    quality: 0.92,
+    stock: 1.0,
+    recovery: 0.82,
+  },
+  {
+    id: 'kumbotso',
+    name: 'Kumbotso Roadside Mechanics',
+    district: 'roadside',
+    quality: 0.78,
+    stock: 0.72,
+    recovery: 0.9,
+  },
+  {
+    id: 'naibawa',
+    name: 'Naibawa Repair Yard',
+    district: 'yard',
+    quality: 0.86,
+    stock: 0.88,
+    recovery: 0.95,
+  },
+];
 
 export class KanoWorkshopRecoveryDirector {
   constructor(options = {}) {
-    this.storageKey = options.storageKey || 'kano-life-workshop-recovery-v1';
-    this.onEvent = typeof options.onEvent === 'function' ? options.onEvent : () => {};
+    this.storageKey =
+      options.storageKey || 'kano-life-workshop-recovery-v1';
+
+    this.onEvent =
+      typeof options.onEvent === 'function'
+        ? options.onEvent
+        : () => {};
+
     this.workshops = new Map();
     this.jobs = new Map();
     this.recoveryCalls = new Map();
+
     this.sequence = 0;
+    this.destroyed = false;
+
     this.registerDefaultWorkshops();
-    if (options.autoLoad !== false) this.load();
+
+    if (options.autoLoad !== false) {
+      this.load();
+    }
   }
+
+  // ----------------------------------------------------------
+  // Lifecycle and event handling
+  // ----------------------------------------------------------
+
+  assertActive() {
+    if (this.destroyed) {
+      throw new Error(
+        'KanoWorkshopRecoveryDirector has been disposed.'
+      );
+    }
+  }
+
+  emit(type, detail = {}) {
+    if (this.destroyed) return;
+
+    const event = {
+      type,
+      detail: clone(detail),
+      at: timestamp(),
+      sequence: ++this.sequence,
+    };
+
+    try {
+      this.onEvent(event);
+    } catch (error) {
+      // Observer failures must not break game simulation.
+      console.error(
+        '[KanoWorkshopRecoveryDirector] Event callback failed:',
+        error
+      );
+    }
+  }
+
+  dispose() {
+    this.destroyed = true;
+    this.onEvent = () => {};
+  }
+
+  // ----------------------------------------------------------
+  // Workshops
+  // ----------------------------------------------------------
 
   registerDefaultWorkshops() {
-    const defaults = [
-      ['kano-central', 'Kano Central Mechanics', 'central', 1.0, 0.95, 0.9],
-      ['sabon-gari', 'Sabon Gari Workshop Row', 'market', 0.92, 1.0, 0.82],
-      ['kumbotso', 'Kumbotso Roadside Mechanics', 'roadside', 0.78, 0.72, 0.9],
-      ['naibawa', 'Naibawa Repair Yard', 'yard', 0.86, 0.88, 0.95],
-    ];
-    defaults.forEach(([id, name, district, quality, stock, recovery]) => this.registerWorkshop({ id, name, district, quality, stock, recovery }));
+    DEFAULT_WORKSHOPS.forEach(workshop => {
+      this.registerWorkshop(workshop);
+    });
   }
 
-  registerWorkshop(data) {
-    if (!data?.id || !data?.name) throw new Error('Workshop id and name are required.');
+  registerWorkshop(data = {}) {
+    this.assertActive();
+
+    if (!data.id || !data.name) {
+      throw new Error('Workshop id and name are required.');
+    }
+
     const workshop = {
-      id: String(data.id), name: String(data.name), district: String(data.district || 'Kano'),
-      quality: clamp(data.quality ?? 0.8, 0.3, 1.25), stock: clamp(data.stock ?? 0.8, 0, 1),
-      recovery: clamp(data.recovery ?? 0.8, 0.3, 1.2), priceMultiplier: clamp(data.priceMultiplier ?? 1, 0.5, 2.5),
-      open: data.open !== false, reputation: clamp(data.reputation ?? 50, 0, 100),
+      id: String(data.id),
+      name: String(data.name),
+      district: String(data.district || 'Kano'),
+      quality: clamp(data.quality ?? 0.8, 0.3, 1.25),
+      stock: clamp(data.stock ?? 0.8, 0, 1),
+      recovery: clamp(data.recovery ?? 0.8, 0.3, 1.2),
+      priceMultiplier: clamp(
+        data.priceMultiplier ?? 1,
+        0.5,
+        2.5
+      ),
+      open: data.open !== false,
+      reputation: clamp(data.reputation ?? 50, 0, 100),
     };
+
     this.workshops.set(workshop.id, workshop);
+
     return { ...workshop };
   }
 
+  getWorkshop(workshopId) {
+    this.assertActive();
+
+    const workshop = this.workshops.get(String(workshopId));
+
+    return workshop ? { ...workshop } : null;
+  }
+
   listWorkshops({ openOnly = true } = {}) {
-    return [...this.workshops.values()].filter(w => !openOnly || w.open).map(w => ({ ...w }));
+    this.assertActive();
+
+    return [...this.workshops.values()]
+      .filter(workshop => !openOnly || workshop.open)
+      .map(workshop => ({ ...workshop }));
   }
 
   setWorkshopOpen(workshopId, open) {
-    const w = this.workshops.get(workshopId);
-    if (!w) return { ok: false, reason: 'workshop_not_found' };
-    w.open = Boolean(open); this.emit('workshop_open_changed', { workshopId, open: w.open });
-    this.save(); return { ok: true, workshop: { ...w } };
+    this.assertActive();
+
+    const workshop = this.workshops.get(String(workshopId));
+
+    if (!workshop) {
+      return {
+        ok: false,
+        reason: 'workshop_not_found',
+      };
+    }
+
+    workshop.open = Boolean(open);
+
+    this.emit('workshop_open_changed', {
+      workshopId: workshop.id,
+      open: workshop.open,
+    });
+
+    this.save();
+
+    return {
+      ok: true,
+      workshop: { ...workshop },
+    };
   }
 
-  quoteRepair({ workshopId, vehicleId, component, severity = 0.5, urgency = 'normal', roadside = false } = {}) {
-    const w = this.workshops.get(workshopId);
-    if (!w) return { ok: false, reason: 'workshop_not_found' };
-    if (!w.open) return { ok: false, reason: 'workshop_closed' };
-    if (!COMPONENTS[component]) return { ok: false, reason: 'unknown_component' };
+  // ----------------------------------------------------------
+  // Repair estimates
+  // ----------------------------------------------------------
+
+  quoteRepair({
+    workshopId,
+    vehicleId,
+    component,
+    severity = 0.5,
+    urgency = 'normal',
+    roadside = false,
+  } = {}) {
+    this.assertActive();
+
+    const workshop = this.workshops.get(String(workshopId));
+
+    if (!workshop) {
+      return { ok: false, reason: 'workshop_not_found' };
+    }
+
+    if (!workshop.open) {
+      return { ok: false, reason: 'workshop_closed' };
+    }
+
     const spec = COMPONENTS[component];
-    const sev = clamp(severity, 0.05, 1);
-    const stockPenalty = w.stock < 0.35 ? 1.25 : w.stock < 0.65 ? 1.1 : 1;
+
+    if (!spec) {
+      return { ok: false, reason: 'unknown_component' };
+    }
+
+    const normalizedUrgency = [
+      'normal',
+      'urgent',
+      'emergency',
+    ].includes(urgency)
+      ? urgency
+      : 'normal';
+
+    const normalizedSeverity = clamp(severity, 0.05, 1);
+
+    const stockPenalty =
+      workshop.stock < 0.35
+        ? 1.25
+        : workshop.stock < 0.65
+          ? 1.1
+          : 1;
+
     const roadsideMultiplier = roadside ? 1.35 : 1;
-    const urgencyMultiplier = urgency === 'urgent' ? 1.25 : urgency === 'emergency' ? 1.5 : 1;
-    const qualityMultiplier = 0.78 + w.quality * 0.32;
-    const partsCost = Math.round(spec.base * (0.45 + sev * 0.55) * stockPenalty);
-    const labourCost = Math.round(spec.base * 0.45 * w.priceMultiplier * roadsideMultiplier * urgencyMultiplier * qualityMultiplier);
-    const durationMinutes = Math.max(5, Math.round(spec.minutes * (0.6 + sev * 0.8) / Math.max(0.55, w.quality) * (roadside ? 1.25 : 1)));
+
+    const urgencyMultiplier = {
+      normal: 1,
+      urgent: 1.25,
+      emergency: 1.5,
+    }[normalizedUrgency];
+
+    const qualityMultiplier =
+      0.78 + workshop.quality * 0.32;
+
+    const partsCost = Math.round(
+      spec.base *
+      (0.45 + normalizedSeverity * 0.55) *
+      stockPenalty
+    );
+
+    const labourCost = Math.round(
+      spec.base *
+      0.45 *
+      workshop.priceMultiplier *
+      roadsideMultiplier *
+      urgencyMultiplier *
+      qualityMultiplier
+    );
+
+    const durationMinutes = Math.max(
+      5,
+      Math.round(
+        spec.minutes *
+        (0.6 + normalizedSeverity * 0.8) /
+        Math.max(0.55, workshop.quality) *
+        (roadside ? 1.25 : 1)
+      )
+    );
+
     return {
-      ok: true, quoteId: uid('quote'), workshopId, workshopName: w.name, vehicleId: vehicleId || null,
-      component, componentLabel: spec.label, severity: sev, parts: spec.parts, partsCost, labourCost,
-      totalCost: partsCost + labourCost, durationMinutes, roadside: Boolean(roadside), urgency,
-      estimatedQualityGain: Math.round((18 + w.quality * 22) * (1 - sev * 0.25)), expiresAt: Date.now() + 5 * 60_000,
+      ok: true,
+      quoteId: makeId('quote'),
+      workshopId: workshop.id,
+      workshopName: workshop.name,
+      vehicleId: vehicleId ? String(vehicleId) : null,
+      component,
+      componentLabel: spec.label,
+      severity: normalizedSeverity,
+      parts: spec.parts,
+      partsCost,
+      labourCost,
+      totalCost: partsCost + labourCost,
+      durationMinutes,
+      roadside: Boolean(roadside),
+      urgency: normalizedUrgency,
+      estimatedQualityGain: Math.round(
+        (18 + workshop.quality * 22) *
+        (1 - normalizedSeverity * 0.25)
+      ),
+      createdAt: timestamp(),
+      expiresAt: timestamp() + 5 * 60_000,
       paymentRequired: true,
     };
   }
 
+  // ----------------------------------------------------------
+  // Repair booking and payment state
+  // ----------------------------------------------------------
+
   bookRepair(quote, options = {}) {
-    if (!quote?.ok || !quote.quoteId || !this.workshops.has(quote.workshopId)) return { ok: false, reason: 'invalid_quote' };
-    if (quote.expiresAt < Date.now()) return { ok: false, reason: 'quote_expired' };
-    if ([...this.jobs.values()].some(j => j.quoteId === quote.quoteId)) return { ok: false, reason: 'already_booked' };
+    this.assertActive();
+
+    if (
+      !quote?.ok ||
+      !quote.quoteId ||
+      !quote.workshopId ||
+      !COMPONENTS[quote.component]
+    ) {
+      return { ok: false, reason: 'invalid_quote' };
+    }
+
+    const workshop = this.workshops.get(
+      String(quote.workshopId)
+    );
+
+    if (!workshop) {
+      return { ok: false, reason: 'workshop_not_found' };
+    }
+
+    if (!workshop.open) {
+      return { ok: false, reason: 'workshop_closed' };
+    }
+
+    if (
+      !Number.isFinite(Number(quote.expiresAt)) ||
+      Number(quote.expiresAt) < timestamp()
+    ) {
+      return { ok: false, reason: 'quote_expired' };
+    }
+
+    const alreadyBooked = [...this.jobs.values()].some(
+      job => job.quoteId === quote.quoteId
+    );
+
+    if (alreadyBooked) {
+      return { ok: false, reason: 'already_booked' };
+    }
+
+    const paymentConfirmed =
+      options.paymentConfirmed === true;
+
+    if (
+      paymentConfirmed &&
+      !options.paymentReference
+    ) {
+      return {
+        ok: false,
+        reason: 'payment_reference_required',
+      };
+    }
+
     const job = {
-      id: uid('repair'), quoteId: quote.quoteId, workshopId: quote.workshopId, vehicleId: quote.vehicleId,
-      component: quote.component, componentLabel: quote.componentLabel, cost: quote.totalCost,
-      durationMinutes: quote.durationMinutes, remainingMinutes: quote.durationMinutes,
-      status: options.paymentConfirmed === true ? 'in_progress' : 'awaiting_payment',
-      paymentReference: options.paymentReference || null, createdAt: Date.now(), updatedAt: Date.now(),
-      qualityGain: quote.estimatedQualityGain, roadside: quote.roadside,
+      id: makeId('repair'),
+      quoteId: quote.quoteId,
+      workshopId: workshop.id,
+      workshopName: workshop.name,
+      vehicleId: quote.vehicleId || null,
+      component: quote.component,
+      componentLabel: quote.componentLabel,
+      cost: Math.max(0, Math.round(Number(quote.totalCost) || 0)),
+      durationMinutes: Math.max(
+        1,
+        Math.round(Number(quote.durationMinutes) || 1)
+      ),
+      remainingMinutes: Math.max(
+        1,
+        Math.round(Number(quote.durationMinutes) || 1)
+      ),
+      status: paymentConfirmed
+        ? 'in_progress'
+        : 'awaiting_payment',
+      paymentReference: paymentConfirmed
+        ? String(options.paymentReference)
+        : null,
+      createdAt: timestamp(),
+      updatedAt: timestamp(),
+      qualityGain: Math.max(
+        0,
+        Math.round(Number(quote.estimatedQualityGain) || 0)
+      ),
+      roadside: Boolean(quote.roadside),
     };
+
     this.jobs.set(job.id, job);
-    this.emit('repair_booked', { job: { ...job } }); this.save();
-    return { ok: true, job: { ...job }, paymentRequired: job.status === 'awaiting_payment' };
+
+    this.emit('repair_booked', { job });
+    this.save();
+
+    return {
+      ok: true,
+      job: { ...job },
+      paymentRequired: job.status === 'awaiting_payment',
+    };
   }
 
-  /** Call only after the existing wallet/payment system confirms a successful charge. */
   confirmRepairPayment(jobId, paymentReference) {
-    const job = this.jobs.get(jobId);
-    if (!job) return { ok: false, reason: 'job_not_found' };
-    if (job.status !== 'awaiting_payment') return { ok: false, reason: 'invalid_job_state', status: job.status };
-    if (!paymentReference) return { ok: false, reason: 'payment_reference_required' };
-    job.paymentReference = String(paymentReference); job.status = 'in_progress'; job.updatedAt = Date.now();
-    this.emit('repair_started', { job: { ...job } }); this.save(); return { ok: true, job: { ...job } };
+    this.assertActive();
+
+    const job = this.jobs.get(String(jobId));
+
+    if (!job) {
+      return { ok: false, reason: 'job_not_found' };
+    }
+
+    if (job.status !== 'awaiting_payment') {
+      return {
+        ok: false,
+        reason: 'invalid_job_state',
+        status: job.status,
+      };
+    }
+
+    if (!paymentReference) {
+      return {
+        ok: false,
+        reason: 'payment_reference_required',
+      };
+    }
+
+    job.paymentReference = String(paymentReference);
+    job.status = 'in_progress';
+    job.updatedAt = timestamp();
+
+    this.emit('repair_started', { job });
+    this.save();
+
+    return {
+      ok: true,
+      job: { ...job },
+    };
   }
 
   advanceWorkshopTime(minutes) {
+    this.assertActive();
+
     const elapsed = clamp(minutes, 0, 24 * 60);
     const completed = [];
+
     for (const job of this.jobs.values()) {
       if (job.status !== 'in_progress') continue;
-      job.remainingMinutes = Math.max(0, job.remainingMinutes - elapsed); job.updatedAt = Date.now();
-      if (job.remainingMinutes === 0) { job.status = 'ready_for_pickup'; completed.push({ ...job }); this.emit('repair_ready', { job: { ...job } }); }
+
+      job.remainingMinutes = Math.max(
+        0,
+        job.remainingMinutes - elapsed
+      );
+
+      job.updatedAt = timestamp();
+
+      if (job.remainingMinutes === 0) {
+        job.status = 'ready_for_pickup';
+
+        completed.push({ ...job });
+
+        this.emit('repair_ready', { job });
+      }
     }
-    if (elapsed > 0) this.save();
-    return { elapsedMinutes: elapsed, completed, activeJobs: this.listJobs({ statuses: ['in_progress'] }).length };
+
+    if (elapsed > 0) {
+      this.save();
+    }
+
+    return {
+      elapsedMinutes: elapsed,
+      completed,
+      activeJobs: this.listJobs({
+        statuses: ['in_progress'],
+      }).length,
+    };
   }
 
-  completeRepair(jobId, options = {}) {
-    const job = this.jobs.get(jobId);
-    if (!job) return { ok: false, reason: 'job_not_found' };
-    if (job.status !== 'ready_for_pickup') return { ok: false, reason: 'repair_not_ready', status: job.status };
-    job.status = 'completed'; job.completedAt = Date.now(); job.updatedAt = Date.now();
-    const result = { ok: true, job: { ...job }, vehicleId: job.vehicleId, component: job.component, qualityGain: job.qualityGain, walletAlreadyHandled: true, maintenanceRecord: { type: 'repair', component: job.component, cost: job.cost, at: job.completedAt, workshopId: job.workshopId, paymentReference: job.paymentReference } };
-    this.emit('repair_completed', result); this.save(); return result;
+  completeRepair(jobId) {
+    this.assertActive();
+
+    const job = this.jobs.get(String(jobId));
+
+    if (!job) {
+      return { ok: false, reason: 'job_not_found' };
+    }
+
+    if (job.status !== 'ready_for_pickup') {
+      return {
+        ok: false,
+        reason: 'repair_not_ready',
+        status: job.status,
+      };
+    }
+
+    job.status = 'completed';
+    job.completedAt = timestamp();
+    job.updatedAt = timestamp();
+
+    const result = {
+      ok: true,
+      job: { ...job },
+      vehicleId: job.vehicleId,
+      component: job.component,
+      qualityGain: job.qualityGain,
+      walletAlreadyHandled: true,
+      maintenanceRecord: {
+        type: 'repair',
+        component: job.component,
+        cost: job.cost,
+        at: job.completedAt,
+        workshopId: job.workshopId,
+        paymentReference: job.paymentReference,
+      },
+    };
+
+    this.emit('repair_completed', result);
+    this.save();
+
+    return result;
   }
 
-  requestRecovery({ vehicleId, location, severity = 'breakdown', distanceKm = 3, timeOfDay = 12 } = {}) {
-    if (!vehicleId) return { ok: false, reason: 'vehicle_id_required' };
-    const nearby = [...this.workshops.values()].filter(w => w.open).sort((a, b) => a.recovery - b.recovery)[0];
-    if (!nearby) return { ok: false, reason: 'no_recovery_available' };
+  // ----------------------------------------------------------
+  // Roadside recovery
+  // ----------------------------------------------------------
+
+  requestRecovery({
+    vehicleId,
+    location,
+    severity = 'breakdown',
+    distanceKm = 3,
+    timeOfDay = 12,
+  } = {}) {
+    this.assertActive();
+
+    if (!vehicleId) {
+      return {
+        ok: false,
+        reason: 'vehicle_id_required',
+      };
+    }
+
+    const reason = RECOVERY_REASONS[severity]
+      ? severity
+      : 'breakdown';
+
+    const reasonSpec = RECOVERY_REASONS[reason];
+
+    const availableWorkshops = [...this.workshops.values()]
+      .filter(workshop => workshop.open)
+      .sort((a, b) => a.recovery - b.recovery);
+
+    const workshop = availableWorkshops[0];
+
+    if (!workshop) {
+      return {
+        ok: false,
+        reason: 'no_recovery_available',
+      };
+    }
+
     const distance = clamp(distanceKm, 0, 100);
-    const afterHours = Number(timeOfDay) < 6 || Number(timeOfDay) >= 22;
-    const base = severity === 'crash' ? 6500 : severity === 'engine_failure' ? 5000 : 3000;
-    const fee = Math.round((base + distance * 450) * (afterHours ? 1.3 : 1) / Math.max(0.6, nearby.recovery));
+    const hour = clamp(timeOfDay, 0, 24);
+    const afterHours = hour < 6 || hour >= 22;
+
+    const fee = Math.round(
+      (
+        reasonSpec.baseFee + distance * 450
+      ) *
+      (afterHours ? 1.3 : 1) /
+      Math.max(0.6, workshop.recovery)
+    );
+
     const call = {
-      id: uid('recovery'), vehicleId: String(vehicleId), location: location || 'Unknown roadside location',
-      severity, distanceKm: distance, workshopId: nearby.id, workshopName: nearby.name, fee,
-      status: 'awaiting_confirmation', createdAt: Date.now(), etaMinutes: Math.max(5, Math.round(8 + distance * 3 / nearby.recovery)),
+      id: makeId('recovery'),
+      vehicleId: String(vehicleId),
+      location: String(
+        location || 'Unknown roadside location'
+      ),
+      severity: reason,
+      severityLabel: reasonSpec.label,
+      distanceKm: distance,
+      workshopId: workshop.id,
+      workshopName: workshop.name,
+      fee,
+      status: 'awaiting_confirmation',
+      createdAt: timestamp(),
+      etaMinutes: Math.max(
+        5,
+        Math.round(
+          8 + distance * 3 / workshop.recovery
+        )
+      ),
       paymentRequired: true,
     };
-    this.recoveryCalls.set(call.id, call); this.emit('recovery_requested', { call: { ...call } }); this.save();
-    return { ok: true, call: { ...call }, walletActionRequired: 'Obtain explicit player confirmation, then process fee through the existing wallet.' };
+
+    this.recoveryCalls.set(call.id, call);
+
+    this.emit('recovery_requested', { call });
+    this.save();
+
+    return {
+      ok: true,
+      call: { ...call },
+      walletActionRequired:
+        'Obtain explicit player confirmation, then process the fee through the existing wallet.',
+    };
   }
 
   confirmRecoveryPayment(callId, paymentReference) {
-    const call = this.recoveryCalls.get(callId);
-    if (!call) return { ok: false, reason: 'recovery_not_found' };
-    if (call.status !== 'awaiting_confirmation') return { ok: false, reason: 'invalid_recovery_state' };
-    if (!paymentReference) return { ok: false, reason: 'payment_reference_required' };
-    call.status = 'dispatched'; call.paymentReference = String(paymentReference); call.dispatchedAt = Date.now();
-    this.emit('recovery_dispatched', { call: { ...call } }); this.save(); return { ok: true, call: { ...call } };
+    this.assertActive();
+
+    const call = this.recoveryCalls.get(String(callId));
+
+    if (!call) {
+      return {
+        ok: false,
+        reason: 'recovery_not_found',
+      };
+    }
+
+    if (call.status !== 'awaiting_confirmation') {
+      return {
+        ok: false,
+        reason: 'invalid_recovery_state',
+        status: call.status,
+      };
+    }
+
+    if (!paymentReference) {
+      return {
+        ok: false,
+        reason: 'payment_reference_required',
+      };
+    }
+
+    call.status = 'dispatched';
+    call.paymentReference = String(paymentReference);
+    call.dispatchedAt = timestamp();
+
+    this.emit('recovery_dispatched', { call });
+    this.save();
+
+    return {
+      ok: true,
+      call: { ...call },
+    };
   }
 
   advanceRecoveryTime(minutes) {
-    const elapsed = clamp(minutes, 0, 24 * 60); const arrived = [];
+    this.assertActive();
+
+    const elapsed = clamp(minutes, 0, 24 * 60);
+    const arrived = [];
+
     for (const call of this.recoveryCalls.values()) {
       if (call.status !== 'dispatched') continue;
-      call.etaMinutes = Math.max(0, call.etaMinutes - elapsed);
-      if (call.etaMinutes === 0) { call.status = 'arrived'; call.arrivedAt = Date.now(); arrived.push({ ...call }); this.emit('recovery_arrived', { call: { ...call } }); }
+
+      call.etaMinutes = Math.max(
+        0,
+        call.etaMinutes - elapsed
+      );
+
+      if (call.etaMinutes === 0) {
+        call.status = 'arrived';
+        call.arrivedAt = timestamp();
+
+        arrived.push({ ...call });
+
+        this.emit('recovery_arrived', { call });
+      }
     }
-    if (elapsed > 0) this.save(); return { arrived, active: [...this.recoveryCalls.values()].filter(c => c.status === 'dispatched').length };
+
+    if (elapsed > 0) {
+      this.save();
+    }
+
+    return {
+      arrived,
+      active: [...this.recoveryCalls.values()].filter(
+        call => call.status === 'dispatched'
+      ).length,
+    };
   }
+
+  completeRecovery(callId) {
+    this.assertActive();
+
+    const call = this.recoveryCalls.get(String(callId));
+
+    if (!call) {
+      return {
+        ok: false,
+        reason: 'recovery_not_found',
+      };
+    }
+
+    if (call.status !== 'arrived') {
+      return {
+        ok: false,
+        reason: 'recovery_not_arrived',
+        status: call.status,
+      };
+    }
+
+    call.status = 'completed';
+    call.completedAt = timestamp();
+
+    this.emit('recovery_completed', { call });
+    this.save();
+
+    return {
+      ok: true,
+      call: { ...call },
+    };
+  }
+
+  // ----------------------------------------------------------
+  // Queries
+  // ----------------------------------------------------------
 
   listJobs({ vehicleId, statuses } = {}) {
-    return [...this.jobs.values()].filter(j => !vehicleId || j.vehicleId === vehicleId).filter(j => !statuses || statuses.includes(j.status)).map(j => ({ ...j }));
+    this.assertActive();
+
+    return [...this.jobs.values()]
+      .filter(job => !vehicleId || job.vehicleId === vehicleId)
+      .filter(job => !statuses || statuses.includes(job.status))
+      .map(job => ({ ...job }));
   }
-  listRecoveryCalls({ vehicleId } = {}) { return [...this.recoveryCalls.values()].filter(c => !vehicleId || c.vehicleId === vehicleId).map(c => ({ ...c })); }
-  getSnapshot() { return { version: 1, workshops: this.listWorkshops({ openOnly: false }), jobs: this.listJobs(), recoveryCalls: this.listRecoveryCalls(), generatedAt: Date.now() }; }
-  exportState() { return JSON.stringify(this.getSnapshot()); }
+
+  getJob(jobId) {
+    this.assertActive();
+
+    const job = this.jobs.get(String(jobId));
+
+    return job ? { ...job } : null;
+  }
+
+  listRecoveryCalls({ vehicleId } = {}) {
+    this.assertActive();
+
+    return [...this.recoveryCalls.values()]
+      .filter(
+        call => !vehicleId || call.vehicleId === vehicleId
+      )
+      .map(call => ({ ...call }));
+  }
+
+  getRecoveryCall(callId) {
+    this.assertActive();
+
+    const call = this.recoveryCalls.get(String(callId));
+
+    return call ? { ...call } : null;
+  }
+
+  getSnapshot() {
+    this.assertActive();
+
+    return {
+      version: 1,
+      workshops: this.listWorkshops({ openOnly: false }),
+      jobs: this.listJobs(),
+      recoveryCalls: this.listRecoveryCalls(),
+      generatedAt: timestamp(),
+    };
+  }
+
+  exportState() {
+    return JSON.stringify(this.getSnapshot());
+  }
+
+  // ----------------------------------------------------------
+  // Persistence
+  // ----------------------------------------------------------
 
   importState(serialized) {
+    this.assertActive();
+
     try {
-      const data = typeof serialized === 'string' ? JSON.parse(serialized) : serialized;
-      if (!data || data.version !== 1 || !Array.isArray(data.workshops) || !Array.isArray(data.jobs) || !Array.isArray(data.recoveryCalls)) return { ok: false, reason: 'invalid_state_format' };
-      this.workshops.clear(); this.jobs.clear(); this.recoveryCalls.clear();
-      data.workshops.forEach(w => this.registerWorkshop(w));
-      data.jobs.forEach(j => { if (j?.id && j?.status) this.jobs.set(j.id, j); });
-      data.recoveryCalls.forEach(c => { if (c?.id && c?.status) this.recoveryCalls.set(c.id, c); });
-      this.save(); return { ok: true, workshops: this.workshops.size, jobs: this.jobs.size, recoveryCalls: this.recoveryCalls.size };
-    } catch (error) { return { ok: false, reason: 'parse_error', message: error.message }; }
+      const data =
+        typeof serialized === 'string'
+          ? JSON.parse(serialized)
+          : serialized;
+
+      if (
+        !data ||
+        data.version !== 1 ||
+        !Array.isArray(data.workshops) ||
+        !Array.isArray(data.jobs) ||
+        !Array.isArray(data.recoveryCalls)
+      ) {
+        return {
+          ok: false,
+          reason: 'invalid_state_format',
+        };
+      }
+
+      const workshops = new Map();
+      const jobs = new Map();
+      const recoveryCalls = new Map();
+
+      for (const item of data.workshops) {
+        if (!item?.id || !item?.name) continue;
+
+        const workshop = {
+          id: String(item.id),
+          name: String(item.name),
+          district: String(item.district || 'Kano'),
+          quality: clamp(item.quality ?? 0.8, 0.3, 1.25),
+          stock: clamp(item.stock ?? 0.8, 0, 1),
+          recovery: clamp(item.recovery ?? 0.8, 0.3, 1.2),
+          priceMultiplier: clamp(
+            item.priceMultiplier ?? 1,
+            0.5,
+            2.5
+          ),
+          open: item.open !== false,
+          reputation: clamp(item.reputation ?? 50, 0, 100),
+        };
+
+        workshops.set(workshop.id, workshop);
+      }
+
+      for (const item of data.jobs) {
+        if (
+          !item?.id ||
+          !item?.status ||
+          ![
+            'awaiting_payment',
+            'in_progress',
+            'ready_for_pickup',
+            'completed',
+          ].includes(item.status)
+        ) {
+          continue;
+        }
+
+        jobs.set(String(item.id), clone(item));
+      }
+
+      for (const item of data.recoveryCalls) {
+        if (
+          !item?.id ||
+          !item?.status ||
+          ![
+            'awaiting_confirmation',
+            'dispatched',
+            'arrived',
+            'completed',
+          ].includes(item.status)
+        ) {
+          continue;
+        }
+
+        recoveryCalls.set(String(item.id), clone(item));
+      }
+
+      if (workshops.size === 0) {
+        return {
+          ok: false,
+          reason: 'no_valid_workshops',
+        };
+      }
+
+      this.workshops = workshops;
+      this.jobs = jobs;
+      this.recoveryCalls = recoveryCalls;
+
+      this.save();
+
+      return {
+        ok: true,
+        workshops: this.workshops.size,
+        jobs: this.jobs.size,
+        recoveryCalls: this.recoveryCalls.size,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: 'parse_error',
+        message: String(error?.message || error),
+      };
+    }
   }
+
   save() {
-    try { if (typeof localStorage !== 'undefined') localStorage.setItem(this.storageKey, this.exportState()); return true; }
-    catch (error) { this.emit('storage_error', { message: error.message }); return false; }
+    if (this.destroyed) return false;
+
+    try {
+      if (typeof localStorage === 'undefined') {
+        return false;
+      }
+
+      localStorage.setItem(
+        this.storageKey,
+        this.exportState()
+      );
+
+      return true;
+    } catch (error) {
+      this.emit('storage_error', {
+        message: String(error?.message || error),
+      });
+
+      return false;
+    }
   }
+
   load() {
-    try { if (typeof localStorage === 'undefined') return { ok: false, reason: 'storage_unavailable' }; const raw = localStorage.getItem(this.storageKey); return raw ? this.importState(raw) : { ok: true, empty: true }; }
-    catch (error) { this.emit('storage_error', { message: error.message }); return { ok: false, reason: 'storage_error' }; }
+    this.assertActive();
+
+    try {
+      if (typeof localStorage === 'undefined') {
+        return {
+          ok: false,
+          reason: 'storage_unavailable',
+        };
+      }
+
+      const raw = localStorage.getItem(this.storageKey);
+
+      if (!raw) {
+        return {
+          ok: true,
+          empty: true,
+        };
+      }
+
+      const result = this.importState(raw);
+
+      if (!result.ok) {
+        this.emit('storage_error', {
+          message: result.reason || 'State could not be loaded.',
+        });
+      }
+
+      return result;
+    } catch (error) {
+      this.emit('storage_error', {
+        message: String(error?.message || error),
+      });
+
+      return {
+        ok: false,
+        reason: 'storage_error',
+      };
+    }
   }
-  emit(type, detail = {}) { this.onEvent({ type, detail, at: Date.now(), sequence: ++this.sequence }); }
 }
 
 export { COMPONENTS as KANO_REPAIR_COMPONENTS };
+export { RECOVERY_REASONS as KANO_RECOVERY_REASONS };
