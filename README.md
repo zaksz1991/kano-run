@@ -1,45 +1,49 @@
-# Kano Life — Dynamic Weather & Day/Night Atmosphere Upgrade
+# Kano Life — Character Animation Upgrade
 
-## What's added
+Adds a reusable Three.js character animation manager for GLB characters, procedural fallback movement, passenger path transitions, and driver rig gestures.
 
-- **Night lighting profile** based on `game.s.night`.
-- **Harmattan haze and suspended dust** when `game.s.environment === 'harmattan'`.
-- **Rain streaks** when `game.s.environment === 'rainPuddles'`.
-- **Subdued overcast lighting** for muddy and bad-road events.
-- **Mobile-aware fixed particle pools** (86 rain streaks / 64 dust particles on mobile; 190 / 142 on desktop).
-- **Safe render-wrapper composition** with the existing cinematic camera; scene colors and light values are restored after each WebGL render.
-- **No additional game state, collision, traffic, fare, or audio simulation**. `Game` remains the gameplay authority.
-- `?disableAtmosphere=1` disables atmospheric effects for comparison. `?disableCameraFX=1` disables camera polish. `?fixedQuality=1` disables adaptive render-resolution changes.
+## Files
+- `js/KanoCharacterAnimation.js` — complete ES module.
 
-## Install
+## What it does
+- Uses `THREE.AnimationMixer` when the loaded GLB includes animation clips.
+- Chooses clips by names such as `walk`, `run`, `idle`, `sit`, or `drive`.
+- Animates a registered passenger along world-space points for boarding/alighting.
+- Provides subtle procedural movement when no clips are available.
+- Offers a driver gesture helper that supports common Mixamo bone names and the Kano procedural rig names.
+- Caps registered actors more aggressively on mobile and provides cleanup methods.
 
-1. Back up the repository.
-2. Extract this package at the `kano-run` repository root and merge its `js/` directory.
-3. Replace `js/main.js` with the supplied complete entry point.
-4. Add or replace `js/KanoAtmosphere.js`, `js/KanoCinematicCamera.js`, and `js/KanoAdaptiveQuality.js`.
-5. Keep the existing `index.html`, `game.js`, `renderer3d.js`, `renderer2d.js`, `ModelManager.js`, `KanoProductionBridge.js`, `KekeDynamics.js`, `KanoVisualEffects.js`, `LiveUserCounter.js`, `KanoSceneUpgrade.js`, `KanoAnimationTrafficUpgrade.js`, `KanoPerformanceMonitor.js`, `ui.js`, `controls.js`, `audio.js`, `storage.js`, CSS, models, and other assets.
-6. Do not replace `package.json` or `package-lock.json` for this upgrade.
+## Integration contract
+This is an additive module, not a replacement for `game.js`, `Renderer3D.js`, `ModelManager.js`, or `main.js`. Your existing renderer/game must decide when a passenger is picked up or dropped off. Instantiate it only when a Three.js scene is active:
 
-The supplied `main.js` retains the previously integrated scene, coin/smoke, live-user, traffic, Keke dynamics, animation, cinematic-camera, adaptive-quality, model-audit, and performance-monitor hooks. It expects those existing companion modules to be present in the repository.
+```js
+import { KanoCharacterAnimation } from './KanoCharacterAnimation.js';
 
-## Verify
+const characterAnimation = new KanoCharacterAnimation({
+  scene: renderer.scene,
+  mobile,
+});
 
-From the repository root, run:
+// When a GLTF has loaded:
+const passenger = characterAnimation.registerCharacter(
+  gltf.scene,
+  gltf.animations,
+  { role: 'passenger', scale: 1 },
+);
 
-```bash
-npm run check
-npm test
-npm run build
+// Each frame, alongside your existing renderer update:
+characterAnimation.update(deltaSeconds);
+
+// When the game switches away from WebGL:
+characterAnimation.dispose();
 ```
 
-Then test `https://kano-run.vercel.app/` on desktop and on a real phone. For diagnostics:
+To animate boarding or alighting, call `boardPassenger(actor, approachPoint, seatPoint)` or `alightPassenger(actor, doorPoint, destinationPoint)`. All points must be `THREE.Vector3` values in world coordinates. Use the `onComplete` callback to update the existing passenger inventory or remove the character; do not update the inventory twice.
 
-- `?debugModels=1` — show model auditing.
-- `?debugPerf=1` — show frame-time and renderer counters.
-- `?disableAtmosphere=1` — disable rain/dust/weather lighting.
-- `?disableCameraFX=1` — disable cinematic camera effects.
-- `?fixedQuality=1` — disable adaptive rendering resolution.
+For driver gestures, pass the actual driver root, the current game state, and frame delta to `animateDriver(driverRoot, game.s, dt)`. The driver root must be a rig or a parent containing named bones. This method does not reposition a driver model that is incorrectly authored in its GLB; fix its seat transform in `ModelManager` or the asset itself.
 
-## Validation status
-
-The supplied JavaScript files passed `node --check` syntax validation. This package has **not** been executed against the full repository, and production build success or 60 FPS has not been verified here. Weather effects are intentionally limited to the existing 3D road scene; the pre-existing 2D renderer remains the fallback on devices without WebGL.
+## Important limitations
+- The module does not automatically discover or load passenger GLBs; connect it to your existing `ModelManager`/GLTF loader.
+- Your current scene and game have not been available here for end-to-end testing. Integrate in a branch and run your existing checks before deploying.
+- GLB animation clip names and rig bone names vary. The helper uses common names and falls back to subtle procedural motion, but high-quality skeletal animation requires suitable clips and matching rigs.
+- Do not dispose shared cached GLB geometry/materials when removing an actor. Use `remove(actor)` for shared assets; use `remove(actor, { disposeMaterials: true })` only when the actor owns its resources exclusively.
