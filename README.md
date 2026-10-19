@@ -1,16 +1,22 @@
-# Kano Life — Workshop & Recovery Upgrade
+# Kano Life — Driver Economy Upgrade
 
-A standalone ES module for playable repair-workshop and breakdown-recovery workflows.
+Standalone JavaScript simulation for a keke driver's working finances in Kano.
 
-## Included
-- Four configurable logical workshop records in Kano districts.
-- Component repair quotations for tyres, engine, cooling, brakes, suspension, electrical, and bodywork.
-- Repair booking, payment-confirmation boundary, in-game repair timers, and pickup completion.
-- Recovery quotations with distance, incident severity, after-hours pricing, dispatch, and ETA.
-- Event callbacks, job/recovery history, and export/import persistence.
+## Includes
+- Daily fare revenue and operating expenses
+- Fuel price changes, purchases, and consumption
+- Household, food, mobile data, and permit budget estimates
+- Savings deposits and withdrawals
+- Emergency costs and optional controlled borrowing
+- Debt repayment and hire-purchase instalments
+- Daily reports, alerts, ledger entries, and persistent state
+- Event callbacks for HUD and finance-screen integration
 
-## Validation
-Syntax and isolated workflow smoke tests should be run in the target project. This package is an additive module; it is not automatically integrated into the live game and does not contain 3D workshop assets.
+## File
+- `js/KanoDriverEconomyDirector.js` — complete ES module.
 
-## Safety against duplicate money systems
-The module deliberately never deducts cash. Charge through the game's existing wallet and pass the confirmed transaction reference into the module. Never treat a quote or booking as proof that payment occurred.
+## Compatibility
+Designed for modern browsers and Vite/ES modules. It uses browser `localStorage` when available and can be tested in Node by passing `{ autoLoad: false }`.
+
+## Status
+Standalone add-on. It is not connected to the production game wallet, UI, or deployed site. Read `INTEGRATION.md` before connecting it to avoid duplicate wallet deductions.
