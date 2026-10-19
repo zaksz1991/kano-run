@@ -1,101 +1,62 @@
-# Integration guide — Kano Life systemic simulation upgrade
+# Integration guide
 
-This is an additive module package. It is not wired into the live game because the current game entry point and its scene/vehicle variables were not supplied.
+This module is deliberately engine-agnostic. It does not spawn 3D objects, change physics, or replace the current route/mission system. Connect its events to the game's existing UI, traffic, audio, and life-simulation systems.
 
-## 1. Add the files
-
-Copy the three JavaScript files into your existing `js/` directory. Keep your existing game files and asset paths.
-
-## 2. Driver-life simulation
+## 1. Import and construct
 
 ```js
-import { KanoLifeSimDirector } from './KanoLifeSimDirector.js';
+import { KanoSystemicEventDirector, KANO_EVENT_COPY } from './KanoSystemicEventDirector.js';
 
-const lifeSim = new KanoLifeSimDirector({
-  onChange: (state, reason) => {
-    // Update your existing HUD here; do not replace the whole HUD.
-    // Example: cashText.textContent = `₦${Math.round(state.cash).toLocaleString()}`;
+const eventDirector = new KanoSystemicEventDirector({
+  onEvent(event, state) {
+    const copy = KANO_EVENT_COPY[event.id];
+    if (copy) showGameNotification(copy.title, copy.message, copy.action);
+    playEventSound?.(event.id);
+    // Trigger existing systems here; do not create a second traffic or physics loop.
   },
-  onEvent: ({ type, detail }) => {
-    // Trigger existing UI/audio feedback for trip_started, refuelled, fine, etc.
-  },
-});
-
-// Call once per frame with your actual measured frame delta.
-lifeSim.update(deltaSeconds, {
-  speedKmh: playerSpeedKmh,
-  distanceKm: distanceTravelledThisFrame,
-  engineRunning: isEngineRunning,
-  passengerOnboard: hasPassenger,
-});
-
-// Connect existing interaction buttons to lifeSim.startTrip(), completeTrip(),
-// refuel(), eat(), and rest(). Dispose on game teardown with lifeSim.dispose().
-```
-
-Default fuel price and fare values are game-balance placeholders; tune them to the existing economy before release. Avoid advancing `distanceKm` with total cumulative distance each frame: pass the incremental distance for that frame.
-
-## 3. Procedural traffic
-
-```js
-import { KanoProceduralTrafficDirector } from './KanoProceduralTrafficDirector.js';
-
-const traffic = new KanoProceduralTrafficDirector({
-  scene,
-  lanes: [-3.2, 0, 3.2],
-  poolSize: isMobile ? 8 : 18,
-  mix: { keke: 0.4, motorcycle: 0.3, car: 0.3 },
-  createVehicle: ({ type, laneIndex }) => {
-    // Return an existing Three.js Object3D cloned from your model catalog.
-    // Do not return a shared scene root. Add type-switching/reloading in your
-    // model manager if the GLB geometry differs across vehicle types.
-    return modelManager.createTrafficVehicle(type, laneIndex);
-  },
-  onNearMiss: () => soundDirector.oneShot('near_miss'),
-  onCollision: ({ actor }) => { /* feed your existing collision system */ },
-});
-
-// In your existing animation loop:
-traffic.update(deltaSeconds, {
-  playerZ: player.position.z,
-  playerX: player.position.x,
-  playerSpeed: playerSpeedWorldUnitsPerSecond,
-  paused: isPaused,
 });
 ```
 
-**Important:** this director expects traffic to approach along +Z while the player's position is used as the reference. If your current game moves the world in the opposite direction, invert the Z convention before enabling it. It is a separate traffic pool and must not run alongside an existing traffic spawner unless that duplication is intentional. Collision callbacks are hooks, not a replacement for your collision solver.
+Replace `showGameNotification` and `playEventSound` with functions already present in the project. Remove optional chaining if your build target does not support it.
 
-## 4. Dynamic audio
+## 2. Update once per frame
+
+Inside the existing animation loop, call the director exactly once:
 
 ```js
-import { KanoDynamicSoundDirector } from './KanoDynamicSoundDirector.js';
-
-const soundDirector = new KanoDynamicSoundDirector({
-  sounds: {
-    engine: { src: '/audio/engine.mp3', loop: true, bus: 'sfx', volume: 0.75 },
-    road_ambience: { src: '/audio/road-ambience.mp3', loop: true, bus: 'ambience' },
-    horn: { src: '/audio/horn.mp3', bus: 'sfx', volume: 0.9 },
-    near_miss: { src: '/audio/near-miss.mp3', bus: 'sfx' },
-  },
+eventDirector.update(deltaSeconds, {
+  speed: playerSpeed,
+  fuel: driverState.fuel,
+  money: driverState.money,
+  hunger: driverState.hunger,
+  fatigue: driverState.fatigue,
+  distance: routeDistance,
+  routeId: activeRouteId,
+  shiftActive: gameState === 'driving',
 });
-
-// Call from the Start/Play button click (required by browser autoplay policies).
-await soundDirector.unlock();
-await soundDirector.setAmbience('road_ambience');
-
-// Update engine from your real vehicle telemetry:
-await soundDirector.setEngineState({ rpm, throttle, running: isEngineRunning });
-// User interactions: await soundDirector.oneShot('horn');
-// On teardown: soundDirector.dispose();
 ```
 
-Use your existing audio asset paths rather than adding duplicate sound files. Avoid calling async `setEngineState` more often than needed if your game has a very high frame rate; a 10–15 Hz audio telemetry update is usually sufficient. Sound playback fails gracefully if a file is absent or audio has not been unlocked.
+Use the actual variable names from the project. Do not add a second `requestAnimationFrame` loop just for this module.
 
-## Required before production
+## 3. Event handlers
 
-- Connect these modules to the real entry point and actual variable names.
-- Confirm the traffic direction, lane coordinates, player scale, and collision conventions.
-- Tune economy, fuel drain, needs decay, and audio levels with playtesting.
-- Test mobile touch controls, performance, pause/resume, reload persistence, and audio unlock.
-- Run a production build and verify that the existing spawner/camera/UI are not duplicated.
+Use `event.id` to connect existing systems:
+- `passenger_demand`: ask the current passenger/pickup system to offer a roadside pickup.
+- `fuel_reminder`: show a notification and optionally play the existing warning sound.
+- `karota_checkpoint`: activate an existing checkpoint if one is available; otherwise show a warning only.
+- `road_hazard`: ask the road-hazard system to place a hazard within the current forward scene window.
+- `market_congestion`: raise density in the existing traffic/crowd spawner temporarily.
+- `fare_negotiation`: open the existing fare interaction only while safely stopped.
+- `rest_opportunity`: show a meal/rest prompt using existing driver-life state.
+
+Do not treat an event notification as proof that a physical object was spawned. Connect to existing world systems for actual scene changes.
+
+## 4. Test controls
+
+`eventDirector.trigger('fuel_reminder', { debug: true })` emits an event immediately for UI testing. `getSnapshot()` provides basic diagnostics. `reset()` clears elapsed time and cooldowns.
+
+## Safety and integration notes
+- Scheduler callbacks are isolated so UI/audio errors do not stop the scheduler.
+- Event timing uses simulation seconds and pauses naturally if `update()` is not called.
+- Event names and UI copy are suggestions; align them with your current game terminology.
+- Test event frequency and accessibility on mobile before shipping.

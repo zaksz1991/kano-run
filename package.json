@@ -1,7 +1,1 @@
-{
-  "name": "kano-life-systemic-simulation-upgrade",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "description": "Additive life simulation, procedural traffic, and dynamic audio modules for Kano Life"
-}
+{"name":"kano-life-systemic-events-upgrade","private":true,"type":"module","scripts":{"test":"node tests/smoke-test.mjs"}}

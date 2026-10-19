@@ -1,13 +1,14 @@
-# Kano Life — Systemic Simulation Upgrade
+# Kano Life — Systemic Events Upgrade
 
-Three additive JavaScript modules for deeper driver-life gameplay, pooled procedural traffic, and dynamic audio mixing.
+A lightweight event scheduler for dynamic transport-life gameplay: passenger demand, fuel reminders, KAROTA checkpoint warnings, road hazards, market congestion, fare negotiation, and rest opportunities.
 
-- `js/KanoLifeSimDirector.js`: persistent cash/fuel/hunger/fatigue/reputation, day clock, trip start/completion, refuelling, meals, rest, fines, and autosave.
-- `js/KanoProceduralTrafficDirector.js`: pooled keke/motorcycle/car traffic with configurable 40/30/30 mix, lane placement, recycling, and near-miss/collision hooks. Uses caller-provided Three.js Object3D factory.
-- `js/KanoDynamicSoundDirector.js`: user-gesture audio unlock, buffered playback, looping ambience, one-shots, engine telemetry modulation, volume controls, and mute.
+## Contents
+- `js/KanoSystemicEventDirector.js` — complete ES module
+- `INTEGRATION.md` — integration steps and example wiring
+- `tests/smoke-test.mjs` — deterministic smoke test
 
-## Scope and validation
+## Important
+This is an additive module, not a modification of the live Kano Run site. It does not create visual objects by itself. Connect callbacks to the existing game UI, model/traffic systems, sound director, and driver state. Avoid creating duplicate physics, traffic, or animation loops.
 
-These modules are not yet connected to the live `kano-run.vercel.app` game. They were designed to avoid assumptions about current asset paths, HUD elements, and game entry-point variables. See `INTEGRATION.md` before enabling them.
-
-All files are ES modules. `KanoProceduralTrafficDirector.js` expects Three.js Object3D instances from the caller; it does not import Three.js itself.
+## Run the smoke test
+From this package directory, run `node tests/smoke-test.mjs` in an environment with Node.js installed. No third-party dependency is required.
