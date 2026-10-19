@@ -1,23 +1,47 @@
-# Kano Life Commercial Integration — Release 1.1
+# Integration steps
 
-## Files
+Copy `js/KanoSystemicGameplayBridge.js` into the repository's `js/` directory. It imports four modules already present in the project.
 
-- `js/KanoCommercialIntegration.js` — additive lifecycle/event coordinator.
-- `patches/main.js.patch` — minimal integration patch for the current published `js/main.js`.
+In `main.js`, add:
 
-## Apply using the GitHub website
+```js
+import { KanoSystemicGameplayBridge } from './KanoSystemicGameplayBridge.js';
+```
 
-1. Open the `js` folder in the repository.
-2. Create `KanoCommercialIntegration.js` and paste the complete file from this package.
-3. Open `js/main.js` and apply the four small changes shown in `patches/main.js.patch`: add the import, add the module variable, initialise the coordinator after `new Game(...)`, update it after `game.tick(dt)`, and dispose it on `pagehide`.
-4. Commit the changes through GitHub. Vercel should deploy the commit if the repository is connected to the project.
+After `game` is created, initialize once:
 
-## Important compatibility notes
+```js
+let systemicGameplay = null;
+try {
+  systemicGameplay = new KanoSystemicGameplayBridge({ game, root: container });
+} catch (error) {
+  console.warn('[Kano Life] systemic gameplay bridge unavailable', error);
+}
+```
 
-The coordinator imports `./PassengerDialogueManager.js` because both files live in `js/`. This path is intentionally relative to the destination repository, not the ZIP folder.
+Inside the existing frame loop, after `game.tick(dt)`, add:
 
-It does not create Three.js passenger anchors or execute hotspot purchases. It only handles real DOM anchors/events supplied by existing systems. The current game remains the authority for physics, money, routes, progression, touch controls, adaptive quality, and live-user count. Do not replace those systems with the duplicate standalone modules.
+```js
+systemicGameplay?.update(dt, {
+  state: game?.s,
+  // Supply these from the game's authoritative clock when available:
+  // day: gameClock.day,
+  // minuteOfDay: gameClock.minuteOfDay,
+});
+```
 
-## Verification
+Inside the existing `pagehide` cleanup, add:
 
-`KanoCommercialIntegration.js` passed a Node syntax check. The integration patch was checked against the current published `main.js` import/boot/frame/pagehide anchors. A full Vite build and browser gameplay test were not possible without the full repository checkout. No repository change or deployment has been performed by this package.
+```js
+systemicGameplay?.dispose();
+```
+
+## Connect real gameplay carefully
+- Market day multiplier getters are exposed as `getFareMultiplier()` and `getTrafficMultiplier()`. Apply them only at the authoritative fare and traffic calculations, once each.
+- Convoy acceptance creates simulation participant records but does not spawn meshes. Connect `convoy_state` events to the existing traffic/vehicle director before representing the other drivers visually.
+- Call `reportConvoyIncident()` from the existing collision system when a convoy collision/near miss actually occurs.
+- Workshop booking must use the current wallet's payment confirmation; do not call `confirmWorkshopPayment()` before the wallet confirms the charge.
+- Vehicle lifecycle state is available from `getVehicle()`. Driving distance, impacts and repairs must be routed from actual game events; this bridge intentionally does not guess the game's distance units.
+
+## Validation status
+The bridge is syntax-checked as an ES module. A full Vite build and browser regression test have not been run here. Keep a rollback copy of `main.js` before applying the integration.

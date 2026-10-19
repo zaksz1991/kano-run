@@ -1,5 +1,11 @@
-# Kano Life — Commercial Integration Release 1.1
+# Kano Life — Systemic Gameplay Bridge
 
-This release corrects the coordinator's in-repository import path and supplies a minimal `main.js` patch for the current published Kano Run source. It preserves existing game architecture and is designed to be additive.
+This release coordinates the existing `KanoMarketDayDirector`, `KanoWeddingConvoyDirector`, `KanoVehicleLifecycleDirector`, and `KanoWorkshopRecoveryDirector` modules behind one update/disposal lifecycle.
 
-Read `INTEGRATION.md` before applying. The module does not by itself complete 3D passenger projection, transactional hotspot gameplay, or online leaderboard backend configuration.
+## Included
+- `js/KanoSystemicGameplayBridge.js`
+- `patches/main.js.integration-snippet.js`
+- `INTEGRATION.md`
+
+## Important boundaries
+This is an integration bridge, not a claim that the live game has been updated. It does not create convoy vehicle meshes, directly alter fares, deduct money, or replace the actual collision system. Those actions must be connected to the existing renderer/game economy to avoid duplicate actors or incorrect wallet changes.
