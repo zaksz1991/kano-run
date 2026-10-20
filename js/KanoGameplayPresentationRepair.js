@@ -660,7 +660,220 @@ function installRecordUI() {
       if (!document.hidden) refreshOverallRecord(false);
     }, 4000);
   }
+  installWorkshopUI();
 }
+
+// -----------------------------------------------------------------------------
+// Garage workshop: real in-game service transactions backed by banked funds.
+// The player must open the existing Garage screen; repairs are never applied
+// automatically while driving. Prices scale with the missing condition.
+// -----------------------------------------------------------------------------
+const WORKSHOP_PARTS = {
+  body:   { stateKey: 'condition', label: 'BODY',   rate: 5,  color: '#f5c542' },
+  engine: { stateKey: 'engine',    label: 'ENGINE', rate: 8,  color: '#00b4d8' },
+  tyres:  { stateKey: 'tyres',     label: 'TYRES',  rate: 6,  color: '#4dd6ac' },
+};
+const WORKSHOP_LABOUR_FEE = 100;
+const naira = (value) => `₦${Math.max(0, Math.floor(Number(value) || 0)).toLocaleString('en-NG')}`;
+
+function workshopHealth(state, partKey) {
+  const config = WORKSHOP_PARTS[partKey];
+  const raw = Number(state?.[config.stateKey]);
+  return Number.isFinite(raw) ? Math.round(clamp(raw, 0, 100)) : 100;
+}
+
+function workshopQuote(state, serviceKey) {
+  const keys = serviceKey === 'full' ? Object.keys(WORKSHOP_PARTS) : [serviceKey];
+  const parts = keys.filter((key) => WORKSHOP_PARTS[key]).map((key) => {
+    const health = workshopHealth(state, key);
+    const deficit = Math.max(0, 100 - health);
+    const config = WORKSHOP_PARTS[key];
+    return { key, label: config.label, health, deficit, cost: Math.ceil(deficit * config.rate) };
+  });
+  const repairCost = parts.reduce((sum, part) => sum + part.cost, 0);
+  const cost = repairCost > 0 ? repairCost + WORKSHOP_LABOUR_FEE : 0;
+  return { parts: parts.filter((part) => part.deficit > 0), cost, labour: cost ? WORKSHOP_LABOUR_FEE : 0 };
+}
+
+function setWorkshopMessage(message) {
+  const panel = document.getElementById('kano-workshop-panel');
+  if (!panel) return;
+  panel.dataset.message = String(message || 'Select a service to see its cost.');
+  const status = panel.querySelector('#kano-workshop-status');
+  if (status) status.textContent = panel.dataset.message;
+}
+
+function renderWorkshopPanel(state = activeGame?.s) {
+  const panel = document.getElementById('kano-workshop-panel');
+  if (!panel || !state) return;
+  const wallet = Math.max(0, Math.floor(Number(save.money) || 0));
+  const values = Object.fromEntries(Object.keys(WORKSHOP_PARTS).map((key) => [key, workshopHealth(state, key)]));
+  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}`;
+  if (panel.dataset.signature === signature) return;
+  panel.dataset.signature = signature;
+
+  const partsMarkup = Object.entries(WORKSHOP_PARTS).map(([key, config]) => {
+    const health = values[key];
+    const quote = workshopQuote(state, key);
+    return `<div class="kano-workshop-part"><div class="kano-workshop-part-label"><span>${config.label}</span><b>${health}%</b></div><div class="kano-workshop-meter" role="progressbar" aria-label="${config.label} condition" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${health}"><i style="width:${health}%;background:${config.color}"></i></div><small>${health < 25 ? 'CRITICAL' : health < 50 ? 'WORN' : health < 80 ? 'SERVICEABLE' : 'GOOD'} CONDITION</small></div>`;
+  }).join('');
+
+  const services = [
+    { key: 'body', label: 'BODY REPAIR' },
+    { key: 'engine', label: 'ENGINE SERVICE' },
+    { key: 'tyres', label: 'TYRE SERVICE' },
+    { key: 'full', label: 'FULL SERVICE' },
+  ];
+  const serviceMarkup = services.map(({ key, label }) => {
+    const quote = workshopQuote(state, key);
+    const unavailable = quote.cost === 0;
+    const unaffordable = quote.cost > wallet;
+    const buttonLabel = unavailable ? `${label} · UP TO DATE` : `${label} · ${naira(quote.cost)}`;
+    const title = unavailable ? 'No repair is required for this service.' : unaffordable ? `Costs ${naira(quote.cost)}; banked wallet has ${naira(wallet)}.` : `Repair the selected components for ${naira(quote.cost)}.`;
+    return `<button type="button" class="kano-workshop-service" data-kano-workshop-service="${key}" ${unavailable || unaffordable ? 'disabled' : ''} title="${title}"><strong>${buttonLabel}</strong><span>${unavailable ? 'No condition loss detected' : unaffordable ? `Short by ${naira(quote.cost - wallet)}` : `${quote.parts.map((part) => `${part.label} +${part.deficit}%`).join(' · ')}`}</span></button>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="kano-workshop-header"><div><p class="kano-workshop-eyebrow">KANO LIFE · MECHANIC'S BAY</p><h3 id="kano-workshop-title">Service your keke</h3><p>Repairs use banked funds and restore the selected components to 100%.</p></div><div class="kano-workshop-wallet"><small>BANKED WALLET</small><strong>${naira(wallet)}</strong></div></div>
+    <div class="kano-workshop-parts">${partsMarkup}</div>
+    <div class="kano-workshop-service-list">${serviceMarkup}</div>
+    <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. No charge is made until a service button is selected.</p>
+    <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>`;
+  const status = panel.querySelector('#kano-workshop-status');
+  status.textContent = panel.dataset.message || 'Select a service to see its cost.';
+}
+
+function updateWorkshopWalletLabels() {
+  const balance = naira(save.money);
+  for (const selector of ['#wallet-balance', '#garage-wallet']) {
+    const element = document.querySelector(selector);
+    if (element) element.textContent = balance;
+  }
+}
+
+function performWorkshopService(serviceKey) {
+  const game = activeGame || window.__KANO_LIFE_GAME__;
+  const panel = document.getElementById('kano-workshop-panel');
+  if (!game?.s || !panel) {
+    setWorkshopMessage('Workshop unavailable: the game vehicle is not ready.');
+    return;
+  }
+  // A service is a garage action, not an in-motion repair or collision exploit.
+  const garage = document.getElementById('garage-screen');
+  const garageVisible = garage && !garage.classList.contains('hidden')
+    && getComputedStyle(garage).display !== 'none' && getComputedStyle(garage).visibility !== 'hidden';
+  if (!garageVisible) {
+    setWorkshopMessage('Open the Garage screen before repairing the keke.');
+    return;
+  }
+  const quote = workshopQuote(game.s, serviceKey);
+  const walletBefore = Math.max(0, Math.floor(Number(save.money) || 0));
+  if (!quote.cost) {
+    setWorkshopMessage('No repair required. The selected components are already at 100%.');
+    return;
+  }
+  if (walletBefore < quote.cost) {
+    setWorkshopMessage(`Insufficient banked funds. This service costs ${naira(quote.cost)}; wallet balance is ${naira(walletBefore)}.`);
+    return;
+  }
+  if (!ensureKekeLifecycle(game)) {
+    setWorkshopMessage('Workshop could not load the vehicle record. No money was deducted.');
+    return;
+  }
+
+  const stateBefore = {
+    condition: game.s.condition,
+    engine: game.s.engine,
+    tyres: game.s.tyres,
+  };
+  try {
+    for (const part of quote.parts) {
+      const config = WORKSHOP_PARTS[part.key];
+      game.s[config.stateKey] = 100;
+    }
+    save.money = walletBefore - quote.cost;
+    if (!syncRunHealthToLifecycle(game)) throw new Error('The vehicle condition could not be saved.');
+    persist();
+  } catch (error) {
+    game.s.condition = stateBefore.condition;
+    game.s.engine = stateBefore.engine;
+    game.s.tyres = stateBefore.tyres;
+    save.money = walletBefore;
+    try { syncRunHealthToLifecycle(game); } catch (_) {}
+    try { persist(); } catch (_) {}
+    setWorkshopMessage(`Service cancelled; changes were rolled back. ${error?.message || 'Save failed.'}`);
+    renderWorkshopPanel(game.s);
+    updateVehicleHealthBadge(game.s);
+    return;
+  }
+
+  try { game.ui?.update?.(game.s, game.route, game.driver); } catch (_) {}
+  updateWorkshopWalletLabels();
+  updateVehicleHealthBadge(game.s);
+  const completed = quote.parts.map((part) => part.label).join(', ');
+  setWorkshopMessage(`SERVICE COMPLETE · ${completed} restored to 100% · ${naira(quote.cost)} deducted.`);
+  renderWorkshopPanel(game.s);
+  window.dispatchEvent(new CustomEvent('kano:workshop-service-complete', { detail: { service: serviceKey, cost: quote.cost, wallet: save.money, parts: quote.parts.map((part) => part.key) } }));
+}
+
+function installWorkshopUI() {
+  const garagePanel = document.querySelector('#garage-screen .garage-panel');
+  if (!garagePanel) return;
+  let panel = document.getElementById('kano-workshop-panel');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.id = 'kano-workshop-panel';
+    panel.className = 'kano-workshop-panel';
+    panel.setAttribute('aria-labelledby', 'kano-workshop-title');
+    const backButton = garagePanel.querySelector('button.primary.full[data-close="garage-screen"]');
+    if (backButton) garagePanel.insertBefore(panel, backButton);
+    else garagePanel.append(panel);
+  }
+  if (!document.getElementById('kano-workshop-style')) {
+    const style = document.createElement('style');
+    style.id = 'kano-workshop-style';
+    style.textContent = `
+      #garage-screen .garage-panel{overflow-y:auto;overscroll-behavior:contain}
+      #kano-workshop-panel{box-sizing:border-box;width:100%;margin:18px 0 12px;padding:14px;border:1px solid #00b4d855;border-radius:12px;background:linear-gradient(145deg,rgba(11,30,58,.98),rgba(8,17,28,.98));color:#eef5ff;text-align:left}
+      .kano-workshop-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+      .kano-workshop-eyebrow{margin:0 0 5px;color:#00c4e7;font-size:9px;font-weight:900;letter-spacing:.12em}
+      .kano-workshop-header h3{margin:0;color:#fff;font-size:18px;line-height:1.2}
+      .kano-workshop-header p:not(.kano-workshop-eyebrow){margin:5px 0 0;color:#bbcbdd;font-size:11px;line-height:1.4;max-width:420px}
+      .kano-workshop-wallet{flex:0 0 auto;padding:7px 9px;border:1px solid #f5c54266;border-radius:8px;background:#101d2c;text-align:right}
+      .kano-workshop-wallet small{display:block;color:#f5d77d;font-size:8px;font-weight:900;white-space:nowrap}
+      .kano-workshop-wallet strong{display:block;margin-top:3px;color:#ffe18b;font-size:14px;white-space:nowrap}
+      .kano-workshop-parts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:14px 0}
+      .kano-workshop-part{min-width:0;padding:9px;border:1px solid #ffffff16;border-radius:8px;background:#ffffff07}
+      .kano-workshop-part-label{display:flex;justify-content:space-between;gap:4px;color:#eaf1f9;font-size:10px;font-weight:900}
+      .kano-workshop-part-label b{color:#fff}
+      .kano-workshop-meter{height:5px;margin:7px 0 5px;overflow:hidden;border-radius:99px;background:#314154}
+      .kano-workshop-meter i{display:block;height:100%;border-radius:99px;transition:width .2s ease}
+      .kano-workshop-part small{color:#8fa5bb;font-size:8px;font-weight:800}
+      .kano-workshop-service-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+      .kano-workshop-service{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:52px;padding:9px;border:1px solid #00b4d866;border-radius:8px;background:#10243a;color:#f2f7fc;text-align:left;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-service strong{font-size:10px;line-height:1.3}
+      .kano-workshop-service span{color:#aec4d8;font-size:9px;line-height:1.3}
+      .kano-workshop-service:not(:disabled):active{transform:translateY(1px);background:#173552}
+      .kano-workshop-service:disabled{border-color:#ffffff15;background:#ffffff06;color:#748496;cursor:not-allowed;opacity:.8}
+      .kano-workshop-service:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
+      .kano-workshop-cost-note{margin:9px 0 6px;color:#9eb2c6;font-size:9px;line-height:1.4}
+      .kano-workshop-status{min-height:17px;margin:7px 0 0;padding:8px;border:1px solid #4dd6ac3d;border-radius:7px;background:#4dd6ac0d;color:#a5f3d4;font-size:10px;font-weight:800;line-height:1.4;overflow-wrap:anywhere}
+      @media(max-width:440px){#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
+    `;
+    document.head.append(style);
+  }
+  if (!panel.dataset.bound) {
+    panel.dataset.bound = 'true';
+    panel.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-kano-workshop-service]');
+      if (!button || button.disabled) return;
+      performWorkshopService(button.dataset.kanoWorkshopService);
+    });
+  }
+  renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
+}
+
 function numberFromRow(row) {
   const n = Number(row?.score ?? row?.highScore ?? row?.points ?? row?.bestScore ?? 0);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
@@ -757,6 +970,7 @@ function updateVehicleHealthBadge(state) {
     : level === 'warning'
       ? 'Vehicle wear is increasing. Plan a workshop visit.'
       : 'Vehicle condition is currently within the healthy range.';
+  renderWorkshopPanel(state);
 }
 
 // -----------------------------------------------------------------------------
