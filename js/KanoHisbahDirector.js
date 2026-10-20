@@ -1,203 +1,224 @@
 /**
- * KANO LIFE — HISBAH COMMUNITY PATROL DIRECTOR
+ * KANO LIFE — HISBAH COMMUNITY MORALS & GOOD CONDUCT DIRECTOR
  *
- * Adds a respectful, optional Kano-specific Hisbah road encounter without
- * rewriting the core Game or Renderer3D files. This module is intentionally
- * loaded before main.js so its prototype hooks exist before Game is created.
+ * IMPORTANT ROLE SEPARATION
+ * - Hisbah is represented as community-based guidance and good-conduct
+ *   scenarios in public/community settings.
+ * - KAROTA remains the road-transport enforcement/checkpoint system in game.js.
+ * - This module NEVER adds a Hisbah car to state.traffic, never adds a road
+ *   checkpoint, and never hooks Renderer3D or reuses a police vehicle.
  *
- * Integrates with the existing event card and police vehicle model. If the
- * police GLB is unavailable, the existing renderer's police fallback is used.
+ * Community scenarios cover concerns raised in the game world about public
+ * drinking/smoking, inappropriate public intimacy, community modest-dress
+ * expectations, and neighbourhood conduct. Responses focus on respectful
+ * guidance, peaceful mediation and referral to community officers—not public
+ * humiliation or confrontation.
  */
-import * as THREE from 'three';
+
 import { Game } from './game.js';
-import { Renderer3D } from './renderer3d.js';
 import { save, persist } from './storage.js';
 
-const PATCH_KEY = Symbol.for('kano.life.hisbah.community.patrol.v1');
-const RENDERER_PATCH_KEY = Symbol.for('kano.life.hisbah.renderer.patrol.v1');
-const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
-const randomBetween = (minimum, maximum) => minimum + Math.random() * (maximum - minimum);
-const MODES_WITH_HISBAH = new Set(['career', 'freeRoam']);
+const PATCH_KEY = Symbol.for('kano.life.hisbah.community.conduct.v2');
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const randomBetween = (min, max) => min + Math.random() * (max - min);
+const ELIGIBLE_MODES = new Set(['career', 'freeRoam']);
+const COMMUNITY_ENVIRONMENTS = new Set([
+  'market',
+  'schoolGate',
+  'wedding',
+  'juma',
+  'mosqueJunction',
+]);
+const EVENT_ID = 'hisbahCommunity';
 
-function isHisbahEnabled() {
+const INCIDENTS = {
+  publicSubstanceUse: {
+    id: 'publicSubstanceUse',
+    kicker: 'HISBAH · COMMUNITY GOOD CONDUCT',
+    title: 'Concern about public drinking or smoking',
+    copy: 'At a busy market-side family area, a shopkeeper raises a concern about public drinking or smoking nearby. The community wants a calm, appropriate response. You are not being stopped for a traffic or vehicle offence.',
+  },
+  publicIntimacy: {
+    id: 'publicIntimacy',
+    kicker: 'HISBAH · COMMUNITY GOOD CONDUCT',
+    title: 'A concern about public decency',
+    copy: 'A community representative asks for guidance about intimate behaviour being reported around a family gathering. The concern should be handled discreetly and respectfully, without public confrontation or humiliation.',
+  },
+  modestDress: {
+    id: 'modestDress',
+    kicker: 'HISBAH · COMMUNITY GOOD CONDUCT',
+    title: 'Modest-dress expectations at a gathering',
+    copy: 'Organisers of a mosque-area or family gathering ask how to address a concern about revealing clothing and the gathering’s modest-dress expectations. The appropriate response is private, respectful guidance—not shaming someone in public.',
+  },
+  neighbourhoodConduct: {
+    id: 'neighbourhoodConduct',
+    kicker: 'HISBAH · COMMUNITY GOOD CONDUCT',
+    title: 'A neighbourhood conduct concern',
+    copy: 'Residents report disruptive behaviour near homes and family spaces. A local community representative asks for a peaceful way to restore respectful conduct and avoid escalating the dispute.',
+  },
+};
+
+function isEnabled() {
   return save.hisbahEnabled !== false;
 }
 
-function ensureHisbahRecord() {
+function integer(value) {
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function ensureRecord() {
   const old = save.hisbahRecord && typeof save.hisbahRecord === 'object'
     ? save.hisbahRecord
     : {};
 
+  // Preserve older data, but do not mislabel old roadside "stops" as
+  // community encounters. Those belong to the inaccurate earlier version.
   save.hisbahRecord = {
-    stops: Math.max(0, Math.floor(Number(old.stops) || 0)),
-    cooperated: Math.max(0, Math.floor(Number(old.cooperated) || 0)),
-    guidanceRequested: Math.max(0, Math.floor(Number(old.guidanceRequested) || 0)),
-    warnings: Math.max(0, Math.floor(Number(old.warnings) || 0)),
-    communityPoints: Math.max(0, Math.floor(Number(old.communityPoints) || 0)),
+    ...old,
+    communityEncounters: integer(old.communityEncounters),
+    peacefulMediations: integer(old.peacefulMediations),
+    guidanceRequests: integer(old.guidanceRequests),
+    communityReferrals: integer(old.communityReferrals),
+    continuedWithoutIntervention: integer(old.continuedWithoutIntervention),
+    communityPoints: integer(old.communityPoints),
+    lastConcern: String(old.lastConcern || ''),
     lastOutcome: String(old.lastOutcome || ''),
     lastAt: Math.max(0, Number(old.lastAt) || 0),
+    // Historic count is kept for transparency but is not presented as
+    // community work because the former implementation wrongly treated it
+    // as road-patrol stops.
+    legacyRoadStops: Math.max(integer(old.legacyRoadStops), integer(old.stops)),
   };
 
   return save.hisbahRecord;
 }
 
-function safePersist() {
+function persistSafely() {
   try {
-    const result = persist();
-    return result !== false;
+    return persist() !== false;
   } catch (error) {
-    console.warn('[Kano Life] Hisbah record could not be saved.', error);
+    console.warn('[Kano Life] Could not persist Hisbah community record.', error);
     return false;
   }
 }
 
-function localizedGuidance(dialect) {
-  const copy = {
-    hausa: 'Hisbah community officers are guiding traffic near a busy market or mosque entrance. Ka tsaya lafiya, kada ka toshe hanya, kuma ka tabbatar fasinjoji suna zaune lafiya.',
-    yoruba: 'Hisbah community officers are guiding traffic near a busy market or mosque entrance. Dúró ní ààbò, má ṣe dí ẹnu ọ̀nà, kí àwọn arìnrìn-àjò jókòó dáadáa.',
-    igbo: 'Hisbah community officers are guiding traffic near a busy market or mosque entrance. Kwụsị n’udo, emechila ụzọ, hụkwa na ndị njem nọ ọdụ nke ọma.',
+function dialectMessage(dialect) {
+  const messages = {
+    hausa: 'A yi magana cikin ladabi, a nemi shawara, kuma a guji cin mutuncin kowa a bainar jama’a.',
+    yoruba: 'Ẹ bá ara yín sọ̀rọ̀ pẹ̀lú ọ̀wọ̀, ẹ béèrè ìtọ́sọ́nà, kí ẹ má sì tàbùkù ẹnikẹ́ni ní gbangba.',
+    igbo: 'Jiri nkwanye ùgwù gwa ndị mmadụ okwu, rịọ nduzi, ma zere ime onye ọ bụla ihere n’ihu ọha.',
   };
-  return copy[dialect] || copy.hausa;
+  return messages[dialect] || messages.hausa;
 }
 
-function publishRecordUpdate() {
+function chooseIncident(environment) {
+  let pool;
+  if (environment === 'market') {
+    pool = [INCIDENTS.publicSubstanceUse, INCIDENTS.neighbourhoodConduct, INCIDENTS.publicIntimacy];
+  } else if (environment === 'mosqueJunction' || environment === 'juma') {
+    pool = [INCIDENTS.modestDress, INCIDENTS.publicIntimacy, INCIDENTS.neighbourhoodConduct];
+  } else if (environment === 'wedding') {
+    pool = [INCIDENTS.modestDress, INCIDENTS.publicIntimacy, INCIDENTS.neighbourhoodConduct];
+  } else {
+    pool = [INCIDENTS.neighbourhoodConduct, INCIDENTS.publicSubstanceUse, INCIDENTS.modestDress];
+  }
+
+  const last = ensureRecord().lastConcern;
+  const alternatives = pool.filter((item) => item.id !== last);
+  const options = alternatives.length ? alternatives : pool;
+  return options[Math.floor(Math.random() * options.length)];
+}
+
+function emitUpdate() {
+  if (typeof window === 'undefined' || typeof CustomEvent === 'undefined') return;
   try {
-    window.dispatchEvent(new CustomEvent('kano:hisbah-record-updated', {
+    window.dispatchEvent(new CustomEvent('kano:hisbah-community-updated', {
       detail: {
-        enabled: isHisbahEnabled(),
-        record: { ...ensureHisbahRecord() },
+        enabled: isEnabled(),
+        record: { ...ensureRecord() },
       },
     }));
   } catch {
-    // The game must keep running if CustomEvent is unavailable.
+    // A UI refresh must never interrupt the simulation.
   }
 }
 
-function createPatrolTraffic(game) {
+function startCommunityEncounter(game) {
   const state = game?.s;
-  if (!state || !Array.isArray(state.traffic)) return null;
+  if (!state || game.state !== 'PLAY' || state.event) return false;
+  if (!ELIGIBLE_MODES.has(game.mode) || !isEnabled()) return false;
+  if (!COMMUNITY_ENVIRONMENTS.has(state.environment)) return false;
+  if ((Number(state.speed) || 0) > 2.5) return false;
+  if ((Number(state.eventCooldown) || 0) > 0) return false;
 
-  const shoulderSide = Number(state.steer) > 0.35 ? -1 : 1;
-  let patrol = state.traffic.find((vehicle) => (
-    vehicle?.serviceRole === 'hisbah' &&
-    Number(vehicle.depth) > -0.12 &&
-    Number(vehicle.depth) < 1.9
-  ));
-
-  if (!patrol) {
-    patrol = {
-      id: `kano-hisbah-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: 'police',
-      lane: shoulderSide < 0 ? 0 : 2,
-      direction: 1,
-      depth: 0.30,
-      speedKmh: 0,
-      color: '#f4f5ee',
-      passed: true,
-      speed: 1,
-      serviceRole: 'hisbah',
-      shoulderSide,
-      shoulderX: shoulderSide * 4.65,
-      noCollision: true,
-      label: 'HISBAH COMMUNITY PATROL',
-    };
-    state.traffic.push(patrol);
-  } else {
-    patrol.type = 'police';
-    patrol.lane = shoulderSide < 0 ? 0 : 2;
-    patrol.direction = 1;
-    patrol.depth = 0.30;
-    patrol.speedKmh = 0;
-    patrol.passed = true;
-    patrol.serviceRole = 'hisbah';
-    patrol.shoulderSide = shoulderSide;
-    patrol.shoulderX = shoulderSide * 4.65;
-    patrol.noCollision = true;
-    patrol.label = 'HISBAH COMMUNITY PATROL';
-  }
-
-  return patrol;
-}
-
-function createHisbahEvent(game) {
-  const state = game?.s;
-  if (!state || state.event || game.state !== 'PLAY' || (Number(state.eventCooldown) || 0) > 0) {
-    return false;
-  }
-
-  state.hisbahApproachSpeed = Math.max(0, Number(state.speed) || 0);
-  state.hisbahSafeApproach = state.hisbahApproachSpeed <= 28;
-  state.event = 'hisbah';
+  const incident = chooseIncident(state.environment);
+  state.event = EVENT_ID;
+  state.hisbahCommunityIncident = incident.id;
   state.gas = false;
   state.brake = false;
   state.speed = 0;
   state.signedSpeed = 0;
   state.reverse = false;
   state.eventCooldown = Math.max(Number(state.eventCooldown) || 0, 7.5);
-  state.hisbahStops = (Number(state.hisbahStops) || 0) + 1;
-  state.hisbahPatrolId = createPatrolTraffic(game)?.id || '';
+  state.hisbahCommunityEventsThisRun = integer(state.hisbahCommunityEventsThisRun) + 1;
 
-  try { game.audio?.engine?.(0); } catch { /* Sound is optional. */ }
-
-  const dialect = state.dialect || save.dialect || 'hausa';
+  // No traffic actor or vehicle is created here. This is a community-life
+  // scenario in an existing market/family/gathering environment, not a stop.
+  try { game.audio?.engine?.(0); } catch { /* Audio is optional. */ }
   game.state = 'EVENT';
 
+  const dialect = state.dialect || save.dialect || 'hausa';
   game.ui?.event?.(
-    'HISBAH COMMUNITY PATROL · KANO',
-    'A respectful roadside check',
-    localizedGuidance(dialect),
+    incident.kicker,
+    incident.title,
+    `${incident.copy}\n\n${dialectMessage(dialect)}`,
     [
-      { label: 'COOPERATE · CLEAR THE ENTRANCE', action: 'hisbah_cooperate' },
-      { label: 'ASK FOR GUIDANCE', action: 'hisbah_guidance' },
-      { label: 'IGNORE THE REQUEST', action: 'hisbah_ignore' },
+      { label: 'HELP MEDIATE PEACEFULLY', action: 'hisbahCommunity_mediate' },
+      { label: 'REQUEST HISBAH GUIDANCE', action: 'hisbahCommunity_guidance' },
+      { label: 'REFER THE CONCERN DISCREETLY', action: 'hisbahCommunity_refer' },
+      { label: 'CONTINUE WITHOUT INTERVENING', action: 'hisbahCommunity_leave' },
     ],
   );
 
-  console.info('[Kano Life] Hisbah community patrol encounter opened.');
+  console.info(`[Kano Life] Hisbah community-conduct scenario opened: ${incident.id}`);
   return true;
 }
 
-function resolveHisbahEvent(game, action) {
+function resolveCommunityEncounter(game, action) {
   const state = game?.s;
-  if (!state || state.event !== 'hisbah' || game.state !== 'EVENT') return false;
+  if (!state || state.event !== EVENT_ID || game.state !== 'EVENT') return false;
 
-  const record = ensureHisbahRecord();
-  record.stops += 1;
+  const record = ensureRecord();
+  const incident = String(state.hisbahCommunityIncident || 'neighbourhoodConduct');
+  record.communityEncounters += 1;
+  record.lastConcern = incident;
   record.lastAt = Date.now();
 
-  let toastMessage = '';
-
-  if (action === 'hisbah_cooperate') {
-    const reward = state.hisbahSafeApproach ? 120 : 70;
-    state.score = Math.max(0, Number(state.score) || 0) + reward;
-    state.heat = Math.max(0, (Number(state.heat) || 0) - 2);
-    state.hisbahComplied = (Number(state.hisbahComplied) || 0) + 1;
-    record.cooperated += 1;
+  let message;
+  if (action === 'hisbahCommunity_mediate') {
+    record.peacefulMediations += 1;
+    record.communityPoints += 2;
+    state.score = Math.max(0, Number(state.score) || 0) + 75;
+    state.morale = clamp((Number(state.morale) || 75) + 3, 0, 100);
+    record.lastOutcome = 'peaceful-mediation';
+    message = 'You helped calm the community discussion and encouraged a respectful resolution · +75 run points.';
+  } else if (action === 'hisbahCommunity_guidance') {
+    record.guidanceRequests += 1;
     record.communityPoints += 1;
-    record.lastOutcome = 'cooperated';
-    toastMessage = `Hisbah check complete · entrance clear · +₦${reward} safe-driving points`;
-  } else if (action === 'hisbah_guidance') {
-    const reward = state.hisbahSafeApproach ? 40 : 0;
-    state.score = Math.max(0, Number(state.score) || 0) + reward;
-    state.heat = Math.max(0, (Number(state.heat) || 0) - 1);
-    state.hisbahGuidanceRequests = (Number(state.hisbahGuidanceRequests) || 0) + 1;
-    record.guidanceRequested += 1;
-    record.lastOutcome = 'asked-guidance';
-    toastMessage = reward
-      ? 'Hisbah guidance received · thanks for approaching safely · +₦40 points'
-      : 'Hisbah guidance received · keep a safe approach speed at the next stop';
-  } else if (action === 'hisbah_ignore') {
-    state.score = Math.max(0, (Number(state.score) || 0) - 200);
-    state.heat = clamp((Number(state.heat) || 0) + 6, 0, 100);
-    state.hisbahWarnings = (Number(state.hisbahWarnings) || 0) + 1;
-    record.warnings += 1;
-    record.lastOutcome = 'warning';
-    toastMessage = 'Hisbah warning recorded · run points reduced by ₦200';
+    state.score = Math.max(0, Number(state.score) || 0) + 45;
+    state.morale = clamp((Number(state.morale) || 75) + 2, 0, 100);
+    record.lastOutcome = 'requested-guidance';
+    message = 'You requested discreet Hisbah guidance for the community concern · +45 run points.';
+  } else if (action === 'hisbahCommunity_refer') {
+    record.communityReferrals += 1;
+    record.communityPoints += 1;
+    state.score = Math.max(0, Number(state.score) || 0) + 40;
+    record.lastOutcome = 'referred-discreetly';
+    message = 'The concern was referred to community officers to handle discreetly · +40 run points.';
   } else {
-    // A stale or malformed action must not leave the game stuck in EVENT.
-    state.score = Math.max(0, Number(state.score) || 0);
-    record.lastOutcome = 'dismissed';
-    toastMessage = 'Hisbah checkpoint closed';
+    record.continuedWithoutIntervention += 1;
+    record.lastOutcome = 'continued-without-intervention';
+    message = 'You continued your journey without intervening. No penalty was applied.';
   }
 
   state.event = null;
@@ -207,17 +228,16 @@ function resolveHisbahEvent(game, action) {
   state.speed = 0;
   state.signedSpeed = 0;
   state.reverse = false;
-  state.invuln = Math.max(Number(state.invuln) || 0, 1.0);
-  state.hisbahTimer = randomBetween(112, 155);
-  state.hisbahApproachSpeed = 0;
-  state.hisbahSafeApproach = false;
+  state.invuln = Math.max(Number(state.invuln) || 0, 0.8);
+  state.hisbahCommunityIncident = '';
+  state.hisbahCommunityTimer = randomBetween(95, 150);
+  state.hisbahCommunityWaitingNotice = false;
 
-  safePersist();
-  publishRecordUpdate();
-
-  try { game.ui?.hideEvent?.(); } catch { /* UI cleanup is optional. */ }
-  try { game.ui?.update?.(state, game.route, game.driver); } catch { /* UI refresh is optional. */ }
-  try { game.ui?.toast?.(toastMessage); } catch { /* Toasts are optional. */ }
+  persistSafely();
+  emitUpdate();
+  try { game.ui?.hideEvent?.(); } catch { /* Optional UI cleanup. */ }
+  try { game.ui?.update?.(state, game.route, game.driver); } catch { /* Optional UI refresh. */ }
+  try { game.ui?.toast?.(message); } catch { /* Optional toast. */ }
   return true;
 }
 
@@ -231,67 +251,63 @@ function installGameHooks(GameClass) {
   const originalResolveEvent = prototype.resolveEvent;
 
   if (typeof originalResetRun === 'function') {
-    prototype.resetRun = function resetRunWithHisbah(...args) {
+    prototype.resetRun = function resetRunWithHisbahCommunity(...args) {
       const result = originalResetRun.apply(this, args);
       if (this.s) {
-        this.s.hisbahTimer = randomBetween(34, 48);
-        this.s.hisbahStops = 0;
-        this.s.hisbahComplied = 0;
-        this.s.hisbahGuidanceRequests = 0;
-        this.s.hisbahWarnings = 0;
-        this.s.hisbahPatrolId = '';
-        this.s.hisbahApproachSpeed = 0;
-        this.s.hisbahSafeApproach = false;
+        this.s.hisbahCommunityTimer = randomBetween(52, 82);
+        this.s.hisbahCommunityIncident = '';
+        this.s.hisbahCommunityEventsThisRun = 0;
+        this.s.hisbahCommunityWaitingNotice = false;
       }
+      // Permanent community history lives in save.hisbahRecord and is not
+      // reset when a new driving run begins.
+      ensureRecord();
       return result;
     };
   }
 
   if (typeof originalBeginEvent === 'function') {
-    prototype.beginEvent = function beginEventWithHisbah(type, ...args) {
-      if (type === 'hisbah') return createHisbahEvent(this);
+    prototype.beginEvent = function beginEventWithHisbahCommunity(type, ...args) {
+      if (type === EVENT_ID || type === 'hisbah') {
+        return startCommunityEncounter(this);
+      }
       return originalBeginEvent.call(this, type, ...args);
     };
   }
 
   if (typeof originalResolveEvent === 'function') {
-    prototype.resolveEvent = function resolveEventWithHisbah(action, ...args) {
-      if (this.s?.event === 'hisbah') return resolveHisbahEvent(this, action);
+    prototype.resolveEvent = function resolveEventWithHisbahCommunity(action, ...args) {
+      if (this.s?.event === EVENT_ID || this.s?.event === 'hisbah') {
+        return resolveCommunityEncounter(this, action);
+      }
       return originalResolveEvent.call(this, action, ...args);
     };
   }
 
   if (typeof originalTick === 'function') {
-    prototype.tick = function tickWithHisbahDirector(deltaSeconds, ...args) {
+    prototype.tick = function tickWithHisbahCommunity(deltaSeconds, ...args) {
       const result = originalTick.call(this, deltaSeconds, ...args);
       const state = this?.s;
-      if (
-        !state ||
-        this.state !== 'PLAY' ||
-        state.event ||
-        !MODES_WITH_HISBAH.has(this.mode) ||
-        !isHisbahEnabled()
-      ) return result;
+      if (!state || this.state !== 'PLAY' || state.event || !isEnabled()) return result;
+      if (!ELIGIBLE_MODES.has(this.mode)) return result;
+      if ((Number(state.elapsed) || 0) < 35 || (Number(state.distance) || 0) < 0.25) return result;
 
       const dt = clamp(Number(deltaSeconds) || 0, 0, 0.05);
-      if ((Number(state.distance) || 0) < 0.22 || (Number(state.elapsed) || 0) < 28) return result;
+      state.hisbahCommunityTimer = Math.max(0, (Number(state.hisbahCommunityTimer) || 0) - dt);
+      if (state.hisbahCommunityTimer > 0) return result;
+      if (!COMMUNITY_ENVIRONMENTS.has(state.environment)) return result;
+      if ((Number(state.environmentDuration) || 0) <= 0) return result;
+      if ((Number(state.eventCooldown) || 0) > 0) return result;
 
-      state.hisbahTimer = Math.max(0, (Number(state.hisbahTimer) || 0) - dt);
-      if (state.hisbahTimer > 0 || (Number(state.eventCooldown) || 0) > 0) return result;
-
-      // Do not freeze a fast-moving keke in place. Warn first and wait until
-      // the driver slows to a safe approach speed before opening the dialog.
-      if ((Number(state.speed) || 0) > 42) {
-        if (!state.hisbahSpeedWarned) {
-          this.ui?.toast?.('HISBAH PATROL AHEAD · ease off and approach the checkpoint safely');
-          state.hisbahSpeedWarned = true;
-        }
-        state.hisbahTimer = 2.5;
+      // Encounter occurs only when the driver has already stopped safely in a
+      // community context. We never create a road checkpoint or freeze a
+      // moving keke to simulate traffic enforcement.
+      if ((Number(state.speed) || 0) > 2.5) {
+        state.hisbahCommunityWaitingNotice = true;
         return result;
       }
 
-      state.hisbahSpeedWarned = false;
-      this.beginEvent('hisbah');
+      startCommunityEncounter(this);
       return result;
     };
   }
@@ -300,165 +316,91 @@ function installGameHooks(GameClass) {
     configurable: false,
     enumerable: false,
     writable: false,
-    value: {
-      originalResetRun,
-      originalTick,
-      originalBeginEvent,
-      originalResolveEvent,
-    },
+    value: { originalResetRun, originalTick, originalBeginEvent, originalResolveEvent },
   });
-  console.info('[Kano Life] Hisbah community patrol and encounter system installed.');
+
+  console.info('[Kano Life] Hisbah community morals and good-conduct system installed. KAROTA remains separate.');
 }
 
-function applyPatrolVisuals(actor) {
-  if (!actor?.add || actor.userData?.kanoHisbahVisuals) return;
-  actor.userData = actor.userData || {};
-
-  const green = new THREE.MeshStandardMaterial({ color: 0x176b42, roughness: 0.75, metalness: 0.05 });
-  const white = new THREE.MeshStandardMaterial({ color: 0xf4f4e9, roughness: 0.6, metalness: 0.02 });
-  const darkGreen = new THREE.MeshStandardMaterial({ color: 0x0d4b2e, roughness: 0.7 });
-
-  const addBox = (name, width, height, depth, x, y, z, material) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
-    mesh.name = name;
-    mesh.userData.kanoHisbahVisual = true;
-    mesh.position.set(x, y, z);
-    actor.add(mesh);
-  };
-
-  // Subtle green/white side livery and a static rooftop marker identify the
-  // patrol without inventing a separate vehicle model or using flashing lights.
-  for (const side of [-1, 1]) {
-    addBox('HISBAH_GREEN_SIDE_STRIPE', 0.035, 0.10, 0.94, side * 0.84, 0.56, 0.02, green);
-    addBox('HISBAH_WHITE_DOOR_PANEL', 0.038, 0.17, 0.42, side * 0.86, 0.76, 0.02, white);
-    addBox('HISBAH_GREEN_DOOR_BADGE', 0.04, 0.08, 0.16, side * 0.885, 0.76, 0.02, darkGreen);
-  }
-  addBox('HISBAH_ROOF_MARKER', 0.48, 0.075, 0.16, 0, 1.30, -0.05, green);
-  addBox('HISBAH_ROOF_WHITE_MARKER', 0.16, 0.08, 0.17, 0, 1.31, -0.05, white);
-  actor.userData.kanoHisbahVisuals = true;
-}
-
-function installRendererHook(RendererClass) {
-  const prototype = RendererClass?.prototype;
-  if (!prototype || prototype[RENDERER_PATCH_KEY] || typeof prototype.syncTraffic !== 'function') return;
-
-  const originalSyncTraffic = prototype.syncTraffic;
-  prototype.syncTraffic = function syncTrafficWithHisbah(state, ...args) {
-    const result = originalSyncTraffic.call(this, state, ...args);
-
-    for (const vehicle of state?.traffic || []) {
-      if (vehicle?.serviceRole !== 'hisbah') continue;
-      const actor = this.trafficActors?.get(vehicle.id);
-      if (!actor) continue;
-      actor.position.x = Number.isFinite(Number(vehicle.shoulderX))
-        ? Number(vehicle.shoulderX)
-        : (vehicle.shoulderSide < 0 ? -4.65 : 4.65);
-      // The existing police model is loaded by main.js; if it is absent, the
-      // renderer's existing procedural police fallback remains available.
-      applyPatrolVisuals(actor);
-    }
-
-    return result;
-  };
-
-  Object.defineProperty(prototype, RENDERER_PATCH_KEY, {
-    configurable: false,
-    enumerable: false,
-    writable: false,
-    value: originalSyncTraffic,
-  });
-}
-
-function mountHisbahPanel() {
+function mountCommunityPanel() {
   if (typeof document === 'undefined') return;
-  if (document.getElementById('kano-hisbah-panel')) return;
-
+  if (document.getElementById('kano-hisbah-community-panel')) return;
   const menuPanel = document.querySelector('#menu-screen .panel');
   if (!menuPanel) return;
 
   const style = document.createElement('style');
-  style.id = 'kano-hisbah-panel-styles';
+  style.id = 'kano-hisbah-community-panel-styles';
   style.textContent = `
-    #kano-hisbah-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;margin:10px 0;padding:12px;border:1px solid rgba(53,149,98,.5);border-radius:12px;background:linear-gradient(135deg,rgba(18,80,53,.36),rgba(10,29,42,.88));color:#f3faf5;font:600 12px/1.4 system-ui,sans-serif}
-    #kano-hisbah-panel h3{margin:0 0 4px;color:#9ce2b7;font-size:12px;letter-spacing:.07em}
-    #kano-hisbah-panel p{margin:0;color:#c7d9d0;font-size:11px}
-    #kano-hisbah-panel .hisbah-record{display:block;margin-top:6px;color:#f2d980;font-size:10px}
-    #kano-hisbah-panel button{min-height:38px;max-width:120px;border:1px solid #45956b;border-radius:9px;background:#174d36;color:white;font:800 10px/1.25 system-ui,sans-serif;padding:8px;cursor:pointer;touch-action:manipulation}
-    #kano-hisbah-panel button:focus-visible{outline:2px solid #a7f3c4;outline-offset:2px}
-    #kano-hisbah-start-badge{margin:8px auto 0;padding:6px 9px;width:fit-content;max-width:100%;border:1px solid rgba(53,149,98,.45);border-radius:99px;color:#b7edca;background:rgba(18,80,53,.25);font:800 9px/1.3 system-ui,sans-serif;letter-spacing:.06em;text-align:center}
-    @media(max-width:520px){#kano-hisbah-panel{grid-template-columns:1fr}#kano-hisbah-panel button{max-width:none;width:100%}}
+    #kano-hisbah-community-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;margin:10px 0;padding:12px;border:1px solid rgba(53,149,98,.5);border-radius:12px;background:linear-gradient(135deg,rgba(18,80,53,.36),rgba(10,29,42,.88));color:#f3faf5;font:600 12px/1.4 system-ui,sans-serif}
+    #kano-hisbah-community-panel h3{margin:0 0 4px;color:#9ce2b7;font-size:12px;letter-spacing:.05em}
+    #kano-hisbah-community-panel p{margin:0;color:#c7d9d0;font-size:11px}
+    #kano-hisbah-community-panel .hisbah-record{display:block;margin-top:6px;color:#f2d980;font-size:10px}
+    #kano-hisbah-community-panel button{min-height:38px;max-width:125px;border:1px solid #45956b;border-radius:9px;background:#174d36;color:white;font:800 10px/1.25 system-ui,sans-serif;padding:8px;cursor:pointer;touch-action:manipulation}
+    #kano-hisbah-community-panel button:focus-visible{outline:2px solid #a7f3c4;outline-offset:2px}
+    @media(max-width:520px){#kano-hisbah-community-panel{grid-template-columns:1fr}#kano-hisbah-community-panel button{max-width:none;width:100%}}
   `;
   document.head.append(style);
 
   const section = document.createElement('section');
-  section.id = 'kano-hisbah-panel';
-  section.setAttribute('aria-label', 'Hisbah community patrol settings');
+  section.id = 'kano-hisbah-community-panel';
+  section.setAttribute('aria-label', 'Hisbah community morals and good-conduct settings');
   section.innerHTML = `
-    <div class="hisbah-copy">
-      <h3>HISBAH COMMUNITY PATROLS · KANO</h3>
-      <p>Roadside guidance near busy market and mosque entrances: stop safely, keep access clear and ensure passengers are seated.</p>
-      <small class="hisbah-record" id="kano-hisbah-record">Loading community record…</small>
+    <div>
+      <h3>HISBAH · COMMUNITY MORALS &amp; GOOD CONDUCT</h3>
+      <p>Community guidance for concerns about public drinking or smoking, inappropriate public intimacy, modest-dress expectations, and respectful behaviour at markets, family gatherings, and neighbourhood spaces. <strong>Separate from KAROTA road and vehicle enforcement.</strong></p>
+      <small class="hisbah-record" id="kano-hisbah-community-record">Loading community record…</small>
     </div>
-    <button type="button" id="kano-hisbah-toggle" aria-pressed="true">PAUSE PATROLS</button>
+    <button type="button" id="kano-hisbah-community-toggle" aria-pressed="true">PAUSE ENCOUNTERS</button>
   `;
-  const menuActions = menuPanel.querySelector('.menu-actions');
-  menuPanel.insertBefore(section, menuActions || null);
-
-  const startCard = document.querySelector('#start-screen .start-card');
-  if (startCard && !document.getElementById('kano-hisbah-start-badge')) {
-    const badge = document.createElement('div');
-    badge.id = 'kano-hisbah-start-badge';
-    badge.textContent = 'HISBAH COMMUNITY PATROLS · INCLUDED';
-    const meta = startCard.querySelector('.start-meta');
-    if (meta?.parentElement === startCard) meta.insertAdjacentElement('afterend', badge);
-    else startCard.append(badge);
-  }
+  const actions = menuPanel.querySelector('.menu-actions');
+  menuPanel.insertBefore(section, actions || null);
 
   const refresh = () => {
-    const enabled = isHisbahEnabled();
-    const record = ensureHisbahRecord();
-    const toggle = document.getElementById('kano-hisbah-toggle');
-    const output = document.getElementById('kano-hisbah-record');
+    const enabled = isEnabled();
+    const record = ensureRecord();
+    const toggle = document.getElementById('kano-hisbah-community-toggle');
+    const output = document.getElementById('kano-hisbah-community-record');
     if (toggle) {
-      toggle.textContent = enabled ? 'PAUSE PATROLS' : 'ENABLE PATROLS';
+      toggle.textContent = enabled ? 'PAUSE ENCOUNTERS' : 'ENABLE ENCOUNTERS';
       toggle.setAttribute('aria-pressed', String(enabled));
     }
     if (output) {
-      output.textContent = `Stops ${record.stops} · Cooperated ${record.cooperated} · Guidance ${record.guidanceRequested} · Warnings ${record.warnings} · Respect ${record.communityPoints}`;
+      output.textContent = `Community encounters ${record.communityEncounters} · Mediations ${record.peacefulMediations} · Guidance ${record.guidanceRequests} · Referrals ${record.communityReferrals} · Community points ${record.communityPoints}`;
     }
-    const badge = document.getElementById('kano-hisbah-start-badge');
-    if (badge) badge.textContent = enabled
-      ? 'HISBAH COMMUNITY PATROLS · ACTIVE'
-      : 'HISBAH COMMUNITY PATROLS · PAUSED IN SETTINGS';
   };
 
-  section.querySelector('#kano-hisbah-toggle')?.addEventListener('click', () => {
-    save.hisbahEnabled = !isHisbahEnabled();
-    safePersist();
+  section.querySelector('#kano-hisbah-community-toggle')?.addEventListener('click', () => {
+    save.hisbahEnabled = !isEnabled();
+    persistSafely();
     refresh();
-    try {
-      window.dispatchEvent(new CustomEvent('kano:hisbah-setting-changed', {
-        detail: { enabled: isHisbahEnabled() },
-      }));
-    } catch { /* Optional event. */ }
+    emitUpdate();
   });
-  window.addEventListener('kano:hisbah-record-updated', refresh);
-  window.addEventListener('storage', (event) => {
-    if (event.key === 'kano-life-save-v4') refresh();
-  });
+  if (typeof window !== 'undefined') {
+    window.addEventListener('kano:hisbah-community-updated', refresh);
+    window.addEventListener('storage', (event) => {
+      if (event.key === 'kano-life-save-v4') refresh();
+    });
+  }
   refresh();
 }
 
 installGameHooks(Game);
-installRendererHook(Renderer3D);
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', mountHisbahPanel, { once: true });
-} else {
-  mountHisbahPanel();
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mountCommunityPanel, { once: true });
+  } else {
+    mountCommunityPanel();
+  }
 }
 
-window.__KANO_HISBAH__ = Object.freeze({
-  version: 1,
-  enabled: isHisbahEnabled,
-  getRecord: () => ({ ...ensureHisbahRecord() }),
-});
+if (typeof window !== 'undefined') {
+  window.__KANO_HISBAH__ = Object.freeze({
+    version: 2,
+    enabled: isEnabled,
+    getRecord: () => ({ ...ensureRecord() }),
+    role: 'community-morals-and-good-conduct',
+    notRoadEnforcement: true,
+  });
+}
+
+export { ensureRecord as getHisbahCommunityRecord, isEnabled as isHisbahCommunityEnabled };
