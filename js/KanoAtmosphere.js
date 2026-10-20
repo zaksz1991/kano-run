@@ -254,9 +254,9 @@ function installEngineMixBalance() {
         const roadNoise = clamp(speed * 0.00011, 0.0001, 0.012) * (hasRecordedEngine ? 0.19 : 0.34);
         this.roadNoiseGain.gain.setTargetAtTime(roadNoise, this.ctx.currentTime, 0.10);
       }
-      if (this.engineAudio && !this.engineAudioFailed && Number.isFinite(this.engineAudio.volume)) {
-        this.engineAudio.volume = clamp(this.engineAudio.volume * 1.12, 0.20, 0.70);
-      }
+      // audio.js already derives the MP3 volume from speed and acceleration.
+      // Do not multiply its live value here on every frame: that fights the
+      // AudioManager and can make environmental/engine balance fluctuate.
     } catch {
       // Audio can be closing when the page is hidden; never interrupt gameplay.
     }
@@ -279,6 +279,13 @@ export class KanoAtmosphere {
     this.elapsed = 0;
     this.particleAccumulator = 0;
     this.routineTimers = [];
+    this.routineGeneration = 0;
+    this.routineIndex = 0;
+    this.routineBeats = [];
+    this.routineWaitingForScene = null;
+    this.routineSceneEntered = false;
+    this.routineRetryTimer = null;
+    this.routineHoldTimer = null;
     this.lastProfileKey = '';
     this.lastLifeScene = renderer?.lifeScene || 'road';
     this.pendingScene = pendingLifeScene;
@@ -910,43 +917,112 @@ export class KanoAtmosphere {
   }
 
   stopMorningRoutine() {
-    for (const timer of this.routineTimers) clearTimeout(timer);
-    this.routineTimers.length = 0;
+    // Every run gets a generation token so an already-queued callback from a
+    // previous routine cannot jump the player into a stale scene.
+    this.routineGeneration = (this.routineGeneration || 0) + 1;
+    for (const timer of this.routineTimers || []) clearTimeout(timer);
+    this.routineTimers = [];
+    this.routineRetryTimer = null;
+    this.routineHoldTimer = null;
     this.routineRunning = false;
+    this.routineWaitingForScene = null;
+    this.routineSceneEntered = false;
   }
 
   playMorningRoutine() {
     if (!this.renderer3d || this.disposed) return;
     this.stopMorningRoutine();
     this.settings.timeOfDay = 'morning';
-    if (this.panel?.querySelector('[data-world-time]')) this.panel.querySelector('[data-world-time]').value = 'morning';
+    const timeSelector = this.panel?.querySelector('[data-world-time]');
+    if (timeSelector) timeSelector.value = 'morning';
     persistLifestyle(this.settings);
     this.applyProfile(this.game?.s || {});
     this.refreshPanel();
-    const beats = [
-      { scene: 'bedroom', message: 'Morning · wake up and prepare for the day.' },
-      { scene: 'household', message: 'Home · family begins the morning routine.' },
-      { scene: 'breakfast', message: 'Roadside akara and pap breakfast.' },
-      { scene: 'garage', message: 'Retrieve the secured keke from the parking garage.' },
-      { scene: 'road', message: 'Kano road · your driving day begins.' },
+
+    // A beat advances only after Renderer3D confirms that its requested scene
+    // is active, then remains visible for a short presentation hold. If WebGL
+    // or the life scene is still loading, retry the same scene instead of
+    // advancing and overwriting the queued request.
+    this.routineBeats = [
+      { scene: 'bedroom', message: 'Morning · wake up and prepare for the day.', holdMs: 2600 },
+      { scene: 'household', message: 'Home · family begins the morning routine.', holdMs: 2600 },
+      { scene: 'breakfast', message: 'Roadside akara and pap breakfast.', holdMs: 2800 },
+      { scene: 'garage', message: 'Retrieve the secured keke from the parking garage.', holdMs: 3000 },
+      { scene: 'road', message: 'Kano road · your driving day begins.', holdMs: 1400 },
     ];
-    let index = 0;
+    this.routineIndex = 0;
     this.routineRunning = true;
-    const showBeat = () => {
-      if (this.disposed || !this.routineRunning) return;
-      const beat = beats[index];
-      if (!beat) {
-        this.routineRunning = false;
-        this.toast('Morning routine complete. Safe driving.');
+    const generation = this.routineGeneration;
+    this.advanceMorningRoutine(generation);
+  }
+
+  advanceMorningRoutine(generation = this.routineGeneration) {
+    if (this.disposed || !this.routineRunning || generation !== this.routineGeneration) return;
+    const beat = this.routineBeats[this.routineIndex];
+    if (!beat) {
+      this.routineRunning = false;
+      this.routineWaitingForScene = null;
+      this.routineSceneEntered = false;
+      this.routineRetryTimer = null;
+      this.routineHoldTimer = null;
+      this.toast('Morning routine complete. Safe driving.');
+      return;
+    }
+
+    this.routineWaitingForScene = beat.scene;
+    this.routineSceneEntered = false;
+    this.toast(beat.message);
+    this.requestScene(beat.scene, true);
+
+    // setLifeScene is normally synchronous. This branch also handles scenes
+    // that were already active, which do not emit a transition event.
+    if (this.renderer3d?.lifeScene === beat.scene) {
+      this.onMorningRoutineSceneEntered(beat.scene, generation);
+      return;
+    }
+    this.scheduleMorningRoutineRetry(beat.scene, generation);
+  }
+
+  scheduleMorningRoutineRetry(scene, generation) {
+    if (this.routineRetryTimer) clearTimeout(this.routineRetryTimer);
+    this.routineRetryTimer = setTimeout(() => {
+      this.routineRetryTimer = null;
+      if (this.disposed || !this.routineRunning || generation !== this.routineGeneration) return;
+      if (this.routineWaitingForScene !== scene) return;
+      if (this.renderer3d?.lifeScene === scene) {
+        this.onMorningRoutineSceneEntered(scene, generation);
         return;
       }
-      this.requestScene(beat.scene, true);
-      this.toast(beat.message);
-      index += 1;
-      const timer = setTimeout(showBeat, beat.scene === 'road' ? 1800 : 2700);
-      this.routineTimers.push(timer);
-    };
-    showBeat();
+      // requestScene preserves this pending scene when the renderer is not yet
+      // ready. Never move to the next beat just because a timer elapsed.
+      this.requestScene(scene, true);
+      if (this.renderer3d?.lifeScene === scene) {
+        this.onMorningRoutineSceneEntered(scene, generation);
+        return;
+      }
+      this.scheduleMorningRoutineRetry(scene, generation);
+    }, 300);
+    this.routineTimers.push(this.routineRetryTimer);
+  }
+
+  onMorningRoutineSceneEntered(scene, generation = this.routineGeneration) {
+    if (this.disposed || !this.routineRunning || generation !== this.routineGeneration) return;
+    if (scene !== this.routineWaitingForScene || this.routineSceneEntered) return;
+    const beat = this.routineBeats[this.routineIndex];
+    if (!beat || beat.scene !== scene) return;
+
+    this.routineSceneEntered = true;
+    if (this.routineRetryTimer) clearTimeout(this.routineRetryTimer);
+    this.routineRetryTimer = null;
+    if (this.routineHoldTimer) clearTimeout(this.routineHoldTimer);
+
+    this.routineHoldTimer = setTimeout(() => {
+      this.routineHoldTimer = null;
+      if (this.disposed || !this.routineRunning || generation !== this.routineGeneration) return;
+      this.routineIndex += 1;
+      this.advanceMorningRoutine(generation);
+    }, beat.holdMs);
+    this.routineTimers.push(this.routineHoldTimer);
   }
 
   requestScene(scene, cinematic = false) {
@@ -987,6 +1063,11 @@ export class KanoAtmosphere {
     this.lastLifeScene = scene;
     this.lastProfileKey = '';
     this.showSceneFade();
+    // Scene activation, not a fixed elapsed timer, is the source of truth for
+    // the morning sequence. This prevents blank or skipped 3D story beats.
+    if (this.routineRunning && scene === this.routineWaitingForScene) {
+      this.onMorningRoutineSceneEntered(scene, this.routineGeneration);
+    }
   }
 
   profileFor(state = {}) {
