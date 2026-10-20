@@ -1,14 +1,9 @@
 import { save, persist } from './storage.js';
-import { KanoAtmosphere } from './KanoAtmosphere.js';
 
 const MOVE_ZONES_PATCH = Symbol.for('kano.life.stopped-roadside-interaction.v1');
-const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v1');
-const SCENE_ANIMATION_PATCH = Symbol.for('kano.life.scene-animation-transform-fix.v1');
-const MORNING_ROUTINE_PATCH = Symbol.for('kano.life.morning-routine-ready-scenes.v1');
+const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v2');
+const SCENE_ANIMATION_PATCH = Symbol.for('kano.life.scene-animation-transform-fix.v2');
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-
-// Renderer3D places world objects using z = -depth * 88. This offset keeps
-// roadside interaction prompts in step with the visible pickup/drop markers.
 const ROADSIDE_INTERACTION_DEPTH_OFFSET = 0.12;
 const ROADSIDE_TYPES = new Set(['pickup', 'drop', 'fuel']);
 const ZONE_LABELS = {
@@ -17,8 +12,39 @@ const ZONE_LABELS = {
   fuel: 'FUEL STOP',
   pothole: 'POTHOLE',
 };
+
+const CHALLENGES = {
+  hausa: {
+    name: 'Hausa · Arewa Route',
+    short: 'HAUSA',
+    description: 'Complete 5 passenger drop-offs.',
+    stat: 'drops',
+    target: 5,
+    rewardMoney: 750,
+    rewardXP: 180,
+  },
+  yoruba: {
+    name: 'Yoruba · Market Match',
+    short: 'YORUBA',
+    description: 'Complete 4 correctly matched drop-offs.',
+    stat: 'matchedDrops',
+    target: 4,
+    rewardMoney: 750,
+    rewardXP: 180,
+  },
+  igbo: {
+    name: 'Igbo · Fare Run',
+    short: 'IGBO',
+    description: 'Collect ₦4,000 in passenger fares.',
+    stat: 'fares',
+    target: 4000,
+    rewardMoney: 750,
+    rewardXP: 180,
+  },
+};
+
 const WOMAN_CHARACTER_KEYS = [
-  'passengerWoman', 'pedestrianWoman', 'passenger', 'passengerMan', 'pedestrian', 'passengerVIP',
+  'passengerWoman', 'pedestrianWoman', 'passenger', 'pedestrian', 'passengerMan', 'passengerVIP',
 ];
 const MAN_CHARACTER_KEYS = [
   'passengerMan', 'passenger', 'pedestrian', 'passengerVIP', 'passengerWoman', 'pedestrianWoman',
@@ -26,6 +52,63 @@ const MAN_CHARACTER_KEYS = [
 const AMBIENT_CHARACTER_KEYS = [
   'pedestrianWoman', 'pedestrian', 'passengerWoman', 'passengerMan', 'passenger', 'passengerVIP',
 ];
+
+function ensureCareerProgress() {
+  const career = save.careerProgression && typeof save.careerProgression === 'object'
+    ? save.careerProgression
+    : {};
+  career.totalXP = Math.max(0, Number(career.totalXP) || 0);
+  career.level = Math.max(1, Math.floor(Number(career.level) || 1));
+  career.totalDistance = Math.max(0, Number(career.totalDistance) || 0);
+  career.totalFares = Math.max(0, Number(career.totalFares) || 0);
+  career.totalDrops = Math.max(0, Math.floor(Number(career.totalDrops) || 0));
+  career.totalBoards = Math.max(0, Math.floor(Number(career.totalBoards) || 0));
+  career.completedRuns = Math.max(0, Math.floor(Number(career.completedRuns) || 0));
+  const derived = deriveLevel(career.totalXP);
+  career.level = derived.level;
+  career.xpIntoLevel = derived.xpIntoLevel;
+  career.xpToNext = derived.xpToNext;
+  save.careerProgression = career;
+  return career;
+}
+
+function xpRequiredForLevel(level) {
+  return 300 + Math.max(0, level - 1) * 125;
+}
+
+function deriveLevel(totalXP) {
+  let remaining = Math.max(0, Number(totalXP) || 0);
+  let level = 1;
+  let required = xpRequiredForLevel(level);
+  while (remaining >= required && level < 999) {
+    remaining -= required;
+    level += 1;
+    required = xpRequiredForLevel(level);
+  }
+  return { level, xpIntoLevel: Math.floor(remaining), xpToNext: required };
+}
+
+function ensureTribeChallenges() {
+  if (!save.tribeChallenges || typeof save.tribeChallenges !== 'object') {
+    save.tribeChallenges = {};
+  }
+  for (const tribe of Object.keys(CHALLENGES)) {
+    const old = save.tribeChallenges[tribe] && typeof save.tribeChallenges[tribe] === 'object'
+      ? save.tribeChallenges[tribe]
+      : {};
+    save.tribeChallenges[tribe] = {
+      completed: Math.max(0, Math.floor(Number(old.completed) || 0)),
+      bestProgress: Math.max(0, Number(old.bestProgress) || 0),
+      runProgress: Math.max(0, Number(old.runProgress) || 0),
+      completedThisRun: Boolean(old.completedThisRun),
+      lastCompletedAt: Number(old.lastCompletedAt) || 0,
+    };
+  }
+  if (!Object.prototype.hasOwnProperty.call(CHALLENGES, save.activeTribeChallenge)) {
+    save.activeTribeChallenge = null;
+  }
+  return save.tribeChallenges;
+}
 
 function isFiniteNumber(value) {
   return Number.isFinite(Number(value));
@@ -40,8 +123,6 @@ function disposeOwnedActor(root) {
   if (!root?.traverse) return;
   const geometries = new Set();
   const materials = new Set();
-  // ModelManager instances share cached GLB geometry across actors. Do not
-  // dispose shared geometry, but dispose per-instance cloned materials.
   const rootUsesSharedGeometry = Boolean(
     root.userData?.sharedGeometry || root.userData?.modelManagerInstance,
   );
@@ -56,8 +137,8 @@ function disposeOwnedActor(root) {
       geometries.add(node.geometry);
       node.geometry.dispose?.();
     }
-    const values = Array.isArray(node.material) ? node.material : [node.material];
-    for (const material of values) {
+    const materialList = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materialList) {
       if (!material || materials.has(material)) continue;
       materials.add(material);
       material.dispose?.();
@@ -73,86 +154,63 @@ function copyTransform(target, source) {
   target.visible = source.visible;
 }
 
-/** Return driving guidance consistent with the renderer-aligned stop window. */
 export function getInteractionAdvice(state, gameStatus = 'PLAY') {
   if (!state || gameStatus !== 'PLAY' || state.event) return null;
   const zones = Array.isArray(state.zones) ? state.zones : [];
-  const nearby = zones
-    .filter((zone) => {
-      if (!zone || !isFiniteNumber(zone.depth)) return false;
-      const depth = Number(zone.depth);
-      if (zone.type === 'pothole') return depth >= -0.015 && depth <= 0.34;
-      if (ROADSIDE_TYPES.has(zone.type)) {
-        const interactionDepth = depth + ROADSIDE_INTERACTION_DEPTH_OFFSET;
-        return interactionDepth >= -0.015 && interactionDepth <= 0.34;
-      }
-      return false;
-    })
-    .sort((a, b) => {
-      const depthA = Number(a.depth) + (ROADSIDE_TYPES.has(a.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
-      const depthB = Number(b.depth) + (ROADSIDE_TYPES.has(b.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
-      return Math.abs(depthA - 0.14) - Math.abs(depthB - 0.14);
-    });
+  const nearby = zones.filter((zone) => {
+    if (!zone || !isFiniteNumber(zone.depth)) return false;
+    const depth = Number(zone.depth);
+    if (zone.type === 'pothole') return depth >= -0.015 && depth <= 0.34;
+    if (ROADSIDE_TYPES.has(zone.type)) {
+      const corrected = depth + ROADSIDE_INTERACTION_DEPTH_OFFSET;
+      return corrected >= -0.015 && corrected <= 0.34;
+    }
+    return false;
+  }).sort((a, b) => {
+    const da = Number(a.depth) + (ROADSIDE_TYPES.has(a.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
+    const db = Number(b.depth) + (ROADSIDE_TYPES.has(b.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
+    return Math.abs(da - 0.14) - Math.abs(db - 0.14);
+  });
   const zone = nearby[0];
   if (!zone) return null;
   const depth = Number(zone.depth) + (ROADSIDE_TYPES.has(zone.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
-  const type = zone.type;
-  const label = ZONE_LABELS[type];
-  const speed = Math.max(0, Number(state.speed) || 0);
-  const reversing = Boolean(state.reverse) || (Number(state.signedSpeed) || 0) < -0.05;
-  if (type === 'pothole') {
+  if (zone.type === 'pothole') {
     return {
       type: 'hazard', zone,
       message: depth > 0.19 ? 'POTHOLE AHEAD · PREPARE TO STEER AROUND IT' : 'POTHOLE CLOSE · STEER CLEAR IF SAFE',
       detail: 'Avoid sudden steering when traffic is close.',
     };
   }
+  const label = ZONE_LABELS[zone.type];
   if (!label) return null;
+  const speed = Math.max(0, Number(state.speed) || 0);
+  const reversing = Boolean(state.reverse) || (Number(state.signedSpeed) || 0) < -0.05;
   if (reversing) {
-    return {
-      type: 'gear', zone,
-      message: `${label} AHEAD · SELECT FORWARD GEAR`,
-      detail: 'Roadside interactions activate only in forward gear.',
-    };
+    return { type: 'gear', zone, message: `${label} AHEAD · SELECT FORWARD GEAR`, detail: 'Roadside interactions activate only in forward gear.' };
   }
   const targetLane = clamp(Math.round(Number(zone.lane) || 0), 0, 2) - 1;
-  const steer = Number(state.steer) || 0;
-  const laneAligned = Math.abs(steer - targetLane) <= 0.48;
-  const speedLimit = zone.hub ? 6.5 : 12;
-  if (!laneAligned) {
+  if (Math.abs((Number(state.steer) || 0) - targetLane) > 0.48) {
     const laneName = targetLane < -0.35 ? 'LEFT LANE' : targetLane > 0.35 ? 'RIGHT LANE' : 'CENTRE LANE';
-    return {
-      type: 'lane', zone,
-      message: `${label} AHEAD · ALIGN WITH ${laneName}`,
-      detail: 'Use a gradual lane change and check surrounding traffic.',
-    };
+    return { type: 'lane', zone, message: `${label} AHEAD · ALIGN WITH ${laneName}`, detail: 'Use a gradual lane change and check surrounding traffic.' };
   }
+  const speedLimit = zone.hub ? 6.5 : 12;
   if (depth > 0.19) {
-    return {
-      type: 'approach', zone,
-      message: `${label} AHEAD · EASE OFF AND PREPARE TO STOP`,
-      detail: `Approach slowly; target ${Math.round(speedLimit)} km/h or less.`,
-    };
+    return { type: 'approach', zone, message: `${label} AHEAD · EASE OFF AND PREPARE TO STOP`, detail: `Approach slowly; target ${Math.round(speedLimit)} km/h or less.` };
   }
   if (speed > speedLimit) {
-    return {
-      type: 'brake', zone,
-      message: `${label} · BRAKE TO ${Math.round(speedLimit)} KM/H OR LESS`,
-      detail: 'Keep the Keke aligned with the roadside marker while slowing down.',
-    };
+    return { type: 'brake', zone, message: `${label} · BRAKE TO ${Math.round(speedLimit)} KM/H OR LESS`, detail: 'Keep the Keke aligned with the roadside marker while slowing down.' };
   }
   return {
-    type: 'ready', zone,
-    message: `${label} · STOP ZONE REACHED`,
-    detail: type === 'pickup'
+    type: 'ready', zone, message: `${label} · STOP ZONE REACHED`,
+    detail: zone.type === 'pickup'
       ? 'Passenger boarding zone reached. Stop and remain aligned with the marker.'
-      : type === 'drop'
+      : zone.type === 'drop'
         ? 'Stop when the drop-off marker is beside the keke.'
         : 'Stop beside the fuel marker to refuel.',
   };
 }
 
-/** Keeps the existing game rules while enabling interaction at a full stop. */
+/** Keeps the existing game rules while enabling roadside interaction at a full stop. */
 export function installStoppedInteractionCompatibility(game) {
   if (!game || typeof game.moveZones !== 'function') return () => {};
   if (game[MOVE_ZONES_PATCH]?.active) {
@@ -166,11 +224,10 @@ export function installStoppedInteractionCompatibility(game) {
   }
   const original = game.moveZones;
   const entry = { active: true, references: 1, original, wrapper: null, restore: null };
-  entry.wrapper = function kanoAlignedRoadsideMoveZones(dt) {
+  entry.wrapper = function alignedRoadsideMoveZones(dt) {
     const state = this?.s;
     if (!state || !Array.isArray(state.zones)) return original.call(this, dt);
-    const originalZones = state.zones.slice();
-    const shiftedZones = originalZones.filter((zone) => zone && ROADSIDE_TYPES.has(zone.type) && Number.isFinite(Number(zone.depth)));
+    const shiftedZones = state.zones.filter((zone) => zone && ROADSIDE_TYPES.has(zone.type) && Number.isFinite(Number(zone.depth)));
     for (const zone of shiftedZones) zone.depth = Number(zone.depth) + ROADSIDE_INTERACTION_DEPTH_OFFSET;
     const canInteractWhileStopped = Boolean(
       this?.state === 'PLAY' && !state.event && !state.reverse &&
@@ -214,7 +271,7 @@ export function installStoppedInteractionCompatibility(game) {
   };
 }
 
-/** Use already-loaded compatible GLBs instead of leaving avoidable placeholders. */
+/** Uses the best compatible GLB already loaded, including models loaded after the fallback appeared. */
 function installCharacterFallbacks(renderer) {
   if (!renderer || renderer[CHARACTER_PATCH]?.active) return renderer?.[CHARACTER_PATCH]?.restore || (() => {});
   const restorers = [];
@@ -225,94 +282,108 @@ function installCharacterFallbacks(renderer) {
     renderer[name] = wrapper;
     restorers.push(() => { if (renderer[name] === wrapper) renderer[name] = original; });
   };
-  rememberPatch('upgradePedestrians', (original) => function upgradePedestriansWithFallback(...args) {
+  const swapActor = (parent, current, key, models) => {
+    const replacement = models.getInstance(key);
+    if (!replacement) return null;
+    copyTransform(replacement, current);
+    replacement.userData.characterType = key;
+    replacement.userData.fallback = false;
+    parent.remove(current);
+    disposeOwnedActor(current);
+    parent.add(replacement);
+    return replacement;
+  };
+  rememberPatch('upgradePedestrians', (original) => function upgradePedestriansWithBestAvailableModel(...args) {
     const result = original.apply(this, args);
     const models = this.models;
     for (const pedestrian of this.pedestrians || []) {
-      if (!pedestrian?.actor || pedestrian.usingModel) continue;
+      if (!pedestrian?.actor || !models?.cache?.has) continue;
       const keys = Number(pedestrian.index) % 2 === 0
         ? AMBIENT_CHARACTER_KEYS
         : ['pedestrian', 'passengerMan', 'passenger', 'pedestrianWoman', 'passengerWoman', 'passengerVIP'];
-      const key = pickCachedKey(models, keys);
-      if (!key) continue;
-      const model = models.getInstance(key);
-      if (!model) continue;
-      const oldActor = pedestrian.actor;
-      copyTransform(model, oldActor);
-      model.rotation.y = pedestrian.side < 0 ? Math.PI / 2 : -Math.PI / 2;
-      model.userData.fallback = false;
-      model.userData.characterType = key;
-      this.world.remove(oldActor);
-      disposeOwnedActor(oldActor);
-      this.world.add(model);
-      pedestrian.actor = model;
+      const bestKey = pickCachedKey(models, keys);
+      if (!bestKey) continue;
+      const currentKey = pedestrian.actor.userData?.characterType || pedestrian.actor.userData?.modelKey || null;
+      if (pedestrian.usingModel && currentKey) {
+        const oldRank = keys.indexOf(currentKey);
+        const bestRank = keys.indexOf(bestKey);
+        if (oldRank >= 0 && bestRank >= oldRank) continue;
+      }
+      const currentActor = pedestrian.actor;
+      const replacement = swapActor(this.world, currentActor, bestKey, models);
+      if (!replacement) continue;
+      // These are roadside walkers in a Z-scrolling scene. Keep them facing
+      // toward the pavement/road edge, matching their existing placement.
+      replacement.rotation.y = pedestrian.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+      pedestrian.actor = replacement;
       pedestrian.usingModel = true;
-      console.info(`[Kano Life] ambient character fallback active: ${key}`);
     }
     return result;
   });
-  rememberPatch('syncZones', (original) => function syncZonesWithPassengerFallback(state, ...args) {
+  rememberPatch('syncZones', (original) => function syncZonesWithBestPassengerModel(state, ...args) {
     const result = original.call(this, state, ...args);
     const models = this.models;
     const zonesById = new Map((state?.zones || []).map((zone) => [zone.id, zone]));
     for (const [id, actor] of this.zoneActors || []) {
       const zone = zonesById.get(id);
-      if (!zone || zone.type !== 'pickup' || !actor?.userData?.waitingActors?.length) continue;
-      const currentActor = actor.userData.waitingActors[0];
-      const currentKey = currentActor?.userData?.modelKey || actor.userData.waitingModelKeyActive || null;
+      const currentActor = actor?.userData?.waitingActors?.[0];
+      if (!zone || zone.type !== 'pickup' || !currentActor || !models?.cache?.has) continue;
       const keys = zone.hub ? WOMAN_CHARACTER_KEYS : MAN_CHARACTER_KEYS;
-      const key = pickCachedKey(models, keys);
-      if (!key) continue;
-      if (currentKey === key) {
-        actor.userData.waitingUsingModel = Boolean(currentActor?.userData?.modelManagerInstance);
-        actor.userData.waitingModelKeyActive = key;
-        continue;
+      const bestKey = pickCachedKey(models, keys);
+      if (!bestKey) continue;
+      const currentKey = currentActor.userData?.characterType || currentActor.userData?.modelKey || actor.userData?.waitingModelKeyActive || null;
+      if (currentKey) {
+        const currentRank = keys.indexOf(currentKey);
+        const bestRank = keys.indexOf(bestKey);
+        if (currentRank >= 0 && bestRank >= currentRank) {
+          actor.userData.waitingUsingModel = Boolean(currentActor.userData?.modelManagerInstance);
+          actor.userData.waitingModelKeyActive = currentKey;
+          continue;
+        }
       }
-      const currentRank = currentKey ? keys.indexOf(currentKey) : Infinity;
-      const nextRank = keys.indexOf(key);
-      if (currentKey && currentRank >= 0 && currentRank <= nextRank) continue;
-      const replacement = models.getInstance(key);
+      const replacement = swapActor(actor, currentActor, bestKey, models);
       if (!replacement) continue;
-      copyTransform(replacement, currentActor);
-      replacement.userData.characterType = key;
-      actor.remove(currentActor);
-      disposeOwnedActor(currentActor);
-      actor.add(replacement);
       actor.userData.waitingActors = [replacement];
       actor.userData.waitingUsingModel = true;
-      actor.userData.waitingModelKeyActive = key;
-      console.info(`[Kano Life] roadside passenger fallback active: ${key}`);
+      actor.userData.waitingModelKeyActive = bestKey;
     }
     return result;
   });
-  const state = { active: true, restore: () => {
-    if (!state.active) return;
-    state.active = false;
-    for (const restore of restorers.reverse()) { try { restore(); } catch {} }
-    try { delete renderer[CHARACTER_PATCH]; } catch { renderer[CHARACTER_PATCH] = undefined; }
-  } };
+  const state = {
+    active: true,
+    restore() {
+      if (!state.active) return;
+      state.active = false;
+      for (const restore of restorers.reverse()) { try { restore(); } catch {} }
+      try { delete renderer[CHARACTER_PATCH]; } catch { renderer[CHARACTER_PATCH] = undefined; }
+    },
+  };
   Object.defineProperty(renderer, CHARACTER_PATCH, { configurable: true, value: state });
   return state.restore;
 }
 
-/** Repair instanced crowd limb transforms and face passenger walkers along paths. */
-function installSceneUpgradeAnimationFix(sceneUpgrade) {
+/** Fixes limb transforms and reverses the in-place gait when road scroll would otherwise make it look backward. */
+function installSceneUpgradeAnimationFix(sceneUpgrade, game) {
   if (!sceneUpgrade) return () => {};
   const existing = sceneUpgrade[SCENE_ANIMATION_PATCH];
   if (existing?.active) return existing.restore;
   const restorers = [];
   if (typeof sceneUpgrade.updateCrowdMatrices === 'function') {
     const original = sceneUpgrade.updateCrowdMatrices;
-    const wrapper = function updateCrowdMatricesWithProperLimbTransforms() {
+    const wrapper = function updateCrowdMatricesWithScrollAwareGait() {
       if (this.disposed || !Array.isArray(this.walkers) || !this.walkers.length || typeof this.writeMatrix !== 'function' || !this.crowdTorso || !this.crowdHead || !this.crowdArms || !this.crowdLegs) {
         return original.call(this);
       }
+      const signedSpeed = Number(game?.s?.signedSpeed) || 0;
+      // The world scrolls toward the camera while driving forward. Invert the
+      // leg/arm phase so the background crowd doesn't visually moonwalk.
+      const gaitSign = signedSpeed > 0.1 ? -1 : signedSpeed < -0.1 ? 1 : 0.62;
       this.walkers.forEach((walker, index) => {
         const direction = Number(walker.direction) < 0 ? -1 : 1;
         const heading = direction < 0 ? Math.PI : 0;
         const phase = this.elapsed * 6.8 * (Number(walker.speed) || 0.4) + (Number(walker.phase) || 0);
-        const step = Math.sin(phase) * 0.30;
-        const stride = Math.cos(phase) * 0.22;
+        const step = Math.sin(phase) * 0.30 * gaitSign;
+        const stride = Math.cos(phase) * 0.22 * gaitSign;
         const bob = Math.abs(step) * 0.035;
         const height = Number(walker.height) || 1;
         const x = (Number(walker.x) || 0) + Math.sin(this.elapsed * 1.1 + (Number(walker.phase) || 0)) * (Number(walker.sway) || 0.06);
@@ -332,12 +403,14 @@ function installSceneUpgradeAnimationFix(sceneUpgrade) {
   }
   if (typeof sceneUpgrade.updatePassengerWalkers === 'function') {
     const original = sceneUpgrade.updatePassengerWalkers;
-    const wrapper = function orientPassengerWalkersAlongPath(dt, scroll) {
+    const wrapper = function orientPassengerWalkersAlongActualPath(dt, scroll) {
       const result = original.call(this, dt, scroll);
       for (const item of this.walkingPassengers || []) {
         if (!item?.rig?.root || !item.start || !item.end) continue;
         const dx = Number(item.end.x) - Number(item.start.x);
-        const dz = Number(item.end.z) - Number(item.start.z);
+        const startZ = item.kind === 'board' ? Number(item.start.z) + (Number(item.worldScroll) || 0) : Number(item.start.z);
+        const endZ = item.kind === 'board' ? Number(item.end.z) : Number(item.end.z) + (Number(item.worldScroll) || 0);
+        const dz = endZ - startZ;
         if (Math.hypot(dx, dz) > 0.001) item.rig.root.rotation.y = Math.atan2(dx, dz);
       }
       return result;
@@ -355,124 +428,10 @@ function installSceneUpgradeAnimationFix(sceneUpgrade) {
     },
   };
   Object.defineProperty(sceneUpgrade, SCENE_ANIMATION_PATCH, { configurable: true, value: state });
-  console.info('[Kano Life] crowd limb placement and passenger walking direction fix active.');
+  console.info('[Kano Life] scroll-aware crowd gait and passenger path facing fix active.');
   return state.restore;
 }
 
-/**
- * The older routine used fixed timers even when Renderer3D had not finished
- * creating its scene groups. A slow model load could make it rapidly change
- * several requested scenes, leaving only the final road scene visible. This
- * wrapper waits for each requested diorama to become the active 3D scene before
- * advancing; it does not replace or duplicate Renderer3D's scene system.
- */
-function installMorningRoutineReadinessPatch() {
-  const proto = KanoAtmosphere?.prototype;
-  if (!proto || proto[MORNING_ROUTINE_PATCH] || typeof proto.playMorningRoutine !== 'function') return;
-  const originalStop = proto.stopMorningRoutine;
-  const originalPlay = proto.playMorningRoutine;
-
-  proto.stopMorningRoutine = function stopRoutineAndInvalidatePendingBeats(...args) {
-    this.__kanoMorningRoutineToken = (Number(this.__kanoMorningRoutineToken) || 0) + 1;
-    return typeof originalStop === 'function' ? originalStop.apply(this, args) : undefined;
-  };
-
-  proto.playMorningRoutine = function playMorningRoutineWhenSceneIsReady() {
-    if (!this.renderer3d || this.disposed) return;
-    this.stopMorningRoutine?.();
-    const token = (Number(this.__kanoMorningRoutineToken) || 0) + 1;
-    this.__kanoMorningRoutineToken = token;
-    this.routineRunning = true;
-    this.settings.timeOfDay = 'morning';
-    const timeSelect = this.panel?.querySelector('[data-world-time]');
-    if (timeSelect) timeSelect.value = 'morning';
-    try {
-      save.lifestyle = this.settings;
-      persist();
-    } catch (error) {
-      console.warn('[Kano Life] morning-routine setting save warning', error);
-    }
-    try { this.applyProfile(this.game?.s || {}); } catch {}
-    try { this.refreshPanel(); } catch {}
-
-    const beats = [
-      { scene: 'bedroom', message: 'Morning · wake up and prepare for the day.', duration: 2800 },
-      { scene: 'household', message: 'Home · family begins the morning routine.', duration: 2800 },
-      { scene: 'breakfast', message: 'Roadside akara and pap breakfast.', duration: 3000 },
-      { scene: 'garage', message: 'Retrieve the secured keke from the parking garage.', duration: 3200 },
-      { scene: 'road', message: 'Kano road · your driving day begins.', duration: 2200 },
-    ];
-    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-    const validRun = () => !this.disposed && this.routineRunning && this.__kanoMorningRoutineToken === token;
-
-    const run = async () => {
-      // Wait for WebGL's player, garage and diorama groups, not just the
-      // constructor. Never jump straight to the last beat on a slow device.
-      const startupDeadline = Date.now() + 20000;
-      while (validRun()) {
-        const renderer = this.renderer3d;
-        const ready = Boolean(renderer?.ready && renderer?.player && renderer?.garageGroup && typeof renderer?.setLifeScene === 'function');
-        if (ready) break;
-        if (Date.now() >= startupDeadline) {
-          this.routineRunning = false;
-          this.toast('Morning routine could not start: 3D scenes are still loading. Try again after the 3D view is ready.');
-          return;
-        }
-        await wait(100);
-      }
-      for (let index = 0; index < beats.length; index += 1) {
-        if (!validRun()) return;
-        const beat = beats[index];
-        const renderer = this.renderer3d;
-        const beatDeadline = Date.now() + 10000;
-        try { this.requestScene(beat.scene, true); } catch (error) {
-          console.warn(`[Kano Life] could not request ${beat.scene} scene`, error);
-        }
-        // requestScene can be queued while assets finish. The loop below waits
-        // for the actual renderer state; it does not assume the request worked.
-        while (validRun() && renderer?.lifeScene !== beat.scene && Date.now() < beatDeadline) {
-          try {
-            if (renderer?.ready && renderer?.player && renderer?.garageGroup && this.pendingScene !== beat.scene) {
-              this.requestScene(beat.scene, true);
-            }
-          } catch {}
-          await wait(100);
-        }
-        if (!validRun()) return;
-        if (renderer?.lifeScene !== beat.scene) {
-          this.routineRunning = false;
-          this.toast(`Morning routine paused: the ${beat.scene} scene did not activate. No later scenes were skipped to hide the problem.`);
-          return;
-        }
-        this.toast(beat.message);
-        try {
-          window.dispatchEvent(new CustomEvent('kano:life-routine-beat', {
-            detail: { scene: beat.scene, index, total: beats.length },
-          }));
-        } catch {}
-        await wait(beat.duration);
-      }
-      if (!validRun()) return;
-      this.routineRunning = false;
-      this.toast('Morning routine complete. Safe driving.');
-    };
-    void run().catch((error) => {
-      if (!validRun()) return;
-      this.routineRunning = false;
-      console.error('[Kano Life] morning routine error', error);
-      this.toast('Morning routine stopped because a 3D scene could not be displayed.');
-    });
-  };
-
-  Object.defineProperty(proto, MORNING_ROUTINE_PATCH, {
-    configurable: false,
-    value: { originalStop, originalPlay },
-  });
-  console.info('[Kano Life] routine now waits for each 3D scene to activate.');
-}
-installMorningRoutineReadinessPatch();
-
-/** Visual interaction prompts and optional scene diagnostics. */
 export class KanoInteractionReliability {
   constructor({ game, container, getRenderer = () => null, getSceneUpgrade = () => null, debug = false } = {}) {
     if (!game?.s) throw new TypeError('KanoInteractionReliability requires an initialized Game instance.');
@@ -486,14 +445,23 @@ export class KanoInteractionReliability {
     this.elapsed = 0;
     this.lastDiagnosticsAt = 0;
     this.lastHintText = '';
-    this.restoreMoveZones = installStoppedInteractionCompatibility(game);
+    this.careerPersistElapsed = 0;
+    this.lastChallengeRefresh = 0;
     this.characterRenderer = null;
     this.restoreCharacterFallbacks = null;
     this.sceneUpgradePatched = null;
     this.restoreSceneUpgradeAnimation = null;
+    this.restoreMoveZones = installStoppedInteractionCompatibility(game);
+    this.career = ensureCareerProgress();
+    this.tribeChallenges = ensureTribeChallenges();
+    this.lastStats = this.captureStats();
+    this.lastGameState = game.state;
     this.installStyles();
     this.hint = this.createHint();
     this.diagnostics = this.debug ? this.createDiagnostics() : null;
+    this.installCareerLevelDisplay();
+    this.installChallengeStartHooks();
+    this.createChallengePanels();
     this.onPageHide = () => this.dispose();
     window.addEventListener('pagehide', this.onPageHide, { once: true });
   }
@@ -503,15 +471,32 @@ export class KanoInteractionReliability {
     const style = document.createElement('style');
     style.id = 'kano-interaction-reliability-styles';
     style.textContent = `
-      #game-container .kano-interaction-hint { position:absolute; z-index:11; left:50%; bottom:calc(68px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%); width:min(92%,390px); padding:10px 13px; border:1px solid rgba(245,197,66,.6); border-radius:13px; background:rgba(10,24,37,.93); color:#f7f8f7; box-shadow:0 8px 26px rgba(0,0,0,.24); text-align:center; pointer-events:none; font:800 11px/1.35 system-ui,sans-serif; letter-spacing:.025em; backdrop-filter:blur(7px); white-space:normal; }
-      #game-container .kano-interaction-hint[hidden], #game-container .kano-scene-diagnostics[hidden] { display:none !important; }
-      #game-container .kano-interaction-hint[data-kind="hazard"] { border-color:rgba(255,134,110,.78); }
-      #game-container .kano-interaction-hint[data-kind="ready"] { border-color:rgba(40,196,165,.72); }
-      #game-container .kano-interaction-hint small { display:block; margin-top:3px; color:#b9c8d5; font:600 10px/1.35 system-ui,sans-serif; }
-      #game-container .kano-scene-diagnostics { position:absolute; z-index:60; top:76px; right:8px; width:min(340px,calc(100% - 16px)); max-height:38%; overflow:auto; padding:10px 12px; border:1px solid rgba(255,255,255,.22); border-radius:10px; background:rgba(6,15,25,.94); color:#e9f1f7; font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; pointer-events:auto; }
-      #game-container .kano-scene-diagnostics strong { color:#f5c542; }
-      @media(max-width:480px) { #game-container .kano-interaction-hint { bottom:calc(61px + env(safe-area-inset-bottom,0px)); width:calc(100% - 18px); padding:8px 10px; font-size:10px; } #game-container .kano-interaction-hint small { font-size:9px; } #game-container .kano-scene-diagnostics { top:68px; right:6px; max-height:30%; font-size:10px; } }
-      @media(prefers-reduced-motion:reduce) { #game-container .kano-interaction-hint { backdrop-filter:none; } }
+      #game-container .kano-interaction-hint{position:absolute;z-index:11;left:50%;bottom:calc(68px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(92%,390px);padding:10px 13px;border:1px solid rgba(245,197,66,.6);border-radius:13px;background:rgba(10,24,37,.93);color:#f7f8f7;box-shadow:0 8px 26px rgba(0,0,0,.24);text-align:center;pointer-events:none;font:800 11px/1.35 system-ui,sans-serif;letter-spacing:.025em;backdrop-filter:blur(7px);white-space:normal}
+      #game-container .kano-interaction-hint[hidden],#game-container .kano-scene-diagnostics[hidden]{display:none!important}
+      #game-container .kano-interaction-hint[data-kind="hazard"]{border-color:rgba(255,134,110,.78)}
+      #game-container .kano-interaction-hint[data-kind="ready"]{border-color:rgba(40,196,165,.72)}
+      #game-container .kano-interaction-hint small{display:block;margin-top:3px;color:#b9c8d5;font:600 10px/1.35 system-ui,sans-serif}
+      #game-container .kano-scene-diagnostics{position:absolute;z-index:60;top:76px;right:8px;width:min(340px,calc(100% - 16px));max-height:38%;overflow:auto;padding:10px 12px;border:1px solid rgba(255,255,255,.22);border-radius:10px;background:rgba(6,15,25,.94);color:#e9f1f7;font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:auto}
+      #game-container .kano-scene-diagnostics strong{color:#f5c542}
+      #kano-career-progress{display:grid;gap:4px;margin:9px 0;padding:9px 10px;border:1px solid rgba(75,193,162,.35);border-radius:10px;background:rgba(11,80,69,.13);color:#e8fff7;font:600 11px/1.3 system-ui,sans-serif}
+      #kano-career-progress strong{font-size:12px;color:#7fe6c7}
+      #kano-career-progress .kano-xp-track{height:5px;background:#22394a;border-radius:99px;overflow:hidden}
+      #kano-career-progress .kano-xp-fill{height:100%;width:0;background:linear-gradient(90deg,#00b4d8,#5fe2b6);border-radius:99px}
+      .kano-tribe-challenges{display:grid;gap:7px;margin:10px 0;padding:9px;border:1px solid rgba(245,197,66,.30);border-radius:12px;background:rgba(10,28,43,.74);color:#ecf3f7;font:600 11px/1.3 system-ui,sans-serif}
+      .kano-tribe-challenges h3{margin:0;color:#f5c542;font-size:11px;letter-spacing:.07em}
+      .kano-tribe-challenge-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+      .kano-tribe-challenge{display:flex;min-width:0;flex-direction:column;gap:5px;padding:7px;border:1px solid #385568;border-radius:9px;background:#10283a;color:#f7fbfd}
+      .kano-tribe-challenge strong{font-size:10px;letter-spacing:.03em}
+      .kano-tribe-challenge small{font-size:9px;line-height:1.25;color:#c3d2dc;font-weight:500}
+      .kano-tribe-challenge .kano-tribe-record{font-size:9px;color:#9fe6d5}
+      .kano-tribe-challenge button{min-height:32px;border:1px solid #39778a;border-radius:7px;background:#0b6073;color:#fff;font:800 9px/1.15 system-ui,sans-serif;padding:5px;cursor:pointer;touch-action:manipulation}
+      .kano-tribe-challenge button[aria-pressed="true"]{background:#f5c542;color:#172333;border-color:#ffe7a0}
+      .kano-tribe-challenge.kano-active-challenge{border-color:#f5c542;box-shadow:0 0 0 1px #f5c5422c}
+      #menu-screen .kano-tribe-challenge-grid{grid-template-columns:1fr}
+      #menu-screen #kano-world-life-panel{position:relative!important;top:auto!important;right:auto!important;left:auto!important;bottom:auto!important;z-index:auto!important;width:100%!important;max-width:100%!important;margin:10px 0!important;box-shadow:none!important;backdrop-filter:none!important;overflow:visible!important}
+      #menu-screen #kano-world-life-panel .kano-world-life-body{max-height:36vh!important}
+      @media(max-width:520px){#game-container .kano-interaction-hint{bottom:calc(61px + env(safe-area-inset-bottom,0px));width:calc(100% - 18px);padding:8px 10px;font-size:10px}#game-container .kano-interaction-hint small{font-size:9px}#game-container .kano-scene-diagnostics{top:68px;right:6px;max-height:30%;font-size:10px}#menu-screen .kano-tribe-challenge-grid{grid-template-columns:1fr!important}#menu-screen .kano-tribe-challenge{display:grid;grid-template-columns:1fr auto;align-items:center}#menu-screen .kano-tribe-challenge small,#menu-screen .kano-tribe-challenge .kano-tribe-record{grid-column:1}#menu-screen .kano-tribe-challenge button{grid-column:2;grid-row:1/4;min-width:86px}#kano-tribe-challenges-start .kano-tribe-challenge-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}#kano-tribe-challenges-start .kano-tribe-challenge{display:flex;flex-direction:column;align-items:stretch;gap:5px;padding:6px}#kano-tribe-challenges-start .kano-tribe-challenge strong{font-size:9px}#kano-tribe-challenges-start .kano-tribe-challenge small{font-size:8px;overflow-wrap:anywhere}#kano-tribe-challenges-start .kano-tribe-challenge .kano-tribe-record{font-size:8px;overflow-wrap:anywhere}#kano-tribe-challenges-start .kano-tribe-challenge button{min-width:0;width:100%;font-size:8px;padding:4px}}
+      @media(prefers-reduced-motion:reduce){#game-container .kano-interaction-hint{backdrop-filter:none}}
     `;
     document.head.append(style);
     this.styleElement = style;
@@ -536,6 +521,307 @@ export class KanoInteractionReliability {
     return panel;
   }
 
+  installCareerLevelDisplay() {
+    const ui = this.game.ui;
+    if (!ui || typeof ui.update !== 'function' || ui.__kanoCareerUiPatched) return;
+    const original = ui.update;
+    const owner = this;
+    const wrapper = function updateWithPersistentCareerLevel(state, ...args) {
+      if (state && state === owner.game.s) {
+        const career = ensureCareerProgress();
+        state.level = career.level;
+      }
+      return original.call(this, state, ...args);
+    };
+    ui.update = wrapper;
+    ui.__kanoCareerUiPatched = { original, wrapper };
+    this.restoreCareerUi = () => {
+      if (ui.update === wrapper) ui.update = original;
+      delete ui.__kanoCareerUiPatched;
+    };
+  }
+
+  installChallengeStartHooks() {
+    const originalStart = this.game.start;
+    if (typeof originalStart !== 'function') return;
+    const owner = this;
+    const wrapper = function startWithChallengeProgressReset(...args) {
+      const result = originalStart.apply(this, args);
+      owner.beginChallengeRun();
+      owner.lastStats = owner.captureStats();
+      owner.lastGameState = this.state;
+      return result;
+    };
+    this.game.start = wrapper;
+    this.restoreGameStart = () => {
+      if (this.game.start === wrapper) this.game.start = originalStart;
+    };
+  }
+
+  createChallengePanels() {
+    const startCard = document.querySelector('#start-screen .start-card');
+    const startAnchor = startCard?.querySelector('.start-actions') || null;
+    if (startCard) {
+      this.challengeStartPanel = this.buildChallengePanel('kano-tribe-challenges-start', 'NAIJA CULTURE CHALLENGES', true);
+      startCard.insertBefore(this.challengeStartPanel, startAnchor);
+      const meta = startCard.querySelector('.start-meta');
+      this.careerCard = this.createCareerCard();
+      if (meta?.parentNode) meta.parentNode.insertBefore(this.careerCard, meta.nextSibling);
+      this.originalStartButtonText = document.getElementById('start-btn')?.textContent || 'START THE MORNING';
+    }
+    const menuPanel = document.querySelector('#menu-screen .panel');
+    const menuActions = menuPanel?.querySelector('.menu-actions') || null;
+    if (menuPanel) {
+      this.challengeMenuPanel = this.buildChallengePanel('kano-tribe-challenges-menu', 'HAUSA · YORUBA · IGBO CHALLENGES', false);
+      menuPanel.insertBefore(this.challengeMenuPanel, menuActions);
+    }
+    this.refreshChallengePanels();
+    this.refreshCareerCard();
+    this.dockWorldLifePanel();
+  }
+
+  buildChallengePanel(id, title, compact) {
+    const section = document.createElement('section');
+    section.className = 'kano-tribe-challenges';
+    section.id = id;
+    const heading = document.createElement('h3');
+    heading.textContent = title;
+    section.append(heading);
+    const grid = document.createElement('div');
+    grid.className = 'kano-tribe-challenge-grid';
+    for (const [tribe, config] of Object.entries(CHALLENGES)) {
+      const card = document.createElement('article');
+      card.className = 'kano-tribe-challenge';
+      card.dataset.tribe = tribe;
+      const name = document.createElement('strong');
+      name.textContent = config.short;
+      const description = document.createElement('small');
+      description.textContent = config.description;
+      const record = document.createElement('span');
+      record.className = 'kano-tribe-record';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.selectTribeChallenge = tribe;
+      button.textContent = compact ? 'SELECT' : 'SELECT CHALLENGE';
+      button.setAttribute('aria-pressed', 'false');
+      button.addEventListener('click', () => this.selectTribeChallenge(tribe));
+      card.append(name, description, record, button);
+      grid.append(card);
+    }
+    section.append(grid);
+    const footer = document.createElement('small');
+    footer.textContent = compact
+      ? 'Select a challenge, then press START THE MORNING. Challenge progress and career XP are saved in this browser.'
+      : 'Choose one challenge to activate it for the next career run. Progress is saved locally.';
+    footer.className = 'kano-tribe-challenges-note';
+    footer.style.cssText = 'font-size:10px;line-height:1.3;color:#9fb5c4;font-weight:500';
+    section.append(footer);
+    return section;
+  }
+
+  createCareerCard() {
+    const card = document.createElement('section');
+    card.id = 'kano-career-progress';
+    const title = document.createElement('strong');
+    title.dataset.careerTitle = 'true';
+    const text = document.createElement('span');
+    text.dataset.careerText = 'true';
+    const track = document.createElement('div');
+    track.className = 'kano-xp-track';
+    const fill = document.createElement('div');
+    fill.className = 'kano-xp-fill';
+    fill.dataset.careerXpFill = 'true';
+    track.append(fill);
+    card.append(title, text, track);
+    return card;
+  }
+
+  selectTribeChallenge(tribe) {
+    if (!CHALLENGES[tribe]) return;
+    save.activeTribeChallenge = tribe;
+    save.dialect = tribe;
+    this.game.s.dialect = tribe;
+    const dialectSelect = document.getElementById('dialect-select');
+    if (dialectSelect) dialectSelect.value = tribe;
+    const profile = ensureTribeChallenges()[tribe];
+    profile.runProgress = 0;
+    profile.completedThisRun = false;
+    persist();
+    this.refreshChallengePanels();
+    this.refreshCareerCard();
+    const start = document.getElementById('start-btn');
+    if (start) start.textContent = `START ${CHALLENGES[tribe].short} CHALLENGE`;
+    this.game.ui?.toast?.(`${CHALLENGES[tribe].name} selected. Start the morning routine to begin.`);
+  }
+
+  beginChallengeRun() {
+    const tribe = save.activeTribeChallenge;
+    this.tribeChallenges = ensureTribeChallenges();
+    if (CHALLENGES[tribe]) {
+      const profile = this.tribeChallenges[tribe];
+      profile.runProgress = 0;
+      profile.completedThisRun = false;
+    }
+    this.lastStats = this.captureStats();
+    this.careerPersistElapsed = 0;
+    persist();
+    this.refreshChallengePanels();
+  }
+
+  captureStats() {
+    const state = this.game?.s || {};
+    return {
+      distance: Math.max(0, Number(state.distance) || 0),
+      fares: Math.max(0, Number(state.fares) || 0),
+      drops: Math.max(0, Number(state.drops) || 0),
+      boards: Math.max(0, Number(state.boards) || 0),
+      matchedDrops: Math.max(0, Number(state.matchedDrops) || 0),
+      nearMisses: Math.max(0, Number(state.nearMisses) || 0),
+      checkpoints: Math.max(0, Number(state.checkpoints) || 0),
+      refills: Math.max(0, Number(state.refills) || 0),
+    };
+  }
+
+  applyCareerXP(amount, showToast = false) {
+    if (!(amount > 0)) return false;
+    this.career = ensureCareerProgress();
+    const previousLevel = this.career.level;
+    this.career.totalXP = Math.max(0, this.career.totalXP + amount);
+    const derived = deriveLevel(this.career.totalXP);
+    this.career.level = derived.level;
+    this.career.xpIntoLevel = derived.xpIntoLevel;
+    this.career.xpToNext = derived.xpToNext;
+    save.careerProgression = this.career;
+    if (this.career.level > previousLevel) {
+      persist();
+      this.refreshCareerCard();
+      if (showToast) this.game.ui?.toast?.(`CAREER LEVEL UP · LEVEL ${this.career.level} · XP saved`);
+      return true;
+    }
+    return false;
+  }
+
+  updateProgression(deltaSeconds, state) {
+    const current = this.captureStats();
+    const previous = this.lastStats || current;
+    const d = {};
+    for (const key of Object.keys(current)) d[key] = Math.max(0, current[key] - (Number(previous[key]) || 0));
+    this.lastStats = current;
+
+    const activeOrJustEnded = ['PLAY', 'OVER'].includes(this.game.state);
+    if (!activeOrJustEnded) return;
+    if (this.game.state === 'PLAY' || this.game.state === 'OVER') {
+      this.career = ensureCareerProgress();
+      const xpGain = d.distance * 80 + d.drops * 30 + d.boards * 7 + d.matchedDrops * 15
+        + d.nearMisses * 4 + d.checkpoints * 16 + d.refills * 9 + d.fares / 350;
+      const leveled = this.applyCareerXP(xpGain, this.game.state === 'PLAY');
+      if (xpGain > 0) {
+        this.career.totalDistance += d.distance;
+        this.career.totalFares += d.fares;
+        this.career.totalDrops += d.drops;
+        this.career.totalBoards += d.boards;
+      }
+      this.updateActiveChallenge(d);
+      this.careerPersistElapsed += Math.max(0, Math.min(0.05, Number(deltaSeconds) || 0));
+      if (leveled || this.careerPersistElapsed >= 4 || (this.game.state === 'OVER' && this.lastGameState !== 'OVER')) {
+        this.careerPersistElapsed = 0;
+        persist();
+      }
+    }
+    if (this.game.state !== this.lastGameState) {
+      if (this.game.state === 'OVER') {
+        this.career.completedRuns += 1;
+        persist();
+      }
+      this.lastGameState = this.game.state;
+    }
+    if (this.elapsed - this.lastChallengeRefresh >= 0.35) {
+      this.lastChallengeRefresh = this.elapsed;
+      this.refreshChallengePanels();
+      this.refreshCareerCard();
+    }
+  }
+
+  updateActiveChallenge(delta) {
+    const tribe = save.activeTribeChallenge;
+    const config = CHALLENGES[tribe];
+    if (!config || this.game.mode !== 'career') return;
+    const profile = ensureTribeChallenges()[tribe];
+    if (profile.completedThisRun) return;
+    const increment = config.stat === 'fares' ? delta.fares : delta[config.stat];
+    if (!(increment > 0)) return;
+    profile.runProgress = Math.min(config.target, Math.max(0, profile.runProgress + increment));
+    profile.bestProgress = Math.max(profile.bestProgress, profile.runProgress);
+    if (profile.runProgress >= config.target) {
+      profile.completedThisRun = true;
+      profile.completed += 1;
+      profile.lastCompletedAt = Date.now();
+      save.money = Math.max(0, Number(save.money) || 0) + config.rewardMoney;
+      this.applyCareerXP(config.rewardXP, false);
+      this.game.ui?.refreshWallet?.();
+      this.game.ui?.toast?.(`${config.name} complete · +₦${config.rewardMoney.toLocaleString()} · +${config.rewardXP} career XP`);
+      persist();
+    }
+  }
+
+  refreshChallengePanels() {
+    const profiles = ensureTribeChallenges();
+    for (const panel of [this.challengeStartPanel, this.challengeMenuPanel]) {
+      if (!panel) continue;
+      for (const card of panel.querySelectorAll('.kano-tribe-challenge')) {
+        const tribe = card.dataset.tribe;
+        const config = CHALLENGES[tribe];
+        const profile = profiles[tribe];
+        const active = save.activeTribeChallenge === tribe;
+        card.classList.toggle('kano-active-challenge', active);
+        const button = card.querySelector('button');
+        if (button) {
+          button.setAttribute('aria-pressed', String(active));
+          button.textContent = active ? 'SELECTED' : (panel.id.endsWith('start') ? 'SELECT' : 'SELECT CHALLENGE');
+        }
+        const record = card.querySelector('.kano-tribe-record');
+        if (record) {
+          const current = active ? Number(profile.runProgress) || 0 : 0;
+          const shown = config.stat === 'fares' ? `₦${Math.floor(current).toLocaleString()}/₦${config.target.toLocaleString()}` : `${Math.floor(current)}/${config.target}`;
+          record.textContent = `Cleared ${profile.completed}× · Best ${Math.floor(profile.bestProgress)} · ${active ? `Current ${shown}` : 'Not selected'}`;
+        }
+      }
+    }
+  }
+
+  refreshCareerCard() {
+    if (!this.careerCard) return;
+    const career = ensureCareerProgress();
+    const title = this.careerCard.querySelector('[data-career-title]');
+    const text = this.careerCard.querySelector('[data-career-text]');
+    const fill = this.careerCard.querySelector('[data-career-xp-fill]');
+    if (title) title.textContent = `CAREER LEVEL ${career.level} · ${Math.floor(career.totalXP).toLocaleString()} TOTAL XP`;
+    if (text) text.textContent = `${Math.floor(career.xpIntoLevel).toLocaleString()} / ${career.xpToNext.toLocaleString()} XP to next level · ${Math.floor(career.totalDistance).toFixed(1)} lifetime km · ${career.completedRuns} runs`;
+    if (fill) fill.style.width = `${clamp(career.xpIntoLevel / Math.max(1, career.xpToNext) * 100, 0, 100)}%`;
+  }
+
+  dockWorldLifePanel() {
+    const worldPanel = document.getElementById('kano-world-life-panel');
+    const menu = document.querySelector('#menu-screen .panel');
+    if (!worldPanel || !menu) return;
+    const actions = menu.querySelector('.menu-actions');
+    if (worldPanel.parentElement !== menu) menu.insertBefore(worldPanel, actions || null);
+    worldPanel.style.position = 'relative';
+    worldPanel.style.top = 'auto';
+    worldPanel.style.right = 'auto';
+    worldPanel.style.left = 'auto';
+    worldPanel.style.bottom = 'auto';
+    worldPanel.style.zIndex = 'auto';
+    worldPanel.style.width = '100%';
+    worldPanel.style.maxWidth = '100%';
+    worldPanel.style.margin = '10px 0';
+    worldPanel.style.boxShadow = 'none';
+    worldPanel.style.backdropFilter = 'none';
+    worldPanel.style.overflow = 'visible';
+    const body = worldPanel.querySelector('.kano-world-life-body');
+    if (body) body.style.maxHeight = '36vh';
+  }
+
   bindRendererFallbacks() {
     const renderer = this.getRenderer?.();
     if (!renderer || renderer === this.characterRenderer) return;
@@ -550,14 +836,17 @@ export class KanoInteractionReliability {
     try { this.restoreSceneUpgradeAnimation?.(); } catch {}
     this.restoreSceneUpgradeAnimation = null;
     this.sceneUpgradePatched = current || null;
-    if (current) this.restoreSceneUpgradeAnimation = installSceneUpgradeAnimationFix(current);
+    if (current) this.restoreSceneUpgradeAnimation = installSceneUpgradeAnimationFix(current, this.game);
   }
 
   update(deltaSeconds = 0, state = this.game?.s || {}) {
     if (this.disposed) return;
     this.bindRendererFallbacks();
     this.bindSceneUpgradeAnimationFix();
-    this.elapsed += Math.min(Math.max(Number(deltaSeconds) || 0, 0), 0.05);
+    this.dockWorldLifePanel();
+    const dt = Math.min(Math.max(Number(deltaSeconds) || 0, 0), 0.05);
+    this.elapsed += dt;
+    this.updateProgression(dt, state);
     this.updateHint(state);
     if (this.debug && this.diagnostics && this.elapsed - this.lastDiagnosticsAt >= 0.25) {
       this.lastDiagnosticsAt = this.elapsed;
@@ -589,13 +878,11 @@ export class KanoInteractionReliability {
     let rigPivot = null;
     let rigRoot = null;
     let namedNodes = 0;
-    if (player?.traverse) {
-      player.traverse((object) => {
-        if (object.name === 'KANO_KEKE_DRIVER_PIVOT') rigPivot = object;
-        if (object.name === 'KANO_KEKE_SEATED_DRIVER') rigRoot = object;
-        if (/driver|wheel|seat|handlebar/i.test(object.name || '')) namedNodes += 1;
-      });
-    }
+    if (player?.traverse) player.traverse((object) => {
+      if (object.name === 'KANO_KEKE_DRIVER_PIVOT') rigPivot = object;
+      if (object.name === 'KANO_KEKE_SEATED_DRIVER') rigRoot = object;
+      if (/driver|wheel|seat|handlebar/i.test(object.name || '')) namedNodes += 1;
+    });
     const driverFound = Boolean(player?.userData?.driverAnimationParts?.driverPivot || rigPivot || rigRoot);
     let seatStatus = 'not measurable';
     if (player && driverFound) {
@@ -609,15 +896,15 @@ export class KanoInteractionReliability {
           driverObject.getWorldPosition(driverPosition);
           const dx = Math.abs(driverPosition.x - vehiclePosition.x);
           const dz = Math.abs(driverPosition.z - vehiclePosition.z);
-          seatStatus = dx <= 1.3 && dz <= 1.8
-            ? `driver anchor near chassis centre (x=${dx.toFixed(2)}, z=${dz.toFixed(2)} m; approximate)`
-            : `WARNING: driver anchor offset from chassis (x=${dx.toFixed(2)}, z=${dz.toFixed(2)} m)`;
+          seatStatus = dx <= 1.3 && dz <= 1.8 ? `driver anchor near chassis centre (x=${dx.toFixed(2)}, z=${dz.toFixed(2)} m; approximate)` : `WARNING: driver anchor offset from chassis (x=${dx.toFixed(2)}, z=${dz.toFixed(2)} m)`;
         } else seatStatus = 'world-position check unavailable';
       } catch { seatStatus = 'seat position unavailable'; }
     } else if (player) seatStatus = 'WARNING: no recognized seated-driver rig';
     else seatStatus = 'no 3D player (2D renderer or not initialized)';
     const near = getInteractionAdvice(state, this.game.state);
     const nearbyZone = near?.zone ? `${near.zone.type} depth=${Number(near.zone.depth).toFixed(3)} lane=${near.zone.lane}` : 'none';
+    const career = ensureCareerProgress();
+    const cachedModels = renderer?.models?.cache?.size ?? 'n/a';
     const status = [
       'KANO LIFE · SCENE DIAGNOSTICS',
       `Renderer: ${window.__KANO_RENDER_MODE__ || 'unknown'}`,
@@ -625,19 +912,22 @@ export class KanoInteractionReliability {
       `Life scene: ${renderer?.lifeScene || 'unknown'}`,
       `Player object: ${player?.name || 'not available'}`,
       `Player GLB: ${player?.userData?.modelPath || 'procedural / unknown'}`,
+      `Loaded model cache keys: ${cachedModels}`,
       `Seated driver rig: ${driverFound ? 'found' : 'missing'}`,
       `Seat check: ${seatStatus}`,
       `Named driver/wheel/seat nodes: ${namedNodes}`,
       `Visible passenger walkers: ${sceneUpgrade?.walkingPassengers?.length ?? 'n/a'}`,
       `Ambient crowd actors: ${sceneUpgrade?.walkers?.length ?? 'n/a'}`,
+      `Career: level ${career.level} · ${Math.floor(career.totalXP)} lifetime XP`,
+      `Challenge: ${save.activeTribeChallenge || 'none selected'}`,
       `Speed: ${Math.round(Number(state.speed) || 0)} km/h · gear: ${state.reverse ? 'REVERSE' : 'FORWARD'}`,
       `Nearby zone: ${nearbyZone}`,
       `Interaction guidance: ${near?.message || 'none'}`,
       'Roadside interaction timing: renderer-aligned',
-      'Character fallback bridge: active when compatible GLBs are cached',
-      'Procedural crowd transforms: corrected when scene system is active',
-      'Morning routine: waits for each 3D scene to activate',
-      'Note: seat check is a position heuristic, not a perfect visual verdict.',
+      'Character fallback bridge: chooses best compatible cached GLB',
+      'Crowd gait: accounts for forward/reverse road scroll',
+      'World & Life panel: docked inside pause menu, away from drive controls',
+      'Note: a failed or missing GLB still requires a valid asset path to eliminate its fallback.',
     ].join('\n');
     if (this.diagnostics && this.diagnostics.textContent !== status) this.diagnostics.textContent = status;
   }
@@ -652,10 +942,25 @@ export class KanoInteractionReliability {
     this.restoreCharacterFallbacks = null;
     try { this.restoreSceneUpgradeAnimation?.(); } catch {}
     this.restoreSceneUpgradeAnimation = null;
+    this.restoreCareerUi?.();
+    this.restoreGameStart?.();
     this.sceneUpgradePatched = null;
     this.characterRenderer = null;
     this.hint?.remove();
     this.diagnostics?.remove();
+    this.challengeStartPanel?.remove();
+    this.challengeMenuPanel?.remove();
+    this.careerCard?.remove();
+    // The World & Life panel remains alive with its original owner; only undo
+    // the temporary docking so disposal does not tear down another controller.
+    const worldPanel = document.getElementById('kano-world-life-panel');
+    if (worldPanel && worldPanel.parentElement !== this.container) {
+      this.container.append(worldPanel);
+      worldPanel.style.position = 'fixed';
+      worldPanel.style.top = 'calc(env(safe-area-inset-top,0px) + 8px)';
+      worldPanel.style.right = '8px';
+      worldPanel.style.width = 'min(268px,calc(100vw - 16px))';
+    }
     if (this.styleElement?.isConnected) this.styleElement.remove();
     this.hint = null;
     this.diagnostics = null;

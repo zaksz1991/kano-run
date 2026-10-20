@@ -1,22 +1,11 @@
 /**
- * KANO LIFE — SHARP-FIRST ADAPTIVE 3D QUALITY
+ * KANO LIFE — PERFORMANCE-BALANCED MOBILE 3D QUALITY
  *
- * Complete replacement for js/KanoAdaptiveQuality.js.
- *
- * Goals:
- * - Start at a crisp device-pixel ratio instead of forcing mobile to 1x.
- * - Keep a sensible minimum resolution during demanding gameplay.
- * - Lower resolution only after sustained low frame rate.
- * - Restore resolution gradually after sustained performance headroom.
- * - Preserve the existing constructor, update(), diagnostics, and dispose() API.
- *
- * This module changes rendering resolution only. It does not alter gameplay,
- * models, vehicle physics, scene contents, controls, or the user interface.
+ * Keeps the main renderer's public adaptive-quality interface while avoiding
+ * an expensive high-DPI render target on mobile from the first frame. It
+ * adapts resolution only after sustained frame-rate measurements.
  */
-
-const clamp = (value, minimum, maximum) =>
-  Math.max(minimum, Math.min(maximum, value));
-
+const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 const safeDevicePixelRatio = () => {
   const value = Number(globalThis.window?.devicePixelRatio) || 1;
   return Number.isFinite(value) && value > 0 ? value : 1;
@@ -24,47 +13,31 @@ const safeDevicePixelRatio = () => {
 
 export class KanoAdaptiveQuality {
   constructor({ renderer, mobile = false, enabled = true } = {}) {
-    if (
-      !renderer?.renderer?.setPixelRatio ||
-      !renderer?.renderer?.getPixelRatio
-    ) {
-      throw new TypeError(
-        'KanoAdaptiveQuality requires a live Renderer3D instance.',
-      );
+    if (!renderer?.renderer?.setPixelRatio || !renderer?.renderer?.getPixelRatio) {
+      throw new TypeError('KanoAdaptiveQuality requires a live Renderer3D instance.');
     }
-
     this.renderer3d = renderer;
     this.webgl = renderer.renderer;
     this.mobile = Boolean(mobile);
     this.enabled = Boolean(enabled);
     this.disposed = false;
-
     this.originalRatio = Number(this.webgl.getPixelRatio()) || 1;
     this.deviceRatio = safeDevicePixelRatio();
 
-    // Renderer3D starts mobile at 1x. Lift the initial ratio toward the
-    // device's actual pixel density, while capping the GPU cost on phones.
-    this.maximumRatio = this.mobile ? 1.55 : 1.9;
-    this.baseRatio = clamp(
-      Math.max(
-        this.originalRatio,
-        Math.min(this.deviceRatio, this.maximumRatio),
-      ),
-      1,
-      this.maximumRatio,
-    );
-
-    // Do not let routine adaptation collapse into the visibly soft 0.6–0.8x
-    // range. It can still lower resolution modestly on slower devices.
-    this.minRatio = Math.min(
-      this.baseRatio,
-      Math.max(1, this.baseRatio * (this.mobile ? 0.78 : 0.72)),
-    );
-
+    // Mobile starts at a moderate resolution, then earns additional clarity
+    // after sustained headroom. This avoids the 1.5x+ initial render cost.
+    this.maximumRatio = this.mobile ? 1.28 : 1.85;
+    this.minimumRatio = this.mobile ? 0.78 : 0.82;
+    this.startupRatio = this.mobile ? 1.08 : 1.42;
+    this.maxSupportedRatio = Math.max(0.75, Math.min(this.deviceRatio, this.maximumRatio));
+    this.baseRatio = this.maxSupportedRatio;
+    this.minRatio = Math.min(this.baseRatio, this.minimumRatio);
     this.levels = this.buildLevels();
-    this.levelIndex = 0;
-    this.currentRatio = this.levels[0] ?? this.baseRatio;
-
+    const targetStart = Math.min(this.baseRatio, this.startupRatio);
+    let startIndex = this.levels.findIndex((ratio) => ratio <= targetStart + 0.01);
+    if (startIndex < 0) startIndex = this.levels.length - 1;
+    this.levelIndex = startIndex;
+    this.currentRatio = this.levels[this.levelIndex] ?? targetStart;
     this.windowStart = globalThis.performance?.now?.() ?? Date.now();
     this.windowFrames = 0;
     this.slowWindows = 0;
@@ -72,10 +45,7 @@ export class KanoAdaptiveQuality {
     this.lastChangeAt = 0;
     this.lastFps = 60;
     this.lastTierEventAt = 0;
-
-    // setPixelRatio alone does not resize the drawing buffer immediately.
-    // Apply the selected ratio and ask the existing renderer to resize.
-    this.applyRatio(this.baseRatio);
+    this.applyRatio(this.currentRatio);
   }
 
   buildLevels() {
@@ -83,59 +53,47 @@ export class KanoAdaptiveQuality {
       this.baseRatio,
       this.baseRatio * 0.90,
       this.baseRatio * 0.82,
+      this.baseRatio * 0.72,
       this.minRatio,
     ];
     const unique = [];
-
     for (const value of raw) {
       const ratio = clamp(value, this.minRatio, this.baseRatio);
-      if (!unique.some((previous) => Math.abs(previous - ratio) < 0.025)) {
-        unique.push(ratio);
-      }
+      if (!unique.some((previous) => Math.abs(previous - ratio) < 0.025)) unique.push(ratio);
     }
-
     unique.sort((a, b) => b - a);
-    if (!unique.length) unique.push(this.baseRatio);
-    return unique;
+    return unique.length ? unique : [this.baseRatio];
   }
 
   applyRatio(ratio) {
     if (this.disposed || !this.webgl) return false;
-
     const next = clamp(Number(ratio) || 1, this.minRatio, this.baseRatio);
-
     try {
       this.webgl.setPixelRatio(next);
       this.renderer3d?.resize?.();
       this.currentRatio = next;
       return true;
     } catch (error) {
-      console.warn('[Kano Life] render resolution adjustment failed', error);
+      console.warn('[Kano Life] adaptive render resolution change failed', error);
       return false;
     }
   }
 
   update(now = globalThis.performance?.now?.() ?? Date.now(), renderMode = '3D', gameState = 'PLAY') {
-    if (this.disposed || !this.enabled || renderMode !== '3D') return;
-    if (this.renderer3d?.disposed || !this.webgl) return;
-
+    if (this.disposed || !this.enabled || renderMode !== '3D' || this.renderer3d?.disposed || !this.webgl) return;
     this.windowFrames += 1;
     if (now - this.windowStart < 1000) return;
-
     const duration = Math.max(1, now - this.windowStart);
     this.lastFps = (this.windowFrames * 1000) / duration;
     this.windowFrames = 0;
     this.windowStart = now;
-
     if (gameState !== 'PLAY') {
       this.slowWindows = 0;
       this.fastWindows = 0;
       return;
     }
-
     const sinceChange = now - this.lastChangeAt;
-
-    if (this.lastFps < 48) {
+    if (this.lastFps < (this.mobile ? 42 : 46)) {
       this.slowWindows += 1;
       this.fastWindows = 0;
     } else if (this.lastFps > 57) {
@@ -145,59 +103,39 @@ export class KanoAdaptiveQuality {
       this.slowWindows = Math.max(0, this.slowWindows - 1);
       this.fastWindows = 0;
     }
-
-    // Lower resolution only after two sustained slow windows and a cooldown.
-    if (
-      this.slowWindows >= 2 &&
-      sinceChange >= 2500 &&
-      this.levelIndex < this.levels.length - 1
-    ) {
+    if (this.slowWindows >= 2 && sinceChange >= 2200 && this.levelIndex < this.levels.length - 1) {
       this.setLevel(this.levelIndex + 1, now, 'performance');
       return;
     }
-
-    // Recover more slowly so resolution does not oscillate from one second to
-    // the next when frame rate is near the threshold.
-    if (
-      this.fastWindows >= 6 &&
-      sinceChange >= 8000 &&
-      this.levelIndex > 0
-    ) {
+    if (this.fastWindows >= 7 && sinceChange >= 9000 && this.levelIndex > 0) {
       this.setLevel(this.levelIndex - 1, now, 'headroom');
     }
   }
 
   setLevel(index, now = globalThis.performance?.now?.() ?? Date.now(), reason = 'manual') {
-    const nextIndex = clamp(index, 0, this.levels.length - 1);
+    const nextIndex = clamp(Math.floor(Number(index) || 0), 0, this.levels.length - 1);
     if (nextIndex === this.levelIndex) return false;
-
-    const nextRatio = this.levels[nextIndex];
-    if (!this.applyRatio(nextRatio)) return false;
-
+    if (!this.applyRatio(this.levels[nextIndex])) return false;
     this.levelIndex = nextIndex;
     this.lastChangeAt = now;
     this.slowWindows = 0;
     this.fastWindows = 0;
-
     if (now - this.lastTierEventAt > 1000) {
       this.lastTierEventAt = now;
       try {
-        globalThis.window?.dispatchEvent?.(
-          new CustomEvent('kano:adaptive-quality', {
-            detail: {
-              ratio: this.currentRatio,
-              level: this.levelIndex,
-              levels: this.levels.length,
-              fps: Math.round(this.lastFps),
-              reason,
-            },
-          }),
-        );
+        globalThis.window?.dispatchEvent?.(new CustomEvent('kano:adaptive-quality', {
+          detail: {
+            ratio: this.currentRatio,
+            level: this.levelIndex + 1,
+            levels: this.levels.length,
+            fps: Math.round(this.lastFps),
+            reason,
+          },
+        }));
       } catch {
         // Telemetry is optional; rendering must continue if unavailable.
       }
     }
-
     return true;
   }
 
@@ -217,17 +155,14 @@ export class KanoAdaptiveQuality {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-
-    // Renderer3D is disposed immediately afterward by main.js. Restore its
-    // initial setting during teardown, matching the previous module contract.
     try {
       if (this.webgl && !this.renderer3d?.disposed) {
         this.webgl.setPixelRatio(this.originalRatio);
+        this.renderer3d?.resize?.();
       }
     } catch {
-      // Ignore renderer teardown/context-loss errors.
+      // Renderer may have been destroyed following WebGL context loss.
     }
-
     this.renderer3d = null;
     this.webgl = null;
   }
