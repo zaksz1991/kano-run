@@ -92,6 +92,55 @@ function disposeTemporaryGLTFScene(root) {
   });
 }
 
+/** Dispose a detached placeholder or model instance without destroying cached
+ * GLB geometry/textures shared by other pedestrians or passengers. */
+function disposeRemovedCharacter(root) {
+  if (!root) return;
+
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+
+  const visit = (object, inheritedShared = false) => {
+    const shared = inheritedShared ||
+      object.userData?.sharedGeometry === true ||
+      object.userData?.modelManagerInstance === true;
+
+    if (object.geometry && !shared && !geometries.has(object.geometry)) {
+      geometries.add(object.geometry);
+      object.geometry.dispose?.();
+    }
+
+    const list = Array.isArray(object.material)
+      ? object.material
+      : object.material
+        ? [object.material]
+        : [];
+
+    for (const material of list) {
+      if (!material || materials.has(material)) continue;
+      materials.add(material);
+
+      if (!shared) {
+        for (const value of Object.values(material)) {
+          if (value?.isTexture && !textures.has(value)) {
+            textures.add(value);
+            value.dispose?.();
+          }
+        }
+      }
+
+      // Skeleton-safe clones receive independent materials, so their materials
+      // can be disposed even when their geometry and textures are shared.
+      material.dispose?.();
+    }
+
+    for (const child of object.children || []) visit(child, shared);
+  };
+
+  visit(root);
+}
+
 /**
  * Runtime add-on for safer animated character clones and lane-aware traffic.
  * Game remains authoritative for traffic movement, collision, fares, fuel,
@@ -359,9 +408,12 @@ export class KanoGLBAnimationManager {
     this.getInstanceWrapper = null;
     this.originalUpgradePedestrians = null;
     this.upgradePedestriansWrapper = null;
+    this.originalSyncZones = null;
+    this.syncZonesWrapper = null;
 
     this.installSkeletonSafeCloning();
     this.installPedestrianModelFallbacks();
+    this.installRoadsidePassengerModelFallbacks();
   }
 
   installSkeletonSafeCloning() {
@@ -448,6 +500,91 @@ export class KanoGLBAnimationManager {
     };
 
     renderer.upgradePedestrians = this.upgradePedestriansWrapper;
+  }
+
+  /**
+   * Renderer3D.syncZones currently tries only the preferred passenger model
+   * and then the generic `passenger` key. If those are unavailable, an already
+   * loaded `pedestrianWoman`, `pedestrian`, or `passengerMan` model is ignored
+   * and the procedural placeholder stays visible. This hook retries on every
+   * sync so late-loading GLBs replace the placeholder without editing the
+   * large renderer source file.
+   */
+  installRoadsidePassengerModelFallbacks() {
+    const renderer = this.renderer;
+    if (typeof renderer.syncZones !== 'function') return;
+
+    this.originalSyncZones = renderer.syncZones;
+    const manager = this;
+
+    this.syncZonesWrapper = function (...args) {
+      const result = manager.originalSyncZones.apply(this, args);
+      manager.upgradeRoadsidePassengerModels();
+      return result;
+    };
+
+    renderer.syncZones = this.syncZonesWrapper;
+  }
+
+  upgradeRoadsidePassengerModels() {
+    if (this.disposed) return;
+
+    const modelCache = this.models?.cache;
+    if (!modelCache?.has) return;
+
+    for (const actor of this.renderer.zoneActors?.values?.() || []) {
+      if (!actor?.isObject3D || actor.userData?.zoneType !== 'pickup') continue;
+
+      const waitingActors = actor.userData?.waitingActors;
+      const oldPerson = waitingActors?.[0];
+      if (!oldPerson?.isObject3D) continue;
+
+      const preferredKey = actor.userData.waitingModelKey || 'passenger';
+      const orderedKeys = CHARACTER_FALLBACKS[preferredKey] ||
+        CHARACTER_FALLBACKS.passenger;
+      const availableKey = orderedKeys.find((key) => modelCache.has(key));
+      if (!availableKey) continue;
+
+      const currentKey = oldPerson.userData?.modelKey ||
+        actor.userData.waitingActiveModelKey || null;
+
+      // Keep the best available role-appropriate model. This also lets a
+      // preferred female/male GLB replace a generic model that loaded first.
+      if (currentKey === availableKey) {
+        actor.userData.waitingUsingModel = true;
+        actor.userData.waitingActiveModelKey = availableKey;
+        continue;
+      }
+
+      let person = null;
+      try {
+        person = this.models.getInstance(availableKey);
+      } catch (error) {
+        if (this.debug) {
+          console.warn(`[Kano characters] Could not clone ${availableKey}`, error);
+        }
+      }
+      if (!person) continue;
+
+      // Preserve the exact local transform set by Renderer3D.syncZones so
+      // alignment with the roadside marker remains unchanged.
+      person.position.copy(oldPerson.position);
+      person.rotation.copy(oldPerson.rotation);
+      person.scale.copy(oldPerson.scale);
+      person.userData.characterType = availableKey;
+
+      actor.remove(oldPerson);
+      disposeRemovedCharacter(oldPerson);
+      actor.add(person);
+
+      actor.userData.waitingActors = [person];
+      actor.userData.waitingUsingModel = true;
+      actor.userData.waitingActiveModelKey = availableKey;
+
+      if (this.debug) {
+        console.info(`[Kano characters] roadside passenger model active: ${availableKey}`);
+      }
+    }
   }
 
   loadClips(relativePath) {
@@ -701,6 +838,13 @@ export class KanoGLBAnimationManager {
       this.renderer.upgradePedestrians === this.upgradePedestriansWrapper
     ) {
       this.renderer.upgradePedestrians = this.originalUpgradePedestrians;
+    }
+
+    if (
+      this.syncZonesWrapper &&
+      this.renderer.syncZones === this.syncZonesWrapper
+    ) {
+      this.renderer.syncZones = this.originalSyncZones;
     }
   }
 }
