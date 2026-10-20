@@ -343,6 +343,278 @@ export async function scanGlbCatalog(modelRoot, overrideFile = null) {
   };
 }
 
+export function patchModelManagerVariants(source) {
+  if (source.includes('// KANO GLB VARIANT ACTIVATION PATCH')) return source;
+  const helperMarker = 'export class ModelManager {';
+  const helperAt = source.indexOf(helperMarker);
+  if (helperAt < 0) throw new Error('[Kano GLB Variants] ModelManager class declaration not found.');
+  source = source.slice(0, helperAt) + `const KANO_GLB_VARIANT_POLICY = {
+  keke: { family: 'vehicle', mobile: 2, desktop: 3 },
+  car: { family: 'vehicle', mobile: 2, desktop: 3 },
+  taxi: { family: 'vehicle', mobile: 1, desktop: 2 },
+  suv: { family: 'vehicle', mobile: 1, desktop: 2 },
+  truck: { family: 'vehicle', mobile: 1, desktop: 2 },
+  bus: { family: 'vehicle', mobile: 1, desktop: 2 },
+  motorcycle: { family: 'vehicle', mobile: 2, desktop: 3 },
+  police: { family: 'vehicle', mobile: 1, desktop: 2 },
+  karota: { family: 'vehicle', mobile: 1, desktop: 2 },
+  ambulance: { family: 'vehicle', mobile: 1, desktop: 2 },
+  passenger: { family: 'character', mobile: 2, desktop: 3 },
+  passengerWoman: { family: 'character', mobile: 2, desktop: 3 },
+  passengerMan: { family: 'character', mobile: 2, desktop: 3 },
+  passengerVIP: { family: 'character', mobile: 1, desktop: 2 },
+  security: { family: 'character', mobile: 1, desktop: 2 },
+  pedestrian: { family: 'character', mobile: 2, desktop: 4 },
+  pedestrianWoman: { family: 'character', mobile: 2, desktop: 3 },
+  building: { family: 'world', mobile: 3, desktop: 7 },
+  industrialBuilding: { family: 'world', mobile: 2, desktop: 4 },
+  flyover: { family: 'world', mobile: 2, desktop: 3 },
+  roadlight: { family: 'world', mobile: 2, desktop: 3 },
+  cone: { family: 'world', mobile: 1, desktop: 2 },
+  bench: { family: 'world', mobile: 1, desktop: 2 },
+  busStop: { family: 'world', mobile: 2, desktop: 2 },
+  trafficLight: { family: 'world', mobile: 1, desktop: 2 },
+  stopSign: { family: 'world', mobile: 1, desktop: 2 },
+  marketStall: { family: 'world', mobile: 2, desktop: 4 },
+  dirtmound: { family: 'environment', mobile: 2, desktop: 3 },
+};
+const KANO_GLB_VARIANT_PRIORITY = [
+  'building', 'industrialBuilding', 'marketStall', 'busStop', 'flyover',
+  'roadlight', 'pedestrian', 'pedestrianWoman', 'passengerWoman',
+  'passengerMan', 'passenger', 'keke', 'motorcycle', 'car', 'taxi', 'suv',
+  'truck', 'bus', 'karota', 'security', 'dirtmound', 'cone', 'trafficLight',
+  'stopSign', 'bench', 'police', 'ambulance', 'passengerVIP',
+];
+function kanoDetectMobileVariantMode() {
+  try {
+    return typeof window !== 'undefined' && !!window.matchMedia(
+      '(max-width: 760px), (pointer: coarse)',
+    ).matches;
+  } catch {
+    return false;
+  }
+}
+function kanoInitialVariantBudget(mobile) {
+  return mobile
+    ? { vehicle: 4, world: 7, character: 4, environment: 1 }
+    : { vehicle: 5, world: 12, character: 6, environment: 2 };
+}
+function kanoVariantPolicyFor(key, mobile) {
+  const policy = KANO_GLB_VARIANT_POLICY[key];
+  return policy ? { ...policy, limit: mobile ? policy.mobile : policy.desktop } : null;
+}
+function kanoDisposeRoots(roots) {
+  const unique = [...new Set((roots || []).filter(Boolean))];
+  if (unique.length) disposeModelResources(unique);
+}
+` + source.slice(helperAt);
+
+  const constructorPattern = /    this\.cache = new Map\(\);\s*    this\.pending = new Map\(\);\s*    this\.failed = new Set\(\);\s*    this\.disposed = false;/;
+  if (!constructorPattern.test(source)) {
+    throw new Error('[Kano GLB Variants] ModelManager constructor markers were not found; refusing an unsafe source rewrite.');
+  }
+  source = source.replace(constructorPattern, `    this.cache = new Map();
+    this.pending = new Map();
+    this.failed = new Set();
+    this.disposed = false;
+    this.variantCache = new Map();
+    this.variantCursor = new Map();
+    this.variantReady = new Set();
+    this.variantMobile = kanoDetectMobileVariantMode();
+    this.variantBudget = kanoInitialVariantBudget(this.variantMobile);`);
+
+  const preloadStart = source.indexOf('  async preload(keys) {');
+  const getInstanceMarker = '  // ----------------------------------------------------------\n  // GET INSTANCE';
+  const preloadEnd = source.indexOf(getInstanceMarker, preloadStart);
+  if (preloadStart < 0 || preloadEnd < 0) {
+    throw new Error('[Kano GLB Variants] Could not locate preload()/GET INSTANCE boundaries; refusing an unsafe source rewrite.');
+  }
+  const methods = `  async preload(keys) {
+    if (this.disposed) return [];
+    const uniqueKeys = [...new Set(keys)];
+    const primaryModels = await Promise.all(uniqueKeys.map((key) => this.load(key)));
+    if (this.disposed) return primaryModels;
+    await this.warmVariantPools(uniqueKeys);
+    return primaryModels;
+  }
+
+  // Loads a bounded selection of the actual configured GLBs for each key.
+  // The original cached model stays as the first variant and remains the
+  // fallback if an additional asset fails validation or loading.
+  async warmVariantPools(keys) {
+    if (this.disposed) return [];
+    const priority = new Map(KANO_GLB_VARIANT_PRIORITY.map((key, index) => [key, index]));
+    const uniqueKeys = [...new Set(keys)].sort((a, b) =>
+      (priority.get(a) ?? 999) - (priority.get(b) ?? 999) || String(a).localeCompare(String(b))
+    );
+    const states = [];
+
+    for (const key of uniqueKeys) {
+      const base = this.cache.get(key) || null;
+      const candidates = Array.isArray(CATALOG[key]) ? [...CATALOG[key]] : [];
+      const policy = kanoVariantPolicyFor(key, this.variantMobile);
+      if (!base || !policy || policy.limit <= 1 || candidates.length <= 1) {
+        if (base) this.variantCache.set(key, [base]);
+        this.variantReady.add(key);
+        continue;
+      }
+      const pool = this.variantCache.get(key) || [base];
+      if (!pool.includes(base)) pool.unshift(base);
+      this.variantCache.set(key, pool);
+      const seen = new Set(pool.map((model) => model?.userData?.modelPath).filter(Boolean));
+      states.push({ key, family: policy.family, limit: policy.limit, candidates, index: 0, pool, seen, exhausted: false });
+    }
+
+    let loadedAnyInLastRound = true;
+    try {
+      while (!this.disposed && loadedAnyInLastRound) {
+        loadedAnyInLastRound = false;
+        for (const state of states) {
+          if (this.disposed) break;
+          if (state.exhausted || state.pool.length >= state.limit) continue;
+          if ((this.variantBudget[state.family] || 0) <= 0) continue;
+          let loadedOne = false;
+          while (state.index < state.candidates.length) {
+            const relativePath = state.candidates[state.index++];
+            if (!relativePath || state.seen.has(relativePath)) continue;
+            const currentBasePath = this.cache.get(state.key)?.userData?.modelPath;
+            if (relativePath === currentBasePath) {
+              state.seen.add(relativePath);
+              continue;
+            }
+            if ((this.variantBudget[state.family] || 0) <= 0) break;
+
+            // CATALOG is module-local and the variant queue is serial. The
+            // main manager has its primary cache already populated, so normal
+            // scene reads continue to use that cache while this scratch loader
+            // attempts exactly one candidate path.
+            this.variantBudget[state.family] -= 1;
+            const scratch = new ModelManager({ basePath: this.basePath });
+            const originalCategory = CATALOG[state.key];
+            let variant = null;
+            try {
+              CATALOG[state.key] = [relativePath];
+              variant = await scratch.load(state.key);
+            } catch (error) {
+              console.debug('[Kano GLB Variants] candidate failed', state.key, relativePath, error?.message || error);
+            } finally {
+              CATALOG[state.key] = originalCategory;
+              scratch.cache.delete(state.key);
+              scratch.pending.delete(state.key);
+              scratch.failed.clear();
+              scratch.dispose();
+            }
+
+            if (!variant || variant.userData?.modelPath !== relativePath) {
+              this.variantBudget[state.family] = Math.min(
+                kanoInitialVariantBudget(this.variantMobile)[state.family],
+                (this.variantBudget[state.family] || 0) + 1,
+              );
+              continue;
+            }
+            if (this.disposed) {
+              kanoDisposeRoots([variant]);
+              this.variantBudget[state.family] = Math.min(
+                kanoInitialVariantBudget(this.variantMobile)[state.family],
+                (this.variantBudget[state.family] || 0) + 1,
+              );
+              break;
+            }
+
+            state.pool.push(variant);
+            state.seen.add(relativePath);
+            this.variantCache.set(state.key, state.pool);
+            console.info('[Kano GLB Variants] active', state.key, relativePath, '(' + state.pool.length + '/' + state.limit + ')');
+            loadedAnyInLastRound = true;
+            loadedOne = true;
+            break;
+          }
+          if (!loadedOne && state.index >= state.candidates.length) state.exhausted = true;
+        }
+      }
+    } finally {
+      for (const key of uniqueKeys) this.variantReady.add(key);
+    }
+
+    return states.map((state) => ({
+      key: state.key,
+      loaded: state.pool.length,
+      target: state.limit,
+      paths: state.pool.map((model) => model?.userData?.modelPath).filter(Boolean),
+    }));
+  }
+
+`;
+  source = source.slice(0, preloadStart) + methods + source.slice(preloadEnd);
+
+  const instanceOld = `    const model = this.cache.get(key);\n\n    if (!model) return null;`;
+  const instanceNew = `    if (this.shouldWaitForVariantPool(key) && !this.variantReady.has(key)) return null;
+    const variants = this.variantCache.get(key);
+    let model = this.cache.get(key);
+    if (variants?.length) {
+      const cursor = this.variantCursor.get(key) || 0;
+      model = variants[cursor % variants.length];
+      this.variantCursor.set(key, (cursor + 1) % variants.length);
+    }
+    if (!model) return null;`;
+  if (!source.includes(instanceOld)) {
+    throw new Error('[Kano GLB Variants] Could not locate getInstance() model selection; refusing an unsafe source rewrite.');
+  }
+  source = source.replace(instanceOld, instanceNew);
+
+  const getStatusOld = `      loaded: [...this.cache.keys()],\n      pending: [...this.pending.keys()],\n      failed: [...this.failed.keys()],\n      disposed: this.disposed,`;
+  const getStatusNew = `      loaded: [...this.cache.keys()],
+      pending: [...this.pending.keys()],
+      failed: [...this.failed.keys()],
+      variantPools: Object.fromEntries([...this.variantCache.entries()].map(([key, pool]) => [key, pool.map((model) => model?.userData?.modelPath).filter(Boolean)])),
+      variantReady: [...this.variantReady],
+      variantBudget: { ...this.variantBudget },
+      disposed: this.disposed,`;
+  if (!source.includes(getStatusOld)) {
+    throw new Error('[Kano GLB Variants] Could not locate getStatus() fields; refusing an unsafe source rewrite.');
+  }
+  source = source.replace(getStatusOld, getStatusNew);
+
+  const disposeOld = `    disposeModelResources(\n      [...this.cache.values()],\n    );\n\n    this.cache.clear();\n    this.failed.clear();\n    this.pending.clear();`;
+  const disposeNew = `    const ownedRoots = new Set([...this.cache.values()]);
+    for (const pool of this.variantCache.values()) {
+      for (const model of pool || []) if (model) ownedRoots.add(model);
+    }
+    kanoDisposeRoots([...ownedRoots]);
+
+    this.cache.clear();
+    this.variantCache.clear();
+    this.variantCursor.clear();
+    this.variantReady.clear();
+    this.failed.clear();
+    this.pending.clear();`;
+  if (!source.includes(disposeOld)) {
+    throw new Error('[Kano GLB Variants] Could not locate dispose() cleanup markers; refusing an unsafe source rewrite.');
+  }
+  source = source.replace(disposeOld, disposeNew);
+
+  const shouldWaitMethod = `
+  shouldWaitForVariantPool(key) {
+    const policy = kanoVariantPolicyFor(key, this.variantMobile);
+    const candidates = Array.isArray(CATALOG[key]) ? CATALOG[key] : [];
+    return !!policy && policy.limit > 1 && candidates.length > 1;
+  }
+
+`;
+  const getInstanceMethodMarker = '  // ----------------------------------------------------------\n  // GET INSTANCE';
+  const insertAt = source.indexOf(getInstanceMethodMarker);
+  if (insertAt < 0) throw new Error('[Kano GLB Variants] GET INSTANCE insertion marker disappeared.');
+  source = source.slice(0, insertAt) + shouldWaitMethod + source.slice(insertAt);
+
+  // Add a marker only to the transformed module; repeated plugin calls do not
+  // duplicate class methods, and catalogue replacement remains idempotent.
+  const classMarker = 'export class ModelManager {';
+  const classAt = source.indexOf(classMarker);
+  if (classAt < 0) throw new Error('[Kano GLB Variants] ModelManager class declaration not found.');
+  source = source.slice(0, classAt) + '// KANO GLB VARIANT ACTIVATION PATCH\n' + source.slice(classAt);
+  return source;
+}
+
 function replaceCatalog(source, catalog) {
   const startToken = 'const CATALOG = {';
   const marker = '// MODEL DIMENSIONS';
@@ -400,7 +672,8 @@ export function createGlbCatalogSyncPlugin() {
       if (!normalizedId.endsWith('/js/ModelManager.js')) return null;
       const report = await refreshReport();
       if (!report.discoveredCount) return null;
-      const transformed = replaceCatalog(source, report.catalog);
+      const transformedCatalog = replaceCatalog(source, report.catalog);
+      const transformed = patchModelManagerVariants(transformedCatalog);
       return { code: transformed, map: null };
     },
     configureServer(server) {
