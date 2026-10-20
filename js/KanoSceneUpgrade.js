@@ -65,7 +65,7 @@ export class KanoSceneUpgrade {
     this.buildAmbientCrowd();
     this.buildMorningActivityRigs();
     this.patchPassengerInteractions();
-    this.ensureDriverSeated(true);
+    this.ensureSeatedDriver(true);
   }
 
   ownMaterial(material) {
