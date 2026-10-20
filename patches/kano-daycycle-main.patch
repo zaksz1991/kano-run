@@ -1,0 +1,80 @@
+--- a/js/main.js	2026-10-20 20:39:12.071212849 +0100
++++ b/js/main.js	2026-10-20 20:39:12.092971965 +0100
+@@ -22,6 +22,8 @@
+ import { KanoAtmosphere } from './KanoAtmosphere.js';
+ import { KanoInteractionReliability } from './KanoInteractionReliability.js';
+ import { KanoWorkshopPanel } from './KanoWorkshopPanel.js';
++import { KanoDayCycle } from './KanoDayCycle.js';
++import { KanoDayHud } from './KanoDayHud.js';
+ 
+ import '../css/kano-responsive-upgrade.css';
+ 
+@@ -92,6 +94,8 @@
+ let controls = null;
+ let game = null;
+ let workshopPanel = null;
++let dayCycle = null;
++let dayHud = null;
+ 
+ let renderMode = '2D';
+ 
+@@ -814,6 +818,33 @@
+   ui.bind?.(game);
+ 
+   // ----------------------------------------------------------
++  // DAY CYCLE: clock, prayer periods, hunger and fatigue.
++  // Owns no money or fuel. Warnings reuse the existing toast.
++  // ----------------------------------------------------------
++
++  try {
++    dayHud = new KanoDayHud({ container });
++
++    dayCycle = new KanoDayCycle({
++      onEvent: ({ type, detail }) => {
++        const messages = {
++          hunger_high: 'You are getting hungry · find food soon',
++          hunger_critical: 'Very hungry · tips are suffering',
++          fatigue_high: 'You are getting tired · rest when you can',
++          fatigue_critical: 'Exhausted · steering is getting heavy',
++          new_day: `A new day in Kano · day ${detail.day}`,
++        };
++
++        if (messages[type]) ui.toast?.(messages[type]);
++      },
++    });
++
++    window.kanoDayCycle = dayCycle;
++  } catch (error) {
++    console.warn('[Kano Life] day cycle unavailable', error);
++  }
++
++  // ----------------------------------------------------------
+   // WORKSHOP, REPAIRS, AND ROADSIDE RECOVERY
+   // This DOM panel persists when switching between 2D and 3D.
+   // ----------------------------------------------------------
+@@ -1096,6 +1127,16 @@
+ 
+     game?.tick(dt);
+ 
++    // Day cycle runs only while actively driving.
++    if (dayCycle && game?.state === 'PLAY') {
++      dayCycle.update(dt, {
++        speedKmh: game.s?.speed,
++        passengerOnboard: (game.s?.passengers?.length || 0) > 0,
++      });
++
++      dayHud?.render(dayCycle.snapshot());
++    }
++
+     interactionReliability?.update?.(
+       dt,
+       game?.s || {},
+@@ -1251,6 +1292,8 @@
+ 
+     try {
+       liveUserCounter?.dispose?.();
++      dayHud?.dispose?.();
++      dayCycle?.dispose?.();
+     } catch {
+       // The page is closing.
+     }
