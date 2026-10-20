@@ -1,8 +1,14 @@
+import { save, persist } from './storage.js';
+import { KanoAtmosphere } from './KanoAtmosphere.js';
+
 const MOVE_ZONES_PATCH = Symbol.for('kano.life.stopped-roadside-interaction.v1');
 const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v1');
-const SCENE_ANIMATION_PATCH = Symbol.for('kano.life.scene-crowd-animation-fix.v1');
-
+const SCENE_ANIMATION_PATCH = Symbol.for('kano.life.scene-animation-transform-fix.v1');
+const MORNING_ROUTINE_PATCH = Symbol.for('kano.life.morning-routine-ready-scenes.v1');
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+// Renderer3D places world objects using z = -depth * 88. This offset keeps
+// roadside interaction prompts in step with the visible pickup/drop markers.
 const ROADSIDE_INTERACTION_DEPTH_OFFSET = 0.12;
 const ROADSIDE_TYPES = new Set(['pickup', 'drop', 'fuel']);
 const ZONE_LABELS = {
@@ -34,6 +40,8 @@ function disposeOwnedActor(root) {
   if (!root?.traverse) return;
   const geometries = new Set();
   const materials = new Set();
+  // ModelManager instances share cached GLB geometry across actors. Do not
+  // dispose shared geometry, but dispose per-instance cloned materials.
   const rootUsesSharedGeometry = Boolean(
     root.userData?.sharedGeometry || root.userData?.modelManagerInstance,
   );
@@ -92,7 +100,6 @@ export function getInteractionAdvice(state, gameStatus = 'PLAY') {
   const label = ZONE_LABELS[type];
   const speed = Math.max(0, Number(state.speed) || 0);
   const reversing = Boolean(state.reverse) || (Number(state.signedSpeed) || 0) < -0.05;
-
   if (type === 'pothole') {
     return {
       type: 'hazard', zone,
@@ -145,7 +152,7 @@ export function getInteractionAdvice(state, gameStatus = 'PLAY') {
   };
 }
 
-/** Keeps existing game rules while enabling interaction at a full stop. */
+/** Keeps the existing game rules while enabling interaction at a full stop. */
 export function installStoppedInteractionCompatibility(game) {
   if (!game || typeof game.moveZones !== 'function') return () => {};
   if (game[MOVE_ZONES_PATCH]?.active) {
@@ -207,8 +214,8 @@ export function installStoppedInteractionCompatibility(game) {
   };
 }
 
-/** Replace procedural render fallbacks when a compatible GLB is already cached. */
-function installCharacterFallbacks(renderer, onRestore) {
+/** Use already-loaded compatible GLBs instead of leaving avoidable placeholders. */
+function installCharacterFallbacks(renderer) {
   if (!renderer || renderer[CHARACTER_PATCH]?.active) return renderer?.[CHARACTER_PATCH]?.restore || (() => {});
   const restorers = [];
   const rememberPatch = (name, wrapFactory) => {
@@ -216,16 +223,14 @@ function installCharacterFallbacks(renderer, onRestore) {
     if (typeof original !== 'function') return;
     const wrapper = wrapFactory(original);
     renderer[name] = wrapper;
-    restorers.push(() => {
-      if (renderer[name] === wrapper) renderer[name] = original;
-    });
+    restorers.push(() => { if (renderer[name] === wrapper) renderer[name] = original; });
   };
   rememberPatch('upgradePedestrians', (original) => function upgradePedestriansWithFallback(...args) {
     const result = original.apply(this, args);
     const models = this.models;
     for (const pedestrian of this.pedestrians || []) {
       if (!pedestrian?.actor || pedestrian.usingModel) continue;
-      const keys = (Number(pedestrian.index) % 2 === 0)
+      const keys = Number(pedestrian.index) % 2 === 0
         ? AMBIENT_CHARACTER_KEYS
         : ['pedestrian', 'passengerMan', 'passenger', 'pedestrianWoman', 'passengerWoman', 'passengerVIP'];
       const key = pickCachedKey(models, keys);
@@ -283,36 +288,23 @@ function installCharacterFallbacks(renderer, onRestore) {
   const state = { active: true, restore: () => {
     if (!state.active) return;
     state.active = false;
-    for (const restore of restorers.reverse()) {
-      try { restore(); } catch { /* Renderer may already be disposed. */ }
-    }
+    for (const restore of restorers.reverse()) { try { restore(); } catch {} }
     try { delete renderer[CHARACTER_PATCH]; } catch { renderer[CHARACTER_PATCH] = undefined; }
-    onRestore?.();
   } };
   Object.defineProperty(renderer, CHARACTER_PATCH, { configurable: true, value: state });
   return state.restore;
 }
 
-/**
- * Fixes the actual KanoSceneUpgrade instanced crowd and temporary passenger rigs.
- * The existing crowd code overwrote each arm/leg matrix with rotation-only matrices,
- * losing its position. This wrapper keeps each limb attached, faces actors along their
- * walking vector, and leaves the scene module and game loop intact.
- */
+/** Repair instanced crowd limb transforms and face passenger walkers along paths. */
 function installSceneUpgradeAnimationFix(sceneUpgrade) {
   if (!sceneUpgrade) return () => {};
   const existing = sceneUpgrade[SCENE_ANIMATION_PATCH];
   if (existing?.active) return existing.restore;
   const restorers = [];
-
   if (typeof sceneUpgrade.updateCrowdMatrices === 'function') {
     const original = sceneUpgrade.updateCrowdMatrices;
     const wrapper = function updateCrowdMatricesWithProperLimbTransforms() {
-      if (
-        this.disposed || !Array.isArray(this.walkers) ||
-        !this.walkers.length || typeof this.writeMatrix !== 'function' ||
-        !this.crowdTorso || !this.crowdHead || !this.crowdArms || !this.crowdLegs
-      ) {
+      if (this.disposed || !Array.isArray(this.walkers) || !this.walkers.length || typeof this.writeMatrix !== 'function' || !this.crowdTorso || !this.crowdHead || !this.crowdArms || !this.crowdLegs) {
         return original.call(this);
       }
       this.walkers.forEach((walker, index) => {
@@ -325,37 +317,19 @@ function installSceneUpgradeAnimationFix(sceneUpgrade) {
         const height = Number(walker.height) || 1;
         const x = (Number(walker.x) || 0) + Math.sin(this.elapsed * 1.1 + (Number(walker.phase) || 0)) * (Number(walker.sway) || 0.06);
         const z = Number(walker.z) || 0;
-
         this.writeMatrix(this.crowdTorso, index, x, 0.98 * height + bob, z, heading, 1, height, 0.90);
         this.writeMatrix(this.crowdHead, index, x, 1.58 * height + bob, z, heading, 1, 1, 0.92);
-
         for (const side of [-1, 1]) {
           const partIndex = index * 2 + (side > 0 ? 1 : 0);
-          // Put limb joints back at their shoulder/hip before applying rotations.
-          const armRot = side * (0.10 + step * 0.45);
-          this.writeMatrix(
-            this.crowdArms, partIndex,
-            x + side * 0.22, 1.02 * height + bob, z,
-            heading, 1, 1, 1, armRot, 0,
-          );
-          const legRot = stride * side;
-          this.writeMatrix(
-            this.crowdLegs, partIndex,
-            x + side * 0.09, 0.44 * height, z,
-            heading, 1, 1, 1, legRot, 0,
-          );
+          this.writeMatrix(this.crowdArms, partIndex, x + side * 0.22, 1.02 * height + bob, z, heading, 1, 1, 1, side * (0.10 + step * 0.45), 0);
+          this.writeMatrix(this.crowdLegs, partIndex, x + side * 0.09, 0.44 * height, z, heading, 1, 1, 1, stride * side, 0);
         }
       });
-      for (const mesh of [this.crowdTorso, this.crowdHead, this.crowdArms, this.crowdLegs]) {
-        mesh.instanceMatrix.needsUpdate = true;
-      }
+      for (const mesh of [this.crowdTorso, this.crowdHead, this.crowdArms, this.crowdLegs]) mesh.instanceMatrix.needsUpdate = true;
     };
     sceneUpgrade.updateCrowdMatrices = wrapper;
-    restorers.push(() => {
-      if (sceneUpgrade.updateCrowdMatrices === wrapper) sceneUpgrade.updateCrowdMatrices = original;
-    });
+    restorers.push(() => { if (sceneUpgrade.updateCrowdMatrices === wrapper) sceneUpgrade.updateCrowdMatrices = original; });
   }
-
   if (typeof sceneUpgrade.updatePassengerWalkers === 'function') {
     const original = sceneUpgrade.updatePassengerWalkers;
     const wrapper = function orientPassengerWalkersAlongPath(dt, scroll) {
@@ -364,27 +338,19 @@ function installSceneUpgradeAnimationFix(sceneUpgrade) {
         if (!item?.rig?.root || !item.start || !item.end) continue;
         const dx = Number(item.end.x) - Number(item.start.x);
         const dz = Number(item.end.z) - Number(item.start.z);
-        if (Math.hypot(dx, dz) > 0.001) {
-          // With this rig's forward axis along +Z, atan2(X, Z) faces the path.
-          item.rig.root.rotation.y = Math.atan2(dx, dz);
-        }
+        if (Math.hypot(dx, dz) > 0.001) item.rig.root.rotation.y = Math.atan2(dx, dz);
       }
       return result;
     };
     sceneUpgrade.updatePassengerWalkers = wrapper;
-    restorers.push(() => {
-      if (sceneUpgrade.updatePassengerWalkers === wrapper) sceneUpgrade.updatePassengerWalkers = original;
-    });
+    restorers.push(() => { if (sceneUpgrade.updatePassengerWalkers === wrapper) sceneUpgrade.updatePassengerWalkers = original; });
   }
-
   const state = {
     active: true,
     restore() {
       if (!state.active) return;
       state.active = false;
-      for (const restore of restorers.reverse()) {
-        try { restore(); } catch { /* Scene instance may already be disposed. */ }
-      }
+      for (const restore of restorers.reverse()) { try { restore(); } catch {} }
       try { delete sceneUpgrade[SCENE_ANIMATION_PATCH]; } catch { sceneUpgrade[SCENE_ANIMATION_PATCH] = undefined; }
     },
   };
@@ -392,6 +358,119 @@ function installSceneUpgradeAnimationFix(sceneUpgrade) {
   console.info('[Kano Life] crowd limb placement and passenger walking direction fix active.');
   return state.restore;
 }
+
+/**
+ * The older routine used fixed timers even when Renderer3D had not finished
+ * creating its scene groups. A slow model load could make it rapidly change
+ * several requested scenes, leaving only the final road scene visible. This
+ * wrapper waits for each requested diorama to become the active 3D scene before
+ * advancing; it does not replace or duplicate Renderer3D's scene system.
+ */
+function installMorningRoutineReadinessPatch() {
+  const proto = KanoAtmosphere?.prototype;
+  if (!proto || proto[MORNING_ROUTINE_PATCH] || typeof proto.playMorningRoutine !== 'function') return;
+  const originalStop = proto.stopMorningRoutine;
+  const originalPlay = proto.playMorningRoutine;
+
+  proto.stopMorningRoutine = function stopRoutineAndInvalidatePendingBeats(...args) {
+    this.__kanoMorningRoutineToken = (Number(this.__kanoMorningRoutineToken) || 0) + 1;
+    return typeof originalStop === 'function' ? originalStop.apply(this, args) : undefined;
+  };
+
+  proto.playMorningRoutine = function playMorningRoutineWhenSceneIsReady() {
+    if (!this.renderer3d || this.disposed) return;
+    this.stopMorningRoutine?.();
+    const token = (Number(this.__kanoMorningRoutineToken) || 0) + 1;
+    this.__kanoMorningRoutineToken = token;
+    this.routineRunning = true;
+    this.settings.timeOfDay = 'morning';
+    const timeSelect = this.panel?.querySelector('[data-world-time]');
+    if (timeSelect) timeSelect.value = 'morning';
+    try {
+      save.lifestyle = this.settings;
+      persist();
+    } catch (error) {
+      console.warn('[Kano Life] morning-routine setting save warning', error);
+    }
+    try { this.applyProfile(this.game?.s || {}); } catch {}
+    try { this.refreshPanel(); } catch {}
+
+    const beats = [
+      { scene: 'bedroom', message: 'Morning · wake up and prepare for the day.', duration: 2800 },
+      { scene: 'household', message: 'Home · family begins the morning routine.', duration: 2800 },
+      { scene: 'breakfast', message: 'Roadside akara and pap breakfast.', duration: 3000 },
+      { scene: 'garage', message: 'Retrieve the secured keke from the parking garage.', duration: 3200 },
+      { scene: 'road', message: 'Kano road · your driving day begins.', duration: 2200 },
+    ];
+    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+    const validRun = () => !this.disposed && this.routineRunning && this.__kanoMorningRoutineToken === token;
+
+    const run = async () => {
+      // Wait for WebGL's player, garage and diorama groups, not just the
+      // constructor. Never jump straight to the last beat on a slow device.
+      const startupDeadline = Date.now() + 20000;
+      while (validRun()) {
+        const renderer = this.renderer3d;
+        const ready = Boolean(renderer?.ready && renderer?.player && renderer?.garageGroup && typeof renderer?.setLifeScene === 'function');
+        if (ready) break;
+        if (Date.now() >= startupDeadline) {
+          this.routineRunning = false;
+          this.toast('Morning routine could not start: 3D scenes are still loading. Try again after the 3D view is ready.');
+          return;
+        }
+        await wait(100);
+      }
+      for (let index = 0; index < beats.length; index += 1) {
+        if (!validRun()) return;
+        const beat = beats[index];
+        const renderer = this.renderer3d;
+        const beatDeadline = Date.now() + 10000;
+        try { this.requestScene(beat.scene, true); } catch (error) {
+          console.warn(`[Kano Life] could not request ${beat.scene} scene`, error);
+        }
+        // requestScene can be queued while assets finish. The loop below waits
+        // for the actual renderer state; it does not assume the request worked.
+        while (validRun() && renderer?.lifeScene !== beat.scene && Date.now() < beatDeadline) {
+          try {
+            if (renderer?.ready && renderer?.player && renderer?.garageGroup && this.pendingScene !== beat.scene) {
+              this.requestScene(beat.scene, true);
+            }
+          } catch {}
+          await wait(100);
+        }
+        if (!validRun()) return;
+        if (renderer?.lifeScene !== beat.scene) {
+          this.routineRunning = false;
+          this.toast(`Morning routine paused: the ${beat.scene} scene did not activate. No later scenes were skipped to hide the problem.`);
+          return;
+        }
+        this.toast(beat.message);
+        try {
+          window.dispatchEvent(new CustomEvent('kano:life-routine-beat', {
+            detail: { scene: beat.scene, index, total: beats.length },
+          }));
+        } catch {}
+        await wait(beat.duration);
+      }
+      if (!validRun()) return;
+      this.routineRunning = false;
+      this.toast('Morning routine complete. Safe driving.');
+    };
+    void run().catch((error) => {
+      if (!validRun()) return;
+      this.routineRunning = false;
+      console.error('[Kano Life] morning routine error', error);
+      this.toast('Morning routine stopped because a 3D scene could not be displayed.');
+    });
+  };
+
+  Object.defineProperty(proto, MORNING_ROUTINE_PATCH, {
+    configurable: false,
+    value: { originalStop, originalPlay },
+  });
+  console.info('[Kano Life] routine now waits for each 3D scene to activate.');
+}
+installMorningRoutineReadinessPatch();
 
 /** Visual interaction prompts and optional scene diagnostics. */
 export class KanoInteractionReliability {
@@ -460,7 +539,7 @@ export class KanoInteractionReliability {
   bindRendererFallbacks() {
     const renderer = this.getRenderer?.();
     if (!renderer || renderer === this.characterRenderer) return;
-    try { this.restoreCharacterFallbacks?.(); } catch { /* Previous renderer may be gone. */ }
+    try { this.restoreCharacterFallbacks?.(); } catch {}
     this.characterRenderer = renderer;
     this.restoreCharacterFallbacks = installCharacterFallbacks(renderer);
   }
@@ -468,12 +547,10 @@ export class KanoInteractionReliability {
   bindSceneUpgradeAnimationFix() {
     const current = this.getSceneUpgrade?.();
     if (current === this.sceneUpgradePatched) return;
-    try { this.restoreSceneUpgradeAnimation?.(); } catch { /* Old scene may already be disposed. */ }
+    try { this.restoreSceneUpgradeAnimation?.(); } catch {}
     this.restoreSceneUpgradeAnimation = null;
     this.sceneUpgradePatched = current || null;
-    if (current) {
-      this.restoreSceneUpgradeAnimation = installSceneUpgradeAnimationFix(current);
-    }
+    if (current) this.restoreSceneUpgradeAnimation = installSceneUpgradeAnimationFix(current);
   }
 
   update(deltaSeconds = 0, state = this.game?.s || {}) {
@@ -545,6 +622,7 @@ export class KanoInteractionReliability {
       'KANO LIFE · SCENE DIAGNOSTICS',
       `Renderer: ${window.__KANO_RENDER_MODE__ || 'unknown'}`,
       `Game state: ${this.game.state}`,
+      `Life scene: ${renderer?.lifeScene || 'unknown'}`,
       `Player object: ${player?.name || 'not available'}`,
       `Player GLB: ${player?.userData?.modelPath || 'procedural / unknown'}`,
       `Seated driver rig: ${driverFound ? 'found' : 'missing'}`,
@@ -557,10 +635,11 @@ export class KanoInteractionReliability {
       `Interaction guidance: ${near?.message || 'none'}`,
       'Roadside interaction timing: renderer-aligned',
       'Character fallback bridge: active when compatible GLBs are cached',
-      'Procedural crowd limb transforms: corrected when scene is active',
+      'Procedural crowd transforms: corrected when scene system is active',
+      'Morning routine: waits for each 3D scene to activate',
       'Note: seat check is a position heuristic, not a perfect visual verdict.',
     ].join('\n');
-    if (this.diagnostics.textContent !== status) this.diagnostics.textContent = status;
+    if (this.diagnostics && this.diagnostics.textContent !== status) this.diagnostics.textContent = status;
   }
 
   dispose() {
@@ -569,9 +648,9 @@ export class KanoInteractionReliability {
     window.removeEventListener('pagehide', this.onPageHide);
     this.restoreMoveZones?.();
     this.restoreMoveZones = null;
-    try { this.restoreCharacterFallbacks?.(); } catch { /* Renderer may already be disposed. */ }
+    try { this.restoreCharacterFallbacks?.(); } catch {}
     this.restoreCharacterFallbacks = null;
-    try { this.restoreSceneUpgradeAnimation?.(); } catch { /* Scene may already be disposed. */ }
+    try { this.restoreSceneUpgradeAnimation?.(); } catch {}
     this.restoreSceneUpgradeAnimation = null;
     this.sceneUpgradePatched = null;
     this.characterRenderer = null;
