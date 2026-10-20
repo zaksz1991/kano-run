@@ -683,6 +683,17 @@ const escapeWorkshopHTML = (value) => String(value ?? '').replace(/[&<>\"']/g, (
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;',
 }[character]));
 
+function normalizeConditionSnapshot(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const snapshot = {};
+  for (const key of Object.keys(WORKSHOP_PARTS)) {
+    const raw = Number(value[key]);
+    if (!Number.isFinite(raw) || raw < 0 || raw > 100) return null;
+    snapshot[key] = Math.round(raw);
+  }
+  return snapshot;
+}
+
 function readWorkshopHistory() {
   try {
     const parsed = JSON.parse(localStorage.getItem(WORKSHOP_HISTORY_KEY) || '[]');
@@ -698,13 +709,22 @@ function readWorkshopHistory() {
 function appendWorkshopHistory(entry) {
   try {
     const history = readWorkshopHistory();
-    history.unshift({
+    const receipt = {
       time: Date.now(),
       service: String(entry.service || 'service').slice(0, 20),
       parts: Array.isArray(entry.parts) ? entry.parts.filter((key) => WORKSHOP_PARTS[key]).slice(0, 3) : [],
       cost: Math.max(0, Math.floor(Number(entry.cost) || 0)),
       walletAfter: Math.max(0, Math.floor(Number(entry.walletAfter) || 0)),
-    });
+    };
+    const conditionBefore = normalizeConditionSnapshot(entry.conditionBefore);
+    const conditionAfter = normalizeConditionSnapshot(entry.conditionAfter);
+    // Store condition details only when both sides of the repair are valid.
+    // Legacy receipts remain readable and exportable without fabricated values.
+    if (conditionBefore && conditionAfter) {
+      receipt.conditionBefore = conditionBefore;
+      receipt.conditionAfter = conditionAfter;
+    }
+    history.unshift(receipt);
     localStorage.setItem(WORKSHOP_HISTORY_KEY, JSON.stringify(history.slice(0, WORKSHOP_HISTORY_LIMIT)));
     return true;
   } catch (error) {
@@ -726,14 +746,33 @@ function workshopHistoryMarkup() {
         : entry.service === 'engine' ? 'ENGINE SERVICE'
           : entry.service === 'tyres' ? 'TYRE SERVICE' : 'WORKSHOP SERVICE';
     const partsLabel = entry.parts.map((key) => WORKSHOP_PARTS[key]?.label || '').filter(Boolean).join(' · ');
-    return `<li class="kano-workshop-history-item"><div class="kano-workshop-history-top"><strong>${serviceLabel}</strong><b>${naira(entry.cost)}</b></div><span>${escapeWorkshopHTML(partsLabel || 'Vehicle service')}</span><small>${escapeWorkshopHTML(dateLabel)} · Wallet after: ${naira(entry.walletAfter)}</small></li>`;
+    const before = normalizeConditionSnapshot(entry.conditionBefore);
+    const after = normalizeConditionSnapshot(entry.conditionAfter);
+    const conditionLine = before && after
+      ? Object.keys(WORKSHOP_PARTS).map((key) => ({
+          key,
+          label: WORKSHOP_PARTS[key].label,
+          before: before[key],
+          after: after[key],
+          restored: Math.max(0, after[key] - before[key]),
+        })).filter((part) => part.before !== part.after)
+          .map((part) => `${part.label} ${part.before}% → ${part.after}% (+${part.restored})`).join(' · ')
+      : 'Condition details unavailable for this older receipt';
+    return `<li class="kano-workshop-history-item"><div class="kano-workshop-history-top"><strong>${serviceLabel}</strong><b>${naira(entry.cost)}</b></div><span>${escapeWorkshopHTML(partsLabel || 'Vehicle service')}</span><small class="kano-workshop-history-condition">${escapeWorkshopHTML(conditionLine || 'No condition change recorded')}</small><small>${escapeWorkshopHTML(dateLabel)} · Wallet after: ${naira(entry.walletAfter)}</small></li>`;
   }).join('');
 }
 
 function workshopHistorySummaryMarkup() {
   const history = readWorkshopHistory();
   const spend = history.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0);
-  return `<div class="kano-workshop-history-summary" aria-label="Saved service history summary"><div><span>SAVED SERVICES</span><strong>${history.length}</strong></div><div><span>SAVED SPEND</span><strong>${naira(spend)}</strong></div></div>`;
+  const restoredPoints = history.reduce((sum, entry) => {
+    const before = normalizeConditionSnapshot(entry.conditionBefore);
+    const after = normalizeConditionSnapshot(entry.conditionAfter);
+    if (!before || !after) return sum;
+    return sum + Object.keys(WORKSHOP_PARTS).reduce((partSum, key) => partSum + Math.max(0, after[key] - before[key]), 0);
+  }, 0);
+  const detailedReceipts = history.filter((entry) => normalizeConditionSnapshot(entry.conditionBefore) && normalizeConditionSnapshot(entry.conditionAfter)).length;
+  return `<div class="kano-workshop-history-summary" aria-label="Saved service history summary"><div><span>SAVED SERVICES</span><strong>${history.length}</strong></div><div><span>SAVED SPEND</span><strong>${naira(spend)}</strong></div><div><span>CONDITION POINTS RESTORED</span><strong>${restoredPoints}</strong><small>${detailedReceipts} receipt${detailedReceipts === 1 ? '' : 's'} with condition detail</small></div></div>`;
 }
 
 function normalizedWorkshopExportRows() {
@@ -745,12 +784,15 @@ function normalizedWorkshopExportRows() {
   };
   return readWorkshopHistory().map((entry) => {
     const date = new Date(Number(entry.time));
+    const conditionBefore = normalizeConditionSnapshot(entry.conditionBefore);
+    const conditionAfter = normalizeConditionSnapshot(entry.conditionAfter);
     return {
       date: Number.isNaN(date.getTime()) ? '' : date.toISOString(),
       service: serviceLabels[entry.service] || 'Workshop service',
       components: entry.parts.filter((key) => WORKSHOP_PARTS[key]).map((key) => WORKSHOP_PARTS[key].label).join('; '),
       costNaira: Math.max(0, Math.floor(Number(entry.cost) || 0)),
       walletAfterNaira: Math.max(0, Math.floor(Number(entry.walletAfter) || 0)),
+      ...(conditionBefore && conditionAfter ? { conditionBefore, conditionAfter } : {}),
     };
   });
 }
@@ -776,8 +818,16 @@ function downloadWorkshopHistory(format) {
         if (/^[\t\r ]*[=+\-@]/.test(safe)) safe = `'${safe}`;
         return `"${safe.replace(/"/g, '""')}"`;
       };
-      const header = ['Service date (ISO 8601)', 'Service', 'Components', 'Cost (NGN)', 'Wallet after (NGN)'];
-      const lines = [header, ...rows.map((row) => [row.date, row.service, row.components, row.costNaira, row.walletAfterNaira])];
+      const header = [
+        'Service date (ISO 8601)', 'Service', 'Components', 'Cost (NGN)', 'Wallet after (NGN)',
+        'Body before (%)', 'Body after (%)', 'Engine before (%)', 'Engine after (%)', 'Tyres before (%)', 'Tyres after (%)',
+      ];
+      const lines = [header, ...rows.map((row) => [
+        row.date, row.service, row.components, row.costNaira, row.walletAfterNaira,
+        row.conditionBefore?.body ?? '', row.conditionAfter?.body ?? '',
+        row.conditionBefore?.engine ?? '', row.conditionAfter?.engine ?? '',
+        row.conditionBefore?.tyres ?? '', row.conditionAfter?.tyres ?? '',
+      ])];
       blob = new Blob(['\uFEFF', lines.map((line) => line.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
       extension = 'csv';
       mimeType = 'CSV';
@@ -788,7 +838,7 @@ function downloadWorkshopHistory(format) {
         formatVersion: 1,
         exportedAt,
         recordCount: rows.length,
-        note: 'This file contains only the saved local workshop history. It does not contain the game wallet or vehicle save.',
+        note: 'This file contains only saved local workshop history. Newer receipts may include body, engine and tyre condition before and after service. It does not contain the game wallet or vehicle save.',
         records: rows,
       };
       blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
@@ -862,13 +912,20 @@ function normalizeWorkshopBackupRecord(record) {
   }
   const parts = importPartKeys(record, service);
   if (!parts.length) return null;
-  return {
+  const conditionBefore = normalizeConditionSnapshot(record.conditionBefore ?? record.healthBefore);
+  const conditionAfter = normalizeConditionSnapshot(record.conditionAfter ?? record.healthAfter);
+  const normalized = {
     time: Math.floor(timestamp),
     service,
     parts,
     cost: Math.floor(cost),
     walletAfter: Math.floor(walletAfter),
   };
+  if (conditionBefore && conditionAfter) {
+    normalized.conditionBefore = conditionBefore;
+    normalized.conditionAfter = conditionAfter;
+  }
+  return normalized;
 }
 
 function workshopRecordIdentity(record) {
@@ -921,11 +978,21 @@ async function importWorkshopHistoryFile(file) {
     const current = readWorkshopHistory().map((entry) => normalizeWorkshopBackupRecord({
       time: Number(entry.time), service: entry.service, parts: entry.parts,
       cost: entry.cost, walletAfter: entry.walletAfter,
+      conditionBefore: entry.conditionBefore, conditionAfter: entry.conditionAfter,
     })).filter(Boolean);
     const byIdentity = new Map();
     for (const record of [...current, ...valid]) {
       const identity = workshopRecordIdentity(record);
-      if (!byIdentity.has(identity)) byIdentity.set(identity, record);
+      const existing = byIdentity.get(identity);
+      if (!existing) {
+        byIdentity.set(identity, record);
+      } else {
+        const existingHasDetails = normalizeConditionSnapshot(existing.conditionBefore) && normalizeConditionSnapshot(existing.conditionAfter);
+        const incomingHasDetails = normalizeConditionSnapshot(record.conditionBefore) && normalizeConditionSnapshot(record.conditionAfter);
+        // Prefer richer receipts when a legacy and an enhanced backup contain
+        // the same transaction, without creating a duplicate service record.
+        if (!existingHasDetails && incomingHasDetails) byIdentity.set(identity, record);
+      }
     }
     const merged = [...byIdentity.values()]
       .sort((a, b) => b.time - a.time)
@@ -1019,7 +1086,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
   // backup while the wallet/vehicle state stays unchanged leaves stale records
   // on screen until a later unrelated state change.
   const historySignature = readWorkshopHistory()
-    .map((entry) => `${entry.time}:${entry.service}:${entry.cost}:${entry.walletAfter}:${entry.parts.join(',')}`)
+    .map((entry) => `${entry.time}:${entry.service}:${entry.cost}:${entry.walletAfter}:${entry.parts.join(',')}:${JSON.stringify(entry.conditionBefore || null)}:${JSON.stringify(entry.conditionAfter || null)}`)
     .join(';');
   const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}`;
   if (panel.dataset.signature === signature) return;
@@ -1173,11 +1240,15 @@ function performWorkshopService(serviceKey) {
   }
 
   try { game.ui?.update?.(game.s, game.route, game.driver); } catch (_) {}
+  const conditionBefore = Object.fromEntries(Object.keys(WORKSHOP_PARTS).map((key) => [key, workshopHealth(stateBefore, key)]));
+  const conditionAfter = Object.fromEntries(Object.keys(WORKSHOP_PARTS).map((key) => [key, workshopHealth(game.s, key)]));
   const historySaved = appendWorkshopHistory({
     service: serviceKey,
     parts: quote.parts.map((part) => part.key),
     cost: quote.cost,
     walletAfter: save.money,
+    conditionBefore,
+    conditionAfter,
   });
   updateWorkshopWalletLabels();
   updateVehicleHealthBadge(game.s);
@@ -1248,10 +1319,10 @@ function installWorkshopUI() {
       .kano-workshop-history-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
       .kano-workshop-history-heading h4{margin:0;color:#f3f7fc;font-size:10px;letter-spacing:.06em}
       .kano-workshop-history-heading span{color:#8fa5bb;font-size:8px;font-weight:900}
-      .kano-workshop-history-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:8px 0}
+      .kano-workshop-history-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0}
       .kano-workshop-history-summary>div{display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0;padding:8px;border:1px solid #ffffff15;border-radius:7px;background:#ffffff06}
       .kano-workshop-history-summary span{color:#9fb4c8;font-size:8px;font-weight:900;letter-spacing:.04em}
-      .kano-workshop-history-summary strong{color:#ffe18b;font-size:11px;overflow-wrap:anywhere;text-align:right}
+      .kano-workshop-history-summary strong{color:#ffe18b;font-size:11px;overflow-wrap:anywhere;text-align:right}.kano-workshop-history-summary small{grid-column:1/-1;color:#8198ad;font-size:8px;line-height:1.3;text-align:right}
       .kano-workshop-history-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0}
       .kano-workshop-history-actions button{min-height:38px;padding:8px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:9px;font-weight:900;cursor:pointer;touch-action:manipulation}
       .kano-workshop-history-actions button:disabled{opacity:.45;cursor:not-allowed}
@@ -1261,7 +1332,7 @@ function installWorkshopUI() {
       .kano-workshop-history-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
       .kano-workshop-history-top strong{color:#d9e8f7;font-size:9px}
       .kano-workshop-history-top b{color:#ffe18b;font-size:10px;white-space:nowrap}
-      .kano-workshop-history-item>span,.kano-workshop-history-item small{display:block;margin-top:4px;color:#a9bbcd;font-size:9px;line-height:1.35;overflow-wrap:anywhere}
+      .kano-workshop-history-item>span,.kano-workshop-history-item small{display:block;margin-top:4px;color:#a9bbcd;font-size:9px;line-height:1.35;overflow-wrap:anywhere}.kano-workshop-history-item .kano-workshop-history-condition{color:#a5f3d4}
       .kano-workshop-history-item small{color:#8198ad}
       .kano-workshop-history-empty,.kano-workshop-history-note{color:#8198ad;font-size:9px;line-height:1.4}
       .kano-workshop-history-empty{padding:8px;border:1px dashed #ffffff1b;border-radius:7px}
@@ -1284,7 +1355,7 @@ function installWorkshopUI() {
       .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
       .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
       .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
