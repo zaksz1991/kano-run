@@ -10,11 +10,11 @@ import { RADIO } from './config.js';
 // start, engine, beep, horn, pickup, crash, toggle, dispose.
 //
 // Improvements:
-// - More audible, layered procedural keke idle/acceleration audio.
-// - Filtered engine harmonics and speed-related road rumble.
-// - Strong two-tone horn, pickup chime, and crash effect.
-// - Optional local radio MP3 playback when a matching file exists.
-// - Searches common local audio folders without assuming every file exists.
+// - Uses public/assets/models/audio/engine.mp3 as the primary engine sound.
+// - Uses public/assets/models/audio/horn.mp3 as the primary horn sound.
+// - Keeps procedural engine/horn audio as a missing-file fallback.
+// - Keeps pickup chime and crash effects.
+// - Finds local radio MP3s, including the existing models/audio folder.
 // - Detects radio-index changes from the existing save/UI integration.
 // - Persistent mute preference and safe cleanup.
 //
@@ -27,7 +27,11 @@ const clamp = (value, min, max) => {
   return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min));
 };
 
+const ENGINE_AUDIO_URL = '/assets/models/audio/engine.mp3';
+const HORN_AUDIO_URL = '/assets/models/audio/horn.mp3';
+
 const RADIO_ROOTS = [
+  '/assets/models/audio/',
   '/assets/audio/',
   '/audio/',
   '/assets/sounds/',
@@ -67,6 +71,14 @@ export class AudioManager {
     this.started = false;
     this.lastSignedSpeed = 0;
     this.activeEffects = new Set();
+
+    // Use the project's real MP3 files first; synth audio is a fallback.
+    this.engineAudio = null;
+    this.hornAudio = null;
+    this.engineAudioFailed = false;
+    this.hornAudioFailed = false;
+    this.enginePlayBlocked = false;
+    this.synthStarted = false;
 
     this.radioAudio = null;
     this.radioIndex = -1;
@@ -109,25 +121,114 @@ export class AudioManager {
     return this.ctx;
   }
 
-  start() {
-    if (!this.enabled || this.disposed) return false;
+  ensureMediaAudio() {
+    if (typeof window === 'undefined' || typeof Audio === 'undefined') return;
+
+    if (!this.engineAudio && !this.engineAudioFailed) {
+      try {
+        const player = new Audio(ENGINE_AUDIO_URL);
+        player.preload = 'auto';
+        player.loop = true;
+        player.volume = 0.30;
+        player.playbackRate = 0.9;
+        player.setAttribute('playsinline', '');
+        player.addEventListener('error', () => {
+          this.engineAudioFailed = true;
+          if (this.enabled && !this.disposed && this.started) {
+            this.startSynthEngine();
+          }
+        });
+        this.engineAudio = player;
+      } catch (error) {
+        this.engineAudioFailed = true;
+        console.warn('[Kano Life] Could not create engine MP3 player:', error);
+      }
+    }
+
+    if (!this.hornAudio && !this.hornAudioFailed) {
+      try {
+        const player = new Audio(HORN_AUDIO_URL);
+        player.preload = 'auto';
+        player.loop = false;
+        player.volume = 0.90;
+        player.setAttribute('playsinline', '');
+        player.addEventListener('error', () => {
+          this.hornAudioFailed = true;
+        });
+        this.hornAudio = player;
+      } catch (error) {
+        this.hornAudioFailed = true;
+        console.warn('[Kano Life] Could not create horn MP3 player:', error);
+      }
+    }
+  }
+
+  playEngineMedia() {
+    if (
+      !this.enabled || this.disposed ||
+      !this.engineAudio || this.engineAudioFailed ||
+      this.enginePlayBlocked
+    ) return false;
+
+    try {
+      if (this.engineAudio.paused || this.engineAudio.ended) {
+        const playResult = this.engineAudio.play();
+        if (playResult && typeof playResult.catch === 'function') {
+          playResult.catch((error) => {
+            if (this.disposed || !this.enabled) return;
+            if (error?.name === 'NotAllowedError') {
+              // Do not flood the console or repeatedly retry autoplay.
+              // The next explicit start/user interaction will retry.
+              this.enginePlayBlocked = true;
+              return;
+            }
+            this.engineAudioFailed = true;
+            this.startSynthEngine();
+          });
+        }
+      }
+      return true;
+    } catch (error) {
+      this.engineAudioFailed = true;
+      this.startSynthEngine();
+      return false;
+    }
+  }
+
+  startSynthEngine() {
+    if (this.disposed || !this.enabled) return false;
+    if (this.synthStarted && this.osc && this.gain) return true;
 
     const ctx = this.ensureContext();
     if (!ctx) return false;
 
-    if (!this.started) {
-      try {
-        this.createEngineLayers(ctx);
-        this.started = true;
-      } catch (error) {
-        console.warn('[Kano Life] Could not initialise engine audio:', error);
-        this.cleanupEngineLayers();
-        return false;
-      }
+    try {
+      this.createEngineLayers(ctx);
+      this.synthStarted = true;
+      return true;
+    } catch (error) {
+      console.warn('[Kano Life] Could not initialise fallback engine audio:', error);
+      this.cleanupEngineLayers();
+      return false;
+    }
+  }
+
+  start() {
+    if (!this.enabled || this.disposed) return false;
+
+    this.ensureMediaAudio();
+    this.enginePlayBlocked = false;
+    this.started = true;
+
+    // Try the real engine recording first. It is served from public/.
+    const mediaStarted = this.playEngineMedia();
+    if (!mediaStarted && (!this.engineAudio || this.engineAudioFailed)) {
+      this.startSynthEngine();
     }
 
+    this.syncRadioStation(false);
     this.engine(this.lastSignedSpeed);
-    return true;
+    return Boolean(mediaStarted || this.synthStarted || this.engineAudio);
   }
 
   createEngineLayers(ctx) {
@@ -218,7 +319,7 @@ export class AudioManager {
     this.roadNoiseSource = null;
     this.roadNoiseFilter = null;
     this.roadNoiseGain = null;
-    this.started = false;
+    this.synthStarted = false;
   }
 
   // ----------------------------------------------------------
@@ -231,23 +332,49 @@ export class AudioManager {
     const safeSpeed = Number.isFinite(rawSpeed) ? rawSpeed : 0;
     this.lastSignedSpeed = safeSpeed;
 
-    // The existing UI changes save.radioIndex before calling beep(). This
-    // polling path also catches a station change from other game code.
     this.syncRadioStation(false);
 
     if (!this.enabled || this.disposed) {
       this.fadeEngineToSilence();
+      if (this.engineAudio && !this.engineAudio.paused) this.engineAudio.pause();
       return;
     }
 
-    if (!this.started && !this.start()) return;
+    this.ensureMediaAudio();
+    if (!this.started) {
+      // Normal gameplay calls this after a user gesture, but the media
+      // element remains independent of AudioContext availability.
+      this.started = true;
+    }
+
+    const speed = Math.abs(safeSpeed);
+    const reversing = safeSpeed < -0.05;
+
+    // Use the supplied engine.mp3 as the main engine sound.
+    if (this.engineAudio && !this.engineAudioFailed) {
+      const targetVolume = clamp(0.30 + speed * 0.0018, 0.30, 0.56);
+      const targetRate = clamp(0.88 + speed * 0.0085, 0.88, 1.48);
+      try {
+        this.engineAudio.volume = targetVolume;
+        this.engineAudio.playbackRate = reversing
+          ? clamp(targetRate * 0.92, 0.82, 1.35)
+          : targetRate;
+      } catch {
+        // Browser/media implementation may reject rate updates.
+      }
+
+      this.playEngineMedia();
+      // Keep the generated engine silent while the actual MP3 is active.
+      this.fadeEngineToSilence();
+      return;
+    }
+
+    // If the MP3 is missing/unreadable, retain the procedural engine fallback.
+    if (!this.synthStarted && !this.startSynthEngine()) return;
     if (!this.ctx || !this.osc || !this.gain) return;
 
     const ctx = this.ctx;
     const now = ctx.currentTime;
-    const speed = Math.abs(safeSpeed);
-    const reversing = safeSpeed < -0.05;
-
     const baseFrequency = reversing ? 43 : 48;
     const speedPitch = reversing ? 0.62 : 0.83;
     const rpmPulse = Math.sin(now * (5.5 + speed * 0.08)) * Math.min(2.4, speed * 0.025);
@@ -379,7 +506,35 @@ export class AudioManager {
 
   horn() {
     if (!this.enabled || this.disposed) return false;
-    // Two overlapping square/saw tones make the horn more audible than a beep.
+
+    this.ensureMediaAudio();
+
+    // Play the actual horn recording supplied in public/assets/models/audio.
+    if (this.hornAudio && !this.hornAudioFailed) {
+      try {
+        this.hornAudio.currentTime = 0;
+        this.hornAudio.volume = 0.92;
+        const playResult = this.hornAudio.play();
+        if (playResult && typeof playResult.catch === 'function') {
+          playResult.catch((error) => {
+            if (this.disposed || !this.enabled) return;
+            if (error?.name !== 'NotAllowedError') {
+              this.hornAudioFailed = true;
+              this.playSyntheticHorn();
+            }
+          });
+        }
+        return true;
+      } catch {
+        this.hornAudioFailed = true;
+      }
+    }
+
+    return this.playSyntheticHorn();
+  }
+
+  playSyntheticHorn() {
+    if (!this.enabled || this.disposed) return false;
     const first = this.playTone({
       frequency: 218,
       endFrequency: 205,
@@ -590,6 +745,8 @@ export class AudioManager {
       this.radioSyncVersion += 1;
       this.radioRequestIndex = -1;
       this.fadeEngineToSilence();
+      this.engineAudio?.pause();
+      this.hornAudio?.pause();
       this.stopRadio();
       for (const effect of this.activeEffects) {
         try {
@@ -613,6 +770,20 @@ export class AudioManager {
 
     this.radioSyncVersion += 1;
     this.stopRadio();
+
+    for (const player of [this.engineAudio, this.hornAudio]) {
+      if (!player) continue;
+      try {
+        player.pause();
+        player.removeAttribute('src');
+        player.load();
+      } catch {
+        // Media cleanup is best-effort during teardown.
+      }
+    }
+    this.engineAudio = null;
+    this.hornAudio = null;
+
     for (const timer of this._effectTimers) {
       try {
         window.clearTimeout(timer);
