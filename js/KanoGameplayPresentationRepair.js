@@ -1,5 +1,5 @@
 /**
- * KANO LIFE — PRESENTATION, TRAFFIC MOTION + PERSISTENT VEHICLE DAMAGE
+ * KANO LIFE — PRESENTATION, WORKSHOP EXPORT/IMPORT + PERSISTENT VEHICLE DAMAGE
  *
  * Production-safe additive repair layer. Core simulation/storage remains in
  * Game, UI and Renderer3D. This module is loaded by index.html and imports
@@ -676,6 +676,8 @@ const WORKSHOP_PARTS = {
 const WORKSHOP_LABOUR_FEE = 100;
 const WORKSHOP_HISTORY_KEY = 'kano-life-workshop-history-v1';
 const WORKSHOP_HISTORY_LIMIT = 12;
+const WORKSHOP_BACKUP_MAX_BYTES = 1024 * 1024;
+const WORKSHOP_BACKUP_MAX_ROWS = 500;
 const naira = (value) => `₦${Math.max(0, Math.floor(Number(value) || 0)).toLocaleString('en-NG')}`;
 const escapeWorkshopHTML = (value) => String(value ?? '').replace(/[&<>\"']/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;',
@@ -813,6 +815,136 @@ function downloadWorkshopHistory(format) {
   }
 }
 
+function importServiceKey(value) {
+  const normalized = String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const aliases = {
+    full: 'full', 'full service': 'full',
+    body: 'body', 'body repair': 'body',
+    engine: 'engine', 'engine service': 'engine',
+    tyre: 'tyres', tyres: 'tyres', 'tyre service': 'tyres', 'tyres service': 'tyres',
+  };
+  return aliases[normalized] || null;
+}
+
+function importPartKeys(record, service) {
+  const aliases = {
+    body: 'body', 'body repair': 'body',
+    engine: 'engine', 'engine service': 'engine',
+    tyre: 'tyres', tyres: 'tyres', 'tyre service': 'tyres', 'tyres service': 'tyres',
+  };
+  let values = [];
+  if (Array.isArray(record?.parts)) values = record.parts;
+  else if (typeof record?.components === 'string') values = record.components.split(/[;,|]/);
+  const parts = [...new Set(values.map((value) => {
+    const normalized = String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return WORKSHOP_PARTS[normalized] ? normalized : aliases[normalized];
+  }).filter((key) => key && WORKSHOP_PARTS[key]))].slice(0, 3);
+  if (parts.length) return parts;
+  if (service === 'full') return ['body', 'engine', 'tyres'];
+  if (service && WORKSHOP_PARTS[service]) return [service];
+  return [];
+}
+
+function normalizeWorkshopBackupRecord(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  const service = importServiceKey(record.service);
+  const timestamp = typeof record.time === 'number' && Number.isFinite(record.time)
+    ? record.time
+    : Date.parse(record.date);
+  const costValue = record.costNaira ?? record.cost;
+  const walletValue = record.walletAfterNaira ?? record.walletAfter;
+  const cost = Number(costValue);
+  const walletAfter = Number(walletValue);
+  if (!service || !Number.isFinite(timestamp) || timestamp < 0
+    || !Number.isFinite(cost) || cost < 0 || cost > 1_000_000_000
+    || !Number.isFinite(walletAfter) || walletAfter < 0 || walletAfter > 1_000_000_000) {
+    return null;
+  }
+  const parts = importPartKeys(record, service);
+  if (!parts.length) return null;
+  return {
+    time: Math.floor(timestamp),
+    service,
+    parts,
+    cost: Math.floor(cost),
+    walletAfter: Math.floor(walletAfter),
+  };
+}
+
+function workshopRecordIdentity(record) {
+  return [
+    Math.floor(Number(record.time) || 0),
+    importServiceKey(record.service) || 'service',
+    [...new Set((Array.isArray(record.parts) ? record.parts : []).filter((key) => WORKSHOP_PARTS[key]))].sort().join(','),
+    Math.floor(Number(record.cost) || 0),
+    Math.floor(Number(record.walletAfter) || 0),
+  ].join('|');
+}
+
+async function importWorkshopHistoryFile(file) {
+  if (!file) return;
+  try {
+    if (file.size > WORKSHOP_BACKUP_MAX_BYTES) {
+      setWorkshopMessage('Backup rejected. Choose a JSON file smaller than 1 MB. No saved data was changed.');
+      return;
+    }
+    const text = await file.text();
+    let backup;
+    try {
+      backup = JSON.parse(text);
+    } catch (_) {
+      setWorkshopMessage('Backup rejected. The file is not valid JSON. No saved data was changed.');
+      return;
+    }
+    if (!backup || typeof backup !== 'object' || backup.application !== 'Kano Life'
+      || backup.exportType !== 'workshop-service-history' || backup.formatVersion !== 1
+      || !Array.isArray(backup.records) || backup.records.length > WORKSHOP_BACKUP_MAX_ROWS) {
+      setWorkshopMessage('Backup rejected. Select a Kano Life Workshop JSON Backup exported by this game. No saved data was changed.');
+      return;
+    }
+    const valid = backup.records.map(normalizeWorkshopBackupRecord).filter(Boolean);
+    const invalidCount = backup.records.length - valid.length;
+    if (!valid.length) {
+      setWorkshopMessage('Backup contains no valid service records. Existing records were not changed.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Import ${valid.length} valid service record${valid.length === 1 ? '' : 's'} from this backup?\n\n` +
+      'The records will be merged with this device’s workshop history. Only the newest 12 records will be retained. ' +
+      'Your game wallet, vehicle condition, and game progress will not be changed.'
+    );
+    if (!confirmed) {
+      setWorkshopMessage('Import cancelled. Existing workshop history and game progress were not changed.');
+      return;
+    }
+
+    const current = readWorkshopHistory().map((entry) => normalizeWorkshopBackupRecord({
+      time: Number(entry.time), service: entry.service, parts: entry.parts,
+      cost: entry.cost, walletAfter: entry.walletAfter,
+    })).filter(Boolean);
+    const byIdentity = new Map();
+    for (const record of [...current, ...valid]) {
+      const identity = workshopRecordIdentity(record);
+      if (!byIdentity.has(identity)) byIdentity.set(identity, record);
+    }
+    const merged = [...byIdentity.values()]
+      .sort((a, b) => b.time - a.time)
+      .slice(0, WORKSHOP_HISTORY_LIMIT);
+    const serialized = JSON.stringify(merged);
+    localStorage.setItem(WORKSHOP_HISTORY_KEY, serialized);
+    const verification = JSON.parse(localStorage.getItem(WORKSHOP_HISTORY_KEY) || 'null');
+    if (!Array.isArray(verification) || verification.length !== merged.length) {
+      throw new Error('The browser could not verify the restored service history.');
+    }
+    const skipped = invalidCount ? ` ${invalidCount} invalid record${invalidCount === 1 ? ' was' : 's were'} skipped.` : '';
+    setWorkshopMessage(`IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} now saved on this device.${skipped} Wallet and vehicle condition unchanged.`);
+    renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
+  } catch (error) {
+    console.warn('[Kano Life] Workshop history import failed safely.', error);
+    setWorkshopMessage('Import failed. The game wallet and vehicle condition were not changed. Check browser storage permissions and try again.');
+  }
+}
+
 function workshopHealth(state, partKey) {
   const config = WORKSHOP_PARTS[partKey];
   const raw = Number(state?.[config.stateKey]);
@@ -876,7 +1008,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
-    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">Exports include the saved local receipts only. They do not include your wallet or game save. Clearing browser storage removes these records.</p></section>
+    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button><button type="button" data-kano-workshop-import-trigger>IMPORT JSON BACKUP</button><input type="file" accept=".json,application/json" data-kano-workshop-import-file hidden aria-label="Choose a Kano Life service history JSON backup"></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">Exports include the saved local receipts only. They do not include your wallet or game save. Clearing browser storage removes these records.</p></section>
     <dialog id="kano-workshop-confirm" class="kano-workshop-confirm" aria-labelledby="kano-workshop-confirm-title"><div class="kano-workshop-confirm-inner"><p class="kano-workshop-eyebrow">PAYMENT CONFIRMATION</p><h3 id="kano-workshop-confirm-title">Confirm workshop service</h3><p id="kano-workshop-confirm-summary">Review the repair and total before paying.</p><div id="kano-workshop-confirm-breakdown" class="kano-workshop-confirm-breakdown"></div><div class="kano-workshop-confirm-wallet"><span>WALLET AFTER SERVICE</span><strong id="kano-workshop-wallet-after">—</strong></div><div class="kano-workshop-confirm-actions"><button type="button" class="kano-workshop-cancel" data-kano-workshop-cancel>Cancel</button><button type="button" class="kano-workshop-confirm-pay" data-kano-workshop-confirm>CONFIRM &amp; PAY</button></div></div></dialog>`;
   const status = panel.querySelector('#kano-workshop-status');
   status.textContent = panel.dataset.message || 'Select a service to see its cost.';
@@ -1060,7 +1192,7 @@ function installWorkshopUI() {
       .kano-workshop-history-summary>div{display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0;padding:8px;border:1px solid #ffffff15;border-radius:7px;background:#ffffff06}
       .kano-workshop-history-summary span{color:#9fb4c8;font-size:8px;font-weight:900;letter-spacing:.04em}
       .kano-workshop-history-summary strong{color:#ffe18b;font-size:11px;overflow-wrap:anywhere;text-align:right}
-      .kano-workshop-history-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0}
+      .kano-workshop-history-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0}
       .kano-workshop-history-actions button{min-height:38px;padding:8px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:9px;font-weight:900;cursor:pointer;touch-action:manipulation}
       .kano-workshop-history-actions button:disabled{opacity:.45;cursor:not-allowed}
       .kano-workshop-history-actions button:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
@@ -1092,7 +1224,7 @@ function installWorkshopUI() {
       .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
       .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
       .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
-      @media(max-width:440px){#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
@@ -1100,6 +1232,11 @@ function installWorkshopUI() {
   if (!panel.dataset.bound) {
     panel.dataset.bound = 'true';
     panel.addEventListener('click', (event) => {
+      const importButton = event.target.closest('[data-kano-workshop-import-trigger]');
+      if (importButton) {
+        panel.querySelector('[data-kano-workshop-import-file]')?.click();
+        return;
+      }
       const exportButton = event.target.closest('[data-kano-workshop-export]');
       if (exportButton) {
         if (!exportButton.disabled) downloadWorkshopHistory(exportButton.dataset.kanoWorkshopExport);
@@ -1121,6 +1258,14 @@ function installWorkshopUI() {
       const button = event.target.closest('[data-kano-workshop-service]');
       if (!button || button.disabled) return;
       requestWorkshopService(button.dataset.kanoWorkshopService);
+    });
+    panel.addEventListener('change', (event) => {
+      const input = event.target.closest('[data-kano-workshop-import-file]');
+      if (!input) return;
+      const file = input.files?.[0] || null;
+      // Reset so selecting the same backup twice still fires a change event.
+      input.value = '';
+      if (file) void importWorkshopHistoryFile(file);
     });
   }
   renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
