@@ -10,6 +10,8 @@
  * the separate life-scene dioramas are deliberately never culled by this file.
  */
 import * as THREE from 'three';
+import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
+import { KanoGLBAnimationManager } from './KanoAnimationTrafficUpgrade.js';
 
 const clamp = (value, minimum, maximum) =>
   Math.max(minimum, Math.min(maximum, value));
@@ -20,6 +22,275 @@ const safeDevicePixelRatio = () => {
   const value = Number(globalThis.window?.devicePixelRatio) || 1;
   return Number.isFinite(value) && value > 0 ? value : 1;
 };
+
+
+// ============================================================
+// REAL GLB MARKET CROWD + DIRECTION-SYNCHRONISED GAIT
+// ============================================================
+// The current market crowd is an InstancedMesh of featureless figures. The
+// road-scroll update moves those figures along +Z/-Z, but their gait previously
+// had no directional sign and their bodies never turned. This integration
+// upgrades a small foreground pool with already-loaded character GLBs. Farther
+// silhouettes remain instanced for mobile performance.
+
+const KANO_CROWD_PATCH = Symbol.for('kano-life.real-model-crowd-direction.v1');
+const KANO_CROWD_ANIMATION_PATCH = Symbol.for('kano-life.real-model-crowd-animation.v1');
+const KANO_CHARACTER_KEYS = [
+  'pedestrianWoman',
+  'pedestrian',
+  'passengerWoman',
+  'passengerMan',
+  'passenger',
+];
+
+function preferredCrowdModelKey(models, slotIndex) {
+  const cache = models?.cache;
+  if (!cache?.has) return null;
+  const preferred = slotIndex % 2 === 0
+    ? ['pedestrianWoman', 'passengerWoman', 'passenger', 'pedestrian', 'passengerMan']
+    : ['pedestrian', 'passengerMan', 'passenger', 'pedestrianWoman', 'passengerWoman'];
+  return preferred.find((key) => cache.has(key)) || null;
+}
+
+function disposeCrowdCharacter(root) {
+  if (!root) return;
+  root.parent?.remove(root);
+  const materials = new Set();
+  root.traverse?.((object) => {
+    const list = Array.isArray(object.material)
+      ? object.material
+      : object.material
+        ? [object.material]
+        : [];
+    for (const material of list) {
+      if (!material || materials.has(material)) continue;
+      materials.add(material);
+      // ModelManager instances own cloned materials, but share cached GLB
+      // geometry and textures. Dispose the clones only.
+      material.dispose?.();
+    }
+  });
+}
+
+function installCrowdCharacter(instance, slotIndex, modelKey) {
+  let actor = null;
+  try {
+    actor = instance.renderer?.models?.getInstance?.(modelKey) || null;
+  } catch (error) {
+    console.debug(`[Kano crowd] Could not clone ${modelKey}; retaining the lightweight crowd figure.`, error);
+    return null;
+  }
+  if (!actor) return null;
+
+  actor.name = `KANO_GLB_MARKET_PEDESTRIAN_${slotIndex}`;
+  actor.userData.kanoModelCrowdActor = true;
+  actor.userData.kanoCrowdSlot = slotIndex;
+  actor.userData.kanoCrowdRole = 'walk';
+  actor.traverse?.((object) => {
+    if (!object.isMesh) return;
+    object.castShadow = false;
+    object.receiveShadow = false;
+    object.frustumCulled = true;
+  });
+  instance.crowdRoot?.add(actor);
+  return actor;
+}
+
+function reconcileModelledCrowd(instance, now = nowTime()) {
+  if (!instance || instance.disposed || !instance.renderer?.models?.cache?.has) return;
+  if (now - (instance._kanoCrowdLastReconcileAt || 0) < 900) return;
+  instance._kanoCrowdLastReconcileAt = now;
+
+  const models = instance.renderer.models;
+  const targetCount = instance.mobile ? 3 : 6;
+  instance._kanoCrowdModelPool ||= new Map();
+  instance._kanoModelledWalkerIndices ||= new Set();
+  const pool = instance._kanoCrowdModelPool;
+
+  for (let slot = 0; slot < targetCount; slot += 1) {
+    const bestKey = preferredCrowdModelKey(models, slot);
+    if (!bestKey) continue; // Keep current placeholders if no character has loaded.
+
+    const current = pool.get(slot);
+    if (current?.modelKey === bestKey && current.actor?.parent) continue;
+
+    const actor = installCrowdCharacter(instance, slot, bestKey);
+    if (!actor) continue;
+
+    if (current?.actor) disposeCrowdCharacter(current.actor);
+    pool.set(slot, { slotIndex: slot, modelKey: bestKey, actor, walkerIndex: null });
+  }
+
+  for (const [slot, record] of [...pool.entries()]) {
+    if (slot >= targetCount || !record.actor) {
+      disposeCrowdCharacter(record.actor);
+      pool.delete(slot);
+    }
+  }
+
+  const walkers = Array.isArray(instance.walkers) ? instance.walkers : [];
+  const records = [...pool.values()].sort((a, b) => a.slotIndex - b.slotIndex);
+  const assignedIndices = new Set(
+    records.map((record) => record.walkerIndex).filter(Number.isInteger),
+  );
+
+  // Recycle a modelled foreground actor only after it has moved well into the
+  // distance. The replacement is chosen from an unmodelled nearby walker, so
+  // the costly GLBs remain concentrated where the driver can see them clearly.
+  for (const record of records) {
+    const currentWalker = walkers.find((walker) => walker.index === record.walkerIndex);
+    if (currentWalker && currentWalker.z > (instance.mobile ? -48 : -58)) continue;
+
+    const replacement = walkers
+      .filter((walker) => !assignedIndices.has(walker.index) && walker.z > -31)
+      .sort((a, b) => b.z - a.z)[0];
+
+    if (replacement) {
+      if (Number.isInteger(record.walkerIndex)) assignedIndices.delete(record.walkerIndex);
+      record.walkerIndex = replacement.index;
+      assignedIndices.add(replacement.index);
+    } else if (!currentWalker) {
+      record.walkerIndex = null;
+    }
+  }
+
+  // Initial assignment: put each real model on a different near-road walker.
+  for (const record of records) {
+    if (Number.isInteger(record.walkerIndex) && walkers.some((walker) => walker.index === record.walkerIndex)) continue;
+    const replacement = walkers
+      .filter((walker) => !assignedIndices.has(walker.index))
+      .sort((a, b) => b.z - a.z)[0];
+    if (!replacement) continue;
+    record.walkerIndex = replacement.index;
+    assignedIndices.add(replacement.index);
+  }
+
+  instance._kanoModelledWalkerIndices = new Set(
+    records.map((record) => record.walkerIndex).filter(Number.isInteger),
+  );
+}
+
+function updateModelledCrowdActors(instance) {
+  const pool = instance?._kanoCrowdModelPool;
+  if (!pool?.size || !Array.isArray(instance.walkers)) return;
+  for (const record of pool.values()) {
+    const actor = record.actor;
+    const walker = instance.walkers.find((candidate) => candidate.index === record.walkerIndex);
+    if (!actor || !walker) {
+      if (actor) actor.visible = false;
+      continue;
+    }
+    actor.visible = true;
+    const sway = Math.sin(instance.elapsed * 1.1 + walker.phase) * (walker.sway || 0.04);
+    actor.position.set(walker.x + sway, 0, walker.z);
+    // Character GLBs in this game use -Z as their default forward axis.
+    // A walker whose Z coordinate increases therefore faces +Z (yaw = PI).
+    actor.rotation.y = walker.direction > 0 ? Math.PI : 0;
+    actor.userData.kanoCrowdWalkerIndex = walker.index;
+  }
+}
+
+function patchedUpdateCrowdMatrices() {
+  if (
+    !Array.isArray(this.walkers) ||
+    !this.walkers.length ||
+    this.disposed ||
+    !this.crowdTorso || !this.crowdHead || !this.crowdArms || !this.crowdLegs ||
+    typeof this.writeMatrix !== 'function'
+  ) {
+    return;
+  }
+
+  reconcileModelledCrowd(this);
+  updateModelledCrowdActors(this);
+  const hidden = this._kanoModelledWalkerIndices || new Set();
+
+  this.walkers.forEach((walker, index) => {
+    const direction = Number(walker.direction) < 0 ? -1 : 1;
+    const facingYaw = direction > 0 ? Math.PI : 0;
+    const phase = this.elapsed * 6.8 * walker.speed + walker.phase;
+    // Reverse the gait phase with the travel direction. This prevents the
+    // procedural silhouette's feet cycling against its actual path.
+    const step = Math.sin(phase) * 0.30 * direction;
+    const stride = Math.cos(phase) * 0.22 * direction;
+    const bob = Math.abs(step) * 0.035;
+    const height = Number(walker.height) || 1;
+    const x = walker.x + Math.sin(this.elapsed * 1.1 + walker.phase) * (walker.sway || 0.04);
+    const z = walker.z;
+    const scale = hidden.has(walker.index) ? 0.0001 : 1;
+
+    this.writeMatrix(this.crowdTorso, index, x, 0.98 * height + bob, z, facingYaw, scale, height * scale, 0.90 * scale);
+    this.writeMatrix(this.crowdHead, index, x, 1.58 * height + bob, z, facingYaw, scale, scale, 0.92 * scale);
+
+    for (const side of [-1, 1]) {
+      const partIndex = index * 2 + (side > 0 ? 1 : 0);
+      const armRot = side * (0.10 + step * 0.45);
+      this.writeMatrix(this.crowdArms, partIndex, x + side * 0.22, 1.02 * height + bob, z, facingYaw, scale, scale, scale);
+      this.dummy.rotation.set(0, facingYaw, armRot);
+      this.dummy.scale.set(scale, scale, scale);
+      this.dummy.updateMatrix();
+      this.crowdArms.setMatrixAt(partIndex, this.dummy.matrix);
+
+      this.writeMatrix(this.crowdLegs, partIndex, x + side * 0.09, 0.44 * height, z, facingYaw, scale, scale, scale);
+      this.dummy.rotation.set(stride * side, facingYaw, 0);
+      this.dummy.scale.set(scale, scale, scale);
+      this.dummy.updateMatrix();
+      this.crowdLegs.setMatrixAt(partIndex, this.dummy.matrix);
+    }
+  });
+
+  for (const mesh of [this.crowdTorso, this.crowdHead, this.crowdArms, this.crowdLegs]) {
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+function installRealCrowdPatch() {
+  const scenePrototype = KanoSceneUpgrade?.prototype;
+  if (scenePrototype && !scenePrototype[KANO_CROWD_PATCH]) {
+    const originalBuild = scenePrototype.buildAmbientCrowd;
+    const originalDispose = scenePrototype.dispose;
+    scenePrototype.buildAmbientCrowd = function (...args) {
+      this._kanoCrowdModelPool = new Map();
+      this._kanoModelledWalkerIndices = new Set();
+      this._kanoCrowdLastReconcileAt = 0;
+      return originalBuild?.apply(this, args);
+    };
+    scenePrototype.updateCrowdMatrices = patchedUpdateCrowdMatrices;
+    scenePrototype.dispose = function (...args) {
+      for (const record of this._kanoCrowdModelPool?.values?.() || []) {
+        disposeCrowdCharacter(record.actor);
+      }
+      this._kanoCrowdModelPool?.clear?.();
+      this._kanoModelledWalkerIndices?.clear?.();
+      return originalDispose?.apply(this, args);
+    };
+    Object.defineProperty(scenePrototype, KANO_CROWD_PATCH, { value: true });
+    console.info('[Kano Life] Foreground crowd model upgrade installed; available GLBs will replace selected procedural figures.');
+  }
+
+  const animationPrototype = KanoGLBAnimationManager?.prototype;
+  if (animationPrototype && !animationPrototype[KANO_CROWD_ANIMATION_PATCH]) {
+    const originalCollect = animationPrototype.collectAnimatedRoots;
+    animationPrototype.collectAnimatedRoots = function (...args) {
+      const roots = originalCollect?.apply(this, args) || new Map();
+      const crowdRoot = this.renderer?.scene?.getObjectByName?.('KANO_ANIMATED_MARKET_CROWD');
+      crowdRoot?.traverse?.((object) => {
+        if (
+          object?.userData?.kanoModelCrowdActor &&
+          object.userData.modelPath &&
+          object.userData.modelKey &&
+          KANO_CHARACTER_KEYS.includes(object.userData.modelKey)
+        ) {
+          roots.set(object, 'walk');
+        }
+      });
+      return roots;
+    };
+    Object.defineProperty(animationPrototype, KANO_CROWD_ANIMATION_PATCH, { value: true });
+  }
+}
+
+installRealCrowdPatch();
 
 export class KanoAdaptiveQuality {
   constructor({ renderer, mobile = false, enabled = true } = {}) {
