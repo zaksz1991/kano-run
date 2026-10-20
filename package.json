@@ -1,7 +1,1 @@
-{
-  "name": "kano-life-systemic-gameplay-release",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "description": "Lifecycle bridge for existing Kano Life market, convoy, vehicle and workshop systems"
-}
+{"type":"module","private":true}
