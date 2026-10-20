@@ -5128,6 +5128,11 @@ function kanoBuildModelVisibilityReport() {
     ? window.kanoExistingGlbModelPoolReport() : null;
   const environment = typeof window.kanoEnvironmentGlbUsageReport === 'function'
     ? window.kanoEnvironmentGlbUsageReport() : null;
+  // main.js owns the real render-mode state. Do not infer WebGL from an old,
+  // disposed Renderer3D reference after the app has fallen back to Canvas 2D.
+  const actualRenderMode = String(window.__KANO_RENDER_MODE__ || (
+    renderer?.renderer?.isWebGLRenderer ? '3D' : renderer ? 'unknown' : 'not-ready'
+  ));
   const worldCounts = { glbRoots: 0, worldBuildings: 0, worldRoadside: 0, modelPaths: [] };
   const seenPaths = new Set();
   renderer?.world?.traverse?.((node) => {
@@ -5141,17 +5146,44 @@ function kanoBuildModelVisibilityReport() {
     }
     if (!seenPaths.has(path)) { seenPaths.add(path); worldCounts.modelPaths.push(path); }
   });
+  const slots = Array.isArray(renderer?.buildingSlots) ? {
+    total: renderer.buildingSlots.length,
+    replacedByGlb: renderer.buildingSlots.filter((slot) => slot?.replaced && slot.actor?.userData?.modelPath).length,
+    stillProcedural: renderer.buildingSlots.filter((slot) => !slot?.replaced).length,
+  } : null;
+  const status = manager?.getStatus?.() || null;
+  let diagnosis = '3D renderer active; inspect loaded asset paths and visible scene objects.';
+  if (actualRenderMode === '2D') {
+    diagnosis = 'GLB models cannot render in the current Canvas 2D mode. Reload this diagnostic with FORCE 3D enabled.';
+  } else if (actualRenderMode === 'not-ready') {
+    diagnosis = 'Renderer has not been observed yet. Wait for startup or check the console for initialization errors.';
+  } else if (renderer?.disposed) {
+    diagnosis = 'The last observed 3D renderer is disposed. The app may have switched renderers; use the global mode above.';
+  } else if (!status?.loaded?.length) {
+    diagnosis = 'No model categories are reported as loaded. Check model requests and ModelManager audit failures.';
+  } else if (slots && slots.replacedByGlb === 0) {
+    diagnosis = 'Some model categories loaded, but no building slot currently reports a GLB replacement. Check candidate failures and world activation.';
+  } else if (worldCounts.glbRoots === 0) {
+    diagnosis = 'Models may be cached but no visible GLB roots were found under the active world group. Check scene activation/visibility.';
+  } else {
+    diagnosis = 'Visible GLB nodes were found in the world. If the scene still looks primitive, inspect the listed model paths and compare visible placement with the loaded pool.';
+  }
+  let webglContextLost = null;
+  try {
+    const context = renderer?.renderer?.getContext?.();
+    if (context && typeof context.isContextLost === 'function') webglContextLost = context.isContextLost();
+  } catch (_) {}
   return {
-    renderMode: renderer?.renderer?.isWebGLRenderer ? '3D WebGL' : (renderer ? renderer.constructor?.name || 'renderer active' : 'renderer not yet available'),
+    renderMode: actualRenderMode,
+    glbRenderingEnabled: actualRenderMode === '3D',
+    diagnosis,
     mobile: Boolean(renderer?.mobile),
     rendererReady: Boolean(renderer?.ready),
-    manager: manager?.getStatus?.() || null,
+    rendererDisposed: Boolean(renderer?.disposed),
+    webglContextLost,
+    manager: status,
     visibleWorld: worldCounts,
-    buildingSlots: Array.isArray(renderer?.buildingSlots) ? {
-      total: renderer.buildingSlots.length,
-      replacedByGlb: renderer.buildingSlots.filter((slot) => slot?.replaced && slot.actor?.userData?.modelPath).length,
-      stillProcedural: renderer.buildingSlots.filter((slot) => !slot?.replaced).length,
-    } : null,
+    buildingSlots: slots,
     pools: pool,
     environment,
     assetAudit: pool?.assetAudit || (typeof getModelAssetAuditReport === 'function' ? getModelAssetAuditReport() : null),
@@ -5160,8 +5192,20 @@ function kanoBuildModelVisibilityReport() {
 }
 if (typeof window !== 'undefined') {
   window.kanoGlbVisibilityReport = kanoBuildModelVisibilityReport;
-  // Keep the normal game screen clean. Add the audit panel only on the explicit
-  // ?assetAudit=1 URL, so it never becomes a permanent game HUD element.
+  window.kanoGlbForce3DAndAudit = () => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('force2d');
+      url.searchParams.set('force3d', '1');
+      url.searchParams.set('assetAudit', '1');
+      window.location.assign(url.toString());
+      return true;
+    } catch (error) {
+      console.error('[Kano GLB audit] Could not open forced 3D diagnostics.', error);
+      return false;
+    }
+  };
+  // Keep the normal game screen clean. Diagnostics are opt-in.
   let enableAssetAudit = false;
   try { enableAssetAudit = new URLSearchParams(window.location.search).get('assetAudit') === '1'; } catch (_) {}
   if (enableAssetAudit) {
@@ -5169,15 +5213,39 @@ if (typeof window !== 'undefined') {
       if (document.getElementById('kano-glb-visibility-audit')) return;
       const panel = document.createElement('section');
       panel.id = 'kano-glb-visibility-audit';
-      panel.style.cssText = 'position:fixed;z-index:99999;top:12px;right:12px;width:min(560px,calc(100vw - 24px));max-height:70vh;display:flex;flex-direction:column;background:rgba(8,18,32,.97);color:#e9f5ff;border:1px solid #00b4d8;border-radius:10px;box-shadow:0 8px 30px #0008;font:12px/1.4 system-ui,sans-serif;';
+      panel.style.cssText = 'position:fixed;z-index:99999;top:10px;right:10px;width:min(620px,calc(100vw - 20px));max-height:78vh;display:flex;flex-direction:column;background:rgba(5,15,27,.98);color:#e9f5ff;border:1px solid #00b4d8;border-radius:10px;box-shadow:0 8px 30px #000b;font:12px/1.4 system-ui,sans-serif;';
       const header = document.createElement('div');
-      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #31516b;font-weight:800;';
-      header.textContent = 'KANO LIFE · GLB VISIBILITY AUDIT';
+      header.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;border-bottom:1px solid #31516b;font-weight:800;';
+      const heading = document.createElement('strong');
+      heading.textContent = 'KANO LIFE · GLB VISIBILITY AUDIT';
+      heading.style.cssText = 'flex:1 1 210px;';
+      const modeBadge = document.createElement('span');
+      modeBadge.id = 'kano-glb-render-mode';
+      modeBadge.style.cssText = 'padding:4px 7px;border-radius:5px;background:#4b2430;color:#ffc0c8;font-weight:900;';
+      modeBadge.textContent = 'MODE CHECKING';
+      const force3d = document.createElement('button');
+      force3d.type = 'button'; force3d.textContent = 'RELOAD FORCE 3D';
+      force3d.style.cssText = 'background:#f5c542;border:0;border-radius:5px;padding:6px 8px;font-weight:900;color:#18202b;';
+      force3d.addEventListener('click', () => window.kanoGlbForce3DAndAudit?.());
+      const exportButton = document.createElement('button');
+      exportButton.type = 'button'; exportButton.textContent = 'EXPORT JSON';
+      exportButton.style.cssText = 'background:#00b4d8;border:0;border-radius:5px;padding:6px 8px;font-weight:900;color:#062033;';
+      exportButton.addEventListener('click', () => {
+        try {
+          const payload = JSON.stringify(kanoBuildModelVisibilityReport(), null, 2);
+          const blob = new Blob([payload], { type: 'application/json' });
+          const href = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = href; link.download = `kano-glb-visibility-report-${new Date().toISOString().slice(0, 10)}.json`;
+          document.body.appendChild(link); link.click(); link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+        } catch (error) { console.error('[Kano GLB audit] Export failed.', error); }
+      });
       const close = document.createElement('button');
       close.type = 'button'; close.textContent = 'HIDE';
-      close.style.cssText = 'background:#00b4d8;border:0;border-radius:5px;padding:5px 8px;font-weight:800;color:#062033;';
+      close.style.cssText = 'background:#263a4d;border:1px solid #577089;border-radius:5px;padding:6px 8px;font-weight:800;color:#e9f5ff;';
       close.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'flex' : 'none'; close.textContent = panel.style.display === 'none' ? 'SHOW' : 'HIDE'; });
-      header.appendChild(close);
+      header.append(heading, modeBadge, force3d, exportButton, close);
       const body = document.createElement('pre');
       body.id = 'kano-glb-visibility-audit-body';
       body.style.cssText = 'margin:0;padding:10px 12px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;';
@@ -5188,13 +5256,19 @@ if (typeof window !== 'undefined') {
         if (!output || !panel.isConnected) return;
         try {
           const report = kanoBuildModelVisibilityReport();
+          const badge = document.getElementById('kano-glb-render-mode');
+          if (badge) {
+            badge.textContent = report.renderMode === '3D' ? '3D WEBGL ACTIVE' : `RENDER MODE: ${report.renderMode}`;
+            badge.style.background = report.renderMode === '3D' ? '#124638' : '#4b2430';
+            badge.style.color = report.renderMode === '3D' ? '#adffe4' : '#ffc0c8';
+          }
           output.textContent = JSON.stringify(report, null, 2);
         } catch (error) {
           output.textContent = `Audit could not be built: ${error?.stack || error}`;
         }
       };
       refresh();
-      window.setInterval(refresh, 1500);
+      window.setInterval(refresh, 1200);
     };
     if (document.body) mountAuditPanel();
     else document.addEventListener('DOMContentLoaded', mountAuditPanel, { once: true });
