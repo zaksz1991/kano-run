@@ -1,8 +1,22 @@
 {
-  "name": "kano-life-glb-variant-activation-upgrade",
+  "name": "kano-life",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
+  "description": "Kano Life — Kano State driving and daily-life simulation",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
-    "test": "node --test tests/glb-catalog-sync.test.mjs"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/glb-catalog-sync.test.mjs",
+    "check": "node scripts/check-syntax.mjs",
+    "release:verify": "node scripts/verify-release.mjs"
+  },
+  "dependencies": {
+    "three": "^0.186.1",
+    "vite": "^8.3.0"
   }
 }
