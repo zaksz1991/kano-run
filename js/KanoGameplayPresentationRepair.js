@@ -155,6 +155,7 @@ function tuneRendererForClarity(owner) {
 // Preserve the original story function so the morning routine remains optional.
 const originalBeginMorningRoutine = UI.prototype.beginMorningRoutine;
 const originalUIBind = UI.prototype.bind;
+const originalSetReverse = Game.prototype.setReverse;
 const originalGameStart = Game.prototype.start;
 const originalGameTick = Game.prototype.tick;
 const originalSpawnTraffic = Game.prototype.spawnTraffic;
@@ -507,7 +508,46 @@ UI.prototype.beginMorningRoutine = function beginRoutineOrDrive() {
   activeUI = this;
   return startSelectedRun(this);
 };
+
+// The current game engine already supports reverse gear, but some index.html
+// versions do not render its button. Create it before UI.bind() and Controls
+// are constructed so the existing input controller discovers it normally.
+function installReverseGearElements() {
+  const controls = document.getElementById('drive-controls');
+  if (!controls) return;
+
+  let reverseButton = document.getElementById('reverse-btn');
+  if (!reverseButton) {
+    reverseButton = document.createElement('button');
+    reverseButton.id = 'reverse-btn';
+    reverseButton.type = 'button';
+    reverseButton.className = 'control reverse';
+    reverseButton.dataset.action = 'reverse';
+    reverseButton.textContent = 'REVERSE';
+    reverseButton.setAttribute('aria-label', 'Toggle reverse gear');
+    reverseButton.setAttribute('aria-pressed', 'false');
+    reverseButton.title = 'Engage reverse gear only after the keke has stopped.';
+
+    const brakeButton = controls.querySelector('[data-action="brake"]');
+    if (brakeButton) controls.insertBefore(reverseButton, brakeButton);
+    else controls.append(reverseButton);
+  } else {
+    reverseButton.dataset.action ||= 'reverse';
+    reverseButton.classList.add('control', 'reverse');
+  }
+
+  const hudBottom = document.querySelector('#hud .hud-bottom');
+  if (hudBottom && !document.getElementById('gear-label')) {
+    const gearLabel = document.createElement('span');
+    gearLabel.id = 'gear-label';
+    gearLabel.setAttribute('aria-live', 'polite');
+    gearLabel.textContent = 'FORWARD GEAR';
+    hudBottom.append(gearLabel);
+  }
+}
+
 UI.prototype.bind = function patchedUIBind(game, ...args) {
+  installReverseGearElements();
   const result = originalUIBind.call(this, game, ...args);
   this.game = game;
   activeUI = this;
@@ -516,6 +556,7 @@ UI.prototype.bind = function patchedUIBind(game, ...args) {
   installRecordUI();
   renderLocalRecord();
   refreshOverallRecord(true);
+  this.updateReverseControl?.(game?.s);
   if (!document.getElementById('kano-replay-morning-routine')) {
     const actions = document.querySelector('.start-actions');
     if (actions) {
@@ -544,7 +585,13 @@ function installRecordUI() {
       #hud .hud-bottom{display:flex;flex-wrap:wrap;align-items:center;row-gap:5px}
       #game-canvas{display:block;width:100%;height:100%;image-rendering:auto;touch-action:none;outline:none}
       #app,#game-container{min-width:0;max-width:100vw}
-      #drive-controls .control{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+      #drive-controls{grid-template-columns:repeat(6,minmax(0,1fr));gap:clamp(3px,.7vw,7px)}
+      #drive-controls .control{min-width:0;min-height:clamp(42px,7vh,62px);touch-action:manipulation;-webkit-user-select:none;user-select:none}
+      #drive-controls .reverse{color:#ffd166;background:#332a18;border:1px solid #f5c54288;font-weight:900}
+      #drive-controls .reverse.active,#drive-controls .reverse.reverse-engaged{color:#172333;background:#f5c542;border-color:#ffe69a;box-shadow:0 0 0 2px #f5c54238}
+      #drive-controls .reverse:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
+      #gear-label{display:inline-flex;align-items:center;color:#9de6d7;font-weight:900}
+      @media(max-width:520px){#drive-controls{gap:3px}#drive-controls .control{padding-left:2px;padding-right:2px;font-size:clamp(8px,2.1vw,10px)}.kano-overall-record{font-size:9px;padding:4px 6px}.kano-start-record{font-size:10px}}
       @media(max-width:760px){#game-canvas{width:100%;height:100%}.kano-overall-record{font-size:9px;padding:4px 6px}.kano-start-record{font-size:10px}}
     `;
     document.head.append(style);
@@ -783,6 +830,16 @@ if (typeof originalAudioEngine === 'function') {
   };
 }
 
+// Reverse-gear changes can come from either the on-screen control or R.
+// Keep the visible button and HUD gear label in sync with the actual game state.
+if (typeof originalSetReverse === 'function') {
+  Game.prototype.setReverse = function trackedSetReverse(value, ...args) {
+    const result = originalSetReverse.call(this, value, ...args);
+    this.ui?.updateReverseControl?.(this.s);
+    return result;
+  };
+}
+
 // -----------------------------------------------------------------------------
 // Tie hook lifetimes to the active game and renderer instances.
 // -----------------------------------------------------------------------------
@@ -790,6 +847,7 @@ Game.prototype.start = function trackedGameStart(...args) {
   activeGame = this;
   window.__KANO_LIFE_GAME__ = this;
   const result = originalGameStart.apply(this, args);
+  this.ui?.updateReverseControl?.(this.s);
   renderLocalRecord();
   return result;
 };
