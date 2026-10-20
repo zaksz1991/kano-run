@@ -1,297 +1,443 @@
 /**
- * KANO LIFE — INDEPENDENT RADIO CONTROLS
+ * KANO LIFE — LOCAL RADIO PLAYBACK
  *
- * Integrates with the existing AudioManager, UI, save data, and configured
- * RADIO list. The radio can be switched off independently of engine audio.
- * Station playback uses the local station MP3 discovery already implemented
- * by AudioManager; this file does not pretend an absent file is a live stream.
+ * Plays the project's local radio MP3s when available, supports power on/off,
+ * station selection, previous/next station, and optional Hausa announcements.
+ *
+ * Expected local audio location:
+ *   public/assets/models/audio/
+ *
+ * The module retains the Radio API used by the existing UI.
+ * Developer: Hassan Zakariya
  */
-import { AudioManager } from './audio.js';
-import { UI } from './ui.js';
-import { RADIO } from './config.js';
+
+import * as AudioModule from './audio.js';
+import { CONFIG } from './config.js';
 import { save, persist } from './storage.js';
 
-const audioInstances = new Set();
-const stationCount = Math.max(1, Array.isArray(RADIO) ? RADIO.length : 1);
-const validIndex = (value) => {
-  const number = Number(value);
-  const index = Number.isFinite(number) ? Math.trunc(number) : 0;
-  return ((index % stationCount) + stationCount) % stationCount;
-};
-const selectedStation = () => RADIO[validIndex(save.radioIndex)] || RADIO[0] || {
-  name: 'Local Radio',
-  freq: '',
-};
-const radioPowerOn = () => save.radioEnabled !== false;
+const AUDIO_ROOTS = [
+  '/assets/models/audio/',
+  '/assets/audio/',
+  '/audio/',
+];
 
-function savePreferences() {
-  try {
-    persist();
-  } catch (error) {
-    console.warn('[Kano Radio] Could not save radio preferences.', error);
-  }
+const STATION_CATALOG = [
+  { id: 'freedom', name: 'Freedom Radio', tag: "Kano's voice", file: 'freedom.mp3' },
+  { id: 'arewa', name: 'Arewa Radio', tag: 'Arewa daidai', file: 'arewa.mp3' },
+  { id: 'rahama', name: 'Rahama Radio', tag: 'Rahama', file: 'rahama.mp3' },
+  { id: 'kanoradio', name: 'Radio Kano', tag: 'Hausa radio', file: 'radio-kano.mp3' },
+  { id: 'coolfm', name: 'Cool FM', tag: 'The cool one', file: 'cool.mp3' },
+  { id: 'wazobia', name: 'Wazobia FM', tag: 'Naija pidgin radio', file: 'wazobia.mp3' },
+  { id: 'ruffneck', name: 'RuffNeck Radio', tag: 'RuffNeck Entertainment', file: 'ruffneck.mp3' },
+];
+
+const ANNOUNCEMENTS = [
+  'Sannu da safe. Traffic heavy near Sabon Gari.',
+  'KAROTA active on Zoo Road. Drive carefully.',
+  'Mu tafi lafiya. Safe journey in Kano.',
+  'Fuel price update coming after this track.',
+  'Adaidaita Sahu. Drive carefully and watch the road.',
+  'Na gode for listening. This is Kano Life radio.',
+  'Ina kwana. Good morning Kano State.',
+  'Please drive safely and watch for pedestrians.',
+];
+
+const ANNOUNCEMENT_INTERVAL = 900;
+const STORAGE_KEY = 'kano-life-radio-v1';
+
+function normalize(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function refreshLabels() {
-  const station = selectedStation();
-  const powered = radioPowerOn();
-  const label = document.getElementById('radio-label');
-  if (label) {
-    label.textContent = `${station.name.toUpperCase()}${station.freq ? ` ${station.freq}` : ''} · RADIO ${powered ? 'ON' : 'OFF'}`;
-  }
+function assetForStation(station) {
+  const id = normalize(station?.id);
+  const name = normalize(station?.name);
+  const explicit = station?.file || station?.audioFile || station?.src || station?.url;
+  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
 
-  const menuPower = document.getElementById('kano-radio-power');
-  const hudPower = document.getElementById('kano-radio-hud-toggle');
-  for (const button of [menuPower, hudPower]) {
-    if (!button) continue;
-    button.textContent = powered ? 'RADIO ON' : 'RADIO OFF';
-    button.setAttribute('aria-pressed', String(powered));
-    button.classList.toggle('is-on', powered);
-    button.classList.toggle('is-off', !powered);
-  }
+  const match = STATION_CATALOG.find((item) => {
+    const catalogId = normalize(item.id);
+    const catalogName = normalize(item.name);
+    return id === catalogId || name === catalogName ||
+      (catalogId === 'kanoradio' && (id.includes('radio-kano') || name.includes('radiokano'))) ||
+      (catalogId === 'coolfm' && (id.includes('cool') || name.includes('coolfm')));
+  });
 
-  const select = document.getElementById('kano-radio-station-select');
-  if (select) select.value = String(validIndex(save.radioIndex));
-
-  const next = document.getElementById('radio-btn');
-  if (next) next.textContent = 'NEXT STATION';
+  return match?.file || null;
 }
 
-function stopRadioInstance(instance) {
-  if (!instance) return;
-  instance.radioEnabled = false;
-  instance.radioSyncVersion = (instance.radioSyncVersion || 0) + 1;
-  instance.radioRequestIndex = -1;
-  try { instance.stopRadio?.(); } catch (error) {
-    console.warn('[Kano Radio] Could not stop station audio.', error);
-  }
-}
-
-function setRadioPower(enabled) {
-  save.radioEnabled = Boolean(enabled);
-  savePreferences();
-
-  for (const instance of audioInstances) {
-    instance.radioEnabled = save.radioEnabled;
-    if (!save.radioEnabled) {
-      stopRadioInstance(instance);
-    } else if (instance.enabled && !instance.disposed) {
-      // This function is called directly from a user gesture so browser
-      // media playback has the best chance of being permitted.
-      void instance.syncRadioStation?.(true);
-    }
+function normalizeStation(station, index) {
+  if (typeof station === 'string') {
+    const key = normalize(station);
+    const match = STATION_CATALOG.find((item) =>
+      normalize(item.id) === key || normalize(item.name) === key
+    );
+    return match || {
+      id: key || `station-${index}`,
+      name: station,
+      tag: 'Local station',
+      file: null,
+    };
   }
 
-  refreshLabels();
-  window.dispatchEvent(new CustomEvent('kano:radiochange', {
-    detail: { enabled: save.radioEnabled, index: validIndex(save.radioIndex), station: selectedStation() },
-  }));
-}
-
-function chooseStation(value) {
-  save.radioIndex = validIndex(value);
-  savePreferences();
-
-  for (const instance of audioInstances) {
-    if (instance.radioEnabled !== false && instance.enabled && !instance.disposed) {
-      void instance.syncRadioStation?.(true);
-    }
-  }
-
-  refreshLabels();
-  window.dispatchEvent(new CustomEvent('kano:radiochange', {
-    detail: { enabled: radioPowerOn(), index: validIndex(save.radioIndex), station: selectedStation() },
-  }));
-}
-
-function stepStation(amount = 1) {
-  chooseStation(validIndex(save.radioIndex) + amount);
-}
-
-// Patch the existing AudioManager prototype rather than requiring another
-// game object or changing the Game constructor.
-const audioPrototype = AudioManager.prototype;
-if (!audioPrototype.__kanoIndependentRadioInstalled) {
-  const originalStart = audioPrototype.start;
-  const originalSyncRadioStation = audioPrototype.syncRadioStation;
-  const originalDispose = audioPrototype.dispose;
-
-  audioPrototype.start = function kanoRadioAwareStart(...args) {
-    audioInstances.add(this);
-    if (typeof this.radioEnabled !== 'boolean') {
-      this.radioEnabled = radioPowerOn();
-    }
-    const result = originalStart.apply(this, args);
-    // AudioManager.start() calls syncRadioStation(), which has been wrapped
-    // below. Keep the power preference independent from engine audio.
-    return result;
+  const value = station && typeof station === 'object' ? station : {};
+  const normalized = {
+    ...value,
+    id: String(value.id || value.key || `station-${index}`),
+    name: String(value.name || value.title || `Radio ${index + 1}`),
+    tag: String(value.tag || value.description || ''),
   };
+  normalized.file = assetForStation(normalized);
+  return normalized;
+}
 
-  audioPrototype.syncRadioStation = function kanoRadioAwareSync(force = false) {
-    if (this.radioEnabled === false || !radioPowerOn()) {
-      if (this.radioAudio || this.radioRequestIndex !== -1) {
-        this.radioSyncVersion = (this.radioSyncVersion || 0) + 1;
-        this.radioRequestIndex = -1;
-        try { this.stopRadio?.(); } catch (_) { /* best-effort cleanup */ }
+function safeInvoke(target, methodNames, ...args) {
+  if (!target) return false;
+  for (const methodName of methodNames) {
+    if (typeof target[methodName] !== 'function') continue;
+    try {
+      target[methodName](...args);
+      return true;
+    } catch (error) {
+      console.warn(`[Kano Radio] ${methodName} failed.`, error);
+      return false;
+    }
+  }
+  return false;
+}
+
+function resolveAudioManager() {
+  const candidate = AudioModule.AudioManager || AudioModule.Audio || AudioModule.default;
+  if (!candidate) return null;
+  if (typeof candidate === 'object') return candidate;
+  if (typeof candidate === 'function') {
+    try {
+      if (candidate.prototype && typeof candidate.prototype.startRadioBed === 'function') {
+        return new candidate();
       }
-      return Promise.resolve(false);
+    } catch (error) {
+      console.warn('[Kano Radio] Audio manager initialisation failed.', error);
     }
-    return originalSyncRadioStation.call(this, force);
-  };
-
-  audioPrototype.dispose = function kanoRadioAwareDispose(...args) {
-    audioInstances.delete(this);
-    return originalDispose.apply(this, args);
-  };
-
-  Object.defineProperty(audioPrototype, '__kanoIndependentRadioInstalled', {
-    value: true,
-    configurable: false,
-    enumerable: false,
-    writable: false,
-  });
-}
-
-// Keep the HUD station text consistent with the saved station choice.
-if (!UI.prototype.__kanoRadioLabelInstalled) {
-  const originalUpdate = UI.prototype.update;
-  UI.prototype.update = function kanoRadioAwareUIUpdate(state, route, driver) {
-    if (state) state.radio = selectedStation();
-    const result = originalUpdate.call(this, state, route, driver);
-    refreshLabels();
-    return result;
-  };
-
-  Object.defineProperty(UI.prototype, '__kanoRadioLabelInstalled', {
-    value: true,
-    configurable: false,
-    enumerable: false,
-    writable: false,
-  });
-}
-
-function addStyles() {
-  if (document.getElementById('kano-radio-control-styles')) return;
-  const style = document.createElement('style');
-  style.id = 'kano-radio-control-styles';
-  style.textContent = `
-    .kano-radio-controls {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-      width: 100%; margin: 4px 0 8px; padding: 10px;
-      border: 1px solid rgba(0,180,216,.35); border-radius: 12px;
-      background: rgba(11,30,58,.94); box-sizing: border-box;
-    }
-    .kano-radio-controls label { color: #dce8f6; font-size: 11px; font-weight: 800; letter-spacing: .06em; }
-    .kano-radio-controls select {
-      flex: 1 1 145px; min-width: 130px; max-width: 100%;
-      min-height: 38px; padding: 7px 10px; border-radius: 8px;
-      color: #f5f8fc; background: #172b43; border: 1px solid #48627b;
-      font: inherit;
-    }
-    .kano-radio-controls button, #kano-radio-hud-toggle {
-      border-radius: 8px; min-height: 36px; padding: 7px 11px;
-      border: 1px solid #00b4d8; background: #102c43; color: #e7fbff;
-      font-size: 11px; font-weight: 900; letter-spacing: .04em;
-      cursor: pointer; touch-action: manipulation;
-    }
-    .kano-radio-controls button.is-on, #kano-radio-hud-toggle.is-on {
-      color: #09291f; background: #59d5a8; border-color: #7af0c7;
-    }
-    .kano-radio-controls button.is-off, #kano-radio-hud-toggle.is-off {
-      color: #ffe4e2; background: #632d32; border-color: #e47b7b;
-    }
-    #kano-radio-hud-toggle { position: relative; z-index: 40; margin-left: 4px; min-height: 28px; padding: 4px 7px; font-size: 9px; pointer-events: auto; }
-    #radio-label { white-space: normal; }
-    @media (max-width: 520px) {
-      .kano-radio-controls { gap: 6px; padding: 8px; }
-      .kano-radio-controls select { flex-basis: 100%; width: 100%; }
-      .kano-radio-controls button { flex: 1 1 auto; }
-      #kano-radio-hud-toggle { font-size: 8px; padding: 3px 5px; }
-    }
-  `;
-  document.head.append(style);
-}
-
-function installControls() {
-  if (document.getElementById('kano-radio-controls')) {
-    refreshLabels();
-    return;
   }
+  return candidate;
+}
 
-  addStyles();
+function candidatesFor(path) {
+  if (!path) return [];
+  if (/^(https?:|blob:|data:|\/)/i.test(path)) return [path];
+  return AUDIO_ROOTS.map((root) => `${root}${encodeURIComponent(path)}`);
+}
 
-  const existingButton = document.getElementById('radio-btn');
-  const actions = existingButton?.parentElement;
-  if (actions) {
-    const panel = document.createElement('div');
-    panel.className = 'kano-radio-controls';
-    panel.id = 'kano-radio-controls';
-    panel.setAttribute('aria-label', 'Radio controls');
+export const Radio = {
+  index: 0,
+  timer: 0,
+  playing: false,
 
-    const label = document.createElement('label');
-    label.htmlFor = 'kano-radio-station-select';
-    label.textContent = 'STATION';
+  _audioManager: null,
+  _element: null,
+  _generation: 0,
+  _sources: [],
+  _sourceIndex: -1,
+  _lastAnnouncementFrame: -1,
+  _announcementEnabled: true,
+  _reportedUnavailable: new Set(),
 
-    const select = document.createElement('select');
-    select.id = 'kano-radio-station-select';
-    select.setAttribute('aria-label', 'Select radio station');
-    RADIO.forEach((station, index) => {
-      const option = document.createElement('option');
-      option.value = String(index);
-      option.textContent = `${station.name}${station.freq ? ` · ${station.freq}` : ''}`;
-      select.append(option);
+  stations() {
+    const configured = Array.isArray(CONFIG?.RADIO) ? CONFIG.RADIO : [];
+    const list = (configured.length ? configured : STATION_CATALOG)
+      .map(normalizeStation);
+    return list.length ? list : STATION_CATALOG.map(normalizeStation);
+  },
+
+  current() {
+    const list = this.stations();
+    if (!list.length) return null;
+    this.index = ((Math.trunc(Number(this.index) || 0) % list.length) + list.length) % list.length;
+    return list[this.index];
+  },
+
+  isPlaying() {
+    return this.playing;
+  },
+
+  _getManager() {
+    if (!this._audioManager) this._audioManager = resolveAudioManager();
+    return this._audioManager;
+  },
+
+  _ensureElement() {
+    if (this._element || typeof window === 'undefined') return this._element;
+    const element = new window.Audio();
+    element.preload = 'auto';
+    element.loop = true;
+    element.volume = 0.48;
+    element.setAttribute('playsinline', '');
+    element.addEventListener('error', () => {
+      this._tryNextSource(this._generation);
     });
+    this._element = element;
+    return element;
+  },
 
-    const power = document.createElement('button');
-    power.type = 'button';
-    power.id = 'kano-radio-power';
-    power.addEventListener('click', () => setRadioPower(!radioPowerOn()));
+  _persistSelection() {
+    try {
+      if (save && typeof save === 'object') {
+        save.radioIndex = this.index;
+        const station = this.current();
+        if (station) save.radioStation = station.id;
+        persist?.();
+      }
+    } catch (error) {
+      console.warn('[Kano Radio] Could not persist station selection.', error);
+    }
 
-    panel.append(label, select, power);
-    actions.insertBefore(panel, existingButton);
-    select.addEventListener('change', () => chooseStation(Number(select.value)));
-  }
+    try {
+      const station = this.current();
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        index: this.index,
+        stationId: station?.id || null,
+      }));
+    } catch (_) {
+      // Storage may be unavailable in private browsing modes.
+    }
+  },
 
-  // Compact power control stays available during the drive, independently
-  // of the pause menu's station selector.
-  const hudLabel = document.getElementById('radio-label');
-  if (hudLabel && !document.getElementById('kano-radio-hud-toggle')) {
-    const hudPower = document.createElement('button');
-    hudPower.id = 'kano-radio-hud-toggle';
-    hudPower.type = 'button';
-    hudPower.setAttribute('aria-label', 'Toggle radio power');
-    hudPower.addEventListener('click', () => setRadioPower(!radioPowerOn()));
-    hudLabel.insertAdjacentElement('afterend', hudPower);
-  }
+  _restoreSelection() {
+    try {
+      const bySave = Number(save?.radioIndex);
+      if (Number.isFinite(bySave) && bySave >= 0) {
+        this.index = Math.trunc(bySave);
+        return;
+      }
+    } catch (_) {
+      // Continue to local storage.
+    }
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null');
+      if (!stored) return;
+      const list = this.stations();
+      const matchIndex = list.findIndex((station) => station.id === stored.stationId);
+      this.index = matchIndex >= 0 ? matchIndex : Math.max(0, Number(stored.index) || 0);
+    } catch (_) {
+      this.index = 0;
+    }
+  },
 
-  // Intercept the existing CHANGE RADIO handler so it doesn't also beep and
-  // mutate a second station state. The button remains the one-tap next-station
-  // control for compatibility with the current menu.
-  document.addEventListener('click', (event) => {
-    const button = event.target instanceof Element
-      ? event.target.closest('#radio-btn')
-      : null;
-    if (!button) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    stepStation(1);
-  }, true);
+  _clearBedAudio() {
+    const manager = this._getManager();
+    safeInvoke(manager, ['stopRadioBed', 'stopRadio', 'radioStop']);
+  },
 
-  refreshLabels();
-}
+  _startSourceList(generation) {
+    if (!this.playing || generation !== this._generation) return;
+    const station = this.current();
+    const element = this._ensureElement();
+    if (!station || !element) return;
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', installControls, { once: true });
-} else {
-  installControls();
-}
+    this._sources = candidatesFor(station.file);
+    this._sourceIndex = -1;
 
-export const RadioControls = {
-  powerOn: radioPowerOn,
-  select: chooseStation,
-  next: () => stepStation(1),
-  previous: () => stepStation(-1),
-  toggle: () => setRadioPower(!radioPowerOn()),
+    if (!this._sources.length) {
+      this._reportUnavailable(station);
+      return;
+    }
+    this._tryNextSource(generation);
+  },
+
+  _tryNextSource(generation) {
+    if (!this.playing || generation !== this._generation) return;
+    const element = this._element;
+    if (!element) return;
+
+    this._sourceIndex += 1;
+    if (this._sourceIndex >= this._sources.length) {
+      this._reportUnavailable(this.current());
+      return;
+    }
+
+    const source = this._sources[this._sourceIndex];
+    element.pause();
+    element.src = source;
+    element.load();
+
+    let playResult;
+    try {
+      playResult = element.play();
+    } catch (error) {
+      this._tryNextSource(generation);
+      return;
+    }
+
+    if (playResult && typeof playResult.catch === 'function') {
+      playResult.catch((error) => {
+        if (!this.playing || generation !== this._generation) return;
+        if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
+          this._emit('kano:radioerror', {
+            reason: 'user-gesture-required',
+            station: this.current(),
+          });
+          return;
+        }
+        this._tryNextSource(generation);
+      });
+    }
+  },
+
+  _reportUnavailable(station) {
+    const id = station?.id || 'unknown';
+    if (this._reportedUnavailable.has(id)) return;
+    this._reportedUnavailable.add(id);
+    console.warn(`[Kano Radio] No playable local audio found for ${station?.name || id}. Checked ${AUDIO_ROOTS.join(', ')}.`);
+    this._emit('kano:radioerror', {
+      reason: 'station-audio-unavailable',
+      station,
+    });
+    const manager = this._getManager();
+    safeInvoke(manager, ['radioTune', 'tuneRadio', 'selectStation'], station?.name || 'Kano Radio');
+  },
+
+  start() {
+    if (!this.stations().length) return null;
+    this._restoreSelection();
+    this.playing = true;
+    this.timer = 0;
+    this._lastAnnouncementFrame = -1;
+    this._clearBedAudio();
+
+    const manager = this._getManager();
+    safeInvoke(manager, ['ensure', 'init', 'initialize', 'resume']);
+
+    this._generation += 1;
+    this._startSourceList(this._generation);
+    this._emit('kano:radiochange');
+    return this.current();
+  },
+
+  stop() {
+    this.playing = false;
+    this.timer = 0;
+    this._generation += 1;
+
+    if (this._element) {
+      try {
+        this._element.pause();
+      } catch (_) {}
+    }
+
+    const manager = this._getManager();
+    safeInvoke(manager, ['stopRadioBed', 'stopRadio', 'radioStop', 'stopSpeech', 'cancelSpeech']);
+    try {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    } catch (_) {}
+
+    this._emit('kano:radiochange');
+  },
+
+  toggle() {
+    if (this.playing) this.stop();
+    else this.start();
+    return this.playing;
+  },
+
+  select(value) {
+    const list = this.stations();
+    if (!list.length) return null;
+
+    let targetIndex = -1;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      targetIndex = Math.trunc(value);
+    } else {
+      const key = normalize(value);
+      targetIndex = list.findIndex((station) =>
+        normalize(station.id) === key || normalize(station.name) === key
+      );
+    }
+    if (targetIndex < 0 || targetIndex >= list.length) return null;
+
+    this.index = targetIndex;
+    this._persistSelection();
+    const station = this.current();
+
+    if (this.playing) {
+      this._generation += 1;
+      this._clearBedAudio();
+      this._startSourceList(this._generation);
+    }
+
+    this._emit('kano:radiochange');
+    return station;
+  },
+
+  next() {
+    const list = this.stations();
+    if (!list.length) return null;
+    return this.select((this.index + 1) % list.length);
+  },
+
+  previous() {
+    const list = this.stations();
+    if (!list.length) return null;
+    return this.select((this.index - 1 + list.length) % list.length);
+  },
+
+  setAnnouncementsEnabled(enabled) {
+    this._announcementEnabled = Boolean(enabled);
+  },
+
+  update(frame) {
+    if (!this.playing || !this._announcementEnabled) return;
+    const value = Number(frame);
+    if (!Number.isFinite(value) || value <= 0 || value % ANNOUNCEMENT_INTERVAL !== 0) return;
+    if (value === this._lastAnnouncementFrame) return;
+    this._lastAnnouncementFrame = value;
+
+    const line = ANNOUNCEMENTS[Math.floor(Math.random() * ANNOUNCEMENTS.length)];
+    const manager = this._getManager();
+    if (safeInvoke(manager, ['speak', 'announce'], line, {
+      rate: 0.92,
+      pitch: 1.02,
+      volume: 0.75,
+    })) return;
+
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
+        const utterance = new SpeechSynthesisUtterance(line);
+        utterance.rate = 0.92;
+        utterance.pitch = 1.02;
+        utterance.volume = 0.75;
+        window.speechSynthesis.speak(utterance);
+      }
+    } catch (_) {
+      // Voice announcements are optional.
+    }
+  },
+
+  _emit(eventName, detail = null) {
+    try {
+      if (typeof window === 'undefined') return;
+      window.dispatchEvent(new CustomEvent(eventName, {
+        detail: detail || {
+          playing: this.playing,
+          index: this.index,
+          station: this.current(),
+        },
+      }));
+    } catch (_) {}
+  },
+
+  dispose() {
+    this.stop();
+    if (this._element) {
+      this._element.removeAttribute('src');
+      this._element.load();
+    }
+    this._element = null;
+    this._audioManager = null;
+    this._sources = [];
+    this._sourceIndex = -1;
+  },
 };
 
-export default RadioControls;
+export default Radio;
