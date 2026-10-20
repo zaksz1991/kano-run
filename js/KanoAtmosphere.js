@@ -1,516 +1,379 @@
 import * as THREE from 'three';
+import { save, persist } from './storage.js';
+import { AudioManager } from './audio.js';
+import { Renderer3D } from './renderer3d.js';
+import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const randomBetween = (min, max) => min + Math.random() * (max - min);
-const mod = (value, divisor) => ((value % divisor) + divisor) % divisor;
+const rand = (min, max) => min + Math.random() * (max - min);
+const validTime = new Set(['auto', 'morning', 'afternoon', 'evening', 'night']);
+const validSeason = new Set(['hotDry', 'harmattan', 'rainy', 'cool']);
+const validHome = new Set(['family', 'rented']);
+const SCENES = new Set(['road', 'garage', 'bedroom', 'household', 'street', 'breakfast', 'walk', 'school']);
+const RENT_PER_WEEK = 3500; // In-game price; not a real-world rental estimate.
+const LIFESTYLE_DEFAULTS = {
+  timeOfDay: 'auto',
+  season: 'hotDry',
+  home: 'family',
+  insects: true,
+  rentWeeksPaid: 0,
+  rentLedger: [],
+};
 
-const ATMOSPHERE_PROFILES = {
+const TIME_PROFILES = {
+  morning: {
+    background: 0x9dcce2, fog: 0xb5d5e1, fogNear: 48, fogFar: 205,
+    hemi: 1.10, directional: 1.08, light: 0xfff0d2,
+    temperature: { hotDry: '30–34°C', harmattan: '17–22°C', rainy: '22–26°C', cool: '18–23°C' },
+  },
+  afternoon: {
+    background: 0xb9e0ed, fog: 0xc6e1e7, fogNear: 58, fogFar: 228,
+    hemi: 1.18, directional: 1.18, light: 0xfff4df,
+    temperature: { hotDry: '37–41°C', harmattan: '29–34°C', rainy: '27–31°C', cool: '27–32°C' },
+  },
+  evening: {
+    background: 0xe4b18b, fog: 0xd7b49a, fogNear: 38, fogFar: 172,
+    hemi: 0.94, directional: 0.76, light: 0xffbf83,
+    temperature: { hotDry: '30–35°C', harmattan: '24–29°C', rainy: '24–28°C', cool: '23–28°C' },
+  },
   night: {
-    background: 0x202c43,
-    fog: 0x2d394e,
-    fogNear: 28,
-    fogFar: 128,
-    hemiFactor: 0.52,
-    directionalFactor: 0.19,
-    tint: 0x8199c4,
-  },
-  harmattan: {
-    background: 0xbab5a5,
-    fog: 0xbab5a5,
-    fogNear: 13,
-    fogFar: 88,
-    hemiFactor: 0.90,
-    directionalFactor: 0.66,
-    tint: 0xd1c6ac,
-  },
-  rain: {
-    background: 0x8098a5,
-    fog: 0x8599a5,
-    fogNear: 25,
-    fogFar: 142,
-    hemiFactor: 0.77,
-    directionalFactor: 0.55,
-    tint: 0x9eafbd,
-  },
-  dustyRoad: {
-    background: 0xaab3ae,
-    fog: 0xaab3ae,
-    fogNear: 35,
-    fogFar: 160,
-    hemiFactor: 0.91,
-    directionalFactor: 0.76,
-    tint: 0xb8b4a1,
+    background: 0x1d2a43, fog: 0x283650, fogNear: 24, fogFar: 132,
+    hemi: 0.76, directional: 0.42, light: 0x9ab5e2,
+    temperature: { hotDry: '25–30°C', harmattan: '13–19°C', rainy: '21–25°C', cool: '15–20°C' },
   },
 };
 
-const FALLBACK_PATHS = new Map([
+const SEASON_PROFILES = {
+  hotDry: { label: 'Hot / dry season', backgroundBlend: 0xefd4a7, fogBlend: 0xe7cfab, hemi: 1.04, directional: 1.04 },
+  harmattan: { label: 'Harmattan / dusty-cool', backgroundBlend: 0xc8c2ad, fogBlend: 0xc7c0ad, hemi: 0.98, directional: 0.90 },
+  rainy: { label: 'Rainy / humid season', backgroundBlend: 0x91aebd, fogBlend: 0x96b0bc, hemi: 0.92, directional: 0.78 },
+  cool: { label: 'Cool season', backgroundBlend: 0xa9c4d5, fogBlend: 0xb5c9d7, hemi: 1.01, directional: 0.96 },
+};
+
+function getLifestyle() {
+  const input = save.lifestyle && typeof save.lifestyle === 'object' ? save.lifestyle : {};
+  const timeOfDay = validTime.has(input.timeOfDay) ? input.timeOfDay : LIFESTYLE_DEFAULTS.timeOfDay;
+  const season = validSeason.has(input.season) ? input.season : LIFESTYLE_DEFAULTS.season;
+  const home = validHome.has(input.home) ? input.home : LIFESTYLE_DEFAULTS.home;
+  const rentWeeksPaid = Number.isFinite(input.rentWeeksPaid) ? Math.max(0, Math.floor(input.rentWeeksPaid)) : 0;
+  const rentLedger = Array.isArray(input.rentLedger)
+    ? input.rentLedger.filter((entry) => entry && typeof entry === 'object' && Number.isFinite(entry.amount)).slice(-20)
+    : [];
+  const lifestyle = {
+    ...LIFESTYLE_DEFAULTS,
+    ...input,
+    timeOfDay,
+    season,
+    home,
+    insects: typeof input.insects === 'boolean' ? input.insects : true,
+    rentWeeksPaid,
+    rentLedger,
+  };
+  save.lifestyle = lifestyle;
+  return lifestyle;
+}
+
+function persistLifestyle(lifestyle) {
+  save.lifestyle = lifestyle;
+  try { persist(); } catch (error) { console.warn('[Kano Life] lifestyle save warning', error); }
+}
+
+// ---------------------------------------------------------------------------
+// Texture recovery is installed at module evaluation time, before main.js
+// constructs Renderer3D. It only intercepts the two known missing textures.
+// ---------------------------------------------------------------------------
+const TEXTURE_FALLBACKS = new Map([
   ['/assets/environment/ground/asphalt.jpg', 'asphalt'],
   ['/assets/environment/ground/market-stall.jpg', 'marketStall'],
 ]);
-const canvasCache = new Map();
-const LOADER_PATCH_FLAG = '__kanoLifeProceduralEnvironmentFallback';
+const TEXTURE_CACHE = new Map();
+const TEXTURE_PATCH_FLAG = '__kanoLifeWorldTextureRecoveryV2';
 
-function seededRandom(seed) {
-  let value = seed >>> 0;
-  return () => {
-    value = (value * 1664525 + 1013904223) >>> 0;
-    return value / 4294967296;
-  };
-}
-
-function drawWrappedDot(ctx, x, y, radius, width, height, color, alpha = 1) {
-  const xs = [x];
-  const ys = [y];
-  if (x - radius < 0) xs.push(x + width);
-  if (x + radius > width) xs.push(x - width);
-  if (y - radius < 0) ys.push(y + height);
-  if (y + radius > height) ys.push(y - height);
-
-  ctx.fillStyle = color;
-  ctx.globalAlpha = alpha;
-  for (const px of xs) {
-    for (const py of ys) {
-      ctx.beginPath();
-      ctx.arc(px, py, radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.globalAlpha = 1;
-}
-
-function makeRoadCanvas() {
-  const cached = canvasCache.get('asphalt');
-  if (cached) return cached;
-
-  const size = 512;
+function makeFallbackTexture(kind) {
+  if (TEXTURE_CACHE.has(kind)) return TEXTURE_CACHE.get(kind);
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = 256;
+  canvas.height = 256;
   const ctx = canvas.getContext('2d', { alpha: false });
-  if (!ctx) return canvas;
+  if (!ctx) return null;
 
-  const image = ctx.createImageData(size, size);
-  const TAU = Math.PI * 2;
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const broad = Math.sin(TAU * (x * 3 + y * 5) / size) * 2.4 +
-        Math.cos(TAU * (x * 7 - y * 2) / size) * 1.8 +
-        Math.sin(TAU * (x * 13 + y * 11) / size) * 1.1;
-      const grain = Math.sin(TAU * (x * 79 + y * 131) / size) * 3.8 +
-        Math.cos(TAU * (x * 137 - y * 97) / size) * 3.1 +
-        Math.sin(TAU * (x * 181 + y * 151) / size) * 2.0;
-      const v = broad + grain;
-      const i = (y * size + x) * 4;
-      image.data[i] = clamp(49 + v, 0, 255);
-      image.data[i + 1] = clamp(56 + v, 0, 255);
-      image.data[i + 2] = clamp(60 + v, 0, 255);
-      image.data[i + 3] = 255;
+  if (kind === 'asphalt') {
+    ctx.fillStyle = '#353a3d';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 5200; i += 1) {
+      const shade = 42 + Math.floor(Math.random() * 49);
+      ctx.fillStyle = `rgba(${shade},${shade + 2},${shade + 3},${Math.random() * 0.26})`;
+      const size = Math.random() < 0.92 ? 1 : 2;
+      ctx.fillRect(Math.random() * 256, Math.random() * 256, size, size);
     }
-  }
-  ctx.putImageData(image, 0, 0);
-
-  // Very subtle longitudinal tyre-wear bands; no painted lane markings here.
-  const wear = ctx.createLinearGradient(0, 0, size, 0);
-  wear.addColorStop(0, 'rgba(10,13,15,0.12)');
-  wear.addColorStop(0.17, 'rgba(0,0,0,0.02)');
-  wear.addColorStop(0.34, 'rgba(5,7,8,0.12)');
-  wear.addColorStop(0.50, 'rgba(255,255,255,0.015)');
-  wear.addColorStop(0.66, 'rgba(4,6,7,0.13)');
-  wear.addColorStop(0.83, 'rgba(0,0,0,0.02)');
-  wear.addColorStop(1, 'rgba(10,13,15,0.12)');
-  ctx.fillStyle = wear;
-  ctx.fillRect(0, 0, size, size);
-
-  const rand = seededRandom(0x4b414e4f);
-  // Tile-wrapped aggregate flecks avoid a visible hard seam at texture edges.
-  for (let i = 0; i < 2600; i += 1) {
-    const x = rand() * size;
-    const y = rand() * size;
-    const radius = 0.35 + rand() * 1.15;
-    const light = rand() > 0.52;
-    drawWrappedDot(
-      ctx,
-      x,
-      y,
-      radius,
-      size,
-      size,
-      light ? '#b3b4ad' : '#171c1f',
-      light ? 0.10 + rand() * 0.15 : 0.12 + rand() * 0.16,
-    );
-  }
-
-  // Small, restrained repair patches add scale without distracting from traffic.
-  for (let i = 0; i < 9; i += 1) {
-    const x = 22 + rand() * (size - 44);
-    const y = 22 + rand() * (size - 44);
-    const w = 18 + rand() * 52;
-    const h = 8 + rand() * 28;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate((rand() - 0.5) * 0.28);
-    ctx.fillStyle = `rgba(14,18,20,${0.04 + rand() * 0.08})`;
-    ctx.fillRect(-w / 2, -h / 2, w, h);
-    ctx.strokeStyle = 'rgba(190,187,174,0.09)';
+    ctx.strokeStyle = 'rgba(18,22,25,0.25)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(-w / 2, -h / 2, w, h);
-    ctx.restore();
-  }
-
-  canvasCache.set('asphalt', canvas);
-  return canvas;
-}
-
-function makeGroundCanvas() {
-  const cached = canvasCache.get('ground');
-  if (cached) return cached;
-
-  const size = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d', { alpha: false });
-  if (!ctx) return canvas;
-
-  const image = ctx.createImageData(size, size);
-  const TAU = Math.PI * 2;
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const broad = Math.sin(TAU * (x * 3 + y * 4) / size) * 4.2 +
-        Math.cos(TAU * (x * 6 - y * 5) / size) * 2.7 +
-        Math.sin(TAU * (x * 11 + y * 9) / size) * 1.7;
-      const grain = Math.sin(TAU * (x * 113 + y * 83) / size) * 3.7 +
-        Math.cos(TAU * (x * 151 - y * 127) / size) * 2.5 +
-        Math.sin(TAU * (x * 197 + y * 173) / size) * 1.8;
-      const v = broad + grain;
-      const i = (y * size + x) * 4;
-      image.data[i] = clamp(177 + v, 0, 255);
-      image.data[i + 1] = clamp(158 + v * 0.91, 0, 255);
-      image.data[i + 2] = clamp(119 + v * 0.70, 0, 255);
-      image.data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(image, 0, 0);
-
-  const rand = seededRandom(0x53414e44);
-  // Fine gravel, dried grass and dusty clumps.
-  for (let i = 0; i < 1700; i += 1) {
-    const x = rand() * size;
-    const y = rand() * size;
-    const radius = 0.25 + rand() * 1.8;
-    const palette = ['#746447', '#887452', '#d6c49a', '#6f7050', '#c2ac7c'];
-    drawWrappedDot(
-      ctx, x, y, radius, size, size,
-      palette[Math.floor(rand() * palette.length)],
-      0.09 + rand() * 0.19,
-    );
-  }
-
-  // Faint wheel-rut lines make the sandy shoulder read as ground, not a flat colour.
-  ctx.save();
-  ctx.globalAlpha = 0.13;
-  ctx.strokeStyle = '#756044';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(110, -10);
-  ctx.bezierCurveTo(135, 150, 95, 350, 126, 522);
-  ctx.moveTo(151, -10);
-  ctx.bezierCurveTo(174, 160, 137, 352, 165, 522);
-  ctx.stroke();
-  ctx.restore();
-
-  canvasCache.set('ground', canvas);
-  return canvas;
-}
-
-function makeMarketStallCanvas() {
-  const cached = canvasCache.get('marketStall');
-  if (cached) return cached;
-
-  const width = 512;
-  const height = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { alpha: false });
-  if (!ctx) return canvas;
-
-  ctx.fillStyle = '#e6d2a5';
-  ctx.fillRect(0, 0, width, height);
-  const stripe = 64;
-  const palette = ['#a93b2b', '#f0dcb2', '#245a43', '#d6a643', '#f1e7cb', '#9f342b'];
-  for (let i = -3; i < 12; i += 1) {
-    ctx.save();
-    ctx.translate(i * stripe, 0);
-    ctx.rotate(-0.07);
-    ctx.fillStyle = palette[mod(i, palette.length)];
-    ctx.fillRect(0, -24, stripe * 0.78, height + 48);
-    ctx.restore();
-  }
-
-  // Woven-cloth texture and edge seams.
-  const rand = seededRandom(0x5354414c);
-  for (let i = 0; i < 1500; i += 1) {
-    const x = rand() * width;
-    const y = rand() * height;
-    ctx.fillStyle = rand() > 0.5 ? 'rgba(255,245,220,0.09)' : 'rgba(24,29,23,0.07)';
-    ctx.fillRect(x, y, 1 + rand() * 2, 1);
-  }
-  ctx.fillStyle = 'rgba(30,30,24,0.22)';
-  ctx.fillRect(0, height - 8, width, 8);
-  ctx.strokeStyle = 'rgba(255,240,204,0.28)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(0, 8);
-  ctx.lineTo(width, 8);
-  ctx.stroke();
-
-  canvasCache.set('marketStall', canvas);
-  return canvas;
-}
-
-function makeSkyCanvas() {
-  const cached = canvasCache.get('sky');
-  if (cached) return cached;
-
-  const width = 1024;
-  const height = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { alpha: false });
-  if (!ctx) return canvas;
-
-  // Neutral white-based colour values are tinted from the active scene colour
-  // during rendering, so the same sky remains compatible with rain/harmattan/night.
-  const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, '#ffffff');
-  gradient.addColorStop(0.38, '#ffffff');
-  gradient.addColorStop(0.62, '#f5f2eb');
-  gradient.addColorStop(0.78, '#e9e0cf');
-  gradient.addColorStop(1, '#d7c8ae');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
-
-  const rand = seededRandom(0x534b5931);
-  // High, broken Sahel cumulus clouds with soft, shaded edges.
-  const cloudBands = [
-    { x: 145, y: 115, w: 185, h: 45 },
-    { x: 375, y: 165, w: 235, h: 42 },
-    { x: 694, y: 108, w: 190, h: 50 },
-    { x: 905, y: 194, w: 150, h: 36 },
-    { x: 515, y: 79, w: 130, h: 27 },
-    { x: 58, y: 218, w: 150, h: 35 },
-  ];
-  for (const cloud of cloudBands) {
-    ctx.save();
-    ctx.globalAlpha = 0.14 + rand() * 0.07;
-    const cloudGradient = ctx.createRadialGradient(
-      cloud.x, cloud.y, cloud.h * 0.06,
-      cloud.x, cloud.y, cloud.w * 0.62,
-    );
-    cloudGradient.addColorStop(0, '#707b85');
-    cloudGradient.addColorStop(0.42, '#a8b0b5');
-    cloudGradient.addColorStop(1, '#ffffff');
-    ctx.fillStyle = cloudGradient;
-    ctx.beginPath();
-    ctx.ellipse(cloud.x, cloud.y, cloud.w * 0.54, cloud.h * 0.8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    for (let p = 0; p < 6; p += 1) {
-      const px = cloud.x + (rand() - 0.5) * cloud.w * 0.82;
-      const py = cloud.y + (rand() - 0.5) * cloud.h * 0.75;
-      const rx = cloud.w * (0.08 + rand() * 0.13);
-      const ry = cloud.h * (0.18 + rand() * 0.35);
+    for (let i = 0; i < 7; i += 1) {
+      const x = Math.random() * 256;
+      const y = Math.random() * 256;
       ctx.beginPath();
-      ctx.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + rand(-18, 18), y + rand(4, 26));
+      ctx.stroke();
     }
-    ctx.restore();
+  } else {
+    ctx.fillStyle = '#9f7852';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 80; i += 1) {
+      ctx.fillStyle = ['#8c6849', '#b58b5a', '#c49c69', '#785b43'][i % 4];
+      ctx.fillRect((i * 31) % 256, (i * 47) % 256, 20 + (i % 5) * 3, 4 + (i % 3) * 2);
+    }
+    ctx.strokeStyle = 'rgba(67,45,29,0.45)';
+    ctx.lineWidth = 3;
+    for (let y = 18; y < 256; y += 32) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke();
+    }
   }
-
-  // Horizon haze softens the transition between sky and the distant Kano terrain.
-  const haze = ctx.createLinearGradient(0, height * 0.70, 0, height);
-  haze.addColorStop(0, 'rgba(242,226,194,0)');
-  haze.addColorStop(0.55, 'rgba(231,216,187,0.32)');
-  haze.addColorStop(1, 'rgba(212,194,162,0.58)');
-  ctx.fillStyle = haze;
-  ctx.fillRect(0, height * 0.68, width, height * 0.32);
-
-  canvasCache.set('sky', canvas);
-  return canvas;
-}
-
-function makeSunCanvas() {
-  const cached = canvasCache.get('sun');
-  if (cached) return cached;
-  const size = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas;
-  const glow = ctx.createRadialGradient(size / 2, size / 2, 5, size / 2, size / 2, size / 2);
-  glow.addColorStop(0, 'rgba(255,245,199,1)');
-  glow.addColorStop(0.11, 'rgba(255,228,152,0.96)');
-  glow.addColorStop(0.22, 'rgba(255,210,116,0.48)');
-  glow.addColorStop(0.48, 'rgba(255,211,126,0.13)');
-  glow.addColorStop(1, 'rgba(255,211,126,0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, size, size);
-  canvasCache.set('sun', canvas);
-  return canvas;
-}
-
-function makeCanvasTexture(kind) {
-  const canvas = kind === 'asphalt'
-    ? makeRoadCanvas()
-    : kind === 'marketStall'
-      ? makeMarketStallCanvas()
-      : kind === 'sky'
-        ? makeSkyCanvas()
-        : kind === 'sun'
-          ? makeSunCanvas()
-          : makeGroundCanvas();
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(kind === 'asphalt' ? 5 : 2, kind === 'asphalt' ? 8 : 2);
+  texture.anisotropy = 2;
   texture.needsUpdate = true;
+  TEXTURE_CACHE.set(kind, texture);
   return texture;
 }
 
-function installMissingTextureFallbacks() {
+function installTextureRecovery() {
   const prototype = THREE.TextureLoader?.prototype;
-  if (!prototype?.load || prototype[LOADER_PATCH_FLAG]) return;
-
+  if (!prototype || prototype[TEXTURE_PATCH_FLAG]) return;
   const originalLoad = prototype.load;
-  Object.defineProperty(prototype, LOADER_PATCH_FLAG, { value: true });
-
-  prototype.load = function (url, onLoad, onProgress, onError) {
-    const path = String(url || '').split('?')[0];
-    const kind = FALLBACK_PATHS.get(path);
-    if (!kind) {
-      return originalLoad.call(this, url, onLoad, onProgress, onError);
-    }
-
-    // These two optional files are absent in the project. Supply a generated
-    // canvas texture instead of issuing a failing network request.
-    const texture = makeCanvasTexture(kind);
-    const manager = this.manager || THREE.DefaultLoadingManager;
-    manager?.itemStart?.(path);
-    Promise.resolve().then(() => {
-      try {
-        onLoad?.(texture);
-      } catch (error) {
-        console.warn('[Kano Life] procedural texture callback failed', error);
-        texture.dispose();
-      } finally {
-        manager?.itemEnd?.(path);
+  if (typeof originalLoad !== 'function') return;
+  prototype.load = function kanoTextureLoad(url, onLoad, onProgress, onError) {
+    const path = String(url || '');
+    let kind = null;
+    for (const [missingPath, fallbackKind] of TEXTURE_FALLBACKS) {
+      if (path.endsWith(missingPath) || path.includes(missingPath)) {
+        kind = fallbackKind;
+        break;
       }
-    });
-    return texture;
+    }
+    if (kind) {
+      const texture = makeFallbackTexture(kind);
+      if (texture) {
+        const manager = this.manager || THREE.DefaultLoadingManager;
+        manager?.itemStart?.(path);
+        queueMicrotask(() => {
+          try {
+            if (typeof onLoad === 'function') onLoad(texture);
+          } catch (error) {
+            console.warn('[Kano Life] procedural texture callback failed', error);
+          } finally {
+            manager?.itemEnd?.(path);
+          }
+        });
+        return texture;
+      }
+    }
+    return originalLoad.call(this, url, onLoad, onProgress, onError);
   };
+  Object.defineProperty(prototype, TEXTURE_PATCH_FLAG, { value: true, configurable: false });
 }
 
-// Install before main.js constructs Renderer3D, which requests these optional paths.
-installMissingTextureFallbacks();
+// Keep a pending scene request even if the active renderer has not finished
+// constructing its life dioramas yet. main.js also listens for this event, but
+// its immediate call can be too early and is otherwise discarded by Renderer3D.
+let pendingLifeScene = null;
+if (typeof window !== 'undefined' && !window.__KANO_LIFE_SCENE_QUEUE_INSTALLED__) {
+  window.__KANO_LIFE_SCENE_QUEUE_INSTALLED__ = true;
+  window.addEventListener('kano:life-scene', (event) => {
+    const scene = event?.detail?.scene;
+    if (SCENES.has(scene)) pendingLifeScene = scene;
+  });
+}
 
-/**
- * Kano Life atmosphere and environment surface upgrade.
- *
- * The existing Renderer3D remains the sole owner of the world, road, camera,
- * traffic and game loop. This class adds tileable road/ground materials, blended
- * shoulders, a clouded sky dome and a distant sun while preserving the existing
- * night, rain, harmattan, wind, rain-particle and dust-particle behaviours.
- */
+function installSceneReplayHooks() {
+  const rendererProto = Renderer3D?.prototype;
+  if (rendererProto && !rendererProto.__kanoLifeSceneEventHook) {
+    const originalSetLifeScene = rendererProto.setLifeScene;
+    if (typeof originalSetLifeScene === 'function') {
+      rendererProto.setLifeScene = function setLifeSceneWithEvent(sceneName) {
+        const before = this.lifeScene;
+        const result = originalSetLifeScene.call(this, sceneName);
+        if (this.lifeScene && this.lifeScene !== before && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('kano:life-scene-activated', {
+            detail: { scene: this.lifeScene, previous: before || 'road' },
+          }));
+        }
+        return result;
+      };
+      Object.defineProperty(rendererProto, '__kanoLifeSceneEventHook', { value: true });
+    }
+  }
+
+  const sceneProto = KanoSceneUpgrade?.prototype;
+  if (sceneProto && !sceneProto.__kanoRoutineReplayHook) {
+    const originalUpdate = sceneProto.update;
+    if (typeof originalUpdate === 'function') {
+      sceneProto.update = function updateWithSceneAnimationReset(dt, state) {
+        const currentScene = this.renderer?.lifeScene || 'road';
+        if (this.__kanoPreviousAnimatedScene !== currentScene) {
+          this.__kanoPreviousAnimatedScene = currentScene;
+          if (!this.__kanoBaseRigPhases) this.__kanoBaseRigPhases = new WeakMap();
+          for (const rig of this.lifeRigs || []) {
+            if (!rig || typeof rig !== 'object') continue;
+            if (!this.__kanoBaseRigPhases.has(rig)) {
+              this.__kanoBaseRigPhases.set(rig, Number(rig.phase) || 0);
+            }
+            // updateLifeRigs calculates t = elapsed*2.1 + phase. This offset
+            // replays the same short body animation whenever a scene returns.
+            rig.phase = this.__kanoBaseRigPhases.get(rig) - (Number(this.elapsed) || 0) * 2.1;
+            if (rig.root?.position && Number.isFinite(rig.baseX)) rig.root.position.x = rig.baseX;
+            if (rig.root?.position && Number.isFinite(rig.baseZ)) rig.root.position.z = rig.baseZ;
+          }
+        }
+        return originalUpdate.call(this, dt, state);
+      };
+      Object.defineProperty(sceneProto, '__kanoRoutineReplayHook', { value: true });
+    }
+  }
+}
+
+// Environmental rumble was competing with the sampled engine recording. Keep
+// the RPM sound and real engine MP3 prominent; attenuate only the generated
+// rolling-road layer. This is a class-level hook installed before AudioManager
+// instances are created in main.js.
+function installEngineMixBalance() {
+  const prototype = AudioManager?.prototype;
+  if (!prototype || prototype.__kanoEngineMixBalance) return;
+  const originalEngine = prototype.engine;
+  if (typeof originalEngine !== 'function') return;
+  prototype.engine = function engineWithKanoMix(signedSpeed, input) {
+    const result = originalEngine.call(this, signedSpeed, input);
+    try {
+      if (this.ctx && this.roadNoiseGain?.gain) {
+        const speed = Math.abs(Number(signedSpeed) || 0);
+        const hasRecordedEngine = Boolean(this.engineAudio && !this.engineAudioFailed);
+        const roadNoise = clamp(speed * 0.00011, 0.0001, 0.012) * (hasRecordedEngine ? 0.19 : 0.34);
+        this.roadNoiseGain.gain.setTargetAtTime(roadNoise, this.ctx.currentTime, 0.10);
+      }
+      if (this.engineAudio && !this.engineAudioFailed && Number.isFinite(this.engineAudio.volume)) {
+        this.engineAudio.volume = clamp(this.engineAudio.volume * 1.12, 0.20, 0.70);
+      }
+    } catch {
+      // Audio can be closing when the page is hidden; never interrupt gameplay.
+    }
+    return result;
+  };
+  Object.defineProperty(prototype, '__kanoEngineMixBalance', { value: true });
+}
+
+installTextureRecovery();
+installSceneReplayHooks();
+installEngineMixBalance();
+
 export class KanoAtmosphere {
   constructor({ renderer, game, mobile = false, enabled = true } = {}) {
-    if (!renderer?.scene?.isScene || !renderer?.camera?.isCamera || !renderer?.renderer?.render) {
-      throw new TypeError('KanoAtmosphere requires a live Renderer3D instance.');
-    }
-    if (!game) {
-      throw new TypeError('KanoAtmosphere requires the active Game instance.');
-    }
-
     this.renderer3d = renderer;
-    this.scene = renderer.scene;
-    this.webgl = renderer.renderer;
     this.game = game;
     this.mobile = Boolean(mobile);
     this.enabled = Boolean(enabled);
     this.disposed = false;
-    this.active = false;
-    this.night = false;
-    this.environment = 'clear';
     this.elapsed = 0;
-    this.wind = this.mobile ? 0.36 : 0.48;
-    this.scrollDistance = 0;
-    this.lastTextureScroll = 0;
-
-    this.scratch = new THREE.Vector3();
-    this.scratchTail = new THREE.Vector3();
-    this.skyForward = new THREE.Vector3();
-    this.skyOffset = new THREE.Vector3();
-    this.tintColor = new THREE.Color();
-    this.snapshot = {
-      background: new THREE.Color(),
-      backgroundValid: false,
-      fogColor: new THREE.Color(),
-      fogValid: false,
-      fogNear: 0,
-      fogFar: 0,
-      lights: [],
-    };
-
+    this.particleAccumulator = 0;
+    this.routineTimers = [];
+    this.lastProfileKey = '';
+    this.lastLifeScene = renderer?.lifeScene || 'road';
+    this.pendingScene = pendingLifeScene;
+    this.settings = getLifestyle();
+    this.container = document.getElementById('game-container') || renderer?.canvas?.parentElement || document.body;
+    this.original = this.snapshotRenderer();
     this.environmentSurfaces = {
-      road: null,
-      ground: null,
-      roadTexture: null,
-      groundTexture: null,
-      shoulderTexture: null,
-      shoulders: [],
-      originalRoadMap: null,
-      originalGroundMap: null,
-      originalRoadColor: null,
-      originalGroundColor: null,
+      road: null, ground: null, roadTexture: null, groundTexture: null,
+      shoulderTexture: null, shoulders: [], originalRoadMap: null,
+      originalGroundMap: null, originalRoadColor: null, originalGroundColor: null,
+      originalRoadRoughness: null, originalGroundRoughness: null,
+      originalRoadMetalness: null, originalGroundMetalness: null,
     };
+    this.scrollDistance = 0;
     this.installEnvironmentSurfaces();
     this.createSkyDome();
+    this.createWeatherParticles();
+    this.createInstancedInsects();
+    this.createWorldLifePanel();
+    this.sceneActivatedHandler = (event) => this.onSceneActivated(event?.detail?.scene);
+    window.addEventListener('kano:life-scene-activated', this.sceneActivatedHandler);
+    this.applyProfile({});
+  }
 
-    this.originalRender = this.webgl.render;
-    this.renderWrapper = (...args) => this.renderWithAtmosphere(...args);
-    this.lights = [];
-    this.scene.traverse((object) => {
-      if (object?.isHemisphereLight || object?.isDirectionalLight) {
-        this.lights.push({
+  snapshotRenderer() {
+    const scene = this.renderer3d?.scene;
+    const snapshot = {
+      background: scene?.background?.isColor ? scene.background.clone() : null,
+      fogColor: scene?.fog?.color?.isColor ? scene.fog.color.clone() : null,
+      fogNear: scene?.fog?.near,
+      fogFar: scene?.fog?.far,
+      toneMappingExposure: this.renderer3d?.renderer?.toneMappingExposure,
+      lights: [],
+    };
+    scene?.traverse?.((object) => {
+      if (object?.isLight && Number.isFinite(object.intensity)) {
+        snapshot.lights.push({
           light: object,
           intensity: object.intensity,
-          color: object.color.clone(),
-          tempColor: object.color.clone(),
+          color: object.color?.isColor ? object.color.clone() : null,
+          groundColor: object.groundColor?.isColor ? object.groundColor.clone() : null,
         });
       }
     });
-
-    this.rainParticles = [];
-    this.dustParticles = [];
-    this.createRain();
-    this.createDust();
-
-    // This wrapper is installed after KanoCinematicCamera, so both layers compose.
-    this.webgl.render = this.renderWrapper;
+    return snapshot;
   }
 
-  // ----------------------------------------------------------
-  // Procedural environment materials
-  // ----------------------------------------------------------
+  makeGroundTexture() {
+    const cached = TEXTURE_CACHE.get('kano-sand-ground');
+    if (cached) return cached.clone();
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return makeFallbackTexture('asphalt')?.clone?.() || null;
+    ctx.fillStyle = '#b29b70';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 1700; i += 1) {
+      const palettes = ['#75664c', '#8a7a58', '#d0bd8a', '#77714d', '#c0a875'];
+      ctx.globalAlpha = 0.12 + Math.random() * 0.24;
+      ctx.fillStyle = palettes[i % palettes.length];
+      const size = 0.35 + Math.random() * 2.0;
+      ctx.fillRect(Math.random() * 256, Math.random() * 256, size, size);
+    }
+    ctx.globalAlpha = 0.14;
+    ctx.strokeStyle = '#69583c';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(48, -8); ctx.bezierCurveTo(65, 78, 36, 174, 61, 264);
+    ctx.moveTo(74, -8); ctx.bezierCurveTo(91, 78, 62, 174, 87, 264);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.needsUpdate = true;
+    TEXTURE_CACHE.set('kano-sand-ground', texture);
+    return texture.clone();
+  }
 
-  prepareSurfaceTexture(texture, repeatX, repeatY) {
+  prepareSurfaceTexture(kind, repeatX, repeatY) {
+    const source = kind === 'asphalt'
+      ? makeFallbackTexture('asphalt')
+      : this.makeGroundTexture();
+    if (!source) return null;
+    const texture = source.clone();
+    texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(repeatX, repeatY);
-    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.offset.set(0, 0);
     texture.anisotropy = Math.min(
-      this.webgl?.capabilities?.getMaxAnisotropy?.() || 1,
-      this.mobile ? 4 : 8,
+      4,
+      this.renderer3d?.renderer?.capabilities?.getMaxAnisotropy?.() || 1,
     );
     texture.needsUpdate = true;
     return texture;
@@ -518,17 +381,25 @@ export class KanoAtmosphere {
 
   installEnvironmentSurfaces() {
     const world = this.renderer3d?.world;
-    if (!world?.isObject3D) return;
-
+    if (!world?.traverse) return;
+    const geometrySize = (object) => {
+      const p = object?.geometry?.parameters;
+      if (p && Number.isFinite(p.width) && Number.isFinite(p.height)) {
+        return { width: p.width, height: p.height };
+      }
+      const attribute = object?.geometry?.attributes?.position;
+      if (!attribute) return null;
+      if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+      const box = object.geometry.boundingBox;
+      return box ? { width: box.max.x - box.min.x, height: box.max.y - box.min.y } : null;
+    };
     world.traverse((object) => {
-      if (!object?.isMesh || object.geometry?.type !== 'PlaneGeometry') return;
-      const params = object.geometry.parameters || {};
-      const width = Number(params.width) || 0;
-      const height = Number(params.height) || 0;
-
-      if (!this.environmentSurfaces.road && Math.abs(width - 13) < 0.01 && Math.abs(height - 250) < 0.01) {
+      if (!object?.isMesh || !object.geometry || !object.material || Array.isArray(object.material)) return;
+      const size = geometrySize(object);
+      if (!size) return;
+      if (!this.environmentSurfaces.road && Math.abs(size.width - 13) < 0.08 && Math.abs(size.height - 250) < 0.5) {
         this.environmentSurfaces.road = object;
-      } else if (!this.environmentSurfaces.ground && Math.abs(width - 240) < 0.01 && Math.abs(height - 270) < 0.01) {
+      } else if (!this.environmentSurfaces.ground && Math.abs(size.width - 240) < 0.5 && Math.abs(size.height - 270) < 0.5) {
         this.environmentSurfaces.ground = object;
       }
     });
@@ -537,520 +408,840 @@ export class KanoAtmosphere {
     if (road?.material && !Array.isArray(road.material)) {
       this.environmentSurfaces.originalRoadMap = road.material.map || null;
       this.environmentSurfaces.originalRoadColor = road.material.color?.clone?.() || null;
-      const texture = this.prepareSurfaceTexture(makeCanvasTexture('asphalt'), 3, 64);
-      road.material.map = texture;
-      road.material.color?.set?.(0xffffff);
-      road.material.roughness = 0.94;
-      road.material.metalness = 0;
-      road.material.needsUpdate = true;
-      road.name = road.name || 'KANO_PROCEDURAL_ASPHALT_ROAD';
-      road.userData.kanoProceduralSurface = 'asphalt';
-      this.environmentSurfaces.roadTexture = texture;
+      this.environmentSurfaces.originalRoadRoughness = road.material.roughness;
+      this.environmentSurfaces.originalRoadMetalness = road.material.metalness;
+      const texture = this.prepareSurfaceTexture('asphalt', 3, 64);
+      if (texture) {
+        road.material.map = texture;
+        road.material.color?.set?.(0xffffff);
+        road.material.roughness = 0.94;
+        road.material.metalness = 0;
+        road.material.needsUpdate = true;
+        road.name = road.name || 'KANO_PROCEDURAL_ASPHALT_ROAD';
+        road.userData.kanoWorldLifeSurface = 'asphalt';
+        this.environmentSurfaces.roadTexture = texture;
+      }
     }
 
     const ground = this.environmentSurfaces.ground;
     if (ground?.material && !Array.isArray(ground.material)) {
       this.environmentSurfaces.originalGroundMap = ground.material.map || null;
       this.environmentSurfaces.originalGroundColor = ground.material.color?.clone?.() || null;
-      const texture = this.prepareSurfaceTexture(makeCanvasTexture('ground'), 28, 31);
-      ground.material.map = texture;
-      ground.material.color?.set?.(0xffffff);
-      ground.material.roughness = 1;
-      ground.material.metalness = 0;
-      ground.material.needsUpdate = true;
-      ground.name = ground.name || 'KANO_PROCEDURAL_SAND_AND_GRAVEL_GROUND';
-      ground.userData.kanoProceduralSurface = 'sand';
-      this.environmentSurfaces.groundTexture = texture;
+      this.environmentSurfaces.originalGroundRoughness = ground.material.roughness;
+      this.environmentSurfaces.originalGroundMetalness = ground.material.metalness;
+      const texture = this.prepareSurfaceTexture('ground', 28, 31);
+      if (texture) {
+        ground.material.map = texture;
+        ground.material.color?.set?.(0xffffff);
+        ground.material.roughness = 1;
+        ground.material.metalness = 0;
+        ground.material.needsUpdate = true;
+        ground.name = ground.name || 'KANO_PROCEDURAL_SAND_GROUND';
+        ground.userData.kanoWorldLifeSurface = 'sand';
+        this.environmentSurfaces.groundTexture = texture;
+      }
     }
 
-    // Add narrow dust-and-gravel shoulders beside the existing road edges.
-    // The gameplay lanes and 13-unit road are left unchanged.
-    if (world && !world.getObjectByName('KANO_ROADSIDE_SHOULDER_LEFT')) {
-      const shoulderTexture = this.prepareSurfaceTexture(makeCanvasTexture('ground'), 3, 53);
-      const shoulderMaterial = new THREE.MeshStandardMaterial({
-        map: shoulderTexture,
-        color: 0xffffff,
-        roughness: 1,
-        metalness: 0,
-      });
-      this.environmentSurfaces.shoulderTexture = shoulderTexture;
-
-      for (const side of [-1, 1]) {
-        const shoulder = new THREE.Mesh(
-          new THREE.PlaneGeometry(2.85, 250),
-          shoulderMaterial,
-        );
-        shoulder.name = side < 0
-          ? 'KANO_ROADSIDE_SHOULDER_LEFT'
-          : 'KANO_ROADSIDE_SHOULDER_RIGHT';
-        shoulder.rotation.x = -Math.PI / 2;
-        shoulder.position.set(side * 7.83, -0.023, -92);
-        shoulder.frustumCulled = false;
-        shoulder.renderOrder = -1;
-        shoulder.userData.kanoEnvironmentOwned = true;
-        world.add(shoulder);
-        this.environmentSurfaces.shoulders.push(shoulder);
+    if (!world.getObjectByName('KANO_ROADSIDE_SHOULDER_LEFT')) {
+      const shoulderTexture = this.prepareSurfaceTexture('ground', 3, 53);
+      if (shoulderTexture) {
+        const material = new THREE.MeshStandardMaterial({ map: shoulderTexture, color: 0xffffff, roughness: 1, metalness: 0 });
+        this.environmentSurfaces.shoulderTexture = shoulderTexture;
+        for (const side of [-1, 1]) {
+          const shoulder = new THREE.Mesh(new THREE.PlaneGeometry(2.85, 250), material);
+          shoulder.name = side < 0 ? 'KANO_ROADSIDE_SHOULDER_LEFT' : 'KANO_ROADSIDE_SHOULDER_RIGHT';
+          shoulder.rotation.x = -Math.PI / 2;
+          shoulder.position.set(side * 7.83, -0.023, -92);
+          shoulder.frustumCulled = false;
+          shoulder.renderOrder = -1;
+          shoulder.userData.kanoWorldLifeOwned = true;
+          world.add(shoulder);
+          this.environmentSurfaces.shoulders.push(shoulder);
+        }
       }
     }
   }
 
-  adoptAsyncRoadTextureIfNeeded() {
-    const roadMap = this.environmentSurfaces.road?.material?.map;
-    if (roadMap && roadMap !== this.environmentSurfaces.roadTexture) {
-      // Renderer3D's optional-texture callback may install the generated
-      // fallback after construction. Keep scrolling the map actually in use.
-      this.environmentSurfaces.roadTexture?.dispose?.();
-      this.environmentSurfaces.roadTexture = this.prepareSurfaceTexture(roadMap, 3, 64);
+  makeSkyTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return makeFallbackTexture('asphalt')?.clone?.() || null;
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, '#82b9d7');
+    gradient.addColorStop(0.48, '#c6e1e9');
+    gradient.addColorStop(0.76, '#e6dfcf');
+    gradient.addColorStop(1, '#ceb98f');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (const cloud of [
+      { x: 150, y: 132, w: 190, h: 35 },
+      { x: 430, y: 182, w: 235, h: 39 },
+      { x: 725, y: 112, w: 170, h: 32 },
+      { x: 915, y: 215, w: 142, h: 27 },
+      { x: 58, y: 232, w: 126, h: 30 },
+    ]) {
+      ctx.save();
+      ctx.globalAlpha = 0.14;
+      const cloudGradient = ctx.createRadialGradient(cloud.x, cloud.y, 4, cloud.x, cloud.y, cloud.w * 0.58);
+      cloudGradient.addColorStop(0, '#73818a');
+      cloudGradient.addColorStop(0.42, '#c7cdd0');
+      cloudGradient.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = cloudGradient;
+      ctx.beginPath();
+      ctx.ellipse(cloud.x, cloud.y, cloud.w * 0.55, cloud.h, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
-  }
-
-  updateSurfaceScroll(scroll) {
-    if (!Number.isFinite(scroll) || Math.abs(scroll) < 1e-8) return;
-    this.scrollDistance += scroll;
-    this.adoptAsyncRoadTextureIfNeeded();
-
-    const roadTexture = this.environmentSurfaces.roadTexture;
-    if (roadTexture) {
-      roadTexture.offset.y = mod(
-        this.scrollDistance / 250 * roadTexture.repeat.y,
-        1,
-      );
-    }
-
-    const groundTexture = this.environmentSurfaces.groundTexture;
-    if (groundTexture) {
-      groundTexture.offset.y = mod(
-        this.scrollDistance / 270 * groundTexture.repeat.y,
-        1,
-      );
-    }
-
-    const shoulderTexture = this.environmentSurfaces.shoulderTexture;
-    if (shoulderTexture) {
-      shoulderTexture.offset.y = mod(
-        this.scrollDistance / 250 * shoulderTexture.repeat.y,
-        1,
-      );
-    }
-  }
-
-  // ----------------------------------------------------------
-  // Sky dome and sun
-  // ----------------------------------------------------------
-
-  createSkyDome() {
-    const geometry = new THREE.SphereGeometry(225, this.mobile ? 32 : 48, this.mobile ? 16 : 24);
-    const texture = makeCanvasTexture('sky');
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  makeSunTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const gradient = ctx.createRadialGradient(64, 64, 3, 64, 64, 64);
+    gradient.addColorStop(0, 'rgba(255,245,204,0.96)');
+    gradient.addColorStop(0.18, 'rgba(255,222,148,0.72)');
+    gradient.addColorStop(0.48, 'rgba(255,207,122,0.18)');
+    gradient.addColorStop(1, 'rgba(255,207,122,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 128, 128);
+    const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.needsUpdate = true;
+    return texture;
+  }
 
+  createSkyDome() {
+    const geometry = new THREE.SphereGeometry(225, this.mobile ? 24 : 40, this.mobile ? 12 : 20);
+    const texture = this.makeSkyTexture();
+    if (!texture) { geometry.dispose(); return; }
     const material = new THREE.MeshBasicMaterial({
       map: texture,
-      color: this.scene.background?.isColor ? this.scene.background : 0x8ccde5,
+      color: 0xffffff,
       side: THREE.BackSide,
       fog: false,
       depthTest: false,
       depthWrite: false,
       toneMapped: false,
     });
-
     this.skyDome = new THREE.Mesh(geometry, material);
-    this.skyDome.name = 'KANO_PROCEDURAL_CLOUD_SKY_DOME';
+    this.skyDome.name = 'KANO_WORLD_LIFE_SKY_DOME';
     this.skyDome.frustumCulled = false;
     this.skyDome.renderOrder = -1000;
-    this.skyDome.userData.kanoEnvironmentOwned = true;
-    this.scene.add(this.skyDome);
-    this.skyTexture = texture;
-
-    this.sunTexture = makeCanvasTexture('sun');
-    const sunMaterial = new THREE.SpriteMaterial({
-      map: this.sunTexture,
-      transparent: true,
-      opacity: 0.9,
-      depthTest: false,
-      depthWrite: false,
-      fog: false,
-      toneMapped: false,
-    });
-    this.sunSprite = new THREE.Sprite(sunMaterial);
-    this.sunSprite.name = 'KANO_SOFT_SAHEL_SUN_GLOW';
-    this.sunSprite.scale.set(19, 19, 1);
-    this.sunSprite.renderOrder = -999;
-    this.sunSprite.frustumCulled = false;
-    this.sunSprite.userData.kanoEnvironmentOwned = true;
-    this.scene.add(this.sunSprite);
+    this.skyDome.userData.kanoWorldLifeOwned = true;
+    this.renderer3d.scene.add(this.skyDome);
+    this.sunTexture = this.makeSunTexture();
+    if (this.sunTexture) {
+      this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this.sunTexture,
+        transparent: true,
+        opacity: 0.88,
+        depthTest: false,
+        depthWrite: false,
+        fog: false,
+        toneMapped: false,
+      }));
+      this.sunSprite.name = 'KANO_SAHEL_SUN_GLOW';
+      this.sunSprite.scale.set(18, 18, 1);
+      this.sunSprite.renderOrder = -999;
+      this.sunSprite.frustumCulled = false;
+      this.sunSprite.userData.kanoWorldLifeOwned = true;
+      this.renderer3d.scene.add(this.sunSprite);
+    }
+    this.skyDome.onBeforeRender = (_renderer, scene, camera) => this.syncSky(scene, camera);
   }
 
   syncSky(scene, camera) {
-    if (!this.skyDome || !this.sunSprite || !scene || !camera) return;
-
+    if (!this.skyDome || !camera) return;
     const roadScene = this.renderer3d?.lifeScene === 'road' && this.renderer3d?.world?.visible !== false;
     this.skyDome.visible = roadScene;
-    this.sunSprite.visible = roadScene && !this.night &&
-      !['harmattan', 'rainPuddles', 'muddy', 'badRoad'].includes(this.environment);
-
-    if (scene.background?.isColor) {
-      this.skyDome.material.color.copy(scene.background);
-    }
-
-    camera.getWorldDirection(this.skyForward);
-    this.skyOffset.copy(this.skyForward);
-    // Slightly above and left of the viewing direction keeps the sun in the sky,
-    // but outside the immediate road focal point.
-    this.skyOffset.x -= 0.22;
-    this.skyOffset.y += 0.34;
-    this.skyOffset.normalize();
-
+    if (scene?.background?.isColor && this.skyDome.material?.color) this.skyDome.material.color.copy(scene.background);
     this.skyDome.position.copy(camera.position);
-    this.sunSprite.position.copy(camera.position).addScaledVector(this.skyOffset, 158);
-    this.skyTexture.offset.x = mod(this.elapsed * 0.0008, 1);
+    if (!this.sunSprite) return;
+    const time = this.settings.timeOfDay === 'auto'
+      ? this.inferDayPart(this.game?.s?.gameClockMinutes, this.game?.s?.night)
+      : this.settings.timeOfDay;
+    const env = String(this.game?.s?.environment || 'clear');
+    const sunAllowed = roadScene && time !== 'night' && this.settings.season !== 'harmattan' && this.settings.season !== 'rainy' && !['harmattan', 'rainPuddles', 'muddy', 'badRoad'].includes(env);
+    this.sunSprite.visible = sunAllowed;
+    if (sunAllowed) {
+      const direction = new THREE.Vector3(-0.28, time === 'morning' ? 0.30 : time === 'evening' ? 0.19 : 0.42, -1)
+        .normalize()
+        .applyQuaternion(camera.quaternion)
+        .multiplyScalar(140);
+      this.sunSprite.position.copy(camera.position).add(direction);
+      if (time === 'evening') this.sunSprite.material.opacity = 0.64;
+      else this.sunSprite.material.opacity = 0.88;
+    }
   }
 
-  // ----------------------------------------------------------
-  // Rain and harmattan particle systems
-  // ----------------------------------------------------------
+  updateSurfaceScroll(signedSpeed, delta) {
+    const speed = Number(signedSpeed) || 0;
+    this.scrollDistance += speed * delta * 0.28;
+    for (const [texture, length] of [
+      [this.environmentSurfaces?.roadTexture, 250],
+      [this.environmentSurfaces?.groundTexture, 270],
+      [this.environmentSurfaces?.shoulderTexture, 250],
+    ]) {
+      if (!texture) continue;
+      texture.offset.y = ((this.scrollDistance / length * texture.repeat.y) % 1 + 1) % 1;
+    }
+  }
 
-  createRain() {
-    const count = this.mobile ? 86 : 190;
-    this.rainPositions = new Float32Array(count * 2 * 3);
+  createWeatherParticles() {
+    const camera = this.renderer3d?.camera;
+    if (!camera) return;
+    const rainCount = this.mobile ? 82 : 150;
+    const dustCount = this.mobile ? 100 : 190;
+
+    this.rainParticles = Array.from({ length: rainCount }, () => ({
+      x: rand(-14, 14), y: rand(-7, 10), z: rand(-25, -5), speed: rand(7, 14), drift: rand(-0.7, 0.7), length: rand(0.16, 0.36),
+    }));
+    this.rainPositions = new Float32Array(rainCount * 2 * 3);
     this.rainGeometry = new THREE.BufferGeometry();
-    this.rainGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(this.rainPositions, 3).setUsage(THREE.DynamicDrawUsage),
-    );
-    this.rainMaterial = new THREE.LineBasicMaterial({
-      color: 0xc1d9e4,
-      transparent: true,
-      opacity: this.mobile ? 0.32 : 0.38,
-      depthTest: false,
-      depthWrite: false,
-      fog: false,
-    });
+    this.rainGeometry.setAttribute('position', new THREE.BufferAttribute(this.rainPositions, 3));
+    this.rainMaterial = new THREE.LineBasicMaterial({ color: 0xd9edf9, transparent: true, opacity: 0.45, depthTest: false, depthWrite: false });
     this.rain = new THREE.LineSegments(this.rainGeometry, this.rainMaterial);
-    this.rain.name = 'KANO_ATMOSPHERE_RAIN';
+    this.rain.name = 'KANO_LIGHTWEIGHT_RAIN';
     this.rain.frustumCulled = false;
-    this.rain.renderOrder = 990;
+    this.rain.renderOrder = 988;
     this.rain.visible = false;
-    this.scene.add(this.rain);
-    for (let index = 0; index < count; index += 1) {
-      this.rainParticles.push({
-        x: randomBetween(-18, 18),
-        y: randomBetween(-7, 18),
-        z: randomBetween(-48, -7),
-        speed: randomBetween(9, 17),
-        drift: randomBetween(-0.7, 0.7),
-        length: randomBetween(0.25, 0.68),
-      });
-    }
-  }
+    camera.add(this.rain);
 
-  createDust() {
-    const count = this.mobile ? 64 : 142;
-    this.dustPositions = new Float32Array(count * 3);
+    this.dustParticles = Array.from({ length: dustCount }, () => ({
+      x: rand(-16, 16), y: rand(-7, 12), z: rand(-24, -5), drift: rand(-0.6, 0.6), rise: rand(-0.06, 0.08), phase: rand(0, Math.PI * 2),
+    }));
+    this.dustPositions = new Float32Array(dustCount * 3);
     this.dustGeometry = new THREE.BufferGeometry();
-    this.dustGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(this.dustPositions, 3).setUsage(THREE.DynamicDrawUsage),
-    );
-    this.dustMaterial = new THREE.PointsMaterial({
-      color: 0xc5b38e,
-      size: this.mobile ? 0.19 : 0.24,
-      transparent: true,
-      opacity: this.mobile ? 0.12 : 0.16,
-      depthTest: false,
-      depthWrite: false,
-      sizeAttenuation: true,
-      fog: false,
-    });
+    this.dustGeometry.setAttribute('position', new THREE.BufferAttribute(this.dustPositions, 3));
+    this.dustMaterial = new THREE.PointsMaterial({ color: 0xd8c6a1, size: this.mobile ? 0.04 : 0.055, transparent: true, opacity: 0.32, depthTest: false, depthWrite: false, sizeAttenuation: true });
     this.dust = new THREE.Points(this.dustGeometry, this.dustMaterial);
-    this.dust.name = 'KANO_ATMOSPHERE_HARMATTAN_DUST';
+    this.dust.name = 'KANO_LIGHTWEIGHT_HARMATTAN_DUST';
     this.dust.frustumCulled = false;
-    this.dust.renderOrder = 989;
+    this.dust.renderOrder = 987;
     this.dust.visible = false;
-    this.scene.add(this.dust);
-    for (let index = 0; index < count; index += 1) {
-      this.dustParticles.push({
-        x: randomBetween(-20, 20),
-        y: randomBetween(-6, 15),
-        z: randomBetween(-55, -8),
-        drift: randomBetween(-0.42, 0.42),
-        rise: randomBetween(-0.05, 0.12),
-        phase: randomBetween(0, Math.PI * 2),
+    camera.add(this.dust);
+  }
+
+  createInstancedInsects() {
+    const camera = this.renderer3d?.camera;
+    if (!camera) return;
+    const mosquitoCount = this.mobile ? 5 : 10;
+    const flyCount = this.mobile ? 4 : 8;
+    this.insects = [];
+    for (let i = 0; i < mosquitoCount; i += 1) this.insects.push(this.makeInsect('mosquito'));
+    for (let i = 0; i < flyCount; i += 1) this.insects.push(this.makeInsect('fly'));
+
+    const bodyGeometry = new THREE.SphereGeometry(1, 5, 4);
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: false, fog: false });
+    this.insectBodies = new THREE.InstancedMesh(bodyGeometry, bodyMaterial, this.insects.length);
+    this.insectBodies.name = 'KANO_INSTANCED_MOSQUITOES_AND_HOUSEFLIES';
+    this.insectBodies.frustumCulled = false;
+    this.insectBodies.renderOrder = 990;
+
+    const wingGeometry = new THREE.SphereGeometry(1, 5, 4);
+    const wingMaterial = new THREE.MeshBasicMaterial({ color: 0xe5e8dc, transparent: true, opacity: 0.48, depthTest: true, depthWrite: false, fog: false });
+    this.insectWings = new THREE.InstancedMesh(wingGeometry, wingMaterial, this.insects.length * 2);
+    this.insectWings.name = 'KANO_INSTANCED_INSECT_WINGS';
+    this.insectWings.frustumCulled = false;
+    this.insectWings.renderOrder = 991;
+
+    this.dummy = new THREE.Object3D();
+    const bodyColors = { mosquito: new THREE.Color(0x22272b), fly: new THREE.Color(0x57402b) };
+    this.insects.forEach((insect, index) => {
+      this.insectBodies.setColorAt(index, bodyColors[insect.kind]);
+      insect.index = index;
+    });
+    if (this.insectBodies.instanceColor) this.insectBodies.instanceColor.needsUpdate = true;
+    camera.add(this.insectBodies, this.insectWings);
+    this.updateInsectMatrices(0);
+  }
+
+  makeInsect(kind) {
+    const mosquito = kind === 'mosquito';
+    return {
+      kind,
+      x: rand(-4.6, 4.6),
+      y: rand(-1.6, 1.7),
+      z: rand(-11, -3.4),
+      phase: rand(0, Math.PI * 2),
+      speed: rand(0.45, 1.2) * (mosquito ? 1.2 : 0.85),
+      radius: rand(0.45, 1.3),
+      scale: mosquito ? [0.025, 0.017, 0.070] : [0.045, 0.032, 0.052],
+    };
+  }
+
+  updateInsectMatrices(dt) {
+    if (!this.insectBodies || !this.insectWings || !this.dummy) return;
+    const t = this.elapsed;
+    for (let index = 0; index < this.insects.length; index += 1) {
+      const bug = this.insects[index];
+      bug.phase += dt * bug.speed;
+      const x = bug.x + Math.sin(t * (bug.kind === 'fly' ? 1.7 : 1.1) + bug.phase) * bug.radius * 0.55;
+      const y = bug.y + Math.sin(t * 2.3 + bug.phase) * 0.24;
+      const z = bug.z + Math.cos(t * 0.8 + bug.phase) * 0.35;
+      this.dummy.position.set(x, y, z);
+      this.dummy.rotation.set(Math.sin(bug.phase) * 0.25, bug.phase * 0.5, Math.cos(bug.phase) * 0.2);
+      this.dummy.scale.set(...bug.scale);
+      this.dummy.updateMatrix();
+      this.insectBodies.setMatrixAt(index, this.dummy.matrix);
+      const wingScale = bug.kind === 'fly' ? [0.032, 0.006, 0.022] : [0.022, 0.004, 0.013];
+      for (let side = -1; side <= 1; side += 2) {
+        const wingIndex = index * 2 + (side > 0 ? 1 : 0);
+        this.dummy.position.set(x + side * (bug.kind === 'fly' ? 0.031 : 0.018), y + 0.010, z);
+        this.dummy.rotation.set(0.1, bug.phase * 0.3, side * (0.16 + Math.sin(t * 32 + bug.phase) * 0.13));
+        this.dummy.scale.set(...wingScale);
+        this.dummy.updateMatrix();
+        this.insectWings.setMatrixAt(wingIndex, this.dummy.matrix);
+      }
+    }
+    this.insectBodies.instanceMatrix.needsUpdate = true;
+    this.insectWings.instanceMatrix.needsUpdate = true;
+  }
+
+  createWorldLifePanel() {
+    if (typeof document === 'undefined' || !this.container) return;
+    const oldPanel = document.getElementById('kano-world-life-panel');
+    if (oldPanel) oldPanel.remove();
+    this.panel = document.createElement('details');
+    this.panel.id = 'kano-world-life-panel';
+    this.panel.className = 'kano-world-life-panel';
+    this.panel.innerHTML = `
+      <summary>WORLD &amp; LIFE <span class="kano-world-life-dot">●</span></summary>
+      <div class="kano-world-life-body">
+        <label>Time of day
+          <select data-world-time>
+            <option value="auto">Auto day cycle</option>
+            <option value="morning">Morning</option>
+            <option value="afternoon">Afternoon</option>
+            <option value="evening">Evening / sunset</option>
+            <option value="night">Night</option>
+          </select>
+        </label>
+        <label>Season / weather feel
+          <select data-world-season>
+            <option value="hotDry">Hot dry season</option>
+            <option value="harmattan">Harmattan / dusty-cool</option>
+            <option value="rainy">Rainy / humid season</option>
+            <option value="cool">Cool season</option>
+          </select>
+        </label>
+        <div class="kano-world-temp" data-world-temp>In-game climate</div>
+        <label>Driver's home
+          <select data-world-home>
+            <option value="family">Family compound · no rent</option>
+            <option value="rented">Rented room · weekly rent</option>
+          </select>
+        </label>
+        <div class="kano-world-rent" data-world-rent></div>
+        <div class="kano-world-actions">
+          <button type="button" data-world-visit>Visit home</button>
+          <button type="button" data-world-rent-pay>Pay one week's rent</button>
+          <button type="button" data-world-road>Return to road</button>
+          <button type="button" data-world-routine>Replay morning routine</button>
+        </div>
+        <small class="kano-world-save">Saved in this browser · local game save</small>
+      </div>`;
+    this.injectPanelStyles();
+    this.container.appendChild(this.panel);
+
+    this.panel.querySelector('[data-world-time]').value = this.settings.timeOfDay;
+    this.panel.querySelector('[data-world-season]').value = this.settings.season;
+    this.panel.querySelector('[data-world-home]').value = this.settings.home;
+    this.panel.querySelector('[data-world-time]').addEventListener('change', (event) => {
+      this.settings.timeOfDay = validTime.has(event.target.value) ? event.target.value : 'auto';
+      persistLifestyle(this.settings);
+      this.installClockOverride(this.game?.s);
+      this.applyProfile(this.game?.s || {});
+      this.refreshPanel();
+    });
+    this.panel.querySelector('[data-world-season]').addEventListener('change', (event) => {
+      this.settings.season = validSeason.has(event.target.value) ? event.target.value : 'hotDry';
+      persistLifestyle(this.settings);
+      this.lastProfileKey = '';
+      this.applyProfile(this.game?.s || {});
+      this.refreshPanel();
+    });
+    this.panel.querySelector('[data-world-home]').addEventListener('change', (event) => {
+      this.settings.home = validHome.has(event.target.value) ? event.target.value : 'family';
+      persistLifestyle(this.settings);
+      this.refreshPanel();
+      this.toast(this.settings.home === 'family' ? 'Residence saved: family compound. No weekly rent.' : `Residence saved: rented room. One week costs ₦${RENT_PER_WEEK.toLocaleString()} in-game.`);
+    });
+    this.panel.querySelector('[data-world-visit]').addEventListener('click', () => this.visitHome());
+    this.panel.querySelector('[data-world-rent-pay]').addEventListener('click', () => this.payRent());
+    this.panel.querySelector('[data-world-road]').addEventListener('click', () => this.goToRoad());
+    this.panel.querySelector('[data-world-routine]').addEventListener('click', () => this.playMorningRoutine());
+    this.refreshPanel();
+  }
+
+  injectPanelStyles() {
+    if (document.getElementById('kano-world-life-style')) return;
+    const style = document.createElement('style');
+    style.id = 'kano-world-life-style';
+    style.textContent = `
+      #kano-world-life-panel{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);right:8px;z-index:1200;width:min(268px,calc(100vw - 16px));font:600 12px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#f8fafc;background:rgba(9,22,37,.91);border:1px solid rgba(130,186,210,.42);border-radius:12px;box-shadow:0 8px 25px rgba(0,0,0,.22);backdrop-filter:blur(9px);pointer-events:auto;overflow:hidden}
+      #kano-world-life-panel summary{cursor:pointer;list-style:none;padding:10px 12px;letter-spacing:.08em;font-size:11px;user-select:none}
+      #kano-world-life-panel summary::-webkit-details-marker{display:none}
+      #kano-world-life-panel .kano-world-life-dot{color:#59d8ae;float:right;font-size:9px;margin-top:3px}
+      #kano-world-life-panel .kano-world-life-body{display:grid;gap:8px;padding:0 10px 10px;max-height:min(65vh,500px);overflow:auto}
+      #kano-world-life-panel label{display:grid;gap:4px;color:#cfdeeb;font-weight:600}
+      #kano-world-life-panel select{width:100%;min-height:34px;border-radius:7px;border:1px solid #446176;background:#142b40;color:#fff;padding:5px 8px;font:600 12px system-ui;outline-offset:2px}
+      #kano-world-life-panel .kano-world-temp,#kano-world-life-panel .kano-world-rent{color:#f6d49d;background:rgba(228,167,77,.10);border:1px solid rgba(228,167,77,.22);border-radius:7px;padding:7px 8px;font-size:11px}
+      #kano-world-life-panel .kano-world-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+      #kano-world-life-panel button{min-height:34px;border:1px solid #2f6c81;border-radius:7px;background:#0c5368;color:#fff;padding:6px 7px;font:700 11px/1.2 system-ui;cursor:pointer}
+      #kano-world-life-panel button:hover{background:#11708a}
+      #kano-world-life-panel [data-world-rent-pay]{background:#7a4a12;border-color:#b98233}
+      #kano-world-life-panel .kano-world-save{color:#9ab1c2;font-size:10px;font-weight:500}
+      @media(max-width:520px){#kano-world-life-panel{width:min(228px,calc(100vw - 16px));}#kano-world-life-panel summary{padding:8px 10px}#kano-world-life-panel .kano-world-life-body{gap:6px;padding:0 8px 8px}#kano-world-life-panel select{min-height:32px}}
+      .kano-life-scene-fade{position:fixed;inset:0;z-index:1150;pointer-events:none;background:#101827;opacity:0;animation:kanoLifeSceneFade .38s ease-out both}
+      @keyframes kanoLifeSceneFade{0%{opacity:0}40%{opacity:.32}100%{opacity:0}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  refreshPanel() {
+    if (!this.panel) return;
+    const timeNames = { auto: 'Auto day cycle', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening / sunset', night: 'Night' };
+    const season = SEASON_PROFILES[this.settings.season] || SEASON_PROFILES.hotDry;
+    const activePart = this.settings.timeOfDay === 'auto' ? this.inferDayPart(this.game?.s?.gameClockMinutes, this.game?.s?.night) : this.settings.timeOfDay;
+    const temperature = TIME_PROFILES[activePart]?.temperature?.[this.settings.season] || 'variable';
+    const temp = this.panel.querySelector('[data-world-temp]');
+    if (temp) temp.textContent = `${season.label} · ${timeNames[this.settings.timeOfDay] || 'Auto'} · simulated feel ${temperature}`;
+    const rent = this.panel.querySelector('[data-world-rent]');
+    const pay = this.panel.querySelector('[data-world-rent-pay]');
+    if (rent) rent.textContent = this.settings.home === 'family'
+      ? 'Family compound: no rent. Return home to the household scene.'
+      : `Rented room: ₦${RENT_PER_WEEK.toLocaleString()} per in-game week · ${this.settings.rentWeeksPaid} week(s) paid.`;
+    if (pay) pay.hidden = this.settings.home !== 'rented';
+  }
+
+  toast(message) {
+    try {
+      if (typeof this.game?.ui?.toast === 'function') this.game.ui.toast(message);
+      else if (typeof this.game?.ui?.showMissionToast === 'function') this.game.ui.showMissionToast(message);
+    } catch { /* UI notification must never interrupt simulation. */ }
+  }
+
+  inferDayPart(clockMinutes, nightFlag) {
+    const minutes = Number.isFinite(Number(clockMinutes)) ? Number(clockMinutes) : 8 * 60;
+    const hour = ((Math.floor(minutes / 60) % 24) + 24) % 24;
+    if (hour >= 5 && hour < 11) return 'morning';
+    if (hour >= 11 && hour < 16) return 'afternoon';
+    if (hour >= 16 && hour < 19) return 'evening';
+    return nightFlag ? 'night' : hour >= 19 || hour < 5 ? 'night' : 'morning';
+  }
+
+  installClockOverride(state) {
+    if (!state || typeof state !== 'object') return;
+    let bridge = state.__kanoClockBridge;
+    if (bridge && typeof bridge === 'object') {
+      bridge.owner = this;
+      return;
+    }
+    bridge = {
+      owner: this,
+      autoNight: Boolean(state.night),
+      autoMinutes: Number.isFinite(state.gameClockMinutes) ? state.gameClockMinutes : 408,
+    };
+    try {
+      Object.defineProperty(state, '__kanoClockBridge', {
+        value: bridge, enumerable: false, configurable: true,
       });
+      Object.defineProperty(state, 'night', {
+        enumerable: true, configurable: true,
+        get: () => {
+          const owner = bridge.owner;
+          const choice = owner?.settings?.timeOfDay || 'auto';
+          return choice === 'auto' ? bridge.autoNight : choice === 'night';
+        },
+        set: (value) => { bridge.autoNight = Boolean(value); },
+      });
+      Object.defineProperty(state, 'gameClockMinutes', {
+        enumerable: true, configurable: true,
+        get: () => {
+          const owner = bridge.owner;
+          const choice = owner?.settings?.timeOfDay || 'auto';
+          if (choice === 'auto') return bridge.autoMinutes;
+          const fixed = { morning: 8 * 60, afternoon: 14 * 60, evening: 18 * 60, night: 22 * 60 }[choice];
+          return Number.isFinite(fixed) ? fixed : bridge.autoMinutes;
+        },
+        set: (value) => { if (Number.isFinite(Number(value))) bridge.autoMinutes = Number(value); },
+      });
+    } catch (error) {
+      console.warn('[Kano Life] Could not install manual time-of-day state.', error);
     }
   }
 
-  // ----------------------------------------------------------
-  // Frame update
-  // ----------------------------------------------------------
-
-  update(dt, state = {}, gameState = this.game?.state) {
-    if (this.disposed) return;
-    const delta = clamp(Number(dt) || 0, 0, 0.05);
-    this.elapsed += delta;
-    this.environment = String(state.environment || 'clear');
-    this.night = Boolean(state.night);
-    this.active = Boolean(
-      this.enabled &&
-      gameState === 'PLAY' &&
-      !state.event &&
-      this.renderer3d?.lifeScene === 'road' &&
-      this.renderer3d?.world?.visible !== false,
-    );
-
-    const roadActive = Boolean(
-      gameState === 'PLAY' &&
-      !state.event &&
-      this.renderer3d?.lifeScene === 'road' &&
-      this.renderer3d?.world?.visible !== false,
-    );
-
-    if (roadActive) {
-      const signedSpeed = Number.isFinite(state.signedSpeed)
-        ? state.signedSpeed
-        : state.reverse
-          ? -Math.abs(Number(state.speed) || 0)
-          : Math.abs(Number(state.speed) || 0);
-      this.updateSurfaceScroll(signedSpeed * delta * 0.28);
-    }
-
-    const raining = this.active && this.environment === 'rainPuddles';
-    const dusty = this.active && (
-      this.environment === 'harmattan' ||
-      this.environment === 'badRoad' ||
-      this.environment === 'muddy'
-    );
-
-    this.rain.visible = raining;
-    this.dust.visible = dusty;
-
-    if (raining) {
-      for (const particle of this.rainParticles) {
-        particle.y -= particle.speed * delta;
-        particle.x += (this.wind + particle.drift) * delta;
-        if (particle.y < -9) {
-          particle.y = randomBetween(9, 19);
-          particle.x = randomBetween(-18, 18);
-          particle.z = randomBetween(-48, -7);
-        }
-        if (particle.x > 20) particle.x = -20;
-      }
-    }
-
-    if (dusty) {
-      for (const particle of this.dustParticles) {
-        particle.x += (particle.drift + this.wind * 0.16) * delta;
-        particle.y += particle.rise * delta + Math.sin(this.elapsed * 0.7 + particle.phase) * 0.004;
-        particle.phase += delta * 0.25;
-        if (particle.x > 22) particle.x = -22;
-        if (particle.x < -22) particle.x = 22;
-        if (particle.y > 16) particle.y = -7;
-        if (particle.y < -8) particle.y = 15;
-      }
-    }
-
-    this.syncSky(this.scene, this.renderer3d?.camera);
+  visitHome() {
+    const scene = this.settings.home === 'family' ? 'household' : 'bedroom';
+    this.requestScene(scene);
+    this.toast(this.settings.home === 'family' ? 'Family compound · household routine.' : 'Rented room · your saved home scene.');
   }
 
-  syncParticleWorldPositions(camera) {
-    if (!camera?.isCamera || (!this.rain.visible && !this.dust.visible)) return;
-    camera.updateMatrixWorld(true);
+  goToRoad() {
+    this.stopMorningRoutine();
+    this.requestScene('road');
+  }
 
-    if (this.rain.visible) {
+  payRent() {
+    if (this.settings.home !== 'rented') return;
+    if ((Number(save.money) || 0) < RENT_PER_WEEK) {
+      this.toast(`Not enough banked money. One in-game week of rent is ₦${RENT_PER_WEEK.toLocaleString()}.`);
+      return;
+    }
+    save.money = Math.max(0, Math.floor(Number(save.money) || 0) - RENT_PER_WEEK);
+    this.settings.rentWeeksPaid += 1;
+    this.settings.rentLedger.push({ amount: RENT_PER_WEEK, week: this.settings.rentWeeksPaid, date: new Date().toISOString() });
+    this.settings.rentLedger = this.settings.rentLedger.slice(-20);
+    persistLifestyle(this.settings);
+    this.refreshPanel();
+    this.toast(`Rent paid: ₦${RENT_PER_WEEK.toLocaleString()} · week ${this.settings.rentWeeksPaid}.`);
+  }
+
+  stopMorningRoutine() {
+    for (const timer of this.routineTimers) clearTimeout(timer);
+    this.routineTimers.length = 0;
+    this.routineRunning = false;
+  }
+
+  playMorningRoutine() {
+    if (!this.renderer3d || this.disposed) return;
+    this.stopMorningRoutine();
+    this.settings.timeOfDay = 'morning';
+    if (this.panel?.querySelector('[data-world-time]')) this.panel.querySelector('[data-world-time]').value = 'morning';
+    persistLifestyle(this.settings);
+    this.applyProfile(this.game?.s || {});
+    this.refreshPanel();
+    const beats = [
+      { scene: 'bedroom', message: 'Morning · wake up and prepare for the day.' },
+      { scene: 'household', message: 'Home · family begins the morning routine.' },
+      { scene: 'breakfast', message: 'Roadside akara and pap breakfast.' },
+      { scene: 'garage', message: 'Retrieve the secured keke from the parking garage.' },
+      { scene: 'road', message: 'Kano road · your driving day begins.' },
+    ];
+    let index = 0;
+    this.routineRunning = true;
+    const showBeat = () => {
+      if (this.disposed || !this.routineRunning) return;
+      const beat = beats[index];
+      if (!beat) {
+        this.routineRunning = false;
+        this.toast('Morning routine complete. Safe driving.');
+        return;
+      }
+      this.requestScene(beat.scene, true);
+      this.toast(beat.message);
+      index += 1;
+      const timer = setTimeout(showBeat, beat.scene === 'road' ? 1800 : 2700);
+      this.routineTimers.push(timer);
+    };
+    showBeat();
+  }
+
+  requestScene(scene, cinematic = false) {
+    if (!SCENES.has(scene)) return false;
+    this.pendingScene = scene;
+    pendingLifeScene = scene;
+    // Renderer3D's setLifeScene hook fades all successful scene transitions.
+    // Keeping the transition effect in one place avoids doubled overlays.
+    return this.applyPendingScene();
+  }
+
+  showSceneFade() {
+    if (!document?.body) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'kano-life-scene-fade';
+    document.body.appendChild(overlay);
+    setTimeout(() => overlay.remove(), 420);
+  }
+
+  applyPendingScene() {
+    const renderer = this.renderer3d;
+    const requested = this.pendingScene || pendingLifeScene;
+    if (!renderer || !SCENES.has(requested)) return false;
+    if (!renderer.ready || !renderer.player || !renderer.garageGroup || typeof renderer.setLifeScene !== 'function') return false;
+    try {
+      renderer.setLifeScene(requested);
+      this.pendingScene = null;
+      if (pendingLifeScene === requested) pendingLifeScene = null;
+      return true;
+    } catch (error) {
+      console.warn('[Kano Life] life-scene request queued after renderer error.', error);
+      return false;
+    }
+  }
+
+  onSceneActivated(scene) {
+    if (!SCENES.has(scene)) return;
+    this.lastLifeScene = scene;
+    this.lastProfileKey = '';
+    this.showSceneFade();
+  }
+
+  profileFor(state = {}) {
+    const time = this.settings.timeOfDay === 'auto'
+      ? this.inferDayPart(state.gameClockMinutes, state.night)
+      : this.settings.timeOfDay;
+    const season = SEASON_PROFILES[this.settings.season] || SEASON_PROFILES.hotDry;
+    const timeProfile = TIME_PROFILES[time] || TIME_PROFILES.morning;
+    const env = String(state.environment || 'clear');
+    const scene = this.renderer3d?.lifeScene || 'road';
+    const profile = {
+      time,
+      season: this.settings.season,
+      env,
+      scene,
+      background: timeProfile.background,
+      fog: timeProfile.fog,
+      fogNear: timeProfile.fogNear,
+      fogFar: timeProfile.fogFar,
+      hemi: timeProfile.hemi * season.hemi,
+      directional: timeProfile.directional * season.directional,
+      light: timeProfile.light,
+    };
+    const bg = new THREE.Color(profile.background).lerp(new THREE.Color(season.backgroundBlend), this.settings.season === 'hotDry' ? 0.055 : 0.11);
+    const fog = new THREE.Color(profile.fog).lerp(new THREE.Color(season.fogBlend), this.settings.season === 'hotDry' ? 0.10 : 0.18);
+    if (this.settings.season === 'harmattan' || env === 'harmattan' || env === 'badRoad' || env === 'muddy') {
+      fog.lerp(new THREE.Color(0xc5b99e), 0.34);
+      profile.fogNear = Math.min(profile.fogNear, 20);
+      profile.fogFar = Math.min(profile.fogFar, 125);
+    }
+    if (this.settings.season === 'rainy' || env === 'rainPuddles') {
+      fog.lerp(new THREE.Color(0x9db5c0), 0.20);
+      profile.fogNear = Math.min(profile.fogNear, 30);
+      profile.fogFar = Math.min(profile.fogFar, 155);
+    }
+    if (scene !== 'road') {
+      bg.lerp(new THREE.Color(0xdbc6a5), 0.035);
+      profile.hemi *= 1.02;
+    }
+    profile.backgroundColor = bg;
+    profile.fogColor = fog;
+    profile.temperature = timeProfile.temperature[this.settings.season] || 'variable';
+    profile.key = `${time}|${this.settings.season}|${env}|${scene}`;
+    return profile;
+  }
+
+  applyProfile(state = {}) {
+    if (!this.renderer3d?.scene) return;
+    const scene = this.renderer3d.scene;
+    const profile = this.profileFor(state);
+    if (profile.key === this.lastProfileKey) return;
+    this.lastProfileKey = profile.key;
+
+    if (scene.background?.isColor) scene.background.copy(profile.backgroundColor);
+    if (scene.fog?.color?.isColor) {
+      scene.fog.color.copy(profile.fogColor);
+      scene.fog.near = profile.fogNear;
+      scene.fog.far = profile.fogFar;
+    }
+    const lightTint = new THREE.Color(profile.light);
+    for (const item of this.original?.lights || []) {
+      const light = item.light;
+      if (!light || light.parent === null) continue;
+      if (light.isHemisphereLight) {
+        light.intensity = item.intensity * profile.hemi;
+        if (item.color && light.color) light.color.copy(item.color).lerp(lightTint, profile.time === 'evening' ? 0.18 : profile.time === 'night' ? 0.10 : 0.035);
+        if (item.groundColor && light.groundColor) light.groundColor.copy(item.groundColor).lerp(new THREE.Color(profile.background), 0.04);
+      } else if (light.isDirectionalLight) {
+        light.intensity = item.intensity * profile.directional;
+        if (item.color && light.color) light.color.copy(item.color).lerp(lightTint, profile.time === 'evening' ? 0.24 : profile.time === 'night' ? 0.18 : 0.055);
+      } else if (light.isPointLight && profile.time === 'night') {
+        light.intensity = item.intensity * 1.05;
+      } else {
+        light.intensity = item.intensity;
+      }
+    }
+
+    // Small exposure lift only. The existing GLB material stack remains intact.
+    const webgl = this.renderer3d.renderer;
+    if (webgl && 'toneMappingExposure' in webgl) {
+      webgl.toneMappingExposure = 1.04;
+    }
+    if (this.rain) this.rainMaterial.opacity = this.settings.season === 'rainy' || profile.env === 'rainPuddles' ? 0.50 : 0.40;
+    if (this.dustMaterial) this.dustMaterial.opacity = this.settings.season === 'harmattan' || ['harmattan', 'badRoad', 'muddy'].includes(profile.env) ? 0.36 : 0.27;
+    this.refreshPanel();
+  }
+
+  updateWeatherParticles(delta, state, gameState) {
+    const sceneName = this.renderer3d?.lifeScene || 'road';
+    const activeScene = sceneName === 'road' || ['household', 'breakfast', 'bedroom', 'street'].includes(sceneName);
+    const inGame = gameState === 'PLAY' && !state.event;
+    const env = String(state.environment || 'clear');
+    const rainy = this.enabled && activeScene && (this.settings.season === 'rainy' || env === 'rainPuddles') && (sceneName === 'road' || inGame);
+    const dusty = this.enabled && activeScene && (this.settings.season === 'harmattan' || ['harmattan', 'badRoad', 'muddy'].includes(env)) && (sceneName === 'road' || inGame);
+    if (this.rain) this.rain.visible = rainy;
+    if (this.dust) this.dust.visible = dusty;
+    if (!rainy && !dusty) return;
+    this.particleAccumulator += delta;
+    if (this.particleAccumulator < (this.mobile ? 0.075 : 0.045)) return;
+    const dt = Math.min(this.particleAccumulator, 0.12);
+    this.particleAccumulator = 0;
+
+    if (rainy && this.rain) {
       let offset = 0;
-      for (const particle of this.rainParticles) {
-        this.scratch.set(particle.x, particle.y, particle.z).applyMatrix4(camera.matrixWorld);
-        this.rainPositions[offset++] = this.scratch.x;
-        this.rainPositions[offset++] = this.scratch.y;
-        this.rainPositions[offset++] = this.scratch.z;
-        this.scratchTail.set(
-          particle.x - 0.055,
-          particle.y + particle.length,
-          particle.z,
-        ).applyMatrix4(camera.matrixWorld);
-        this.rainPositions[offset++] = this.scratchTail.x;
-        this.rainPositions[offset++] = this.scratchTail.y;
-        this.rainPositions[offset++] = this.scratchTail.z;
+      for (const item of this.rainParticles) {
+        item.y -= item.speed * dt;
+        item.x += item.drift * dt;
+        if (item.y < -8) { item.y = rand(8, 14); item.x = rand(-15, 15); item.z = rand(-25, -5); }
+        if (item.x > 16) item.x = -16;
+        if (item.x < -16) item.x = 16;
+        const tailY = item.y + item.length;
+        this.rainPositions[offset++] = item.x;
+        this.rainPositions[offset++] = item.y;
+        this.rainPositions[offset++] = item.z;
+        this.rainPositions[offset++] = item.x - 0.055;
+        this.rainPositions[offset++] = tailY;
+        this.rainPositions[offset++] = item.z;
       }
       this.rainGeometry.attributes.position.needsUpdate = true;
       this.rainGeometry.computeBoundingSphere();
     }
-
-    if (this.dust.visible) {
+    if (dusty && this.dust) {
       let offset = 0;
-      for (const particle of this.dustParticles) {
-        this.scratch.set(particle.x, particle.y, particle.z).applyMatrix4(camera.matrixWorld);
-        this.dustPositions[offset++] = this.scratch.x;
-        this.dustPositions[offset++] = this.scratch.y;
-        this.dustPositions[offset++] = this.scratch.z;
+      for (const item of this.dustParticles) {
+        item.x += (item.drift + 0.12) * dt;
+        item.y += item.rise * dt + Math.sin(this.elapsed * 0.7 + item.phase) * 0.004;
+        item.phase += dt * 0.25;
+        if (item.x > 18) item.x = -18;
+        if (item.x < -18) item.x = 18;
+        if (item.y > 14) item.y = -7;
+        if (item.y < -8) item.y = 13;
+        this.dustPositions[offset++] = item.x;
+        this.dustPositions[offset++] = item.y;
+        this.dustPositions[offset++] = item.z;
       }
       this.dustGeometry.attributes.position.needsUpdate = true;
       this.dustGeometry.computeBoundingSphere();
     }
   }
 
-  atmosphereProfile() {
-    if (this.night) return ATMOSPHERE_PROFILES.night;
-    if (this.environment === 'harmattan') return ATMOSPHERE_PROFILES.harmattan;
-    if (this.environment === 'rainPuddles') return ATMOSPHERE_PROFILES.rain;
-    if (this.environment === 'muddy' || this.environment === 'badRoad') {
-      return ATMOSPHERE_PROFILES.dustyRoad;
+  update(dt, state = {}, gameState = this.game?.state) {
+    if (this.disposed) return;
+    const delta = clamp(Number(dt) || 0, 0, 0.05);
+    this.elapsed += delta;
+    this.installClockOverride(state);
+    if (this.pendingScene && this.renderer3d?.ready) this.applyPendingScene();
+    else if (pendingLifeScene && this.renderer3d?.ready) this.applyPendingScene();
+    this.applyProfile(state);
+    this.updateWeatherParticles(delta, state, gameState);
+    if (this.renderer3d?.lifeScene === 'road' && this.renderer3d?.world?.visible !== false) {
+      const signedSpeed = Number.isFinite(state.signedSpeed)
+        ? state.signedSpeed
+        : state.reverse ? -Math.abs(Number(state.speed) || 0) : Math.abs(Number(state.speed) || 0);
+      this.updateSurfaceScroll(signedSpeed, delta);
     }
-    return null;
-  }
+    this.syncSky(this.renderer3d?.scene, this.renderer3d?.camera);
 
-  applyAtmosphere(scene) {
-    const profile = this.atmosphereProfile();
-    if (!profile || !scene) return null;
-
-    const snapshot = this.snapshot;
-    snapshot.backgroundValid = Boolean(scene.background?.isColor);
-    if (snapshot.backgroundValid) snapshot.background.copy(scene.background);
-    snapshot.fogValid = Boolean(scene.fog?.color?.isColor);
-    if (snapshot.fogValid) {
-      snapshot.fogColor.copy(scene.fog.color);
-      snapshot.fogNear = scene.fog.near;
-      snapshot.fogFar = scene.fog.far;
-    }
-
-    snapshot.lights.length = 0;
-    if (scene.background?.isColor) scene.background.setHex(profile.background);
-    if (scene.fog?.color) {
-      scene.fog.color.setHex(profile.fog);
-      scene.fog.near = profile.fogNear;
-      scene.fog.far = profile.fogFar;
-    }
-
-    this.tintColor.setHex(profile.tint);
-    for (const entry of this.lights) {
-      const light = entry.light;
-      if (!light || light.parent === null) continue;
-      snapshot.lights.push(entry);
-      if (light.isHemisphereLight) {
-        light.intensity = entry.intensity * profile.hemiFactor;
-      } else if (light.isDirectionalLight) {
-        light.intensity = entry.intensity * profile.directionalFactor;
+    const scene = this.renderer3d?.lifeScene || 'road';
+    const environmentAllowsInsects = ['road', 'household', 'breakfast', 'bedroom', 'street'].includes(scene);
+    const bugsOn = this.enabled && this.settings.insects && environmentAllowsInsects;
+    const part = this.settings.timeOfDay === 'auto' ? this.inferDayPart(state.gameClockMinutes, state.night) : this.settings.timeOfDay;
+    const fliesOn = bugsOn && this.settings.season !== 'harmattan' && ['morning', 'afternoon', 'evening'].includes(part) && ['road', 'breakfast', 'street', 'household'].includes(scene);
+    if (this.insectBodies) this.insectBodies.visible = bugsOn;
+    if (this.insectWings) this.insectWings.visible = bugsOn;
+    if (bugsOn) this.updateInsectMatrices(delta);
+    if (this.insects) {
+      for (const insect of this.insects) {
+        insect.visible = insect.kind === 'mosquito' ? bugsOn : fliesOn;
       }
-      entry.tempColor.copy(entry.color).lerp(this.tintColor, this.night ? 0.28 : 0.13);
-      light.color.copy(entry.tempColor);
-    }
-    return snapshot;
-  }
-
-  restoreAtmosphere(scene, snapshot) {
-    if (!snapshot || !scene) return;
-    if (snapshot.backgroundValid && scene.background?.isColor) {
-      scene.background.copy(snapshot.background);
-    }
-    if (snapshot.fogValid && scene.fog?.color) {
-      scene.fog.color.copy(snapshot.fogColor);
-      scene.fog.near = snapshot.fogNear;
-      scene.fog.far = snapshot.fogFar;
-    }
-    for (const entry of snapshot.lights) {
-      if (!entry.light || entry.light.parent === null) continue;
-      entry.light.intensity = entry.intensity;
-      entry.light.color.copy(entry.color);
-    }
-    snapshot.lights.length = 0;
-  }
-
-  renderWithAtmosphere(scene, camera, ...args) {
-    if (this.disposed) {
-      return this.originalRender.call(this.webgl, scene, camera, ...args);
-    }
-
-    this.syncParticleWorldPositions(camera);
-    const shouldShade = this.active && this.renderer3d?.lifeScene === 'road';
-    const snapshot = shouldShade ? this.applyAtmosphere(scene) : null;
-    this.syncSky(scene, camera);
-
-    try {
-      return this.originalRender.call(this.webgl, scene, camera, ...args);
-    } finally {
-      this.restoreAtmosphere(scene, snapshot);
+      // Hide only the fly instances by scaling their entries to near zero when
+      // conditions suppress them. Both species remain one body draw call.
+      if (this.insectBodies && this.insectWings) {
+        const count = this.insects.length;
+        for (let i = 0; i < count; i += 1) {
+          const insect = this.insects[i];
+          if (insect.kind === 'fly' && !fliesOn) {
+            this.dummy.position.set(0, 0, 0);
+            this.dummy.scale.setScalar(0.0001);
+            this.dummy.rotation.set(0, 0, 0);
+            this.dummy.updateMatrix();
+            this.insectBodies.setMatrixAt(i, this.dummy.matrix);
+            for (let side = 0; side < 2; side += 1) this.insectWings.setMatrixAt(i * 2 + side, this.dummy.matrix);
+          }
+        }
+        this.insectBodies.instanceMatrix.needsUpdate = true;
+        this.insectWings.instanceMatrix.needsUpdate = true;
+      }
     }
   }
-
-  getDiagnostics() {
-    return {
-      enabled: this.enabled,
-      active: this.active,
-      night: this.night,
-      environment: this.environment,
-      rainVisible: Boolean(this.rain?.visible),
-      dustVisible: Boolean(this.dust?.visible),
-      skyVisible: Boolean(this.skyDome?.visible),
-      groundTextured: Boolean(this.environmentSurfaces.ground?.material?.map),
-      roadTextured: Boolean(this.environmentSurfaces.road?.material?.map),
-      mobile: this.mobile,
-    };
-  }
-
-  // ----------------------------------------------------------
-  // Cleanup
-  // ----------------------------------------------------------
 
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-
-    // Restore the wrapped render method before renderer/camera teardown.
-    if (this.webgl?.render === this.renderWrapper) {
-      this.webgl.render = this.originalRender;
+    this.stopMorningRoutine();
+    if (typeof window !== 'undefined' && this.sceneActivatedHandler) window.removeEventListener('kano:life-scene-activated', this.sceneActivatedHandler);
+    this.panel?.remove();
+    this.panel = null;
+    const camera = this.renderer3d?.camera;
+    for (const object of [this.rain, this.dust, this.insectBodies, this.insectWings, this.skyDome, this.sunSprite]) {
+      try { if (object?.parent) object.parent.remove(object); } catch {}
     }
-
-    for (const object of [this.rain, this.dust, this.skyDome, this.sunSprite]) {
-      if (!object) continue;
-      object.parent?.remove(object);
+    for (const shoulder of this.environmentSurfaces?.shoulders || []) {
+      try { shoulder.parent?.remove(shoulder); shoulder.geometry?.dispose?.(); } catch {}
     }
-
-    for (const shoulder of this.environmentSurfaces.shoulders) {
-      shoulder.parent?.remove(shoulder);
-      shoulder.geometry?.dispose?.();
-    }
-    this.environmentSurfaces.shoulders.length = 0;
-
-    // Restore the surface colours/maps so this addon does not retain ownership
-    // of the renderer's road and ground materials after it is disposed.
-    const road = this.environmentSurfaces.road;
+    const road = this.environmentSurfaces?.road;
     if (road?.material && !Array.isArray(road.material)) {
       road.material.map = this.environmentSurfaces.originalRoadMap;
-      if (this.environmentSurfaces.originalRoadColor && road.material.color) {
-        road.material.color.copy(this.environmentSurfaces.originalRoadColor);
-      }
+      if (this.environmentSurfaces.originalRoadColor && road.material.color) road.material.color.copy(this.environmentSurfaces.originalRoadColor);
+      if (Number.isFinite(this.environmentSurfaces.originalRoadRoughness)) road.material.roughness = this.environmentSurfaces.originalRoadRoughness;
+      if (Number.isFinite(this.environmentSurfaces.originalRoadMetalness)) road.material.metalness = this.environmentSurfaces.originalRoadMetalness;
       road.material.needsUpdate = true;
     }
-    const ground = this.environmentSurfaces.ground;
+    const ground = this.environmentSurfaces?.ground;
     if (ground?.material && !Array.isArray(ground.material)) {
       ground.material.map = this.environmentSurfaces.originalGroundMap;
-      if (this.environmentSurfaces.originalGroundColor && ground.material.color) {
-        ground.material.color.copy(this.environmentSurfaces.originalGroundColor);
-      }
+      if (this.environmentSurfaces.originalGroundColor && ground.material.color) ground.material.color.copy(this.environmentSurfaces.originalGroundColor);
+      if (Number.isFinite(this.environmentSurfaces.originalGroundRoughness)) ground.material.roughness = this.environmentSurfaces.originalGroundRoughness;
+      if (Number.isFinite(this.environmentSurfaces.originalGroundMetalness)) ground.material.metalness = this.environmentSurfaces.originalGroundMetalness;
       ground.material.needsUpdate = true;
     }
+    for (const resource of [this.rainGeometry, this.rainMaterial, this.dustGeometry, this.dustMaterial]) {
+      try { resource?.dispose?.(); } catch {}
+    }
+    const insectGeometry = this.insectBodies?.geometry;
+    const insectMaterial = this.insectBodies?.material;
+    const wingGeometry = this.insectWings?.geometry;
+    const wingMaterial = this.insectWings?.material;
+    for (const resource of [
+      insectGeometry, insectMaterial, wingGeometry, wingMaterial,
+      this.skyDome?.geometry, this.skyDome?.material, this.skyDome?.material?.map,
+      this.sunSprite?.material, this.sunTexture,
+      this.environmentSurfaces?.roadTexture, this.environmentSurfaces?.groundTexture,
+      this.environmentSurfaces?.shoulderTexture,
+      this.environmentSurfaces?.shoulders?.[0]?.material,
+    ]) {
+      try { resource?.dispose?.(); } catch {}
+    }
 
-    this.rainGeometry?.dispose();
-    this.rainMaterial?.dispose();
-    this.dustGeometry?.dispose();
-    this.dustMaterial?.dispose();
-    this.skyDome?.geometry?.dispose?.();
-    this.skyDome?.material?.dispose?.();
-    this.sunSprite?.material?.dispose?.();
-    this.skyTexture?.dispose?.();
-    this.sunTexture?.dispose?.();
-    this.environmentSurfaces.roadTexture?.dispose?.();
-    this.environmentSurfaces.groundTexture?.dispose?.();
-    this.environmentSurfaces.shoulderTexture?.dispose?.();
-
-    this.rainParticles.length = 0;
-    this.dustParticles.length = 0;
-    this.lights.length = 0;
-    this.renderer3d = null;
-    this.scene = null;
-    this.webgl = null;
-    this.game = null;
+    const scene = this.renderer3d?.scene;
+    if (scene && this.original) {
+      if (this.original.background && scene.background?.isColor) scene.background.copy(this.original.background);
+      if (this.original.fogColor && scene.fog?.color?.isColor) {
+        scene.fog.color.copy(this.original.fogColor);
+        scene.fog.near = this.original.fogNear;
+        scene.fog.far = this.original.fogFar;
+      }
+      for (const item of this.original.lights) {
+        if (!item.light || item.light.parent === null) continue;
+        item.light.intensity = item.intensity;
+        if (item.color && item.light.color) item.light.color.copy(item.color);
+        if (item.groundColor && item.light.groundColor) item.light.groundColor.copy(item.groundColor);
+      }
+      if (this.renderer3d.renderer && 'toneMappingExposure' in this.renderer3d.renderer && Number.isFinite(this.original.toneMappingExposure)) this.renderer3d.renderer.toneMappingExposure = this.original.toneMappingExposure;
+    }
   }
 }
+
+export default KanoAtmosphere;
