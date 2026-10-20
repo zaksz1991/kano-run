@@ -5086,7 +5086,7 @@ if (!Renderer3D.prototype[KANO_GLB_VISIBLE_WORLD_PATCH]) {
 
     // Mobile uses 10 real GLB facade instances instead of only two. Desktop
     // can use every configured building slot. The pool still shares geometry.
-    const maximum = this.mobile ? Math.min(10, this.buildingSlots.length) : this.buildingSlots.length;
+    const maximum = this.mobile ? Math.min(14, this.buildingSlots.length) : this.buildingSlots.length;
     let added = 0;
     for (let index = 0; index < maximum; index += 1) {
       const slot = this.buildingSlots[index];
@@ -5121,6 +5121,210 @@ if (!Renderer3D.prototype[KANO_GLB_VISIBLE_WORLD_PATCH]) {
   };
 }
 
+// ============================================================
+// GLB VISIBILITY + TRANSFORM REPAIR (v3)
+// Corrects imported world-model visibility after the renderer installs them.
+// This is deliberately applied to the real existing scene objects and uses
+// only the GLBs already loaded by ModelManager / the environment loader.
+// ============================================================
+const KANO_GLB_VISIBILITY_TRANSFORM_PATCH = Symbol.for('kano.life.glbVisibilityTransform.v3');
+const kanoGlbVisibilityStats = {
+  passes: 0,
+  worldRootsRepaired: 0,
+  groundAlignments: 0,
+  meshesPrepared: 0,
+  lastPassAt: null,
+  errors: [],
+};
+
+function kanoPrepareVisibleGlbRoot(root) {
+  if (!root?.traverse || !root?.userData) return { root: false, meshes: 0 };
+  const path = root.userData.modelPath || root.userData.kanoEnvironmentAsset;
+  if (!path && !root.userData.kanoWorldGlbActive && !root.userData.flyoverModel
+      && !root.userData.roadPropKey && !root.userData.lifeSceneModel
+      && !root.userData.kanoExistingEnvironmentGlb && !root.userData.kanoPotholeGlb) {
+    return { root: false, meshes: 0 };
+  }
+  root.visible = true;
+  root.userData.kanoGlbVisibilityPrepared = true;
+  let meshes = 0;
+  root.traverse((node) => {
+    if (!node?.isMesh || !node.geometry) return;
+    meshes += 1;
+    // Imported GLB bounds can be too small or offset for the slot transform.
+    // Disable frustum culling for these scene assets rather than allowing the
+    // renderer to drop them before their malformed imported bounds are repaired.
+    node.frustumCulled = false;
+    if (!node.geometry.boundingBox) node.geometry.computeBoundingBox?.();
+    if (!node.geometry.boundingSphere) node.geometry.computeBoundingSphere?.();
+    if (node.material) {
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      for (const mat of mats) {
+        if (mat && mat.visible === false && node.userData?.kanoHiddenByGame !== true) {
+          // Don't override materials intentionally hidden by a game system.
+          // Mesh visibility and culling are the known sources of false invisibility.
+        }
+      }
+    }
+  });
+  root.updateMatrixWorld?.(true);
+  kanoGlbVisibilityStats.meshesPrepared += meshes;
+  return { root: true, meshes };
+}
+
+function kanoRepairBuildingSlotTransform(renderer, slot) {
+  const root = slot?.actor;
+  if (!root?.userData?.modelPath || root.userData.kanoGroundTransformFixed) return false;
+  try {
+    root.visible = true;
+    // Preserve the renderer's x/z loop position, facing and selected scale.
+    root.updateMatrixWorld?.(true);
+    const box = new THREE.Box3().setFromObject(root);
+    if (!Number.isFinite(box.min.y) || !Number.isFinite(box.max.y) || box.max.y - box.min.y < 0.05) {
+      root.userData.kanoBoundsWarning = 'invalid-world-bounds';
+      return false;
+    }
+    const lift = -box.min.y;
+    // Keep already-grounded models exactly where they are; correct only real
+    // sub-centimeter / positive/negative origin errors caused by imported GLBs.
+    if (Math.abs(lift) > 0.015 && Math.abs(lift) < 6) {
+      root.position.y += lift;
+      root.updateMatrixWorld?.(true);
+      kanoGlbVisibilityStats.groundAlignments += 1;
+    }
+    root.userData.kanoGroundTransformFixed = true;
+    root.userData.kanoWorldSlotIndex = Number.isInteger(slot.index)
+      ? slot.index : root.userData.kanoWorldSlotIndex;
+    return true;
+  } catch (error) {
+    kanoGlbVisibilityStats.errors.push({
+      path: root.userData.modelPath,
+      stage: 'building-transform',
+      message: error?.message || String(error),
+    });
+    return false;
+  }
+}
+
+function kanoRepairRendererGlbVisibility(renderer) {
+  if (!renderer || renderer.disposed) return;
+  kanoGlbVisibilityStats.passes += 1;
+  kanoGlbVisibilityStats.lastPassAt = new Date().toISOString();
+  const seen = new Set();
+  const prepare = (root) => {
+    if (!root || seen.has(root)) return;
+    seen.add(root);
+    const result = kanoPrepareVisibleGlbRoot(root);
+    if (result.root) kanoGlbVisibilityStats.worldRootsRepaired += 1;
+  };
+
+  try {
+    for (const slot of renderer.buildingSlots || []) {
+      if (!slot?.replaced || !slot.actor?.userData?.modelPath) continue;
+      prepare(slot.actor);
+      kanoRepairBuildingSlotTransform(renderer, slot);
+    }
+    for (const list of [renderer.flyovers, renderer.streetLights, renderer.pedestrians,
+      renderer.roadProps, renderer.lifeAssetSlots, renderer.garageVehicleSlots]) {
+      for (const item of list || []) {
+        const root = item?.actor || item;
+        if (root?.userData?.modelPath || root?.userData?.kanoEnvironmentAsset) prepare(root);
+      }
+    }
+    renderer.world?.traverse?.((node) => {
+      if (!node?.userData) return;
+      const hasGLB = Boolean(node.userData.modelPath || node.userData.kanoEnvironmentAsset
+        || node.userData.kanoExistingEnvironmentGlb || node.userData.kanoPotholeGlb
+        || node.userData.kanoWorldGlbActive || node.userData.flyoverModel
+        || node.userData.roadPropKey || node.userData.lifeSceneModel);
+      if (hasGLB && node.isObject3D) prepare(node);
+    });
+    renderer.lifeDioramaRoot?.traverse?.((node) => {
+      if (node?.userData?.modelPath && node.isObject3D) prepare(node);
+    });
+    renderer.garageGroup?.traverse?.((node) => {
+      if (node?.userData?.modelPath && node.isObject3D) prepare(node);
+    });
+  } catch (error) {
+    kanoGlbVisibilityStats.errors.push({
+      path: '(scene traversal)',
+      stage: 'visibility-pass',
+      message: error?.message || String(error),
+    });
+  }
+}
+
+if (!Renderer3D.prototype[KANO_GLB_VISIBILITY_TRANSFORM_PATCH]) {
+  const originalVisibilityWorldUpgrade = Renderer3D.prototype.upgradeWorldAssets;
+  const originalVisibilityLifeUpgrade = Renderer3D.prototype.upgradeLifeSceneAssets;
+  const originalVisibilityGarageUpgrade = Renderer3D.prototype.upgradeGarageAssets;
+  Object.defineProperty(Renderer3D.prototype, KANO_GLB_VISIBILITY_TRANSFORM_PATCH, { value: true });
+
+  if (typeof originalVisibilityWorldUpgrade === 'function') {
+    Renderer3D.prototype.upgradeWorldAssets = function upgradeWorldWithTransformRepair(...args) {
+      const result = originalVisibilityWorldUpgrade.apply(this, args);
+      kanoRepairRendererGlbVisibility(this);
+      return result;
+    };
+  }
+  if (typeof originalVisibilityLifeUpgrade === 'function') {
+    Renderer3D.prototype.upgradeLifeSceneAssets = function upgradeLifeWithTransformRepair(...args) {
+      const result = originalVisibilityLifeUpgrade.apply(this, args);
+      kanoRepairRendererGlbVisibility(this);
+      return result;
+    };
+  }
+  if (typeof originalVisibilityGarageUpgrade === 'function') {
+    Renderer3D.prototype.upgradeGarageAssets = function upgradeGarageWithTransformRepair(...args) {
+      const result = originalVisibilityGarageUpgrade.apply(this, args);
+      kanoRepairRendererGlbVisibility(this);
+      return result;
+    };
+  }
+}
+
+function kanoGlbCameraVisibility(renderer, root) {
+  try {
+    if (!renderer?.camera || !root) return null;
+    renderer.camera.updateMatrixWorld?.(true);
+    root.updateMatrixWorld?.(true);
+    const box = new THREE.Box3().setFromObject(root);
+    if (box.isEmpty?.()) return false;
+    const viewProjection = new THREE.Matrix4().multiplyMatrices(
+      renderer.camera.projectionMatrix,
+      renderer.camera.matrixWorldInverse,
+    );
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(viewProjection);
+    return frustum.intersectsBox(box);
+  } catch (_) { return null; }
+}
+
+if (typeof window !== 'undefined') {
+  window.kanoGlbActivateLoadedModels = () => {
+    const renderer = activeRenderer || window.__KANO_ACTIVE_RENDERER__ || null;
+    if (!renderer || renderer.disposed) {
+      return { ok: false, message: 'The active WebGL renderer is not ready.' };
+    }
+    try {
+      renderer.upgradeWorldAssets?.();
+      renderer.upgradePedestrians?.();
+      renderer.upgradeLifeSceneAssets?.();
+      renderer.upgradeGarageAssets?.();
+      renderer.upgradeGarageVehicles?.();
+      kanoRepairRendererGlbVisibility(renderer);
+      return { ok: true, report: kanoBuildModelVisibilityReport() };
+    } catch (error) {
+      return { ok: false, message: error?.message || String(error) };
+    }
+  };
+  window.kanoGlbTransformRepairStatus = () => ({
+    ...kanoGlbVisibilityStats,
+    liveRenderer: Boolean(activeRenderer && !activeRenderer.disposed),
+    lastReport: typeof window.kanoGlbVisibilityReport === 'function'
+      ? window.kanoGlbVisibilityReport() : null,
+  });
+}
+
 function kanoBuildModelVisibilityReport() {
   const renderer = activeRenderer || window.__KANO_ACTIVE_RENDERER__ || null;
   const manager = renderer?.models || window.__KANO_ACTIVE_MODEL_MANAGER__ || null;
@@ -5133,7 +5337,7 @@ function kanoBuildModelVisibilityReport() {
   const actualRenderMode = String(window.__KANO_RENDER_MODE__ || (
     renderer?.renderer?.isWebGLRenderer ? '3D' : renderer ? 'unknown' : 'not-ready'
   ));
-  const worldCounts = { glbRoots: 0, worldBuildings: 0, worldRoadside: 0, modelPaths: [] };
+  const worldCounts = { glbRoots: 0, worldBuildings: 0, worldRoadside: 0, cameraFrustumRoots: 0, modelPaths: [], roots: [] };
   const seenPaths = new Set();
   renderer?.world?.traverse?.((node) => {
     if (!node?.userData) return;
@@ -5141,8 +5345,23 @@ function kanoBuildModelVisibilityReport() {
     if (!path || !node.visible) return;
     if (node.userData.modelPath) {
       worldCounts.glbRoots += 1;
-      if (node.userData.kanoWorldGlbActive) worldCounts.worldBuildings += 1;
+      if (node.userData.kanoWorldGlbActive || node.userData.kanoWorldSlotIndex !== undefined) worldCounts.worldBuildings += 1;
       if (node.userData.roadPropKey || node.userData.flyoverModel || node.userData.lifeSceneModel) worldCounts.worldRoadside += 1;
+      const cameraVisible = kanoGlbCameraVisibility(renderer, node);
+      if (cameraVisible === true) worldCounts.cameraFrustumRoots += 1;
+      if (worldCounts.roots.length < 120) {
+        const position = node.getWorldPosition?.(new THREE.Vector3()) || node.position || { x: 0, y: 0, z: 0 };
+        const box = new THREE.Box3().setFromObject(node);
+        const size = box.getSize(new THREE.Vector3());
+        worldCounts.roots.push({
+          path,
+          key: node.userData.modelKey || node.userData.kanoWorldCategory || null,
+          position: { x: Number(position.x.toFixed(2)), y: Number(position.y.toFixed(2)), z: Number(position.z.toFixed(2)) },
+          size: { x: Number(size.x.toFixed(2)), y: Number(size.y.toFixed(2)), z: Number(size.z.toFixed(2)) },
+          cameraFrustum: cameraVisible,
+          visible: Boolean(node.visible),
+        });
+      }
     }
     if (!seenPaths.has(path)) { seenPaths.add(path); worldCounts.modelPaths.push(path); }
   });
@@ -5166,7 +5385,9 @@ function kanoBuildModelVisibilityReport() {
   } else if (worldCounts.glbRoots === 0) {
     diagnosis = 'Models may be cached but no visible GLB roots were found under the active world group. Check scene activation/visibility.';
   } else {
-    diagnosis = 'Visible GLB nodes were found in the world. If the scene still looks primitive, inspect the listed model paths and compare visible placement with the loaded pool.';
+    diagnosis = worldCounts.cameraFrustumRoots > 0
+      ? 'Loaded GLB roots intersect the active camera frustum. Their exact paths, dimensions and placements are listed below.'
+      : 'GLBs are present in the world but none of the reported roots intersect the camera frustum. Check their position/size fields, then use ACTIVATE LOADED GLBS.';
   }
   let webglContextLost = null;
   try {
@@ -5187,6 +5408,7 @@ function kanoBuildModelVisibilityReport() {
     pools: pool,
     environment,
     assetAudit: pool?.assetAudit || (typeof getModelAssetAuditReport === 'function' ? getModelAssetAuditReport() : null),
+    visibilityTransformRepair: { ...kanoGlbVisibilityStats, errors: kanoGlbVisibilityStats.errors.slice(-40) },
     timestamp: new Date().toISOString(),
   };
 }
@@ -5227,6 +5449,14 @@ if (typeof window !== 'undefined') {
       force3d.type = 'button'; force3d.textContent = 'RELOAD FORCE 3D';
       force3d.style.cssText = 'background:#f5c542;border:0;border-radius:5px;padding:6px 8px;font-weight:900;color:#18202b;';
       force3d.addEventListener('click', () => window.kanoGlbForce3DAndAudit?.());
+      const activateButton = document.createElement('button');
+      activateButton.type = 'button'; activateButton.textContent = 'ACTIVATE LOADED GLBS';
+      activateButton.style.cssText = 'background:#3ea878;border:0;border-radius:5px;padding:6px 8px;font-weight:900;color:#071d14;';
+      activateButton.addEventListener('click', () => {
+        const result = window.kanoGlbActivateLoadedModels?.();
+        const output = document.getElementById('kano-glb-visibility-audit-body');
+        if (output && result?.ok === false) output.textContent = `${result.message}\n\n${JSON.stringify(kanoBuildModelVisibilityReport(), null, 2)}`;
+      });
       const exportButton = document.createElement('button');
       exportButton.type = 'button'; exportButton.textContent = 'EXPORT JSON';
       exportButton.style.cssText = 'background:#00b4d8;border:0;border-radius:5px;padding:6px 8px;font-weight:900;color:#062033;';
@@ -5245,7 +5475,7 @@ if (typeof window !== 'undefined') {
       close.type = 'button'; close.textContent = 'HIDE';
       close.style.cssText = 'background:#263a4d;border:1px solid #577089;border-radius:5px;padding:6px 8px;font-weight:800;color:#e9f5ff;';
       close.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'flex' : 'none'; close.textContent = panel.style.display === 'none' ? 'SHOW' : 'HIDE'; });
-      header.append(heading, modeBadge, force3d, exportButton, close);
+      header.append(heading, modeBadge, force3d, activateButton, exportButton, close);
       const body = document.createElement('pre');
       body.id = 'kano-glb-visibility-audit-body';
       body.style.cssText = 'margin:0;padding:10px 12px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;';
