@@ -578,6 +578,7 @@ UI.prototype.bind = function patchedUIBind(game, ...args) {
   window.__KANO_LIFE_GAME__ = game;
   installRecordUI();
   renderLocalRecord();
+  updateVehicleHealthBadge(game?.s);
   refreshOverallRecord(true);
   this.updateReverseControl?.(game?.s);
   if (!document.getElementById('kano-replay-morning-routine')) {
@@ -605,6 +606,9 @@ function installRecordUI() {
       #kano-replay-morning-routine{flex:1 1 100%;min-height:34px;font-size:10px}
       .kano-overall-record{display:inline-flex!important;align-items:center;gap:5px;max-width:100%;padding:5px 8px;border-radius:8px;border:1px solid #f5c54288;background:rgba(8,17,28,.92);color:#ffe18b;font-size:10px;font-weight:900;line-height:1.3;white-space:normal;visibility:visible!important;opacity:1!important}
       .kano-start-record{display:block!important;flex:1 1 100%;width:100%;color:#f5d77d;font-size:12px;font-weight:900;padding:7px 0 2px;line-height:1.35;visibility:visible!important;opacity:1!important}
+      .kano-vehicle-health{display:inline-flex;flex:1 1 100%;align-items:center;box-sizing:border-box;min-width:0;max-width:100%;padding:4px 7px;border:1px solid #4dd6ac66;border-radius:7px;background:rgba(8,17,28,.88);color:#a5f3d4;font-size:9px;font-weight:900;line-height:1.35;white-space:normal;overflow-wrap:anywhere}
+      .kano-vehicle-health[data-level=warning]{color:#ffd166;border-color:#ffd16699}
+      .kano-vehicle-health[data-level=critical]{color:#ff8989;border-color:#ff626299;background:rgba(48,10,10,.9)}
       #hud .hud-bottom{display:flex;flex-wrap:wrap;align-items:center;row-gap:5px}
       #game-canvas{display:block;width:100%;height:100%;image-rendering:auto;touch-action:none;outline:none}
       #app,#game-container{min-width:0;max-width:100vw}
@@ -626,6 +630,15 @@ function installRecordUI() {
     badge.className = 'kano-overall-record';
     badge.setAttribute('aria-live', 'polite');
     hud.append(badge);
+  }
+  if (hud && !document.getElementById('kano-vehicle-health')) {
+    const health = document.createElement('span');
+    health.id = 'kano-vehicle-health';
+    health.className = 'kano-vehicle-health';
+    health.setAttribute('role', 'status');
+    health.setAttribute('aria-live', 'polite');
+    health.textContent = 'KEKE HEALTH · CHECKING CONDITION';
+    hud.append(health);
   }
   const card = document.querySelector('#start-screen .start-card');
   if (card && !document.getElementById('kano-start-record')) {
@@ -715,6 +728,35 @@ async function refreshOverallRecord(force = false) {
     recordRequestInFlight = false;
     showRecord(lastRecord);
   }
+}
+
+function updateVehicleHealthBadge(state) {
+  const badge = document.getElementById('kano-vehicle-health');
+  if (!badge || !state) return;
+
+  const readHealth = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.round(clamp(number, 0, 100)) : null;
+  };
+  const body = readHealth(state.condition);
+  const engine = readHealth(state.engine);
+  const tyres = readHealth(state.tyres);
+  const values = [body, engine, tyres].filter((value) => value !== null);
+  if (!values.length) return;
+
+  const worst = Math.min(...values);
+  const level = worst < 25 ? 'critical' : worst < 50 ? 'warning' : 'good';
+  const status = level === 'critical' ? 'SERVICE NOW' : level === 'warning' ? 'SERVICE SOON' : 'STATUS GOOD';
+  const display = `KEKE HEALTH · BODY ${body ?? '—'}% · ENGINE ${engine ?? '—'}% · TYRES ${tyres ?? '—'}% · ${status}`;
+  if (badge.textContent !== display) badge.textContent = display;
+  badge.dataset.level = level;
+  badge.hidden = false;
+  badge.style.display = 'inline-flex';
+  badge.title = level === 'critical'
+    ? 'Vehicle condition is critical. Visit the workshop when service options are available.'
+    : level === 'warning'
+      ? 'Vehicle wear is increasing. Plan a workshop visit.'
+      : 'Vehicle condition is currently within the healthy range.';
 }
 
 // -----------------------------------------------------------------------------
@@ -1066,6 +1108,7 @@ Game.prototype.start = function trackedGameStart(...args) {
   window.__KANO_LIFE_GAME__ = this;
   const result = originalGameStart.apply(this, args);
   this.ui?.updateReverseControl?.(this.s);
+  updateVehicleHealthBadge(this.s);
   renderLocalRecord();
   return result;
 };
@@ -1217,6 +1260,7 @@ if (typeof originalResetRun === 'function') {
     // health. On later resets it restores the saved component health.
     const vehicle = ensureKekeLifecycle(this);
     applyLifecycleHealthToRun(this, vehicle);
+    updateVehicleHealthBadge(this.s);
     return result;
   };
 }
@@ -1235,17 +1279,20 @@ if (typeof originalHitTraffic === 'function') {
     const result = originalHitTraffic.call(this, vehicle, ...args);
     try {
       if (!this.s || !this.vehicleLifecycle) ensureKekeLifecycle(this);
-      const persistent = syncRunHealthToLifecycle(this);
-      if (persistent) {
+      if (this.vehicleLifecycle) {
+        // Record the event first, then persist the game's actual post-collision
+        // health. This preserves lifecycle impact history without applying the
+        // same collision damage a second time.
         this.vehicleLifecycle.recordImpact({
           vehicleId: this.playerVehicleId,
           part: 'body',
           severity,
           collision: true,
         });
-        applyLifecycleHealthToRun(this, this.vehicleLifecycle.getVehicle(this.playerVehicleId));
-        this.ui?.update?.(this.s, this.route, this.driver);
       }
+      const persistent = syncRunHealthToLifecycle(this);
+      if (persistent) this.ui?.update?.(this.s, this.route, this.driver);
+      updateVehicleHealthBadge(this.s);
     } catch (error) {
       if (!lifecycleWarningShown) {
         lifecycleWarningShown = true;
@@ -1261,18 +1308,20 @@ if (typeof originalHitPothole === 'function') {
     const result = originalHitPothole.apply(this, args);
     try {
       if (!this.s || !this.vehicleLifecycle) ensureKekeLifecycle(this);
-      const persistent = syncRunHealthToLifecycle(this);
-      if (persistent) {
+      if (this.vehicleLifecycle) {
         const roughRoad = this.s?.environment === 'badRoad' || this.s?.environment === 'muddy';
+        // Keep the director's separate suspension-wear record, then overwrite
+        // shared body/engine/tyre health with the exact result from the game.
         this.vehicleLifecycle.recordImpact({
           vehicleId: this.playerVehicleId,
           part: 'suspension',
           severity: roughRoad ? 0.22 : 0.14,
           pothole: true,
         });
-        applyLifecycleHealthToRun(this, this.vehicleLifecycle.getVehicle(this.playerVehicleId));
-        this.ui?.update?.(this.s, this.route, this.driver);
       }
+      const persistent = syncRunHealthToLifecycle(this);
+      if (persistent) this.ui?.update?.(this.s, this.route, this.driver);
+      updateVehicleHealthBadge(this.s);
     } catch (error) {
       if (!lifecycleWarningShown) {
         lifecycleWarningShown = true;
@@ -1304,6 +1353,7 @@ if (typeof presentationTrackedTick === 'function') {
       )) {
         syncRunHealthToLifecycle(this);
       }
+      updateVehicleHealthBadge(s || this.s);
     } catch (error) {
       if (!lifecycleWarningShown) {
         lifecycleWarningShown = true;
