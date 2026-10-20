@@ -62,7 +62,7 @@ export class AudioManager {
     this.lastEngineSampleAt = 0;
     this.acceleration = 0;
     this.radioAudio = null;
-    this.radioEnabled = Boolean(save?.radioEnabled);
+    this.radioEnabled = save?.radioEnabled !== false;
     this.radioIndex = -1;
     this.radioRequestIndex = -1;
     this.radioSyncVersion = 0;
