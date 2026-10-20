@@ -3,6 +3,10 @@ import { save, persist } from './storage.js';
 const MOVE_ZONES_PATCH = Symbol.for('kano.life.stopped-roadside-interaction.v1');
 const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v2');
 const SCENE_ANIMATION_PATCH = Symbol.for('kano.life.scene-animation-transform-fix.v2');
+const REAL_CROWD_CHARACTER_KEYS = ['pedestrianWoman', 'pedestrian', 'passengerWoman', 'passengerMan', 'passenger', 'passengerVIP'];
+const MOBILE_REAL_CROWD_COUNT = 6;
+const DESKTOP_REAL_CROWD_COUNT = 10;
+const REAL_CROWD_ASSET_WAIT_SECONDS = 8;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const ROADSIDE_INTERACTION_DEPTH_OFFSET = 0.12;
 const ROADSIDE_TYPES = new Set(['pickup', 'drop', 'fuel']);
@@ -362,23 +366,204 @@ function installCharacterFallbacks(renderer) {
   return state.restore;
 }
 
-/** Fixes limb transforms and reverses the in-place gait when road scroll would otherwise make it look backward. */
+/**
+ * Upgrades the closest ambient market walkers to real, already-cached GLB
+ * characters. The distant instanced silhouettes remain as a deliberate mobile
+ * LOD layer, keeping the crowd readable without dozens of full-detail models.
+ * All actors are sourced from this game's ModelManager; no guessed asset paths
+ * or external downloads are introduced.
+ */
 function installSceneUpgradeAnimationFix(sceneUpgrade, game) {
   if (!sceneUpgrade) return () => {};
   const existing = sceneUpgrade[SCENE_ANIMATION_PATCH];
   if (existing?.active) return existing.restore;
+
   const restorers = [];
+  const realCrowdActors = [];
+  let lastCrowdBuildAt = -Infinity;
+
+  function usableCrowdKeys(upgrade) {
+    const cache = upgrade?.renderer?.models?.cache;
+    if (!cache?.has) return [];
+    return REAL_CROWD_CHARACTER_KEYS.filter((key) => cache.has(key));
+  }
+
+  function walkerCandidates(upgrade, targetCount) {
+    const rows = (upgrade.walkers || [])
+      .map((walker, index) => ({ walker, index }))
+      .filter(({ walker }) => walker && Number.isFinite(Number(walker.z)))
+      .sort((a, b) => Number(b.walker.z) - Number(a.walker.z));
+
+    // Prioritise the visible foreground/midground. If the current layout has
+    // too few actors inside this band, broaden it instead of losing crowd slots.
+    let band = rows.filter(({ walker }) => Number(walker.z) >= -105 && Number(walker.z) <= 9);
+    if (band.length < targetCount) band = rows;
+    if (band.length <= targetCount) return band;
+
+    const selected = [];
+    const used = new Set();
+    for (let slot = 0; slot < targetCount; slot += 1) {
+      const position = targetCount === 1
+        ? 0
+        : Math.round(slot * (band.length - 1) / (targetCount - 1));
+      const row = band[position];
+      if (row && !used.has(row.index)) {
+        selected.push(row);
+        used.add(row.index);
+      }
+    }
+    // Rounding can theoretically select the same row when there are very few
+    // walkers, so fill any remaining slots from the unselected candidates.
+    for (const row of band) {
+      if (selected.length >= targetCount) break;
+      if (!used.has(row.index)) {
+        selected.push(row);
+        used.add(row.index);
+      }
+    }
+    return selected;
+  }
+
+  function tryCreateRealCrowd(upgrade) {
+    if (upgrade.disposed || realCrowdActors.length) return;
+    const renderer = upgrade.renderer;
+    const models = renderer?.models;
+    const root = upgrade.crowdRoot;
+    if (!root?.add || !models?.getInstance || !models?.cache?.has) return;
+
+    // Give the game's staggered mobile preload a brief head start. Retry if the
+    // first character batch is not ready; never hide silhouettes before GLBs exist.
+    if (Number(upgrade.elapsed) < 2.4 || Number(upgrade.elapsed) - lastCrowdBuildAt < 0.75) return;
+    lastCrowdBuildAt = Number(upgrade.elapsed) || 0;
+
+    const available = usableCrowdKeys(upgrade);
+    if (!available.length) return;
+
+    // The game's human assets are loaded in staggered batches. Wait briefly for
+    // model variety so the entire foreground crowd does not become eight copies
+    // of the first generic passenger GLB. After the timeout, use whatever valid
+    // character models are actually available rather than blocking the scene.
+    if (available.length < 3 && Number(upgrade.elapsed) < REAL_CROWD_ASSET_WAIT_SECONDS) return;
+
+    const targetCount = upgrade.mobile ? MOBILE_REAL_CROWD_COUNT : DESKTOP_REAL_CROWD_COUNT;
+    const rows = walkerCandidates(upgrade, targetCount);
+    if (!rows.length) return;
+    const registry = renderer.pedestrians || (renderer.pedestrians = []);
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const { walker, index: walkerIndex } = rows[index];
+      let actor = null;
+      let activeKey = null;
+      const startAt = index % available.length;
+
+      // A candidate may be in cache but fail clone/rig creation. Try the other
+      // real character models before leaving this particular slot procedural.
+      for (let offset = 0; offset < available.length; offset += 1) {
+        const key = available[(startAt + offset) % available.length];
+        try {
+          actor = models.getInstance(key);
+        } catch (error) {
+          console.warn(`[Kano Life] Could not clone crowd model ${key}.`, error);
+          actor = null;
+        }
+        if (actor) {
+          activeKey = key;
+          break;
+        }
+      }
+      if (!actor) continue;
+
+      actor.name = `KANO_REAL_CROWD_${String(walkerIndex).padStart(2, '0')}`;
+      actor.userData.kanoAmbientCrowd = true;
+      actor.userData.kanoCrowdWalkerIndex = walkerIndex;
+      actor.userData.characterType = activeKey;
+      actor.userData.fallback = false;
+      actor.position.set(Number(walker.x) || 0, 0, Number(walker.z) || 0);
+      actor.rotation.set(0, Number(walker.direction) < 0 ? Math.PI : 0, 0);
+      actor.scale.setScalar(Number(walker.height) || 1);
+      actor.traverse?.((node) => {
+        if (!node.isMesh) return;
+        node.castShadow = false;
+        node.receiveShadow = false;
+        // Materials have already been cloned by ModelManager's instance API;
+        // disabling costly shadow flags is safe and benefits mobile rendering.
+      });
+      root.add(actor);
+
+      // KanoGLBAnimationManager already animates renderer.pedestrians and
+      // chooses genuine idle clips for scenery characters. Register these
+      // actors with usingModel=true so fallback selection cannot replace them.
+      const registryEntry = {
+        index: walkerIndex,
+        side: Number(walker.side) || (Number(walker.x) < 0 ? -1 : 1),
+        actor,
+        usingModel: true,
+        preferredModelIndex: walkerIndex,
+        kanoAmbientCrowd: true,
+      };
+      registry.push(registryEntry);
+      realCrowdActors.push({ actor, walkerIndex, walker, registryEntry, key: activeKey, phase: Number(walker.phase) || 0 });
+    }
+
+    if (realCrowdActors.length) {
+      console.info(`[Kano Life] ambient crowd upgraded to ${realCrowdActors.length} cached GLB character instances; distant silhouettes retained as mobile LOD.`);
+    }
+  }
+
+  function updateRealCrowd(upgrade) {
+    tryCreateRealCrowd(upgrade);
+    if (!realCrowdActors.length) return;
+
+    const time = Number(upgrade.elapsed) || 0;
+    for (const entry of realCrowdActors) {
+      const walker = upgrade.walkers?.[entry.walkerIndex];
+      const actor = entry.actor;
+      if (!walker || !actor) continue;
+
+      const phase = time * 6.8 * (Number(walker.speed) || 0.4) + entry.phase;
+      const sway = Math.sin(time * 1.1 + entry.phase) * (Number(walker.sway) || 0.05);
+      const x = (Number(walker.x) || 0) + sway;
+      const z = Number(walker.z) || 0;
+      actor.position.set(x, Math.abs(Math.sin(phase)) * 0.012, z);
+      actor.rotation.y = Number(walker.direction) < 0 ? Math.PI : 0;
+      actor.rotation.z = Math.sin(phase * 0.5) * 0.008;
+      actor.scale.setScalar(Number(walker.height) || 1);
+      actor.visible = true;
+    }
+  }
+
+  function hideProceduralWalker(upgrade, index) {
+    // Hide only the four instance rows corresponding to a real GLB actor.
+    // All other distant walkers stay instanced (four draw calls total).
+    const meshes = [upgrade.crowdTorso, upgrade.crowdHead, upgrade.crowdArms, upgrade.crowdLegs];
+    if (!upgrade.writeMatrix) return;
+    upgrade.writeMatrix(meshes[0], index, 0, 0, 0, 0, 0, 0, 0);
+    upgrade.writeMatrix(meshes[1], index, 0, 0, 0, 0, 0, 0, 0);
+    upgrade.writeMatrix(meshes[2], index * 2, 0, 0, 0, 0, 0, 0, 0);
+    upgrade.writeMatrix(meshes[2], index * 2 + 1, 0, 0, 0, 0, 0, 0, 0);
+    upgrade.writeMatrix(meshes[3], index * 2, 0, 0, 0, 0, 0, 0, 0);
+    upgrade.writeMatrix(meshes[3], index * 2 + 1, 0, 0, 0, 0, 0, 0, 0);
+  }
+
   if (typeof sceneUpgrade.updateCrowdMatrices === 'function') {
     const original = sceneUpgrade.updateCrowdMatrices;
-    const wrapper = function updateCrowdMatricesWithScrollAwareGait() {
+    const wrapper = function updateCrowdMatricesWithScrollAwareGaitAndRealModels() {
       if (this.disposed || !Array.isArray(this.walkers) || !this.walkers.length || typeof this.writeMatrix !== 'function' || !this.crowdTorso || !this.crowdHead || !this.crowdArms || !this.crowdLegs) {
         return original.call(this);
       }
+
+      updateRealCrowd(this);
+      const realIndices = new Set(realCrowdActors.map((entry) => entry.walkerIndex));
       const signedSpeed = Number(game?.s?.signedSpeed) || 0;
       // The world scrolls toward the camera while driving forward. Invert the
-      // leg/arm phase so the background crowd doesn't visually moonwalk.
+      // primitive crowd gait with road direction so distant silhouettes do not
+      // visually moonwalk. Real GLBs use their own suitable idle clips.
       const gaitSign = signedSpeed > 0.1 ? -1 : signedSpeed < -0.1 ? 1 : 0.62;
       this.walkers.forEach((walker, index) => {
+        if (realIndices.has(index)) {
+          hideProceduralWalker(this, index);
+          return;
+        }
         const direction = Number(walker.direction) < 0 ? -1 : 1;
         const heading = direction < 0 ? Math.PI : 0;
         const phase = this.elapsed * 6.8 * (Number(walker.speed) || 0.4) + (Number(walker.phase) || 0);
@@ -401,6 +586,7 @@ function installSceneUpgradeAnimationFix(sceneUpgrade, game) {
     sceneUpgrade.updateCrowdMatrices = wrapper;
     restorers.push(() => { if (sceneUpgrade.updateCrowdMatrices === wrapper) sceneUpgrade.updateCrowdMatrices = original; });
   }
+
   if (typeof sceneUpgrade.updatePassengerWalkers === 'function') {
     const original = sceneUpgrade.updatePassengerWalkers;
     const wrapper = function orientPassengerWalkersAlongActualPath(dt, scroll) {
@@ -418,17 +604,27 @@ function installSceneUpgradeAnimationFix(sceneUpgrade, game) {
     sceneUpgrade.updatePassengerWalkers = wrapper;
     restorers.push(() => { if (sceneUpgrade.updatePassengerWalkers === wrapper) sceneUpgrade.updatePassengerWalkers = original; });
   }
+
   const state = {
     active: true,
     restore() {
       if (!state.active) return;
       state.active = false;
+      const renderer = sceneUpgrade.renderer;
+      for (const entry of realCrowdActors.splice(0)) {
+        entry.actor?.parent?.remove(entry.actor);
+        if (Array.isArray(renderer?.pedestrians)) {
+          const index = renderer.pedestrians.indexOf(entry.registryEntry);
+          if (index >= 0) renderer.pedestrians.splice(index, 1);
+        }
+        disposeOwnedActor(entry.actor);
+      }
       for (const restore of restorers.reverse()) { try { restore(); } catch {} }
       try { delete sceneUpgrade[SCENE_ANIMATION_PATCH]; } catch { sceneUpgrade[SCENE_ANIMATION_PATCH] = undefined; }
     },
   };
   Object.defineProperty(sceneUpgrade, SCENE_ANIMATION_PATCH, { configurable: true, value: state });
-  console.info('[Kano Life] scroll-aware crowd gait and passenger path facing fix active.');
+  console.info('[Kano Life] crowd gait and path-facing fix active; real character GLBs will replace near ambient silhouettes as model assets finish loading.');
   return state.restore;
 }
 
