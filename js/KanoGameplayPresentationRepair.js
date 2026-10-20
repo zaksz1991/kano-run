@@ -201,12 +201,29 @@ function makeMesh(root, geometry, material, position = [0, 0, 0], scale = [1, 1,
 }
 function disposeRoot(root) {
   if (!root) return;
+
+  // Owned resources may live on nested groups, especially the individual goats
+  // in a crossing. Collect only explicitly owned resources so shared GLB assets
+  // and the original renderer's geometry/materials are never disposed here.
+  const geometries = new Set();
+  const materials = new Set();
+  const collect = (node) => {
+    const resources = node?.userData?.kanoRepairResources;
+    for (const geometry of resources?.geometries || []) {
+      if (geometry && typeof geometry.dispose === 'function') geometries.add(geometry);
+    }
+    for (const material of resources?.materials || []) {
+      if (material && typeof material.dispose === 'function') materials.add(material);
+    }
+  };
+  if (typeof root.traverse === 'function') root.traverse(collect);
+  else collect(root);
+
   root.parent?.remove(root);
-  const resources = root.userData?.kanoRepairResources;
-  for (const geometry of resources?.geometries || []) {
+  for (const geometry of geometries) {
     try { geometry.dispose(); } catch (_) {}
   }
-  for (const material of resources?.materials || []) {
+  for (const material of materials) {
     try { material.dispose(); } catch (_) {}
   }
   root.clear?.();
@@ -749,8 +766,20 @@ function attachRider(actor) {
 // steering state, or the garage/morning scenes.
 // -----------------------------------------------------------------------------
 function applyPlayerKekeRideResponse(renderer, state, dt) {
-  const player = renderer?.player;
-  if (!player?.isObject3D || renderer.lifeScene !== 'road') return;
+  if (!renderer || renderer.lifeScene !== 'road') {
+    if (renderer) renderer._kanoRideBasePlayer = null;
+    return;
+  }
+  const player = renderer.player;
+  if (!player?.isObject3D) return;
+
+  // Keep a stable vertical anchor. Adding an oscillating offset directly to the
+  // current y-position every frame can slowly walk the keke up or down over a
+  // long run. Re-anchor when the active player model changes or road play resumes.
+  if (renderer._kanoRideBasePlayer !== player || !Number.isFinite(renderer._kanoRideBaseY)) {
+    renderer._kanoRideBasePlayer = player;
+    renderer._kanoRideBaseY = Number(player.position.y) || 0;
+  }
 
   const delta = clamp(Number(dt) || 0, 0, 0.05);
   if (delta <= 0) return;
@@ -779,7 +808,7 @@ function applyPlayerKekeRideResponse(renderer, state, dt) {
     * (0.0015 + speedFactor * 0.0045) * roadFactor;
   const impact = clamp(Number(state?.crashShake) || 0, 0, 1.25);
   const impactPulse = Math.sin(time * 38) * impact * 0.006;
-  player.position.y += suspension + impactPulse;
+  player.position.y = renderer._kanoRideBaseY + suspension + impactPulse;
 
   // The stock renderer has already set its steering bank before it calls the
   // driver animator. Add a small chassis response without accumulating angles.
