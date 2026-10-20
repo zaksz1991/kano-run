@@ -5397,6 +5397,7 @@ function kanoBuildModelVisibilityReport() {
   return {
     renderMode: actualRenderMode,
     glbRenderingEnabled: actualRenderMode === '3D',
+    startupPreference: window.__KANO_GLB_STARTUP_QUALITY__ || kanoGlbStartupPreferenceStatus,
     diagnosis,
     mobile: Boolean(renderer?.mobile),
     rendererReady: Boolean(renderer?.ready),
@@ -5449,6 +5450,16 @@ if (typeof window !== 'undefined') {
       force3d.type = 'button'; force3d.textContent = 'RELOAD FORCE 3D';
       force3d.style.cssText = 'background:#f5c542;border:0;border-radius:5px;padding:6px 8px;font-weight:900;color:#18202b;';
       force3d.addEventListener('click', () => window.kanoGlbForce3DAndAudit?.());
+      const default3DButton = document.createElement('button');
+      default3DButton.type = 'button'; default3DButton.textContent = 'SAVE 3D DEFAULT';
+      default3DButton.style.cssText = 'background:#75d9ff;border:0;border-radius:5px;padding:6px 8px;font-weight:900;color:#072134;';
+      default3DButton.addEventListener('click', () => {
+        const result = window.kanoGlbUse3DByDefault?.();
+        if (result?.ok === false) {
+          const output = document.getElementById('kano-glb-visibility-audit-body');
+          if (output) output.textContent = `Could not save 3D default: ${result.error}`;
+        }
+      });
       const activateButton = document.createElement('button');
       activateButton.type = 'button'; activateButton.textContent = 'ACTIVATE LOADED GLBS';
       activateButton.style.cssText = 'background:#3ea878;border:0;border-radius:5px;padding:6px 8px;font-weight:900;color:#071d14;';
@@ -5475,7 +5486,7 @@ if (typeof window !== 'undefined') {
       close.type = 'button'; close.textContent = 'HIDE';
       close.style.cssText = 'background:#263a4d;border:1px solid #577089;border-radius:5px;padding:6px 8px;font-weight:800;color:#e9f5ff;';
       close.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'flex' : 'none'; close.textContent = panel.style.display === 'none' ? 'SHOW' : 'HIDE'; });
-      header.append(heading, modeBadge, force3d, activateButton, exportButton, close);
+      header.append(heading, modeBadge, default3DButton, force3d, activateButton, exportButton, close);
       const body = document.createElement('pre');
       body.id = 'kano-glb-visibility-audit-body';
       body.style.cssText = 'margin:0;padding:10px 12px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;';
@@ -5505,6 +5516,334 @@ if (typeof window !== 'undefined') {
   }
 }
 
+
+// ============================================================
+// GLB STARTUP MODE REPAIR (v1)
+// The main app honours a saved quality="2d" preference and then loads
+// Canvas2D; GLB world/environment/character assets can never appear in 2D.
+// For this requested GLB upgrade, migrate the existing saved quality to 3D
+// once. Respect an explicit ?force2d=1 request and allow the player to choose
+// 2D again later because the migration marker prevents repeated overriding.
+// ============================================================
+const KANO_GLB_3D_STARTUP_MIGRATION_KEY = 'kano-life-glb-3d-startup-migration-v1';
+const kanoGlbStartupPreferenceStatus = {
+  migrationKey: KANO_GLB_3D_STARTUP_MIGRATION_KEY,
+  applied: false,
+  changedPreference: false,
+  previousQuality: null,
+  resultingQuality: null,
+  reason: 'not-run',
+  timestamp: null,
+};
+
+function applyKanoGlbStartupPreferenceRepair() {
+  const query = new URLSearchParams(window.location.search);
+  const previousQuality = save?.settings?.quality ?? null;
+  kanoGlbStartupPreferenceStatus.previousQuality = previousQuality;
+  kanoGlbStartupPreferenceStatus.timestamp = new Date().toISOString();
+
+  if (query.has('force2d')) {
+    kanoGlbStartupPreferenceStatus.reason = 'explicit-force2d-query-respected';
+    kanoGlbStartupPreferenceStatus.resultingQuality = previousQuality;
+    return;
+  }
+
+  let alreadyMigrated = false;
+  try {
+    alreadyMigrated = window.localStorage.getItem(KANO_GLB_3D_STARTUP_MIGRATION_KEY) === 'done';
+  } catch (_) {
+    // Storage may be restricted. In-memory preference change can still help
+    // this page load; the normal application remains responsible for fallback.
+  }
+
+  if (alreadyMigrated) {
+    kanoGlbStartupPreferenceStatus.applied = true;
+    kanoGlbStartupPreferenceStatus.reason = 'one-time-migration-already-completed';
+    kanoGlbStartupPreferenceStatus.resultingQuality = save?.settings?.quality ?? null;
+    return;
+  }
+
+  try {
+    if (!save.settings || typeof save.settings !== 'object') save.settings = {};
+    if (save.settings.quality !== '3d') {
+      save.settings.quality = '3d';
+      kanoGlbStartupPreferenceStatus.changedPreference = true;
+      persist();
+    }
+    try { window.localStorage.setItem(KANO_GLB_3D_STARTUP_MIGRATION_KEY, 'done'); } catch (_) {}
+    kanoGlbStartupPreferenceStatus.applied = true;
+    kanoGlbStartupPreferenceStatus.reason = kanoGlbStartupPreferenceStatus.changedPreference
+      ? 'saved-quality-migrated-to-3d-for-glb-rendering'
+      : 'saved-quality-already-3d';
+    kanoGlbStartupPreferenceStatus.resultingQuality = save.settings.quality;
+    console.info('[Kano GLB] Startup quality:', kanoGlbStartupPreferenceStatus.reason,
+      '| quality =', save.settings.quality,
+      '| use ?force2d=1 to explicitly disable GLB rendering.');
+  } catch (error) {
+    // Do not block game startup if user storage is locked or unavailable.
+    kanoGlbStartupPreferenceStatus.reason = 'preference-migration-failed';
+    kanoGlbStartupPreferenceStatus.resultingQuality = save?.settings?.quality ?? null;
+    console.warn('[Kano GLB] Could not persist 3D startup preference; normal startup continues.', error);
+  }
+}
+
+applyKanoGlbStartupPreferenceRepair();
+if (typeof window !== 'undefined') {
+  window.__KANO_GLB_STARTUP_QUALITY__ = kanoGlbStartupPreferenceStatus;
+  window.kanoGlbUse3DByDefault = () => {
+    try {
+      if (!save.settings || typeof save.settings !== 'object') save.settings = {};
+      save.settings.quality = '3d';
+      persist();
+      const url = new URL(window.location.href);
+      url.searchParams.delete('force2d');
+      url.searchParams.delete('force3d');
+      url.searchParams.set('assetAudit', '1');
+      window.location.assign(url.toString());
+      return { ok: true, quality: '3d' };
+    } catch (error) {
+      console.error('[Kano GLB] Could not save the 3D preference.', error);
+      return { ok: false, error: error?.message || String(error) };
+    }
+  };
+}
+
+// ============================================================
+// GLB WORLD FRAMING + DENSITY REPAIR (v1)
+// Uses the existing loaded building GLBs more visibly by moving the roadside
+// frontage into the portrait-camera's useful field of view, restoring the
+// intended normalized model scale instead of shrinking every building to the
+// procedural placeholder's small random height, and adding four opposite-side
+// model slots from existing building candidates. No new GLB files are added.
+// ============================================================
+const KANO_GLB_WORLD_FRAMING_PATCH = Symbol.for('kano.life.glbWorldFraming.v1');
+const kanoGlbWorldFramingStats = {
+  version: 1,
+  buildWorldPasses: 0,
+  additionalSlotsCreated: 0,
+  modelScalesCorrected: 0,
+  lastAppliedAt: null,
+  lastError: null,
+};
+
+function kanoWorldFrontageOffset(index) {
+  // Keeps shop/building fronts close enough to read on portrait mobile cameras,
+  // while still leaving a narrow roadside shoulder outside the 13-unit road.
+  return 7.8 + (Math.floor(index / 2) % 3) * 0.85;
+}
+
+function kanoApplyWorldFrontageLayout(renderer) {
+  if (!renderer || !Array.isArray(renderer.buildingSlots)) return;
+  const slots = renderer.buildingSlots;
+
+  for (let index = 0; index < slots.length; index += 1) {
+    const slot = slots[index];
+    if (!slot) continue;
+    const side = Number(slot.side) < 0 ? -1 : 1;
+    const x = side * kanoWorldFrontageOffset(index);
+    slot.index = index;
+    slot.side = side;
+    slot.x = x;
+    if (slot.actor?.position) slot.actor.position.x = x;
+    if (slot.actor?.userData) {
+      slot.actor.userData.kanoWorldSlotIndex = index;
+      slot.actor.userData.kanoWorldFrontageLayout = true;
+    }
+  }
+
+  // Add four opposite-side frontage models so mobile receives 14 GLB-backed
+  // building slots (instead of the renderer's original ten procedural slots).
+  // Desktop gets the same four additions on its longer existing street loop.
+  const extraCount = 4;
+  const marker = renderer.userData?.kanoGlbFrontageExtrasAdded;
+  if (!marker && slots.length) {
+    const baseCount = slots.length;
+    const baseIndices = renderer.mobile ? [1, 2, 3, 4] : [3, 7, 11, 15];
+    let added = 0;
+    for (let extraIndex = 0; extraIndex < Math.min(extraCount, baseIndices.length); extraIndex += 1) {
+      const baseSlot = slots[baseIndices[extraIndex]];
+      if (!baseSlot) continue;
+      const index = slots.length;
+      const side = -baseSlot.side;
+      const x = side * kanoWorldFrontageOffset(index);
+      const z = Number(baseSlot.z ?? baseSlot.actor?.position?.z) || -8 - index * 10;
+      const industrial = extraIndex === 2;
+      const height = (industrial ? 5.2 : 4.5) * [1.06, 1.15, 1.24, 1.10][extraIndex];
+      const actor = new THREE.Group();
+      actor.name = `KANO_GLB_FRONTAGE_SLOT_${index}`;
+      actor.position.set(x, 0, z);
+      actor.userData.kanoWorldSlotPlaceholder = true;
+      actor.userData.kanoWorldSlotIndex = index;
+      actor.userData.kanoWorldFrontageLayout = true;
+      renderer.world.add(actor);
+      slots.push({
+        actor,
+        x,
+        z,
+        height,
+        side,
+        industrial,
+        replaced: false,
+        index,
+        kanoGlbFrontageExtra: true,
+      });
+      added += 1;
+    }
+    renderer.userData = renderer.userData || {};
+    renderer.userData.kanoGlbFrontageExtrasAdded = true;
+    kanoGlbWorldFramingStats.additionalSlotsCreated += added;
+  }
+
+  // Move existing roadside promo boards back next to the building they were
+  // authored for. These are procedural signs, not replacement GLB assets.
+  for (const child of renderer.world?.children || []) {
+    if (!child?.userData?.kanoWorldBillboard || !child.position) continue;
+    const original = child.userData.kanoWorldBillboardOriginal || {};
+    const wantedSide = Number(original.x) < 0 ? -1 : 1;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const slot of slots) {
+      if (!slot || slot.kanoGlbFrontageExtra || slot.side !== wantedSide) continue;
+      const distance = Math.abs((Number(slot.z) || 0) + 1.75 - child.position.z);
+      if (distance < bestDistance) {
+        best = slot;
+        bestDistance = distance;
+      }
+    }
+    if (best && bestDistance < 3) {
+      child.position.x = best.x - best.side * 1.5;
+      child.userData.kanoWorldBillboardForSlot = best.index;
+    }
+  }
+}
+
+if (!Renderer3D.prototype[KANO_GLB_WORLD_FRAMING_PATCH]) {
+  Object.defineProperty(Renderer3D.prototype, KANO_GLB_WORLD_FRAMING_PATCH, { value: true });
+
+  const originalAddBillboardForWorldFraming = Renderer3D.prototype.addBillboard;
+  if (typeof originalAddBillboardForWorldFraming === 'function') {
+    Renderer3D.prototype.addBillboard = function addTrackedKanoWorldBillboard(x, y, z, green, ...args) {
+      const before = this.world?.children?.length || 0;
+      const result = originalAddBillboardForWorldFraming.call(this, x, y, z, green, ...args);
+      const inserted = this.world?.children?.[before];
+      if (inserted?.position) {
+        inserted.userData = inserted.userData || {};
+        inserted.userData.kanoWorldBillboard = true;
+        inserted.userData.kanoWorldBillboardOriginal = { x, y, z, green: Boolean(green) };
+      }
+      return result;
+    };
+  }
+
+  const originalBuildWorldForFraming = Renderer3D.prototype.buildWorld;
+  if (typeof originalBuildWorldForFraming === 'function') {
+    Renderer3D.prototype.buildWorld = function buildWorldWithKanoGlbFrontage(...args) {
+      const result = originalBuildWorldForFraming.apply(this, args);
+      try {
+        kanoApplyWorldFrontageLayout(this);
+        kanoGlbWorldFramingStats.buildWorldPasses += 1;
+        kanoGlbWorldFramingStats.lastAppliedAt = new Date().toISOString();
+      } catch (error) {
+        kanoGlbWorldFramingStats.lastError = error?.message || String(error);
+        console.warn('[Kano GLB frontage] Layout pass failed; original world remains available.', error);
+      }
+      return result;
+    };
+  }
+
+  const originalWorldUpgradeForFraming = Renderer3D.prototype.upgradeWorldAssets;
+  if (typeof originalWorldUpgradeForFraming === 'function') {
+    Renderer3D.prototype.upgradeWorldAssets = function upgradeWorldAssetsWithKanoGlbFraming(...args) {
+      const result = originalWorldUpgradeForFraming.apply(this, args);
+      try {
+        for (let index = 0; index < (this.buildingSlots || []).length; index += 1) {
+          const slot = this.buildingSlots[index];
+          const model = slot?.actor;
+          if (!slot?.replaced || !model?.userData?.modelPath) continue;
+          if (model.userData.kanoWorldFramingVersion === 1) continue;
+
+          const normalizedHeight = Number(model.userData.targetHeight)
+            || (slot.industrial ? 5.2 : 4.5);
+          // The old renderer scaled imported buildings to the placeholder's
+          // random 2.2–4.3m height. That shrank normalized GLBs, making them look
+          // like tiny props. Keep model-specific normalized height and vary it
+          // modestly for real-looking frontages instead.
+          const sizeVariant = Math.floor(index / 2) % 3;
+          const extraVariant = slot.kanoGlbFrontageExtra ? (index % 2) * 0.035 : 0;
+          const scale = [1.06, 1.15, 1.24][sizeVariant] + extraVariant;
+          model.scale.setScalar(scale);
+          model.position.x = Number(slot.x) || 0;
+          model.visible = true;
+          model.userData.kanoWorldFramingVersion = 1;
+          model.userData.kanoWorldFramingScale = scale;
+          model.userData.kanoWorldFramingTargetHeight = normalizedHeight * scale;
+          model.userData.kanoWorldSlotIndex = index;
+          model.updateMatrixWorld?.(true);
+          kanoGlbWorldFramingStats.modelScalesCorrected += 1;
+        }
+        kanoGlbWorldFramingStats.lastAppliedAt = new Date().toISOString();
+      } catch (error) {
+        kanoGlbWorldFramingStats.lastError = error?.message || String(error);
+        console.warn('[Kano GLB frontage] Model scale pass failed; loaded GLBs remain active.', error);
+      }
+      return result;
+    };
+  }
+}
+
+function kanoBuildWorldFramingReport() {
+  const renderer = activeRenderer || window.__KANO_ACTIVE_RENDERER__ || null;
+  const slots = (renderer?.buildingSlots || []).map((slot, index) => {
+    const model = slot?.actor;
+    let size = null;
+    let inFrustum = null;
+    try {
+      if (model) {
+        model.updateMatrixWorld?.(true);
+        const box = new THREE.Box3().setFromObject(model);
+        const vector = box.getSize(new THREE.Vector3());
+        size = { x: Number(vector.x.toFixed(2)), y: Number(vector.y.toFixed(2)), z: Number(vector.z.toFixed(2)) };
+        if (typeof kanoGlbCameraVisibility === 'function') inFrustum = kanoGlbCameraVisibility(renderer, model);
+      }
+    } catch (_) {}
+    return {
+      index,
+      category: slot?.industrial ? 'industrialBuilding' : 'building',
+      path: model?.userData?.modelPath || null,
+      replacedByGlb: Boolean(slot?.replaced && model?.userData?.modelPath),
+      visible: Boolean(model?.visible),
+      x: Number((model?.position?.x ?? slot?.x ?? 0).toFixed(2)),
+      y: Number((model?.position?.y ?? 0).toFixed(2)),
+      z: Number((model?.position?.z ?? slot?.z ?? 0).toFixed(2)),
+      scale: model?.scale ? Number(model.scale.x.toFixed(3)) : null,
+      dimensions: size,
+      cameraFrustum: inFrustum,
+      additionalSlot: Boolean(slot?.kanoGlbFrontageExtra),
+    };
+  });
+  return {
+    ...kanoGlbWorldFramingStats,
+    mobile: Boolean(renderer?.mobile),
+    totalSlots: slots.length,
+    glbSlots: slots.filter((slot) => slot.replacedByGlb).length,
+    visibleGlbSlots: slots.filter((slot) => slot.replacedByGlb && slot.visible).length,
+    inCameraFrustum: slots.filter((slot) => slot.replacedByGlb && slot.cameraFrustum === true).length,
+    slots,
+  };
+}
+
+if (typeof window !== 'undefined') {
+  window.kanoGlbWorldFramingReport = kanoBuildWorldFramingReport;
+  if (typeof window.kanoGlbVisibilityReport === 'function'
+      && !window.__KANO_GLB_WORLD_FRAMING_REPORT_WRAPPED__) {
+    const previousKanoGlbVisibilityReport = window.kanoGlbVisibilityReport;
+    window.kanoGlbVisibilityReport = () => {
+      const report = previousKanoGlbVisibilityReport();
+      return { ...report, worldFraming: kanoBuildWorldFramingReport() };
+    };
+    window.__KANO_GLB_WORLD_FRAMING_REPORT_WRAPPED__ = true;
+  }
+}
 
 // Register all hooks before the actual game entry point creates its objects.
 await import('./main.js');
