@@ -7,6 +7,8 @@
  */
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
+import { ModelManager, MODEL_KEYS, getModelAssetAuditReport } from './ModelManager.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
 import { AudioManager } from './audio.js';
@@ -29,6 +31,675 @@ let recordRefreshTimer = null;
 const riderGroups = new Set();
 const potholeActors = new Set();
 const rendererQualityStates = new WeakMap();
+
+// ============================================================
+// EXISTING GLB MODEL POOL ACTIVATION
+// The catalogue already contains many GLBs, but ModelManager.load(key)
+// historically stopped after the first valid candidate and cached only that
+// single template. Repeated world slots therefore received the same building
+// or light model. This compatibility layer cycles through a small pool of the
+// existing assets without changing Renderer3D or game simulation behavior.
+// ============================================================
+const EXISTING_GLB_POOL_PATCH = Symbol.for('kano.life.existingGlbModelPool.v1');
+const existingGlbPoolState = {
+  loadedByManager: new WeakMap(),
+  reportVersion: 1,
+};
+
+const modelPoolMobile = (() => {
+  try {
+    return (navigator.maxTouchPoints || 0) > 0
+      || window.matchMedia?.('(max-width: 760px), (pointer: coarse)').matches;
+  } catch (_) {
+    return false;
+  }
+})();
+
+const EXISTING_GLB_POOL_LIMITS = {
+  // World architecture: the biggest visual payoff. Keep the mobile pool small.
+  building: { mobile: 4, desktop: 8 },
+  industrialBuilding: { mobile: 3, desktop: 5 },
+  flyover: { mobile: 2, desktop: 2 },
+  roadlight: { mobile: 2, desktop: 4 },
+  trafficLight: { mobile: 2, desktop: 2 },
+  stopSign: { mobile: 2, desktop: 2 },
+  cone: { mobile: 2, desktop: 3 },
+  // Existing traffic models: keep visual variety without loading every candidate.
+  keke: { mobile: 3, desktop: 5 },
+  car: { mobile: 2, desktop: 3 },
+  taxi: { mobile: 2, desktop: 3 },
+  suv: { mobile: 2, desktop: 3 },
+  truck: { mobile: 1, desktop: 2 },
+  bus: { mobile: 1, desktop: 2 },
+  motorcycle: { mobile: 3, desktop: 4 },
+  // Existing pedestrian/passenger models.
+  passenger: { mobile: 2, desktop: 3 },
+  passengerWoman: { mobile: 2, desktop: 3 },
+  passengerMan: { mobile: 2, desktop: 3 },
+  passengerVIP: { mobile: 1, desktop: 2 },
+  security: { mobile: 1, desktop: 2 },
+  pedestrian: { mobile: 2, desktop: 3 },
+  pedestrianWoman: { mobile: 2, desktop: 3 },
+};
+
+function disposeUncachedGlbTemplate(root) {
+  if (!root?.traverse) return;
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+  root.traverse((object) => {
+    if (object.geometry && !geometries.has(object.geometry)) {
+      geometries.add(object.geometry);
+      object.geometry.dispose?.();
+    }
+    const list = Array.isArray(object.material)
+      ? object.material
+      : object.material ? [object.material] : [];
+    for (const material of list) {
+      if (!material || materials.has(material)) continue;
+      materials.add(material);
+      for (const value of Object.values(material)) {
+        if (value?.isTexture && !textures.has(value)) {
+          textures.add(value);
+          value.dispose?.();
+        }
+      }
+      material.dispose?.();
+    }
+  });
+}
+
+function activeExistingGlbPools(manager) {
+  return manager?.__kanoExistingGlbPools instanceof Map
+    ? manager.__kanoExistingGlbPools : new Map();
+}
+
+function installExistingGlbPoolCompatibility() {
+  if (ModelManager.prototype[EXISTING_GLB_POOL_PATCH]) return;
+
+  const originalLoad = ModelManager.prototype.load;
+  const originalGetInstance = ModelManager.prototype.getInstance;
+  const originalDispose = ModelManager.prototype.dispose;
+
+  Object.defineProperty(ModelManager.prototype, EXISTING_GLB_POOL_PATCH, {
+    value: true,
+    configurable: false,
+  });
+
+  ModelManager.prototype.load = function loadWithExistingGlbPool(key) {
+    const configured = MODEL_KEYS[key];
+    const counts = EXISTING_GLB_POOL_LIMITS[key];
+    const desiredCount = counts
+      ? (modelPoolMobile ? counts.mobile : counts.desktop)
+      : 1;
+
+    if (!Array.isArray(configured) || configured.length <= 1 || desiredCount <= 1) {
+      return originalLoad.call(this, key);
+    }
+
+    if (!this.__kanoExistingGlbPools) this.__kanoExistingGlbPools = new Map();
+    if (!this.__kanoExistingGlbNextIndex) this.__kanoExistingGlbNextIndex = new Map();
+    if (!this.__kanoExistingGlbPoolTasks) this.__kanoExistingGlbPoolTasks = new Map();
+
+    if (this.__kanoExistingGlbPools.has(key)) {
+      return Promise.resolve(this.cache.get(key) || this.__kanoExistingGlbPools.get(key)[0] || null);
+    }
+    if (this.__kanoExistingGlbPoolTasks.has(key)) {
+      return this.__kanoExistingGlbPoolTasks.get(key);
+    }
+    if (this.cache.has(key)) {
+      // A standard load already ran before the pool hook. Preserve it safely;
+      // the next page load will activate the pool from the beginning.
+      return Promise.resolve(this.cache.get(key));
+    }
+
+    const task = (async () => {
+      const candidates = [...configured];
+      const loadedTemplates = [];
+      const attemptedPaths = [];
+
+      for (const relativePath of candidates) {
+        if (loadedTemplates.length >= desiredCount) break;
+        attemptedPaths.push(relativePath);
+        const temporaryManager = new ModelManager({ basePath: this.basePath });
+        const currentCatalogEntry = MODEL_KEYS[key];
+        let template = null;
+
+        try {
+          // Give the original, already-tested loader exactly one candidate at
+          // a time. A failed candidate can never hide later candidates.
+          MODEL_KEYS[key] = [relativePath];
+          const loaded = await originalLoad.call(temporaryManager, key);
+          template = loaded || temporaryManager.cache.get(key) || null;
+          if (this.disposed) {
+            if (template) disposeUncachedGlbTemplate(template);
+            temporaryManager.cache.clear();
+            temporaryManager.disposed = true;
+            for (const alreadyLoaded of loadedTemplates) {
+              disposeUncachedGlbTemplate(alreadyLoaded);
+            }
+            loadedTemplates.length = 0;
+            return null;
+          }
+          if (template) {
+            // Transfer ownership to the pool; do not dispose shared GLB data.
+            temporaryManager.cache.clear();
+            temporaryManager.disposed = true;
+            loadedTemplates.push(template);
+          } else {
+            temporaryManager.dispose();
+          }
+        } catch (error) {
+          try { temporaryManager.dispose(); } catch (_) { /* best effort */ }
+          console.debug('[Kano existing GLB pool] Candidate skipped:', key, relativePath, error?.message || error);
+        } finally {
+          MODEL_KEYS[key] = currentCatalogEntry;
+        }
+      }
+
+      if (!loadedTemplates.length) {
+        this.failed?.add?.(key);
+        console.warn('[Kano existing GLB pool] No valid existing candidate loaded for', key, attemptedPaths);
+        return null;
+      }
+
+      this.__kanoExistingGlbPools.set(key, loadedTemplates);
+      this.__kanoExistingGlbNextIndex.set(key, 0);
+      this.cache.set(key, loadedTemplates[0]);
+      this.failed?.delete?.(key);
+      existingGlbPoolState.loadedByManager.set(this, true);
+
+      if (typeof window !== 'undefined') window.__KANO_ACTIVE_MODEL_MANAGER__ = this;
+      console.info(
+        `[Kano existing GLB pool] ${key}: ${loadedTemplates.length}/${desiredCount} existing models active`,
+        loadedTemplates.map((model) => model?.userData?.modelPath || '(path unavailable)'),
+      );
+      return loadedTemplates[0];
+    })();
+
+    this.__kanoExistingGlbPoolTasks.set(key, task);
+    this.pending?.set?.(key, task);
+    const settled = task.finally(() => {
+      this.__kanoExistingGlbPoolTasks?.delete(key);
+      this.pending?.delete?.(key);
+    });
+    // Keep the exact settled promise to prevent duplicate downloads during preload.
+    this.__kanoExistingGlbPoolTasks.set(key, settled);
+    return settled;
+  };
+
+  ModelManager.prototype.getInstance = function getVariedExistingGlbInstance(key) {
+    const pool = this.__kanoExistingGlbPools?.get(key);
+    if (!pool || pool.length <= 1) return originalGetInstance.call(this, key);
+
+    const index = this.__kanoExistingGlbNextIndex.get(key) || 0;
+    const template = pool[index % pool.length];
+    this.__kanoExistingGlbNextIndex.set(key, (index + 1) % pool.length);
+
+    // Reuse the original cloning/material-isolation/driver-rig implementation.
+    // The cache substitution is synchronous and restored before this returns.
+    const firstTemplate = this.cache.get(key);
+    this.cache.set(key, template);
+    try {
+      const instance = originalGetInstance.call(this, key);
+      if (instance) {
+        instance.userData.kanoExistingGlbPoolIndex = index % pool.length;
+        instance.userData.kanoExistingGlbPoolSize = pool.length;
+      }
+      return instance;
+    } finally {
+      if (firstTemplate) this.cache.set(key, firstTemplate);
+      else this.cache.delete(key);
+    }
+  };
+
+  ModelManager.prototype.dispose = function disposeExistingGlbPools() {
+    if (this.disposed) return;
+    const pools = activeExistingGlbPools(this);
+    const baseTemplates = new Set(this.cache?.values?.() || []);
+    // The original method disposes cached base models. Dispose only pool
+    // variants not already in that cache to avoid double-freeing first entries.
+    originalDispose.call(this);
+    for (const [key, pool] of pools) {
+      for (const template of pool) {
+        if (!baseTemplates.has(template)) disposeUncachedGlbTemplate(template);
+      }
+      pool.length = 0;
+      pools.delete(key);
+    }
+    this.__kanoExistingGlbNextIndex?.clear?.();
+    this.__kanoExistingGlbPoolTasks?.clear?.();
+  };
+}
+
+installExistingGlbPoolCompatibility();
+
+if (typeof window !== 'undefined') {
+  window.kanoExistingGlbModelPoolReport = () => {
+    const manager = window.__KANO_ACTIVE_MODEL_MANAGER__;
+    const pools = activeExistingGlbPools(manager);
+    const models = {};
+    for (const [key, items] of pools.entries()) {
+      models[key] = items.map((item) => ({
+        path: item?.userData?.modelPath || '(path unavailable)',
+        targetHeight: item?.userData?.targetHeight ?? null,
+      }));
+    }
+    return {
+      version: existingGlbPoolState.reportVersion,
+      deviceClass: modelPoolMobile ? 'mobile' : 'desktop',
+      pooledCategories: Object.keys(models).length,
+      totalLoadedVariants: Object.values(models).reduce((sum, items) => sum + items.length, 0),
+      models,
+      assetAudit: getModelAssetAuditReport(),
+    };
+  };
+}
+
+
+// ============================================================
+// EXISTING ENVIRONMENT GLB ACTIVATION
+// Reuses environment GLBs already listed by ModelManager. These are the
+// real assets currently present in the catalogue; no replacement models
+// or external asset URLs are introduced.
+// ============================================================
+const KANO_EXISTING_ENVIRONMENT_PATCH = Symbol.for('kano.life.existingEnvironmentGlb.v1');
+const kanoEnvironmentStates = new WeakMap();
+const kanoEnvironmentRenderers = new Set();
+
+const KANO_EXISTING_ENVIRONMENT_ASSETS = [
+  {
+    id: 'potholeSurface',
+    path: 'environment/ground/photoscan_-_pothole_1.glb',
+    role: 'pothole-surface',
+    targetSpan: 2.0,
+    placements: [],
+    mobilePlacements: [],
+  },
+  {
+    id: 'dirtGround',
+    path: 'environment/ground/low_poly_dirt_ground.glb',
+    role: 'shoulder-dirt',
+    targetSpan: 4.6,
+    placements: [
+      { x: -8.6, z: -27 }, { x: 8.7, z: -91 }, { x: -9.1, z: -156 },
+    ],
+    mobilePlacements: [
+      { x: -8.6, z: -27 }, { x: 8.7, z: -112 },
+    ],
+  },
+  {
+    id: 'sandTracks',
+    path: 'environment/ground/close_sand_with_tracks.glb',
+    role: 'tracked-sand-shoulder',
+    targetSpan: 4.3,
+    placements: [
+      { x: 8.4, z: -48 }, { x: -8.7, z: -119 }, { x: 8.6, z: -196 },
+    ],
+    mobilePlacements: [
+      { x: 8.4, z: -48 }, { x: -8.7, z: -157 },
+    ],
+  },
+  {
+    id: 'sandHandprints',
+    path: 'environment/ground/sand_with_handprints_tile_texture.glb',
+    role: 'sandy-shoulder-detail',
+    targetSpan: 3.5,
+    placements: [
+      { x: -8.4, z: -72 }, { x: 8.7, z: -163 },
+    ],
+    mobilePlacements: [
+      { x: -8.4, z: -78 },
+    ],
+  },
+  {
+    id: 'brokenAsphalt',
+    path: 'environment/ground/manhole_cover_on_broken_asphalt_road.glb',
+    role: 'road-surface-detail',
+    targetSpan: 2.15,
+    placements: [
+      { x: -4.65, z: -57 }, { x: 4.55, z: -128 }, { x: -4.75, z: -205 },
+    ],
+    mobilePlacements: [
+      { x: -4.65, z: -57 }, { x: 4.55, z: -151 },
+    ],
+  },
+];
+
+function kanoDisposeEnvironmentTree(root) {
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+  root?.traverse?.((node) => {
+    if (node.geometry && !geometries.has(node.geometry)) {
+      geometries.add(node.geometry);
+      node.geometry.dispose?.();
+    }
+    const materialList = Array.isArray(node.material)
+      ? node.material
+      : node.material ? [node.material] : [];
+    for (const material of materialList) {
+      if (!material || materials.has(material)) continue;
+      materials.add(material);
+      for (const value of Object.values(material)) {
+        if (value?.isTexture && !textures.has(value)) {
+          textures.add(value);
+          value.dispose?.();
+        }
+      }
+      material.dispose?.();
+    }
+  });
+}
+
+function kanoGetEnvironmentState(renderer) {
+  let state = kanoEnvironmentStates.get(renderer);
+  if (!state) {
+    state = {
+      disposed: false,
+      loading: new Set(),
+      assets: new Map(),
+      details: [],
+      started: false,
+      errors: [],
+    };
+    kanoEnvironmentStates.set(renderer, state);
+    kanoEnvironmentRenderers.add(renderer);
+  }
+  return state;
+}
+
+function kanoEnvironmentAssetUrl(renderer, relativePath) {
+  const base = renderer?.models?.basePath || '/assets/models/';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  const encodedPath = relativePath.split('/').map((part) => encodeURIComponent(part)).join('/');
+  return `${normalizedBase}${encodedPath}`;
+}
+
+function kanoBuildEnvironmentInstances(renderer, state, spec, template) {
+  if (!renderer.world || state.disposed || spec.id === 'potholeSurface') return;
+  const isMobile = Boolean(renderer.mobile);
+  const placements = isMobile ? spec.mobilePlacements : spec.placements;
+  if (!placements?.length) return;
+
+  template.updateMatrixWorld?.(true);
+  const sourceBounds = new THREE.Box3().setFromObject(template);
+  const sourceSize = sourceBounds.getSize(new THREE.Vector3());
+  const horizontalSpan = Math.max(sourceSize.x, sourceSize.z);
+  const dimensions = {
+    x: Number(sourceSize.x.toFixed(4)),
+    y: Number(sourceSize.y.toFixed(4)),
+    z: Number(sourceSize.z.toFixed(4)),
+  };
+  const report = state.assets.get(spec.id);
+  if (!Number.isFinite(horizontalSpan) || horizontalSpan < 0.01
+      || sourceSize.x < 0.01 || sourceSize.z < 0.01
+      || sourceSize.y > horizontalSpan * 1.1) {
+    if (report) {
+      report.status = 'rejected-shape';
+      report.dimensions = dimensions;
+      report.reason = 'Model bounds do not look like a low-profile ground/road detail.';
+    }
+    console.warn('[Kano environment GLB] skipped unsuitable ground asset:', spec.path, dimensions);
+    return;
+  }
+
+  const scale = THREE.MathUtils.clamp(spec.targetSpan / horizontalSpan, 0.004, 80);
+  const center = sourceBounds.getCenter(new THREE.Vector3());
+  for (let index = 0; index < placements.length; index += 1) {
+    const placement = placements[index];
+    const instance = template.clone(true);
+    instance.scale.multiplyScalar(scale);
+    const isRoadSurface = spec.role === 'road-surface-detail';
+    const surfaceY = isRoadSurface ? 0.024 : -0.065;
+    instance.position.set(
+      placement.x - center.x * scale,
+      surfaceY - sourceBounds.min.y * scale,
+      placement.z - center.z * scale,
+    );
+    instance.userData.kanoExistingEnvironmentGlb = true;
+    instance.userData.kanoEnvironmentAsset = spec.path;
+    instance.userData.kanoEnvironmentRole = spec.role;
+    instance.userData.kanoEnvironmentInitialZ = placement.z;
+    renderer.world.add(instance);
+    state.details.push({
+      object: instance,
+      assetId: spec.id,
+      role: spec.role,
+      z: instance.position.z,
+      disposed: false,
+    });
+  }
+  if (report) {
+    report.status = 'loaded-and-placed';
+    report.dimensions = dimensions;
+    report.placements = state.details.filter((item) => item.assetId === spec.id).length;
+    report.scale = Number(scale.toFixed(5));
+  }
+}
+
+function kanoLoadEnvironmentAsset(renderer, state, spec) {
+  if (state.loading.has(spec.id) || state.assets.has(spec.id) || state.disposed) return;
+  state.loading.add(spec.id);
+  state.assets.set(spec.id, {
+    id: spec.id,
+    path: spec.path,
+    role: spec.role,
+    url: kanoEnvironmentAssetUrl(renderer, spec.path),
+    status: 'loading',
+    placements: 0,
+    dimensions: null,
+    error: null,
+  });
+  const report = state.assets.get(spec.id);
+  const loader = new GLTFLoader();
+  loader.load(
+    report.url,
+    (gltf) => {
+      state.loading.delete(spec.id);
+      const template = gltf?.scene;
+      if (!template) {
+        report.status = 'failed';
+        report.error = 'GLTF loaded without a scene root.';
+        return;
+      }
+      if (state.disposed || renderer.disposed) {
+        kanoDisposeEnvironmentTree(template);
+        report.status = 'discarded-after-dispose';
+        return;
+      }
+      template.userData.kanoEnvironmentTemplate = true;
+      template.userData.kanoEnvironmentAsset = spec.path;
+      report.meshCount = 0;
+      template.traverse((node) => { if (node.isMesh) report.meshCount += 1; });
+      state.assets.set(spec.id, { ...report, template });
+      const savedReport = state.assets.get(spec.id);
+      if (spec.id === 'potholeSurface') {
+        savedReport.status = 'loaded-ready-for-pothole-zones';
+        const lastState = renderer.__kanoLastDrawState;
+        if (lastState) kanoApplyPotholeEnvironmentModel(renderer, state, lastState);
+      } else {
+        kanoBuildEnvironmentInstances(renderer, state, spec, template);
+      }
+      console.info(`[Kano environment GLB] ${spec.path}: ${savedReport.status}`, {
+        meshCount: savedReport.meshCount,
+        placements: savedReport.placements || 0,
+      });
+    },
+    undefined,
+    (error) => {
+      state.loading.delete(spec.id);
+      report.status = 'failed';
+      report.error = error?.message || String(error || 'GLB request failed');
+      state.errors.push({ path: spec.path, error: report.error });
+      console.warn('[Kano environment GLB] Existing asset unavailable; preserving current fallback:', spec.path, report.error);
+    },
+  );
+}
+
+function kanoApplyPotholeEnvironmentModel(renderer, state, drawState) {
+  const entry = state.assets.get('potholeSurface');
+  const template = entry?.template;
+  if (!template || state.disposed || !renderer.zoneActors) return;
+  const zoneList = Array.isArray(drawState?.zones) ? drawState.zones : [];
+  for (const zone of zoneList) {
+    if (zone?.type !== 'pothole') continue;
+    const actor = renderer.zoneActors.get(zone.id);
+    if (!actor || actor.userData.kanoPotholeGlbAdded) continue;
+    template.updateMatrixWorld?.(true);
+    const bounds = new THREE.Box3().setFromObject(template);
+    const size = bounds.getSize(new THREE.Vector3());
+    const span = Math.max(size.x, size.z);
+    if (!Number.isFinite(span) || span < 0.01) continue;
+    const targetSpan = zone.hub ? 2.35 : 1.85;
+    const scale = THREE.MathUtils.clamp(targetSpan / span, 0.004, 80);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const surface = template.clone(true);
+    surface.scale.multiplyScalar(scale);
+    surface.position.set(
+      -center.x * scale,
+      0.028 - bounds.min.y * scale,
+      -center.z * scale,
+    );
+    surface.userData.kanoPotholeGlb = true;
+    surface.userData.kanoEnvironmentAsset = entry.path;
+
+    // Preserve the red hazard ring; use the actual GLB surface in place of
+    // the primitive broken-road/crater meshes only after the GLB loads.
+    for (const child of actor.children) {
+      if (child !== actor.userData.potholeWarning) child.visible = false;
+    }
+    actor.add(surface);
+    actor.userData.kanoPotholeGlbAdded = true;
+    entry.potholeInstances = (entry.potholeInstances || 0) + 1;
+  }
+}
+
+function kanoStartExistingEnvironmentAssets(renderer) {
+  if (!renderer || renderer.disposed || renderer.lifeScene !== 'road' || !renderer.world) return;
+  const state = kanoGetEnvironmentState(renderer);
+  if (state.started) return;
+  state.started = true;
+  for (const spec of KANO_EXISTING_ENVIRONMENT_ASSETS) {
+    kanoLoadEnvironmentAsset(renderer, state, spec);
+  }
+}
+
+function kanoTickExistingEnvironmentAssets(renderer, deltaSeconds, drawState) {
+  const state = kanoEnvironmentStates.get(renderer);
+  if (!state || state.disposed || renderer.lifeScene !== 'road') return;
+  renderer.__kanoLastDrawState = drawState;
+  kanoApplyPotholeEnvironmentModel(renderer, state, drawState);
+  const dt = THREE.MathUtils.clamp(Number(deltaSeconds) || 0, 0, 0.05);
+  const speed = Number.isFinite(drawState?.signedSpeed)
+    ? drawState.signedSpeed
+    : drawState?.reverse
+      ? -Math.abs(Number(drawState?.speed) || 0)
+      : Math.abs(Number(drawState?.speed) || 0);
+  const scroll = speed * dt * 0.28 * 0.88;
+  if (!scroll) return;
+  for (const detail of state.details) {
+    if (!detail.object || detail.disposed) continue;
+    detail.object.position.z += scroll;
+    if (detail.object.position.z > 10) detail.object.position.z -= 250;
+    else if (detail.object.position.z < -250) detail.object.position.z += 250;
+  }
+}
+
+function kanoDisposeExistingEnvironmentAssets(renderer) {
+  const state = kanoEnvironmentStates.get(renderer);
+  if (!state || state.disposed) return;
+  state.disposed = true;
+  for (const detail of state.details) {
+    if (detail.object?.parent) detail.object.parent.remove(detail.object);
+    detail.disposed = true;
+  }
+  state.details.length = 0;
+  // Remove pothole instances before disposing their shared template resources.
+  for (const actor of renderer.zoneActors?.values?.() || []) {
+    for (const child of [...(actor.children || [])]) {
+      if (child?.userData?.kanoPotholeGlb) actor.remove(child);
+    }
+  }
+  const disposedTemplates = new Set();
+  for (const entry of state.assets.values()) {
+    if (entry.template && !disposedTemplates.has(entry.template)) {
+      disposedTemplates.add(entry.template);
+      kanoDisposeEnvironmentTree(entry.template);
+    }
+    delete entry.template;
+  }
+  state.assets.clear();
+  state.loading.clear();
+  kanoEnvironmentRenderers.delete(renderer);
+}
+
+function installKanoExistingEnvironmentGlbs() {
+  if (Renderer3D.prototype[KANO_EXISTING_ENVIRONMENT_PATCH]) return;
+  const originalDraw = Renderer3D.prototype.draw;
+  const originalSyncZones = Renderer3D.prototype.syncZones;
+  const originalDispose = Renderer3D.prototype.dispose;
+  Object.defineProperty(Renderer3D.prototype, KANO_EXISTING_ENVIRONMENT_PATCH, { value: true });
+
+  Renderer3D.prototype.draw = function drawWithExistingEnvironmentGlbs(state, deltaSeconds) {
+    if (this.lifeScene === 'road' && this.ready && !this.disposed) {
+      kanoStartExistingEnvironmentAssets(this);
+      this.__kanoLastDrawState = state;
+    }
+    const result = originalDraw.call(this, state, deltaSeconds);
+    if (this.lifeScene === 'road' && this.ready && !this.disposed) {
+      kanoTickExistingEnvironmentAssets(this, deltaSeconds, state);
+    }
+    return result;
+  };
+
+  Renderer3D.prototype.syncZones = function syncZonesWithExistingPotholeGlb(state) {
+    const result = originalSyncZones.call(this, state);
+    const environmentState = kanoEnvironmentStates.get(this);
+    if (environmentState) kanoApplyPotholeEnvironmentModel(this, environmentState, state);
+    return result;
+  };
+
+  Renderer3D.prototype.dispose = function disposeExistingEnvironmentGlbs() {
+    kanoDisposeExistingEnvironmentAssets(this);
+    return originalDispose.call(this);
+  };
+}
+
+installKanoExistingEnvironmentGlbs();
+
+if (typeof window !== 'undefined') {
+  window.kanoEnvironmentGlbUsageReport = () => {
+    const renderers = [...kanoEnvironmentRenderers];
+    const reports = renderers.map((renderer) => {
+      const state = kanoEnvironmentStates.get(renderer);
+      return {
+        lifeScene: renderer.lifeScene || null,
+        mobile: Boolean(renderer.mobile),
+        disposed: Boolean(state?.disposed),
+        assets: state ? [...state.assets.values()].map((asset) => ({
+          id: asset.id,
+          path: asset.path,
+          role: asset.role,
+          status: asset.status,
+          meshCount: asset.meshCount || 0,
+          dimensions: asset.dimensions || null,
+          placements: asset.placements || 0,
+          potholeInstances: asset.potholeInstances || 0,
+          error: asset.error || asset.reason || null,
+        })) : [],
+        environmentDetailsActive: state?.details?.filter((detail) => !detail.disposed).length || 0,
+        errors: state?.errors || [],
+      };
+    });
+    return {
+      version: 1,
+      existingAssetsOnly: true,
+      activeRenderers: reports.length,
+      reports,
+    };
+  };
+}
 
 // Adaptive rendering clarity: start sharp, then trade a small amount of pixel
 // density for steadier frame pacing on slower phones. This touches rendering
