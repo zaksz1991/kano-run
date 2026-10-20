@@ -1,5 +1,5 @@
 /**
- * KANO LIFE — GAMEPLAY PRESENTATION + TRAFFIC MOTION REPAIR
+ * KANO LIFE — PRESENTATION, TRAFFIC MOTION + PERSISTENT VEHICLE DAMAGE
  *
  * Production-safe additive repair layer. Core simulation/storage remains in
  * Game, UI and Renderer3D. This module is loaded by index.html and imports
@@ -12,6 +12,7 @@ import { UI } from './ui.js';
 import { AudioManager } from './audio.js';
 import { ROUTES, DRIVERS } from './config.js';
 import { save, persist } from './storage.js';
+import { KanoVehicleLifecycleDirector } from './KanoVehicleLifecycleDirector.js';
 
 const RECORD_NAME_KEY = 'kano-life-global-display-name-v1';
 const SCORE_ENDPOINT = '/api/leaderboard?board=all&limit=1';
@@ -154,6 +155,9 @@ function tuneRendererForClarity(owner) {
 }
 
 // Preserve the original story function so the morning routine remains optional.
+const originalResetRun = Game.prototype.resetRun;
+const originalHitTraffic = Game.prototype.hit;
+const originalHitPothole = Game.prototype.hitPothole;
 const originalBeginMorningRoutine = UI.prototype.beginMorningRoutine;
 const originalUIBind = UI.prototype.bind;
 const originalSetReverse = Game.prototype.setReverse;
@@ -1121,6 +1125,194 @@ window.addEventListener('pagehide', () => {
   if (recordRefreshTimer) window.clearInterval(recordRefreshTimer);
   if (activeRenderer?._kanoRepairEventVisual?.root) disposeRoot(activeRenderer._kanoRepairEventVisual.root);
 }, { once: true });
+
+// -----------------------------------------------------------------------------
+// Persistent player-vehicle damage
+//
+// Game.s remains the live-run authority. The lifecycle director stores the
+// damaged component health so a new run or page reload does not magically
+// restore the keke to 100%. This layer never deducts money or performs repairs.
+// -----------------------------------------------------------------------------
+const KANO_PLAYER_VEHICLE_ID = 'kano-life-player-keke-v1';
+let lifecycleWarningShown = false;
+
+function ensureKekeLifecycle(game) {
+  if (!game || !game.s) return null;
+  try {
+    if (!game.vehicleLifecycle || typeof game.vehicleLifecycle.getVehicle !== 'function') {
+      game.vehicleLifecycle = new KanoVehicleLifecycleDirector();
+    }
+    game.playerVehicleId ||= KANO_PLAYER_VEHICLE_ID;
+    let vehicle = game.vehicleLifecycle.getVehicle(game.playerVehicleId);
+    if (!vehicle) {
+      vehicle = game.vehicleLifecycle.createVehicle({
+        id: game.playerVehicleId,
+        type: 'keke',
+        name: 'Adaidaita Sahu',
+        odometerKm: Math.max(0, Number(game.s.distance) || 0),
+        parts: {
+          body: { health: clamp(game.s.condition, 0, 100) },
+          engine: { health: clamp(game.s.engine, 0, 100) },
+          tyres: { health: clamp(game.s.tyres, 0, 100) },
+        },
+      });
+    }
+    return vehicle || game.vehicleLifecycle.getVehicle(game.playerVehicleId);
+  } catch (error) {
+    if (!lifecycleWarningShown) {
+      lifecycleWarningShown = true;
+      console.warn('[Kano Life] Persistent vehicle damage is unavailable; the normal run will continue.', error);
+    }
+    return null;
+  }
+}
+
+function syncRunHealthToLifecycle(game) {
+  const vehicle = ensureKekeLifecycle(game);
+  if (!vehicle) return null;
+  try {
+    game.vehicleLifecycle.syncPartHealth({
+      vehicleId: game.playerVehicleId,
+      parts: {
+        body: clamp(game.s.condition, 0, 100),
+        engine: clamp(game.s.engine, 0, 100),
+        tyres: clamp(game.s.tyres, 0, 100),
+      },
+    });
+    return game.vehicleLifecycle.getVehicle(game.playerVehicleId);
+  } catch (error) {
+    if (!lifecycleWarningShown) {
+      lifecycleWarningShown = true;
+      console.warn('[Kano Life] Vehicle health could not be saved; gameplay remains active.', error);
+    }
+    return null;
+  }
+}
+
+function applyLifecycleHealthToRun(game, suppliedVehicle = null) {
+  if (!game?.s) return false;
+  try {
+    const vehicle = suppliedVehicle || ensureKekeLifecycle(game);
+    if (!vehicle?.parts) return false;
+    const bodyHealth = Number(vehicle.parts.body?.health);
+    const engineHealth = Number(vehicle.parts.engine?.health);
+    const tyreHealth = Number(vehicle.parts.tyres?.health);
+    if (Number.isFinite(bodyHealth)) game.s.condition = clamp(bodyHealth, 0, 100);
+    if (Number.isFinite(engineHealth)) game.s.engine = clamp(engineHealth, 0, 100);
+    if (Number.isFinite(tyreHealth)) game.s.tyres = clamp(tyreHealth, 0, 100);
+    return true;
+  } catch (error) {
+    if (!lifecycleWarningShown) {
+      lifecycleWarningShown = true;
+      console.warn('[Kano Life] Persistent health could not be restored; gameplay remains active.', error);
+    }
+    return false;
+  }
+}
+
+if (typeof originalResetRun === 'function') {
+  Game.prototype.resetRun = function persistentVehicleReset(...args) {
+    const result = originalResetRun.apply(this, args);
+    // On the very first reset this creates a record from the fresh default
+    // health. On later resets it restores the saved component health.
+    const vehicle = ensureKekeLifecycle(this);
+    applyLifecycleHealthToRun(this, vehicle);
+    return result;
+  };
+}
+
+if (typeof originalHitTraffic === 'function') {
+  Game.prototype.hit = function persistentTrafficImpact(vehicle, ...args) {
+    const s = this.s;
+    const playerSignedSpeed = Number.isFinite(s?.signedSpeed)
+      ? Number(s.signedSpeed)
+      : (s?.reverse ? -Math.abs(Number(s?.speed) || 0) : Math.abs(Number(s?.speed) || 0));
+    const trafficSpeed = Math.max(0, Number(vehicle?.speedKmh) || 25);
+    const trafficSignedSpeed = (vehicle?.direction === -1 ? -1 : 1) * trafficSpeed;
+    const relativeSpeed = Math.abs(playerSignedSpeed - trafficSignedSpeed);
+    const severity = clamp(relativeSpeed / 100, 0.08, 0.42);
+
+    const result = originalHitTraffic.call(this, vehicle, ...args);
+    try {
+      if (!this.s || !this.vehicleLifecycle) ensureKekeLifecycle(this);
+      const persistent = syncRunHealthToLifecycle(this);
+      if (persistent) {
+        this.vehicleLifecycle.recordImpact({
+          vehicleId: this.playerVehicleId,
+          part: 'body',
+          severity,
+          collision: true,
+        });
+        applyLifecycleHealthToRun(this, this.vehicleLifecycle.getVehicle(this.playerVehicleId));
+        this.ui?.update?.(this.s, this.route, this.driver);
+      }
+    } catch (error) {
+      if (!lifecycleWarningShown) {
+        lifecycleWarningShown = true;
+        console.warn('[Kano Life] Traffic impact persistence skipped safely.', error);
+      }
+    }
+    return result;
+  };
+}
+
+if (typeof originalHitPothole === 'function') {
+  Game.prototype.hitPothole = function persistentPotholeImpact(...args) {
+    const result = originalHitPothole.apply(this, args);
+    try {
+      if (!this.s || !this.vehicleLifecycle) ensureKekeLifecycle(this);
+      const persistent = syncRunHealthToLifecycle(this);
+      if (persistent) {
+        const roughRoad = this.s?.environment === 'badRoad' || this.s?.environment === 'muddy';
+        this.vehicleLifecycle.recordImpact({
+          vehicleId: this.playerVehicleId,
+          part: 'suspension',
+          severity: roughRoad ? 0.22 : 0.14,
+          pothole: true,
+        });
+        applyLifecycleHealthToRun(this, this.vehicleLifecycle.getVehicle(this.playerVehicleId));
+        this.ui?.update?.(this.s, this.route, this.driver);
+      }
+    } catch (error) {
+      if (!lifecycleWarningShown) {
+        lifecycleWarningShown = true;
+        console.warn('[Kano Life] Pothole damage persistence skipped safely.', error);
+      }
+    }
+    return result;
+  };
+}
+
+// Save non-impact condition changes too (for example a scripted breakdown or
+// roadside repair) only when a component actually changes. This avoids writes
+// on every frame while preserving the live game's existing rules.
+const presentationTrackedTick = Game.prototype.tick;
+if (typeof presentationTrackedTick === 'function') {
+  Game.prototype.tick = function persistChangedVehicleHealth(dt, ...args) {
+    const before = this.s ? {
+      body: Number(this.s.condition),
+      engine: Number(this.s.engine),
+      tyres: Number(this.s.tyres),
+    } : null;
+    const result = presentationTrackedTick.call(this, dt, ...args);
+    try {
+      const s = this.s;
+      if (before && s && (
+        Math.abs(Number(s.condition) - before.body) > 0.001 ||
+        Math.abs(Number(s.engine) - before.engine) > 0.001 ||
+        Math.abs(Number(s.tyres) - before.tyres) > 0.001
+      )) {
+        syncRunHealthToLifecycle(this);
+      }
+    } catch (error) {
+      if (!lifecycleWarningShown) {
+        lifecycleWarningShown = true;
+        console.warn('[Kano Life] Changed vehicle health could not be persisted; gameplay remains active.', error);
+      }
+    }
+    return result;
+  };
+}
 
 // Register all hooks before the actual game entry point creates its objects.
 await import('./main.js');
