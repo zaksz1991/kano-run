@@ -1,79 +1,75 @@
-KANO LIFE — GLOBAL LEADERBOARD UPGRADE
-======================================
+KANO LIFE — ACCOUNT CLOUD SAVE & CROSS-DEVICE PROGRESSION
+========================================================
 
 PURPOSE
 -------
-Adds a shared, server-backed global score board alongside the existing local
-save and tribe scoreboards. The board contains Overall, Hausa, Yoruba, and Igbo
-leaderboards. It submits only newly completed/banked runs, queues failed network
-submissions locally for retry, and exposes scores through the existing Vercel
-serverless API layout.
+Adds optional account-backed cloud save to the existing local save system.
+Authenticated users can upload/download their complete save and enable
+revision-checked automatic sync after verified local persist operations.
+Local gameplay and localStorage continue to work without cloud configuration.
 
-FILES IN THIS PACKAGE
----------------------
-index.html
-  Complete replacement for the current root index.html. It preserves the game's
-  existing screen/control IDs and adds the GlobalLeaderboardBridge module before
-  main.js so score-sync observation is installed before gameplay interactions.
+FILES
+-----
+js/KanoCloudSave.js
+  New cloud-save UI and REST integration. It uses Supabase Auth and PostgREST
+  directly; it adds no npm dependency and does not use a privileged API key.
 
 js/GlobalLeaderboardBridge.js
-  New frontend bridge. Observes successful saves to kano-life-save-v4, detects a
-  newly banked run through lastRuns, stores a retry queue in localStorage, submits
-  records to /api/leaderboard, and adds the Global Rank UI to NAIJA RANK and the
-  run report. It does not modify local wallet balances or unlocks.
+  Complete replacement preserving the existing global leaderboard bridge,
+  with a single added import to initialize KanoCloudSave.js. The current
+  index.html already loads GlobalLeaderboardBridge.js as an ES module.
 
-api/leaderboard.js
-  New Vercel API endpoint backed by Upstash Redis REST. It stores each score in
-  the overall board and the player's selected dialect board, with up to 500 rows
-  retained per board. It validates input and applies basic IP/session rate limits.
+supabase/kano_life_cloud_saves.sql
+  Database table, size constraint, grants and row-level-security policies.
 
-INSTALLATION
-------------
-Copy the files to the same relative paths in the existing kano-run project:
-  index.html                         (replace the entire file)
-  js/GlobalLeaderboardBridge.js      (new file)
-  api/leaderboard.js                 (new file)
+SETUP
+-----
+1. In Supabase Dashboard, create or use a project.
+2. Open SQL Editor, create a query, paste supabase/kano_life_cloud_saves.sql,
+   and run it.
+3. In Authentication settings, ensure Email provider is enabled. Keep email
+   confirmation enabled if desired; new users may need to confirm their email.
+4. In Project Settings > API, copy the Project URL and the public anon or
+   publishable key. Do NOT use a service_role/secret key.
+5. Open Kano Life and click CLOUD SAVE on the start screen or pause menu.
+   Enter the URL and public key and click SAVE CLOUD CONFIG.
+6. Create an account or sign in with email and password.
+7. If a cloud save already exists, choose USE CLOUD SAVE or UPLOAD THIS DEVICE.
+   These copies are not silently merged; export a JSON backup before replacing
+   one side. If there is no cloud record, choose CREATE CLOUD SAVE FROM THIS DEVICE.
+8. Once linked, every verified local persist event schedules a cloud sync after
+   a short debounce. SYNC NOW forces a sync. A stale revision pauses sync and
+   asks you to choose again, preventing an older tab from silently overwriting
+   a newer cloud save.
 
-No edits to game.js, ui.js, storage.js, main.js, or the renderer are required.
-This package deliberately leaves those gameplay files untouched.
+WHAT IS SYNCHRONIZED
+--------------------
+The complete existing save object, including banked funds, banking history,
+high scores, last runs, local Hausa/Yoruba/Igbo boards, achievements, daily
+missions, unlocked drivers/paint, settings, and any active-run checkpoint that
+is already present in storage.js.
 
-SERVER STORAGE CONFIGURATION
-----------------------------
-The API reuses the same Vercel environment variables as the existing live-user
-presence endpoint:
-  UPSTASH_REDIS_REST_URL
-  UPSTASH_REDIS_REST_TOKEN
+WHAT THIS DOES NOT DO
+--------------------
+- It does not generate an account-backed save until you configure Supabase,
+  run the SQL, and sign in.
+- It does not magically checkpoint active gameplay each frame. It mirrors data
+  whenever the existing storage module persist() succeeds. If a run is not
+  written to local storage, there is nothing new to upload yet.
+- It does not merge two diverged save files. It requires an explicit choice.
+- This is not authoritative anti-cheat. The browser controls much of the game
+  state; valuable rewards still require server-side validation.
+- It does not sync the anonymous global leaderboard queue as private save data.
 
-If those variables are already configured for api/live-users.js, the leaderboard
-uses that same Redis database. If not configured, the global board returns an
-explicit unavailable message. While the service is unavailable, newly banked
-scores remain queued in the browser and retry when connectivity returns.
-
-WHAT IS SHARED VS LOCAL
------------------------
-Shared online: completed run score, distance, tribe, driver name, mode, selected
-public display name, and submission date.
-
-Still local to this browser: wallet funds, unlocked drivers/paint, achievements,
-daily missions, active-run checkpoint, and other game settings. This package is
-not cloud-save/account synchronization; that requires account identity and a
-separate secure player-save backend.
-
-Existing local scores are not automatically uploaded as if they were new runs.
-Only a newly banked run observed after installation is submitted. This avoids
-replaying historical local records and creating accidental duplicates.
-
-TRUST / ANTI-CHEAT LIMITATION
-----------------------------
-The leaderboard is cross-browser and server-backed, but players are anonymous
-and the run simulation still takes place in the browser. Rate limits and input
-validation reduce accidental abuse; they cannot prove that a submitted score is
-honest. A competitive, cheat-resistant board needs authenticated player accounts
-and server-side validation/authority. Do not use this guest leaderboard for cash
-prizes or other valuable rewards.
+SECURITY
+--------
+The browser uses only the public anon/publishable key with Supabase Auth. RLS
+restricts reads and writes to auth.uid() = user_id. Never paste a service_role
+or secret key into the game. The public key is not an access control by itself;
+the SQL policies are essential.
 
 VALIDATION
 ----------
-JavaScript syntax checks, HTML parsing, duplicate-ID checks, and an isolated API
-mock test were run on the package. Actual Redis connectivity and visual behaviour
-have not been tested in the user's live game.
+This package's JavaScript should be syntax-checked as ES modules and the SQL
+reviewed/run in the user's Supabase project. Actual authentication, RLS, network
+sync, and visual UI cannot be confirmed until configured against a real project.
