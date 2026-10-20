@@ -75,7 +75,7 @@ test('drop removes one passenger and records fare progress', () => {
   const { game } = createHarness();
   game.start('career');
   game.s.passengers = [{ name: 'Amina', dest: game.route.name, seats: 1, fare: 500, class: 'worker' }];
-  game.s.speed = 0;
+  game.s.speed = 0; game.s.signedSpeed = 0;
   const fareBefore = game.s.fares;
   assert.equal(game.drop({ dest: game.route.name }), true);
   assert.equal(game.s.passengers.length, 0);
@@ -256,7 +256,7 @@ test('time attack finishes at the 3.5 km target with a medal result', () => {
   const { game, calls } = createHarness();
   game.start('timeAttack');
   game.s.distance = 3.499;
-  game.s.speed = 150;
+  game.s.speed = 150; game.s.signedSpeed = 150;
   game.s.invuln = 60;
   game.tick(0.045);
   assert.equal(game.state, 'OVER');
@@ -267,8 +267,8 @@ test('time attack finishes at the 3.5 km target with a medal result', () => {
 test('potholes damage tyres and are counted by the challenge', () => {
   const { game } = createHarness();
   game.start('potholes');
-  game.s.speed = 70;
-  game.s.zones = [{ id: 'test-pothole', type: 'pothole', lane: 1, depth: 0.18, dest: game.route.name, seats: 0, hub: false, label: '', warned: false }];
+  game.s.speed = 70; game.s.signedSpeed = 70;
+  game.s.zones = [{ id: 'test-pothole', type: 'pothole', lane: 1, depth: 0.008, dest: game.route.name, seats: 0, hub: false, label: '', warned: false }];
   const tyresBefore = game.s.tyres;
   game.moveZones(1 / 60);
   assert.equal(game.s.potholeHits, 1);
@@ -280,7 +280,7 @@ test('Match Drop applies the wrong-stop penalty when destination does not match'
   const { game } = createHarness();
   game.start('matchDrop');
   game.s.passengers = [{ name: 'Amina', dest: 'Kumbotso', seats: 1, fare: 1000, class: 'worker' }];
-  game.s.speed = 0;
+  game.s.speed = 0; game.s.signedSpeed = 0;
   game.s.streak = 2;
   game.drop({ dest: game.route.name });
   assert.equal(game.s.matchedDrops, 0);
@@ -292,7 +292,7 @@ test('Potholes Challenge fails after eight hits at the 3 km finish', () => {
   const { game, calls } = createHarness();
   game.start('potholes');
   game.s.distance = 2.999;
-  game.s.speed = 150;
+  game.s.speed = 150; game.s.signedSpeed = 150;
   game.s.potholeHits = 8;
   game.s.invuln = 60;
   game.tick(0.045);
@@ -329,7 +329,7 @@ test('clean-distance and safe-speed mission trackers advance during a clear run'
   game.start('career');
   game.s.traffic = [];
   game.s.zones = [];
-  game.s.speed = 110;
+  game.s.speed = 110; game.s.signedSpeed = 110;
   game.s.invuln = 60;
   game.tick(0.045);
   assert.ok(game.s.cleanDistance > 0);
@@ -350,7 +350,7 @@ test('matched destination streak advances in Career, completes run mission and u
     game.start('career');
     game.s.missions = [{ ...MISSION_POOL.find((mission) => mission.id === 'streak3'), done: false }];
     game.s.missionProgress = {};
-    game.s.speed = 0;
+    game.s.speed = 0; game.s.signedSpeed = 0;
     for (let index = 0; index < 3; index += 1) {
       game.s.passengers = [{ name: 'Amina', dest: 'Kumbotso', seats: 1, fare: 400, class: 'worker' }];
       game.drop({ dest: 'Kumbotso' });
@@ -423,7 +423,7 @@ test('Career starts at a calmer urban cruise and gas stays below racing-game spe
 test('roadside pickup zones stop advancing when the keke is fully stopped', () => {
   const { game } = createHarness();
   game.start('career');
-  game.s.speed = 0;
+  game.s.speed = 0; game.s.signedSpeed = 0;
   const before = game.s.zones.map((zone) => zone.depth);
   game.moveZones(1.5);
   const after = game.s.zones.map((zone) => zone.depth);
@@ -435,15 +435,15 @@ test('same-direction traffic recedes when faster than the keke; overtaking and o
   const { game } = createHarness();
   game.start('career');
   game.s.traffic = [{ id: 'receding', type: 'car', lane: 1, direction: 1, depth: 1, speedKmh: 24, passed: false }];
-  game.s.speed = 0;
+  game.s.speed = 0; game.s.signedSpeed = 0;
   game.moveTraffic(1);
   assert.ok(game.s.traffic[0].depth > 1, 'stationary keke should watch same-way traffic pull away');
   game.s.traffic = [{ id: 'overtake', type: 'car', lane: 1, direction: 1, depth: 1, speedKmh: 12, passed: false }];
-  game.s.speed = 38;
+  game.s.speed = 38; game.s.signedSpeed = 38;
   game.moveTraffic(1);
   assert.ok(game.s.traffic[0].depth < 1, 'faster player should close the gap to slower traffic');
   game.s.traffic = [{ id: 'oncoming', type: 'car', lane: 0, direction: -1, depth: 1, speedKmh: 32, passed: false }];
-  game.s.speed = 22;
+  game.s.speed = 22; game.s.signedSpeed = 22;
   game.moveTraffic(1);
   assert.ok(game.s.traffic[0].depth < 1, 'oncoming vehicle should close the gap from the opposing lane');
 });
@@ -451,7 +451,7 @@ test('same-direction traffic recedes when faster than the keke; overtaking and o
 test('collision damage scales with relative speed and low-speed scrapes remain recoverable', () => {
   const { game } = createHarness();
   game.start('career');
-  game.s.speed = 20;
+  game.s.speed = 20; game.s.signedSpeed = 20;
   const before = game.s.condition;
   game.hit({ type: 'car', direction: 1, speedKmh: 19 });
   assert.ok(before - game.s.condition < 1.5, 'near-matching traffic speeds should cause a light scrape');
@@ -500,14 +500,14 @@ test('roadside pickup is forgiving at walking speed, while checkpoint groups req
   game.s.zones = [{ id: 'shoulder-pickup', type: 'pickup', lane: 2, side: 1, roadside: true, depth: 0.1, dest: 'Hotoro', seats: 1, hub: false, label: 'PICK UP', warned: false, retryAt: 0 }];
   game.s.steer = 1;
   game.s.targetLane = 1;
-  game.s.speed = 10;
+  game.s.speed = 10; game.s.signedSpeed = 10;
   game.moveZones(0.001);
   assert.equal(game.s.passengers.length, 1, 'single roadside pickup accepts a slow roll under 12 km/h');
   assert.equal(game.s.pullOverSide, 1);
 
   game.s.passengers = [];
   game.s.zones = [{ id: 'general-checkpoint', type: 'pickup', lane: 2, side: 1, roadside: true, depth: 0.1, dest: 'Sabon Gari', seats: 3, hub: true, label: 'GENERAL CHECKPOINT', warned: false, retryAt: 0 }];
-  game.s.speed = 9;
+  game.s.speed = 9; game.s.signedSpeed = 9;
   game.moveZones(0.001);
   assert.equal(game.s.passengers.length, 0, 'group boarding must wait until almost stopped');
 });

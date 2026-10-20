@@ -11,13 +11,14 @@ function state(overrides = {}) {
     signedSpeed: 0,
     reverse: false,
     steer: 0,
-    zones: [{ id: 'stop-1', type: 'pickup', depth: 0.12, lane: 1, hub: false }],
+    // Raw zone depth; the module adds ROADSIDE_INTERACTION_DEPTH_OFFSET (0.12), so 0.05 -> 0.17 (inside stop range).
+    zones: [{ id: 'stop-1', type: 'pickup', depth: 0.05, lane: 1, hub: false }],
     ...overrides,
   };
 }
 
 test('pickup guidance changes from approach to ready as the zone reaches the stop range', () => {
-  const approach = getInteractionAdvice(state({ zones: [{ type: 'pickup', depth: 0.25, lane: 1 }] }), 'PLAY');
+  const approach = getInteractionAdvice(state({ zones: [{ type: 'pickup', depth: 0.12, lane: 1 }] }), 'PLAY');
   assert.equal(approach.type, 'approach');
 
   const ready = getInteractionAdvice(state(), 'PLAY');
@@ -57,7 +58,7 @@ test('stationary road interaction receives a temporary speed epsilon and restore
   let speedSeenInside = null;
   const game = {
     state: 'PLAY',
-    s: { speed: 0, signedSpeed: 0, reverse: false, event: null },
+    s: { speed: 0, signedSpeed: 0, reverse: false, event: null, zones: [] },
     moveZones() {
       speedSeenInside = this.s.signedSpeed;
       return 'called';

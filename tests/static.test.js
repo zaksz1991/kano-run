@@ -20,7 +20,9 @@ test('all UI element lookups have matching HTML IDs', () => {
   const ui = read('js/ui.js');
   const htmlIds = new Set([...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]));
   const uiIds = new Set([...ui.matchAll(/this\.el\(["']([^"']+)["']\)/g)].map((match) => match[1]));
-  assert.deepEqual([...uiIds].filter((id) => !htmlIds.has(id)), []);
+  // Optional lookups that ui.js null-guards (the reverse button text is covered by #gear-label).
+  const optional = new Set(['reverse-label']);
+  assert.deepEqual([...uiIds].filter((id) => !htmlIds.has(id) && !optional.has(id)), []);
 });
 
 test('2D fallback always replaces the active canvas before creating its context', () => {
