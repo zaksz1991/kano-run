@@ -1,5 +1,5 @@
 /**
- * KANO LIFE — GAMEPLAY PRESENTATION REPAIR
+ * KANO LIFE — GAMEPLAY PRESENTATION + TRAFFIC MOTION REPAIR
  *
  * Production-safe additive repair layer. Core simulation/storage remains in
  * Game, UI and Renderer3D. This module is loaded by index.html and imports
@@ -740,6 +740,90 @@ function attachRider(actor) {
   actor.userData.kanoRepairRider = rider;
   riderGroups.add(rider);
 }
+
+// Animate traffic wheels and suspension without replacing the vehicle models.
+// Imported GLBs use wheel/tire names when available; procedural fallbacks expose
+// the keke wheel list directly, with geometry-based detection for fallback cars
+// and motorcycles. Original rotations and transforms are preserved.
+function collectTrafficWheels(actor) {
+  if (!actor?.isObject3D) return [];
+  if (Array.isArray(actor.userData?.kanoTrafficWheelParts)) {
+    return actor.userData.kanoTrafficWheelParts;
+  }
+
+  const parts = actor.userData?.driverAnimationParts?.wheels;
+  if (Array.isArray(parts) && parts.length) {
+    actor.userData.kanoTrafficWheelParts = parts.filter((wheel) => wheel?.isObject3D);
+    return actor.userData.kanoTrafficWheelParts;
+  }
+
+  const wheels = [];
+  const seen = new Set();
+  actor.traverse?.((node) => {
+    if (!node?.isMesh || !node.geometry || seen.has(node)) return;
+    const name = `${node.name || ''} ${node.material?.name || ''}`;
+    const geometry = node.geometry;
+    const type = geometry.type || '';
+    const radius = Number(geometry.parameters?.radiusTop ?? geometry.parameters?.radius ?? 0);
+    const namedWheel = /wheel|tyre|tire/i.test(name) && (radius >= 0.12 || type === 'TorusGeometry' || geometry.isBufferGeometry === true);
+    const fallbackBikeWheel = type === 'TorusGeometry' && Number(node.position?.y) < 0.55;
+    const fallbackCarWheel = type === 'CylinderGeometry'
+      && radius >= 0.19
+      && Number(node.position?.y) > 0.12
+      && Number(node.position?.y) < 0.42
+      && Math.abs(Math.abs(Number(node.rotation?.z) || 0) - Math.PI / 2) < 0.18
+      && (Math.abs(Number(node.position?.x) || 0) > 0.3 || Math.abs(Number(node.position?.z) || 0) > 0.3);
+
+    if (namedWheel || fallbackBikeWheel || fallbackCarWheel) {
+      seen.add(node);
+      wheels.push(node);
+    }
+  });
+
+  actor.userData ||= {};
+  actor.userData.kanoTrafficWheelParts = wheels;
+  return wheels;
+}
+
+function animateTrafficActor(actor, vehicle, dt, time) {
+  if (!actor?.isObject3D || dt <= 0) return;
+  actor.userData ||= {};
+  if (!Number.isFinite(actor.userData.kanoTrafficPhase)) {
+    actor.userData.kanoTrafficPhase = Math.random() * Math.PI * 2;
+  }
+  if (!Number.isFinite(actor.userData.kanoTrafficBaseZ)) {
+    actor.userData.kanoTrafficBaseZ = Number(actor.rotation.z) || 0;
+  }
+
+  const phase = actor.userData.kanoTrafficPhase;
+  const speed = clamp(Number(vehicle?.speedKmh) || Number(vehicle?.speed) * 24 || 0, 0, 55);
+  const directionSign = vehicle?.direction === -1 ? -1 : 1;
+  const wheelStep = directionSign * (speed / 20) * dt;
+  const wheels = collectTrafficWheels(actor);
+  for (const wheel of wheels) {
+    if (!wheel?.isObject3D || !wheel.parent) continue;
+    // Local-axis rotation works for the common imported and generated wheel rigs.
+    try { wheel.rotateX(wheelStep); } catch (_) {}
+  }
+
+  const bike = vehicle?.type === 'motorcycle';
+  const keke = vehicle?.type === 'keke';
+  const bounce = bike ? 0.010 : keke ? 0.007 : 0.004;
+  actor.position.y = Math.max(0, Math.sin(time * (bike ? 7.2 : 4.8) + phase) * bounce);
+  actor.rotation.z = actor.userData.kanoTrafficBaseZ
+    + Math.sin(time * (bike ? 2.6 : 1.5) + phase) * (bike ? 0.012 : 0.003);
+
+  // A named GLB rider receives a restrained upper-body bob. Procedural fallback
+  // riders are animated separately and are not double-animated here.
+  const rider = actor.userData.kanoNamedRiderRoot;
+  if (rider?.parent && !actor.userData.kanoRepairRider) {
+    if (!Number.isFinite(rider.userData.kanoBaseY)) rider.userData.kanoBaseY = Number(rider.position.y) || 0;
+    if (!Number.isFinite(rider.userData.kanoBaseZ)) rider.userData.kanoBaseZ = Number(rider.rotation.z) || 0;
+    rider.position.y = rider.userData.kanoBaseY + Math.abs(Math.sin(time * 5.1 + phase)) * 0.006;
+    rider.rotation.z = rider.userData.kanoBaseZ + Math.sin(time * 2.0 + phase) * 0.008;
+  }
+}
+
 if (typeof originalMakeTrafficActor === 'function') {
   Renderer3D.prototype.makeTrafficActor = function patchedMakeTrafficActor(vehicle, ...args) {
     const manager = this.models;
@@ -759,6 +843,16 @@ if (typeof originalMakeTrafficActor === 'function') {
       actor.userData ||= {};
       if (returnedModel && objectContains(actor, returnedModel)) actor.userData.kanoLoadedTrafficModel = true;
       else actor.userData.kanoGeneratedTraffic = true;
+      actor.userData.kanoTrafficWheelParts = undefined;
+      actor.userData.kanoTrafficBaseZ = Number(actor.rotation.z) || 0;
+      actor.userData.kanoTrafficPhase = Math.random() * Math.PI * 2;
+      actor.traverse?.((node) => {
+        if (!actor.userData.kanoNamedRiderRoot && node !== actor
+          && /(rider|motorist|motorcycle.?driver|humanoid|person|driver.?body|biker)/i.test(node.name || '')
+          && (node.isGroup || node.children?.length)) {
+          actor.userData.kanoNamedRiderRoot = node;
+        }
+      });
     }
     return actor;
   };
@@ -771,6 +865,15 @@ if (typeof originalSyncTraffic === 'function') {
       if (vehicle?.type !== 'motorcycle') continue;
       const actor = this.trafficActors?.get?.(vehicle.id) || this.trafficActors?.[vehicle.id];
       if (!actor) continue;
+      if (!actor.userData?.kanoNamedRiderRoot) {
+        actor.traverse?.((node) => {
+          if (!actor.userData.kanoNamedRiderRoot && node !== actor
+            && /(rider|motorist|motorcycle.?driver|humanoid|person|driver.?body|biker)/i.test(node.name || '')
+            && (node.isGroup || node.children?.length)) {
+            actor.userData.kanoNamedRiderRoot = node;
+          }
+        });
+      }
       // Attach to every motorcycle actor. The rider helper intentionally
       // skips this layer's procedural fallback bikes because renderer3d.js
       // already builds a torso and helmet for those. Loaded GLBs are checked
@@ -782,6 +885,7 @@ if (typeof originalSyncTraffic === 'function') {
         rider.rotation.z = Math.sin(time * 3.5 + (vehicle.lane || 0)) * 0.018;
         rider.position.y = 0.30 + Math.abs(Math.sin(time * 5.3 + (vehicle.lane || 0))) * 0.018;
       }
+      animateTrafficActor(actor, vehicle, clamp(Number(this._kanoRepairDelta) || 0, 0, 0.05), Number(this._kanoRepairTime) || 0);
     }
     return result;
   };
@@ -860,7 +964,8 @@ if (typeof originalRendererDraw === 'function') {
   Renderer3D.prototype.draw = function patchedPresentationDraw(state, dt, ...args) {
     activeRenderer = this;
     tuneRendererForClarity(this);
-    this._kanoRepairTime = (Number(this._kanoRepairTime) || 0) + clamp(dt, 0, 0.05);
+    this._kanoRepairDelta = clamp(dt, 0, 0.05);
+    this._kanoRepairTime = (Number(this._kanoRepairTime) || 0) + this._kanoRepairDelta;
     const game = activeGame || window.__KANO_LIFE_GAME__;
     const eventType = typeof game?.s?.event === 'string' ? game.s.event : null;
     try {
