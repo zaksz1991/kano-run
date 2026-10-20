@@ -11,25 +11,25 @@ const CATALOG_KEYS = [
 
 const normalizeRel = (value) => value.split(path.sep).join('/');
 const has = (text, regex) => regex.test(String(text || '').toLowerCase());
-
-// Inputs may be either relative-path strings or discovered GLB objects.
-// Several catalog categories are assembled from objects so sorting must use
-// each object's .path rather than calling localeCompare() on the object itself.
+// Accept both relative path strings and discovered GLB records. The catalogue
+// builder intentionally unions directory-based object lists with name-based
+// object lists; sorting the objects directly caused Vercel's
+// `a.localeCompare is not a function` build failure.
 const sortKey = (item) => {
   if (typeof item === 'string') return item;
   if (item && typeof item.path === 'string') return item.path;
   return String(item ?? '');
 };
-const uniqueSorted = (items) => {
+function uniqueSorted(items) {
   const unique = new Map();
   for (const item of items) {
     const key = sortKey(item);
     if (!unique.has(key)) unique.set(key, item);
   }
   return [...unique.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([left], [right]) => left.localeCompare(right))
     .map(([, item]) => item);
-};
+}
 
 function readGlbHints(filePath) {
   try {
@@ -96,9 +96,11 @@ function makeCatalog(files) {
   // Stable folder paths take precedence over names, so renamed files within
   // established asset folders continue to be discovered.
   const kekeDir = under('vehicles/keke');
-  assign('keke', uniqueSorted([...kekeDir, ...matching(/\b(keke|napep|adaidaita|tricycle)\b/)]));
+  assign('keke', uniqueSorted([...kekeDir, ...matching(/\b(keke|napep|adaidaita|tricycle)\b/) ]));
+
   const allVehicles = under('vehicles');
   const carsDir = under('vehicles/cars');
+  const specialDir = under('vehicles/special');
   const specialVehicleText = /\b(motorcycle|motorbike|motor bike|okada|scooter|ktm|spyder|bus|coach|minibus|coaster|truck|lorry|freight|cargo|peterbilt|volvo fh|cement truck|pickup|police|patrol|karota|ambulance)\b/;
   const ordinaryCars = carsDir.filter((file) => !has(fileText(file), specialVehicleText));
   assign('car', ordinaryCars.length ? ordinaryCars : carsDir);
@@ -123,7 +125,7 @@ function makeCatalog(files) {
   assign('passengerMan', menPassengers.length ? menPassengers : passengerFiles);
   const vipPassengers = matching(/\b(vip|suit|formal|businessman|executive)\b/, passengerFiles);
   assign('passengerVIP', vipPassengers.length ? vipPassengers : passengerFiles);
-  const security = matching(/\b(security|police man|policeman|officer|karota|traffic officer|guard)\b/, fromPaths(characterFiles));
+  const security = matching(/\b(security|police man|policeman|officer|karota|traffic officer|guard)\b/, characterFiles.map((p) => files.find((file) => file.path === p)).filter(Boolean));
   assign('security', security.length ? security : pedestrianFiles);
   assign('pedestrian', pedestrianFiles);
   const womenPedestrians = matching(/\b(woman|women|female|girl|hijab|lady|keke female)\b/, pedestrianFiles);
@@ -149,6 +151,7 @@ function makeCatalog(files) {
   const environmentFiles = under('environment');
   const groundNames = matching(/\b(pothole|manhole|sand|dirt|ground|asphalt|road damage|broken road|gravel|mud)\b/, environmentFiles);
   assign('dirtmound', uniqueSorted([...environmentGround, ...groundNames]));
+
   const allAssigned = new Set([...reasons.entries()].filter(([, keys]) => keys.size > 0).map(([relativePath]) => relativePath));
   const fileReports = files.map((file) => ({
     path: file.path,
@@ -166,25 +169,177 @@ function makeCatalog(files) {
   };
 }
 
-export async function scanGlbCatalog(modelRoot) {
+function readCatalogOverrides(overrideFile) {
+  if (!overrideFile || !fs.existsSync(overrideFile)) {
+    return { overrides: { schemaVersion: 1, categories: {}, exclude: {} }, errors: [] };
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(overrideFile, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { overrides: { schemaVersion: 1, categories: {}, exclude: {} }, errors: ['Override file must contain a JSON object.'] };
+    }
+    return { overrides: parsed, errors: [] };
+  } catch (error) {
+    return { overrides: { schemaVersion: 1, categories: {}, exclude: {} }, errors: [`Could not read override JSON: ${error?.message || error}`] };
+  }
+}
+
+function validateOverridePath(rawPath, existingPaths) {
+  if (typeof rawPath !== 'string' || !rawPath.trim()) {
+    return { path: null, error: 'Model path must be a non-empty string.' };
+  }
+  const normalized = rawPath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  if (normalized.startsWith('/') || /^[a-z]:/i.test(normalized) || normalized.split('/').some((part) => part === '..' || part === '' || part === '.')) {
+    return { path: null, error: `Path must be relative to public/assets/models and cannot contain traversal segments: ${rawPath}` };
+  }
+  if (!existingPaths.has(normalized)) {
+    const caseInsensitiveMatch = [...existingPaths].find((candidate) => candidate.toLowerCase() === normalized.toLowerCase());
+    return {
+      path: null,
+      error: caseInsensitiveMatch
+        ? `Filename case does not match the actual asset. Use: ${caseInsensitiveMatch}`
+        : `File was not found under public/assets/models: ${normalized}`,
+      missingPath: normalized,
+    };
+  }
+  return { path: normalized, error: null };
+}
+
+function applyCatalogOverrides(mapping, discovered, overrides, overrideFile = '') {
+  const catalog = Object.fromEntries(CATALOG_KEYS.map((key) => [key, [...(mapping.catalog[key] || [])]]));
+  const existingPaths = new Set(discovered.map((file) => file.path));
+  const errors = [];
+  const missingPaths = [];
+  const appliedCategories = [];
+  const appliedExclusions = [];
+  const rawCategories = overrides?.categories;
+  const rawExcludes = overrides?.exclude;
+
+  if (overrides?.schemaVersion != null && overrides.schemaVersion !== 1) {
+    errors.push(`Unsupported override schemaVersion ${String(overrides.schemaVersion)}; expected 1.`);
+  }
+
+  if (rawCategories != null && (!rawCategories || typeof rawCategories !== 'object' || Array.isArray(rawCategories))) {
+    errors.push('"categories" must be an object whose keys are catalog categories and values are path arrays.');
+  } else {
+    for (const [key, rawPaths] of Object.entries(rawCategories || {})) {
+      if (!CATALOG_KEYS.includes(key)) {
+        errors.push(`Unknown category "${key}". Allowed categories: ${CATALOG_KEYS.join(', ')}.`);
+        continue;
+      }
+      if (!Array.isArray(rawPaths)) {
+        errors.push(`Category "${key}" must contain an array of model paths.`);
+        continue;
+      }
+      if (rawPaths.length === 0) {
+        // An explicit [] intentionally disables the auto-detected category.
+        catalog[key] = [];
+        appliedCategories.push(key);
+        continue;
+      }
+      const valid = [];
+      for (const rawPath of rawPaths) {
+        const result = validateOverridePath(rawPath, existingPaths);
+        if (result.path) valid.push(result.path);
+        else {
+          errors.push(`[${key}] ${result.error}`);
+          if (result.missingPath) missingPaths.push(result.missingPath);
+        }
+      }
+      if (valid.length) {
+        // A partially valid override keeps only the explicitly approved, valid files.
+        catalog[key] = uniqueSorted(valid);
+        appliedCategories.push(key);
+      } else {
+        // Fail safe: a typo must not silently empty a previously working category.
+        errors.push(`Category "${key}" override had no valid files; automatic candidates were preserved.`);
+      }
+    }
+  }
+
+  if (rawExcludes != null && (!rawExcludes || typeof rawExcludes !== 'object' || Array.isArray(rawExcludes))) {
+    errors.push('"exclude" must be an object whose keys are catalog categories and values are path arrays.');
+  } else {
+    for (const [key, rawPaths] of Object.entries(rawExcludes || {})) {
+      if (!CATALOG_KEYS.includes(key)) {
+        errors.push(`Unknown exclusion category "${key}".`);
+        continue;
+      }
+      if (!Array.isArray(rawPaths)) {
+        errors.push(`Exclusion for "${key}" must be an array of model paths.`);
+        continue;
+      }
+      const validExclusions = new Set();
+      for (const rawPath of rawPaths) {
+        const result = validateOverridePath(rawPath, existingPaths);
+        if (result.path) validExclusions.add(result.path);
+        else {
+          errors.push(`[exclude.${key}] ${result.error}`);
+          if (result.missingPath) missingPaths.push(result.missingPath);
+        }
+      }
+      if (validExclusions.size) {
+        const presentBefore = new Set(catalog[key]);
+        catalog[key] = catalog[key].filter((candidate) => !validExclusions.has(candidate));
+        for (const removedPath of validExclusions) {
+          if (presentBefore.has(removedPath)) appliedExclusions.push({ category: key, path: removedPath });
+        }
+      }
+    }
+  }
+
+  const membership = new Map(discovered.map((file) => [file.path, []]));
+  for (const [key, paths] of Object.entries(catalog)) {
+    for (const modelPath of paths) membership.get(modelPath)?.push(key);
+  }
+  const files = mapping.files.map((file) => {
+    const categories = (membership.get(file.path) || []).sort();
+    return { ...file, categories, classified: categories.length > 0 };
+  });
+  const populatedCatalog = Object.fromEntries(Object.entries(catalog).map(([key, paths]) => [key, uniqueSorted(paths)]));
+  const unclassified = files.filter((file) => !file.classified).map((file) => file.path).sort();
+  return {
+    catalog: populatedCatalog,
+    categoryCounts: Object.fromEntries(CATALOG_KEYS.map((key) => [key, populatedCatalog[key].length])),
+    files,
+    unclassified,
+    overrideAudit: {
+      file: overrideFile ? normalizeRel(path.relative(process.cwd(), overrideFile)) : 'scripts/glb-catalog-overrides.json',
+      appliedCategories: uniqueSorted(appliedCategories),
+      appliedExclusions,
+      missingPaths: uniqueSorted(missingPaths),
+      errors,
+      status: errors.length ? (appliedCategories.length || appliedExclusions.length ? 'applied_with_warnings' : 'needs_attention')
+        : (appliedCategories.length || appliedExclusions.length ? 'applied' : 'no_manual_overrides'),
+    },
+  };
+}
+
+export async function scanGlbCatalog(modelRoot, overrideFile = null) {
   const discovered = walkGlbFiles(modelRoot).map((file) => {
     let bytes = 0;
     try { bytes = fs.statSync(file.absolutePath).size; } catch { /* file changed mid-scan */ }
     return { ...file, bytes, hints: readGlbHints(file.absolutePath) };
   }).sort((a, b) => a.path.localeCompare(b.path));
-  const mapping = makeCatalog(discovered);
+  const automatic = makeCatalog(discovered);
+  const resolvedOverrideFile = overrideFile || path.resolve(modelRoot, '..', '..', '..', 'scripts', 'glb-catalog-overrides.json');
+  const { overrides, errors: readErrors } = readCatalogOverrides(resolvedOverrideFile);
+  const mapping = applyCatalogOverrides(automatic, discovered, overrides, resolvedOverrideFile);
+  mapping.overrideAudit.errors.unshift(...readErrors);
+  if (readErrors.length && mapping.overrideAudit.status === 'no_manual_overrides') mapping.overrideAudit.status = 'needs_attention';
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     root: 'public/assets/models/',
     discoveredCount: discovered.length,
     note: discovered.length
-      ? 'Catalog paths were generated from GLB files found in the project at build/dev time. Unclassified assets are listed for explicit review rather than assigned to a potentially incorrect scene category.'
+      ? 'Catalog paths come from the exact GLB files found at build/dev time. Automatic mapping is supplemented by scripts/glb-catalog-overrides.json. Invalid manual paths are reported; an invalid all-missing override preserves the previous automatic category.'
       : 'No GLB files were found at the scanned model root. Existing static model catalogue was left unchanged.',
     catalog: mapping.catalog,
     categoryCounts: mapping.categoryCounts,
     unclassified: mapping.unclassified,
     files: mapping.files,
+    overrideAudit: mapping.overrideAudit,
   };
 }
 
@@ -203,13 +358,14 @@ function replaceCatalog(source, catalog) {
 }
 
 export function createGlbCatalogSyncPlugin() {
-  const state = { root: process.cwd(), publicDir: 'public', modelRoot: '', latestReport: null };
+  const state = { root: process.cwd(), publicDir: 'public', modelRoot: '', overridesFile: '', latestReport: null };
   const auditPath = '/assets/models/model-catalog-audit.generated.json';
 
   async function refreshReport() {
-    state.latestReport = await scanGlbCatalog(state.modelRoot);
+    state.latestReport = await scanGlbCatalog(state.modelRoot, state.overridesFile);
     return state.latestReport;
   }
+
   return {
     name: 'kano-life-glb-catalog-sync',
     enforce: 'pre',
@@ -219,6 +375,7 @@ export function createGlbCatalogSyncPlugin() {
         ? ''
         : (typeof config.publicDir === 'string' ? config.publicDir : 'public');
       state.modelRoot = path.resolve(state.root, state.publicDir, 'assets', 'models');
+      state.overridesFile = path.resolve(state.root, 'scripts', 'glb-catalog-overrides.json');
       await refreshReport();
     },
     async buildStart() {
@@ -232,6 +389,8 @@ export function createGlbCatalogSyncPlugin() {
         const populated = Object.entries(report.categoryCounts).filter(([, count]) => count > 0).map(([key, count]) => `${key}:${count}`);
         console.info(`[Kano GLB Catalog] Discovered ${report.discoveredCount} actual GLB files. Populated categories: ${populated.join(', ')}`);
         if (report.unclassified.length) console.warn(`[Kano GLB Catalog] ${report.unclassified.length} file(s) remain unclassified; see assets/models/model-catalog-audit.generated.json.`);
+        if (report.overrideAudit?.errors?.length) console.warn('[Kano GLB Catalog] Manual override warnings:', report.overrideAudit.errors);
+        if (report.overrideAudit?.appliedCategories?.length) console.info(`[Kano GLB Catalog] Manual overrides applied to: ${report.overrideAudit.appliedCategories.join(', ')}`);
       } else {
         console.warn(`[Kano GLB Catalog] No GLBs found under ${state.modelRoot}; leaving the original model catalogue in place.`);
       }
@@ -262,16 +421,21 @@ export function createGlbCatalogSyncPlugin() {
         }
       });
       server.watcher.add(state.modelRoot);
-      const onModelFolderChange = (changedPath) => {
-        const normalized = changedPath.replace(/\\/g, '/').toLowerCase();
-        if (!normalized.endsWith('.glb')) return;
+      server.watcher.add(state.overridesFile);
+      const managerPath = path.resolve(state.root, 'js', 'ModelManager.js');
+      const invalidateAndReload = () => {
         refreshReport().catch((error) => console.warn('[Kano GLB Catalog] rescan failed', error));
-        const managerPath = path.resolve(state.root, 'js', 'ModelManager.js');
         const module = server.moduleGraph.getModuleById(managerPath);
         if (module) server.moduleGraph.invalidateModule(module);
         server.ws.send({ type: 'full-reload', path: '*' });
       };
+      const onModelFolderChange = (changedPath) => {
+        const normalized = changedPath.replace(/\\/g, '/').toLowerCase();
+        if (normalized.endsWith('.glb')) invalidateAndReload();
+        else if (path.resolve(changedPath) === path.resolve(state.overridesFile)) invalidateAndReload();
+      };
       server.watcher.on('add', onModelFolderChange);
+      server.watcher.on('change', onModelFolderChange);
       server.watcher.on('unlink', onModelFolderChange);
     },
   };
