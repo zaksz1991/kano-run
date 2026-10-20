@@ -1,3 +1,5 @@
+import './KanoCloudSave.js';
+
 /**
  * KANO LIFE — GLOBAL LEADERBOARD BRIDGE
  *
