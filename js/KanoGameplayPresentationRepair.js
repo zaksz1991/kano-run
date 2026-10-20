@@ -972,12 +972,56 @@ function setWorkshopMessage(message) {
   if (status) status.textContent = panel.dataset.message;
 }
 
+function workshopMaintenanceMarkup(values, wallet) {
+  const trackedParts = Object.keys(WORKSHOP_PARTS);
+  const belowThreshold = trackedParts.filter((key) => values[key] < 80);
+  const critical = trackedParts.filter((key) => values[key] < 25);
+  const worn = trackedParts.filter((key) => values[key] < 50);
+  const thresholdLabel = (key) => `${WORKSHOP_PARTS[key].label} ${values[key]}%`;
+
+  let level = 'good';
+  let headline = 'CONDITION CHECK · GOOD';
+  let message = 'All tracked components are at 80% or above. Keep monitoring condition during runs.';
+  if (critical.length) {
+    level = 'critical';
+    headline = 'CRITICAL WEAR · SERVICE ADVISED';
+    message = `Inspect ${critical.map(thresholdLabel).join(' · ')} before starting another long run.`;
+  } else if (worn.length) {
+    level = 'warning';
+    headline = 'SERVICE RECOMMENDED';
+    message = `Worn components: ${worn.map(thresholdLabel).join(' · ')}. Review the repair options below.`;
+  } else if (belowThreshold.length) {
+    level = 'soon';
+    headline = 'MAINTENANCE DUE SOON';
+    message = `Monitor ${belowThreshold.map(thresholdLabel).join(' · ')} and plan service when practical.`;
+  }
+
+  const fullQuote = workshopQuote(
+    Object.fromEntries(trackedParts.map((key) => [WORKSHOP_PARTS[key].stateKey, values[key]])),
+    'full',
+  );
+  let estimate = '';
+  if (belowThreshold.length && fullQuote.cost > 0) {
+    estimate = wallet >= fullQuote.cost
+      ? `Full-service estimate: ${naira(fullQuote.cost)}.`
+      : `Full-service estimate: ${naira(fullQuote.cost)} · wallet short by ${naira(fullQuote.cost - wallet)}.`;
+  }
+
+  return `<section class="kano-workshop-maintenance" data-level="${level}" aria-live="polite"><div class="kano-workshop-maintenance-heading"><span class="kano-workshop-maintenance-indicator" aria-hidden="true"></span><strong>${headline}</strong></div><p>${escapeWorkshopHTML(message)}</p>${estimate ? `<small>${escapeWorkshopHTML(estimate)}</small>` : ''}<small class="kano-workshop-maintenance-footnote">In-game condition guidance for body, engine and tyres only; no repair is applied automatically.</small></section>`;
+}
+
 function renderWorkshopPanel(state = activeGame?.s) {
   const panel = document.getElementById('kano-workshop-panel');
   if (!panel || !state) return;
   const wallet = Math.max(0, Math.floor(Number(save.money) || 0));
   const values = Object.fromEntries(Object.keys(WORKSHOP_PARTS).map((key) => [key, workshopHealth(state, key)]));
-  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}`;
+  // The saved history is part of the render signature. Without it, importing a
+  // backup while the wallet/vehicle state stays unchanged leaves stale records
+  // on screen until a later unrelated state change.
+  const historySignature = readWorkshopHistory()
+    .map((entry) => `${entry.time}:${entry.service}:${entry.cost}:${entry.walletAfter}:${entry.parts.join(',')}`)
+    .join(';');
+  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}`;
   if (panel.dataset.signature === signature) return;
   panel.dataset.signature = signature;
 
@@ -1004,6 +1048,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
 
   panel.innerHTML = `
     <div class="kano-workshop-header"><div><p class="kano-workshop-eyebrow">KANO LIFE · MECHANIC'S BAY</p><h3 id="kano-workshop-title">Service your keke</h3><p>Repairs use banked funds and restore the selected components to 100%.</p></div><div class="kano-workshop-wallet"><small>BANKED WALLET</small><strong>${naira(wallet)}</strong></div></div>
+    ${workshopMaintenanceMarkup(values, wallet)}
     <div class="kano-workshop-parts">${partsMarkup}</div>
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
@@ -1168,6 +1213,21 @@ function installWorkshopUI() {
       .kano-workshop-wallet{flex:0 0 auto;padding:7px 9px;border:1px solid #f5c54266;border-radius:8px;background:#101d2c;text-align:right}
       .kano-workshop-wallet small{display:block;color:#f5d77d;font-size:8px;font-weight:900;white-space:nowrap}
       .kano-workshop-wallet strong{display:block;margin-top:3px;color:#ffe18b;font-size:14px;white-space:nowrap}
+      .kano-workshop-maintenance{margin:12px 0 0;padding:10px 11px;border:1px solid #4dd6ac55;border-radius:9px;background:#4dd6ac0b}
+      .kano-workshop-maintenance[data-level="soon"]{border-color:#00b4d866;background:#00b4d80b}
+      .kano-workshop-maintenance[data-level="warning"]{border-color:#ffd16699;background:#ffd1660d}
+      .kano-workshop-maintenance[data-level="critical"]{border-color:#ff6262aa;background:#ff62620d}
+      .kano-workshop-maintenance-heading{display:flex;align-items:center;gap:7px;color:#a5f3d4;font-size:10px;font-weight:900;letter-spacing:.04em}
+      .kano-workshop-maintenance[data-level="soon"] .kano-workshop-maintenance-heading{color:#8ce8f6}
+      .kano-workshop-maintenance[data-level="warning"] .kano-workshop-maintenance-heading{color:#ffd166}
+      .kano-workshop-maintenance[data-level="critical"] .kano-workshop-maintenance-heading{color:#ff8989}
+      .kano-workshop-maintenance-indicator{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#4dd6ac;box-shadow:0 0 0 3px #4dd6ac1d}
+      .kano-workshop-maintenance[data-level="soon"] .kano-workshop-maintenance-indicator{background:#00b4d8;box-shadow:0 0 0 3px #00b4d81d}
+      .kano-workshop-maintenance[data-level="warning"] .kano-workshop-maintenance-indicator{background:#ffd166;box-shadow:0 0 0 3px #ffd1661d}
+      .kano-workshop-maintenance[data-level="critical"] .kano-workshop-maintenance-indicator{background:#ff6262;box-shadow:0 0 0 3px #ff62621d}
+      .kano-workshop-maintenance p{margin:6px 0 0;color:#c5d5e5;font-size:10px;line-height:1.45;overflow-wrap:anywhere}
+      .kano-workshop-maintenance small{display:block;margin-top:5px;color:#ffe18b;font-size:9px;line-height:1.4;overflow-wrap:anywhere}
+      .kano-workshop-maintenance .kano-workshop-maintenance-footnote{color:#8198ad}
       .kano-workshop-parts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:14px 0}
       .kano-workshop-part{min-width:0;padding:9px;border:1px solid #ffffff16;border-radius:8px;background:#ffffff07}
       .kano-workshop-part-label{display:flex;justify-content:space-between;gap:4px;color:#eaf1f9;font-size:10px;font-weight:900}
