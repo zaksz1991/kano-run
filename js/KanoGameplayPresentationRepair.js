@@ -1,5 +1,5 @@
 /**
- * KANO LIFE — MAINTENANCE TREND PLANNER + WORKSHOP EXPORT/IMPORT + PERSISTENT VEHICLE DAMAGE
+ * KANO LIFE — WORKSHOP SAVINGS GOAL & DUE-DATE REMINDER + MAINTENANCE TREND PLANNER
  *
  * Production-safe additive repair layer. Core simulation/storage remains in
  * Game, UI and Renderer3D. This module is loaded by index.html and imports
@@ -675,6 +675,7 @@ const WORKSHOP_PARTS = {
 };
 const WORKSHOP_LABOUR_FEE = 100;
 const WORKSHOP_HISTORY_KEY = 'kano-life-workshop-history-v1';
+const WORKSHOP_SAVINGS_GOAL_KEY = 'kano-life-workshop-savings-goal-v1';
 const WORKSHOP_HISTORY_LIMIT = 12;
 const WORKSHOP_BACKUP_MAX_BYTES = 1024 * 1024;
 const WORKSHOP_BACKUP_MAX_ROWS = 500;
@@ -1131,6 +1132,139 @@ function workshopBudgetPlannerMarkup(state, values, wallet) {
   return `<section class="kano-workshop-planner" aria-labelledby="kano-workshop-planner-title"><div class="kano-workshop-planner-heading"><h4 id="kano-workshop-planner-title">REPAIR PRIORITY &amp; BUDGET</h4><span>LOWEST CONDITION FIRST</span></div><ol class="kano-workshop-plan-list">${rows}</ol><div class="kano-workshop-plan-total"><div><span>FULL SERVICE</span><strong>${fullQuote.cost ? naira(fullQuote.cost) : '₦0'}</strong></div><p>${escapeWorkshopHTML(budgetText)}</p></div><small class="kano-workshop-planner-note">Priority is sorted using the game's current BODY, ENGINE and TYRES values. Individual service prices include labour per transaction; a full service includes one labour fee. This is an in-game budget aid, not a real-world vehicle inspection.</small></section>`;
 }
 
+function workshopTodayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeWorkshopDueDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return '';
+  const date = new Date(`${value}T12:00:00`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : '';
+}
+
+function readWorkshopSavingsGoal() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(WORKSHOP_SAVINGS_GOAL_KEY) || 'null');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const targetNaira = Math.floor(Number(raw.targetNaira));
+    if (!Number.isFinite(targetNaira) || targetNaira < 1 || targetNaira > 100000000) return null;
+    return {
+      targetNaira,
+      dueDate: normalizeWorkshopDueDate(raw.dueDate) || '',
+      updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : 0,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function workshopSavingsGoalMarkup(state, wallet) {
+  const goal = readWorkshopSavingsGoal();
+  const fullQuote = workshopQuote(state, 'full');
+  const dueDateValue = goal?.dueDate || '';
+  let statusText = 'Set a target to track how the current wallet compares with your planned repair budget.';
+  let statusLevel = 'empty';
+  let goalSummary = '<div class="kano-workshop-goal-empty">No repair-fund target saved on this device.</div>';
+
+  if (goal) {
+    const progress = Math.min(100, Math.floor((wallet / goal.targetNaira) * 100));
+    const shortfall = Math.max(0, goal.targetNaira - wallet);
+    const surplus = Math.max(0, wallet - goal.targetNaira);
+    const dueLabel = goal.dueDate
+      ? new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString('en-NG', { dateStyle: 'medium' })
+      : 'No target date';
+    if (shortfall === 0) {
+      statusText = `TARGET COVERED · Current wallet is at or above ${naira(goal.targetNaira)}.`;
+      statusLevel = 'reached';
+    } else if (goal.dueDate && goal.dueDate < workshopTodayKey()) {
+      statusText = `TARGET DATE PASSED · ${naira(shortfall)} remains to reach the planned target.`;
+      statusLevel = 'overdue';
+    } else if (goal.dueDate && goal.dueDate === workshopTodayKey()) {
+      statusText = `TARGET DATE TODAY · ${naira(shortfall)} remains to reach the planned target.`;
+      statusLevel = 'due';
+    } else {
+      statusText = `${naira(shortfall)} remains before the wallet reaches the target${goal.dueDate ? ` by ${dueLabel}` : ''}.`;
+      statusLevel = shortfall > wallet ? 'saving' : 'near';
+    }
+    goalSummary = `<div class="kano-workshop-goal-summary"><div class="kano-workshop-goal-numbers"><div><span>REPAIR TARGET</span><strong>${naira(goal.targetNaira)}</strong></div><div><span>WALLET COVERAGE</span><strong>${progress}%</strong></div></div><div class="kano-workshop-goal-meter" role="progressbar" aria-label="Current wallet coverage of repair target" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><i style="width:${progress}%"></i></div><p>${shortfall ? `Target gap: ${naira(shortfall)}.` : `Wallet exceeds target by ${naira(surplus)}.`} Due: ${escapeWorkshopHTML(dueLabel)}.</p><small>The wallet is not ring-fenced: gameplay purchases and other costs can reduce this coverage.</small></div>`;
+  }
+
+  const targetValue = goal ? String(goal.targetNaira) : (fullQuote.cost ? String(fullQuote.cost) : '');
+  const clearButton = goal ? '<button type="button" class="kano-workshop-goal-secondary" data-kano-workshop-goal-clear>DELETE GOAL</button>' : '';
+  return `<section class="kano-workshop-goal" aria-labelledby="kano-workshop-goal-title"><div class="kano-workshop-goal-heading"><h4 id="kano-workshop-goal-title">REPAIR FUND TARGET &amp; REMINDER</h4><span>LOCAL PLAN</span></div><p class="kano-workshop-goal-intro">Set a target amount and optional date. This creates a reminder only; it does not reserve or deduct game money.</p>${goalSummary}<div class="kano-workshop-goal-status" data-level="${statusLevel}" role="status">${escapeWorkshopHTML(statusText)}</div><div class="kano-workshop-goal-form"><label for="kano-workshop-goal-amount">TARGET AMOUNT (₦)<input id="kano-workshop-goal-amount" data-kano-workshop-goal-amount type="number" min="1" max="100000000" step="100" inputmode="numeric" value="${targetValue}" placeholder="Enter target amount"></label><label for="kano-workshop-goal-date">TARGET DATE (OPTIONAL)<input id="kano-workshop-goal-date" data-kano-workshop-goal-date type="date" min="${workshopTodayKey()}" value="${dueDateValue}" /></label></div><div class="kano-workshop-goal-actions"><button type="button" data-kano-workshop-goal-save>SAVE TARGET</button><button type="button" class="kano-workshop-goal-secondary" data-kano-workshop-goal-use-quote ${fullQuote.cost ? '' : 'disabled'}>USE FULL-SERVICE ESTIMATE</button>${clearButton}</div><small class="kano-workshop-goal-note">Saved in this browser on this device, separately from game progress and service receipts. It is not included in the service-history backup.</small></section>`;
+}
+
+function handleWorkshopSavingsGoalAction(action) {
+  const panel = document.getElementById('kano-workshop-panel');
+  const game = activeGame || window.__KANO_LIFE_GAME__;
+  if (!panel) return;
+  if (action === 'use-quote') {
+    if (!game?.s) {
+      setWorkshopMessage('Vehicle state is not ready. No target was changed.');
+      return;
+    }
+    const quote = workshopQuote(game.s, 'full');
+    if (!quote.cost) {
+      setWorkshopMessage('The current vehicle has no repair deficit. Enter a custom target instead.');
+      return;
+    }
+    const amount = panel.querySelector('[data-kano-workshop-goal-amount]');
+    if (amount) {
+      amount.value = String(quote.cost);
+      amount.focus();
+    }
+    setWorkshopMessage(`Full-service estimate loaded: ${naira(quote.cost)}. Save the target to keep it.`);
+    return;
+  }
+  if (action === 'clear') {
+    try {
+      localStorage.removeItem(WORKSHOP_SAVINGS_GOAL_KEY);
+      panel.dataset.signature = '';
+      panel.dataset.message = 'Repair-fund target deleted. Wallet and vehicle condition were not changed.';
+      renderWorkshopPanel(game?.s || window.__KANO_LIFE_GAME__?.s);
+    } catch (_) {
+      setWorkshopMessage('Could not delete the target because browser storage is unavailable.');
+    }
+    return;
+  }
+  if (action !== 'save') return;
+
+  const amountInput = panel.querySelector('[data-kano-workshop-goal-amount]');
+  const dateInput = panel.querySelector('[data-kano-workshop-goal-date]');
+  const targetNaira = Math.floor(Number(amountInput?.value));
+  if (!Number.isFinite(targetNaira) || targetNaira < 1 || targetNaira > 100000000) {
+    setWorkshopMessage('Enter a target amount between ₦1 and ₦100,000,000. No target was saved.');
+    amountInput?.focus();
+    return;
+  }
+  const dateRaw = String(dateInput?.value || '');
+  const dueDate = dateRaw ? normalizeWorkshopDueDate(dateRaw) : '';
+  if (dateRaw && !dueDate) {
+    setWorkshopMessage('Enter a valid target date. No target was saved.');
+    dateInput?.focus();
+    return;
+  }
+  if (dueDate && dueDate < workshopTodayKey()) {
+    setWorkshopMessage('Choose today or a future date for the reminder. No target was saved.');
+    dateInput?.focus();
+    return;
+  }
+  try {
+    const record = { targetNaira, dueDate, updatedAt: Date.now() };
+    localStorage.setItem(WORKSHOP_SAVINGS_GOAL_KEY, JSON.stringify(record));
+    const verify = readWorkshopSavingsGoal();
+    if (!verify || verify.targetNaira !== targetNaira || verify.dueDate !== dueDate) {
+      throw new Error('Saved goal could not be verified.');
+    }
+    panel.dataset.signature = '';
+    panel.dataset.message = `Repair-fund target saved at ${naira(targetNaira)}${dueDate ? ` with a reminder date of ${dueDate}` : ''}. No money was deducted.`;
+    renderWorkshopPanel(game?.s || window.__KANO_LIFE_GAME__?.s);
+  } catch (_) {
+    setWorkshopMessage('Could not save the target because browser storage is unavailable. Wallet and vehicle condition were not changed.');
+  }
+}
+
 function renderWorkshopPanel(state = activeGame?.s) {
   const panel = document.getElementById('kano-workshop-panel');
   if (!panel || !state) return;
@@ -1142,7 +1276,8 @@ function renderWorkshopPanel(state = activeGame?.s) {
   const historySignature = readWorkshopHistory()
     .map((entry) => `${entry.time}:${entry.service}:${entry.cost}:${entry.walletAfter}:${entry.parts.join(',')}:${JSON.stringify(entry.conditionBefore || null)}:${JSON.stringify(entry.conditionAfter || null)}`)
     .join(';');
-  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}`;
+  const goalSignature = JSON.stringify(readWorkshopSavingsGoal() || null);
+  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}`;
   if (panel.dataset.signature === signature) return;
   panel.dataset.signature = signature;
 
@@ -1173,6 +1308,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     <div class="kano-workshop-parts">${partsMarkup}</div>
     ${workshopConditionTrendMarkup(values)}
     ${workshopBudgetPlannerMarkup(state, values, wallet)}
+    ${workshopSavingsGoalMarkup(state, wallet)}
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
@@ -1384,6 +1520,28 @@ function installWorkshopUI() {
       .kano-workshop-plan-total>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.kano-workshop-plan-total span{color:#f5d77d;font-size:8px;font-weight:900}.kano-workshop-plan-total strong{color:#ffe18b;font-size:12px}
       .kano-workshop-plan-total p{margin:5px 0 0;color:#c5d5e5;font-size:9px;line-height:1.4}
       .kano-workshop-planner-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
+      .kano-workshop-goal{margin:11px 0;padding:10px;border:1px solid #f5c54245;border-radius:9px;background:linear-gradient(145deg,#f5c5420a,#00b4d806);min-width:0}
+      .kano-workshop-goal-heading{display:flex;justify-content:space-between;align-items:center;gap:8px}
+      .kano-workshop-goal-heading h4{margin:0;color:#fff0b5;font-size:10px;letter-spacing:.04em}
+      .kano-workshop-goal-heading span{color:#f5d77d;font-size:8px;font-weight:900;white-space:nowrap}
+      .kano-workshop-goal-intro{margin:6px 0 8px;color:#a9bbcd;font-size:9px;line-height:1.45}
+      .kano-workshop-goal-empty{padding:8px;border:1px dashed #ffffff25;border-radius:7px;color:#94a9bd;font-size:9px}
+      .kano-workshop-goal-summary{padding:9px;border:1px solid #f5c5422d;border-radius:7px;background:#00000017}
+      .kano-workshop-goal-numbers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .kano-workshop-goal-numbers>div{display:grid;gap:4px;min-width:0}.kano-workshop-goal-numbers span{color:#b7c7d7;font-size:8px;font-weight:900}.kano-workshop-goal-numbers strong{color:#ffe18b;font-size:14px;overflow-wrap:anywhere}
+      .kano-workshop-goal-meter{height:7px;margin:9px 0 6px;overflow:hidden;border-radius:99px;background:#344254}.kano-workshop-goal-meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#00b4d8,#4dd6ac);transition:width .2s ease}
+      .kano-workshop-goal-summary p{margin:0;color:#c4d2e0;font-size:9px;line-height:1.4}.kano-workshop-goal-summary small{display:block;margin-top:5px;color:#879caf;font-size:8px;line-height:1.4}
+      .kano-workshop-goal-status{margin:7px 0;padding:8px;border:1px solid #00b4d844;border-radius:7px;background:#00b4d80b;color:#a6eaf5;font-size:9px;font-weight:800;line-height:1.4}
+      .kano-workshop-goal-status[data-level="reached"]{border-color:#4dd6ac55;background:#4dd6ac0b;color:#9bf0d2}.kano-workshop-goal-status[data-level="overdue"],.kano-workshop-goal-status[data-level="due"]{border-color:#ff858555;background:#ff62620b;color:#ffabab}
+      .kano-workshop-goal-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+      .kano-workshop-goal-form label{display:grid;gap:5px;color:#b8cadb;font-size:8px;font-weight:900;line-height:1.35}
+      .kano-workshop-goal-form input{box-sizing:border-box;width:100%;min-width:0;min-height:38px;padding:8px;border:1px solid #ffffff24;border-radius:7px;background:#081524;color:#f2f7fc;font:inherit;font-size:11px;font-weight:700;color-scheme:dark}
+      .kano-workshop-goal-form input:focus-visible{outline:2px solid #f5c542;outline-offset:1px}
+      .kano-workshop-goal-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:8px}
+      .kano-workshop-goal-actions button{min-height:38px;padding:8px;border:1px solid #f5c54266;border-radius:7px;background:#f5c542;color:#152135;font-size:9px;font-weight:900;line-height:1.3;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-goal-actions button.kano-workshop-goal-secondary{border-color:#00b4d866;background:#10243a;color:#d9f5ff}
+      .kano-workshop-goal-actions button:disabled{opacity:.45;cursor:not-allowed}.kano-workshop-goal-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
+      .kano-workshop-goal-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
       .kano-workshop-parts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:14px 0}
       .kano-workshop-part{min-width:0;padding:9px;border:1px solid #ffffff16;border-radius:8px;background:#ffffff07}
       .kano-workshop-part-label{display:flex;justify-content:space-between;gap:4px;color:#eaf1f9;font-size:10px;font-weight:900}
@@ -1440,7 +1598,7 @@ function installWorkshopUI() {
       .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
       .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
       .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
@@ -1448,6 +1606,12 @@ function installWorkshopUI() {
   if (!panel.dataset.bound) {
     panel.dataset.bound = 'true';
     panel.addEventListener('click', (event) => {
+      const goalSaveButton = event.target.closest('[data-kano-workshop-goal-save]');
+      if (goalSaveButton) { handleWorkshopSavingsGoalAction('save'); return; }
+      const goalQuoteButton = event.target.closest('[data-kano-workshop-goal-use-quote]');
+      if (goalQuoteButton) { if (!goalQuoteButton.disabled) handleWorkshopSavingsGoalAction('use-quote'); return; }
+      const goalClearButton = event.target.closest('[data-kano-workshop-goal-clear]');
+      if (goalClearButton) { handleWorkshopSavingsGoalAction('clear'); return; }
       const importButton = event.target.closest('[data-kano-workshop-import-trigger]');
       if (importButton) {
         panel.querySelector('[data-kano-workshop-import-file]')?.click();
