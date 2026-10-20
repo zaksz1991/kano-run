@@ -1,32 +1,33 @@
-KANO LIFE — VERCEL BUILD REPAIR
+KANO LIFE — HISBAH COMMUNITY PATROL UPGRADE
 
-ROOT CAUSE
-The repository's current root package.json contains only:
-  { "type": "module", "private": true }
-It declares no dependencies. Vercel therefore reports `up to date`, installs no Vite executable,
-and then fails at `vite build` with `vite: command not found`.
+Package files
+- index.html: complete replacement matching the current public app shell, with the Hisbah module loaded before main.js.
+- js/KanoHisbahDirector.js: new side-effect module that integrates with Game and Renderer3D using existing public methods.
+- package.json: build dependencies to use if the repository still has the original minimal package.json and Vercel says "vite: command not found".
 
-COMPLETE REPLACEMENT
-Replace the entire package.json at the repository root with the package.json in this folder.
-It declares Vite and Three.js, preserves ES module mode, includes normal Vite scripts, and selects
-Node 24.x, which is supported by Vercel and meets current Vite runtime requirements.
+Features
+- Adds Hisbah community patrol encounters to Career and Free Roam. First encounter becomes eligible after the run has been active for about 28 seconds and progressed at least 0.22 km; the actual trigger waits for a safe-enough approach speed and the game's normal event cooldown.
+- Uses the existing event card, pauses the keke at a safe standstill, and provides three outcomes: cooperate/clear the entrance, ask for guidance, or ignore the request.
+- Uses the existing police vehicle model asset for a roadside patrol. If that GLB is unavailable, the renderer's existing police fallback is used. The patrol is tagged so it is non-colliding and staged on the shoulder.
+- Adds restrained green/white patrol markings to the existing actor, not a brand-new vehicle model.
+- Adds a Hisbah status panel and lifetime records to the pause menu. Patrol encounters are enabled by default and can be paused in the menu.
+- Saves stop/cooperation/guidance/warning counts into the existing local save object via storage.js persist().
+- Adds brief localized guidance text for Hausa, Yoruba, and Igbo selections.
+- Leaves game.js, renderer3d.js, and existing driver controls untouched.
 
-WHY THREE.JS IS INCLUDED
-js/renderer3d.js and js/ModelManager.js import `three`; ModelManager also imports
-`three/addons/loaders/GLTFLoader.js`. These imports require the Three.js npm package.
+Installation
+1. Add js/KanoHisbahDirector.js to the js folder.
+2. Replace the complete index.html with the included copy. The Hisbah script must load before /js/main.js so its Game and Renderer3D hooks install before the game starts.
+3. The original repository package.json contained only {"type":"module","private":true}. If you have not already fixed the Vercel error "vite: command not found", replace the root package.json with the included version. It declares Vite and Three.js and defines the build command.
 
-WHAT NOT TO CHANGE
-Do not replace index.html, game.js, renderer3d.js, ModelManager.js, vite.config.js, vercel.json,
-or any model/audio assets for this repair.
+Important integration details
+- The renderer's existing `police` model is reused rather than inventing a Hisbah GLB path. For a clearly branded, model-perfect patrol vehicle, a dedicated Hisbah GLB and an explicit ModelManager catalog entry would still be needed.
+- Encounters run only in Career and Free Roam, not timed challenge modes.
+- Local Hisbah history is browser-local. It does not create a cloud account or modify banked funds.
 
-BUILD SETTINGS
-The log shows a direct `vite build` command, so adding the Vite dependency is the essential fix.
-If the Vercel dashboard's Build Command is overridden, `vite build` will continue to work because
-Vite is now a declared dependency. Alternatively, the package now defines `npm run build`.
-Vite's default output directory is `dist`.
-
-VALIDATION LIMITATION
-The package.json was parsed and checked for required dependencies and scripts, and this ZIP was
-validated. The full application build has not been run against the entire repository in this runtime.
-After this replacement, check the next build log: dependency installation should install Vite, and
-if another missing package or source error exists it will appear as the next specific error.
+Validation
+- JavaScript syntax checks: run for the new module.
+- HTML parser checks: confirm required IDs and that KanoHisbahDirector.js is ordered before main.js.
+- Static assertions: confirm hook coverage for resetRun/tick/beginEvent/resolveEvent and Renderer3D.syncTraffic.
+- ZIP integrity: checked.
+- A live Vercel build and in-browser 3D visual test have not been run from this environment.
