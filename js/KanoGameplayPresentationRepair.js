@@ -677,6 +677,9 @@ const WORKSHOP_LABOUR_FEE = 100;
 const WORKSHOP_HISTORY_KEY = 'kano-life-workshop-history-v1';
 const WORKSHOP_SAVINGS_GOAL_KEY = 'kano-life-workshop-savings-goal-v1';
 const WORKSHOP_MONTHLY_BUDGET_KEY = 'kano-life-workshop-monthly-budget-v1';
+const WORKSHOP_SPENDING_LEDGER_KEY = 'kano-life-workshop-spending-ledger-v1';
+const WORKSHOP_LEDGER_MONTHS_LIMIT = 12;
+const WORKSHOP_LEDGER_TRANSACTIONS_LIMIT = 500;
 const WORKSHOP_HISTORY_LIMIT = 12;
 const WORKSHOP_BACKUP_MAX_BYTES = 1024 * 1024;
 const WORKSHOP_BACKUP_MAX_ROWS = 500;
@@ -726,8 +729,15 @@ function appendWorkshopHistory(entry) {
       receipt.conditionBefore = conditionBefore;
       receipt.conditionAfter = conditionAfter;
     }
+    // Backfill whatever legacy history still exists before the 12-receipt list
+    // is changed. The separate spending ledger continues counting new receipts
+    // after older receipts roll off the visible history.
+    ensureWorkshopSpendingLedger();
     history.unshift(receipt);
     localStorage.setItem(WORKSHOP_HISTORY_KEY, JSON.stringify(history.slice(0, WORKSHOP_HISTORY_LIMIT)));
+    if (!recordWorkshopSpendingRecords([receipt], 'live')) {
+      console.warn('[Kano Life] Service receipt was saved, but the monthly spending ledger could not be updated.');
+    }
     return true;
   } catch (error) {
     console.warn('[Kano Life] Workshop service completed but its local receipt could not be saved.', error);
@@ -940,6 +950,228 @@ function workshopRecordIdentity(record) {
   ].join('|');
 }
 
+function emptyWorkshopSpendingLedger() {
+  return { formatVersion: 1, months: {} };
+}
+
+function workshopLedgerMonthKey(time) {
+  const date = new Date(Number(time));
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function workshopLedgerMonthTotal(month) {
+  const archived = Math.max(0, Math.floor(Number(month?.archivedNaira) || 0));
+  const observed = (Array.isArray(month?.transactions) ? month.transactions : []).reduce(
+    (sum, transaction) => sum + Math.max(0, Math.floor(Number(transaction.cost) || 0)), 0);
+  return archived + observed;
+}
+
+function normalizeWorkshopSpendingLedger(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || value.formatVersion !== 1 || !value.months || typeof value.months !== 'object'
+    || Array.isArray(value.months)) return null;
+  const months = {};
+  const monthKeys = Object.keys(value.months)
+    .filter((key) => /^\d{4}-(0[1-9]|1[0-2])$/.test(key))
+    .sort();
+  for (const monthKey of monthKeys) {
+    const rawMonth = value.months[monthKey];
+    if (!rawMonth || typeof rawMonth !== 'object' || Array.isArray(rawMonth)) continue;
+    const rawTransactions = Array.isArray(rawMonth.transactions) ? rawMonth.transactions : [];
+    const unique = new Map();
+    for (const raw of rawTransactions) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+      const id = typeof raw.id === 'string' ? raw.id : '';
+      const time = Number(raw.time);
+      const cost = Number(raw.cost);
+      if (!id || id.length > 300 || !Number.isFinite(time) || time < 0
+        || workshopLedgerMonthKey(time) !== monthKey || !Number.isFinite(cost)
+        || cost < 0 || cost > 1000000000) continue;
+      if (!unique.has(id)) unique.set(id, { id, time: Math.floor(time), cost: Math.floor(cost) });
+    }
+    const sorted = [...unique.values()].sort((a, b) => b.time - a.time);
+    const overflow = sorted.slice(WORKSHOP_LEDGER_TRANSACTIONS_LIMIT);
+    const transactions = sorted.slice(0, WORKSHOP_LEDGER_TRANSACTIONS_LIMIT);
+    const rawArchivedNaira = Number(rawMonth.archivedNaira);
+    const rawArchivedCount = Number(rawMonth.archivedCount);
+    const archivedNaira = Math.min(1000000000000,
+      Math.max(0, Math.floor(Number.isFinite(rawArchivedNaira) ? rawArchivedNaira : 0))
+      + overflow.reduce((sum, item) => sum + item.cost, 0));
+    const archivedCount = Math.min(1000000000,
+      Math.max(0, Math.floor(Number.isFinite(rawArchivedCount) ? rawArchivedCount : 0)) + overflow.length);
+    months[monthKey] = {
+      transactions,
+      archivedNaira,
+      archivedCount,
+      coverageComplete: Boolean(rawMonth.coverageComplete) && !overflow.length && archivedCount === 0,
+    };
+  }
+  const retainedKeys = Object.keys(months).sort().slice(-WORKSHOP_LEDGER_MONTHS_LIMIT);
+  const retained = {};
+  for (const key of retainedKeys) retained[key] = months[key];
+  return { formatVersion: 1, months: retained };
+}
+
+function readWorkshopSpendingLedger() {
+  try {
+    const raw = localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY);
+    if (!raw) return emptyWorkshopSpendingLedger();
+    return normalizeWorkshopSpendingLedger(JSON.parse(raw)) || emptyWorkshopSpendingLedger();
+  } catch (_) {
+    return emptyWorkshopSpendingLedger();
+  }
+}
+
+function saveWorkshopSpendingLedger(ledger) {
+  try {
+    const normalized = normalizeWorkshopSpendingLedger(ledger);
+    if (!normalized) return false;
+    const serialized = JSON.stringify(normalized);
+    localStorage.setItem(WORKSHOP_SPENDING_LEDGER_KEY, serialized);
+    const verified = normalizeWorkshopSpendingLedger(JSON.parse(localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY) || 'null'));
+    if (!verified || Object.keys(verified.months).length !== Object.keys(normalized.months).length) return false;
+    for (const key of Object.keys(normalized.months)) {
+      if (!verified.months[key] || workshopLedgerMonthTotal(verified.months[key]) !== workshopLedgerMonthTotal(normalized.months[key])) return false;
+    }
+    return true;
+  } catch (error) {
+    console.warn('[Kano Life] Workshop monthly spending ledger save failed.', error);
+    return false;
+  }
+}
+
+function trimWorkshopLedgerMonths(ledger) {
+  const keys = Object.keys(ledger.months || {}).sort();
+  for (const key of keys.slice(0, Math.max(0, keys.length - WORKSHOP_LEDGER_MONTHS_LIMIT))) {
+    delete ledger.months[key];
+  }
+  return ledger;
+}
+
+function addWorkshopLedgerRecord(ledger, rawRecord, source = 'import') {
+  const record = normalizeWorkshopBackupRecord(rawRecord);
+  if (!record) return false;
+  const monthKey = workshopLedgerMonthKey(record.time);
+  if (!monthKey) return false;
+  const identity = workshopRecordIdentity(record);
+  let month = ledger.months[monthKey];
+  if (!month) {
+    month = {
+      transactions: [],
+      archivedNaira: 0,
+      archivedCount: 0,
+      coverageComplete: source === 'live',
+    };
+    ledger.months[monthKey] = month;
+  }
+  if (month.transactions.some((transaction) => transaction.id === identity)) return false;
+
+  // Archived entries no longer retain individual IDs. Avoid likely duplicates
+  // from old imports that fall before the retained transaction window.
+  const oldestRetained = month.transactions.reduce((min, transaction) => Math.min(min, transaction.time), Infinity);
+  if (month.archivedCount > 0 && record.time <= oldestRetained) {
+    month.coverageComplete = false;
+    return false;
+  }
+
+  month.transactions.push({ id: identity, time: record.time, cost: record.cost });
+  month.transactions.sort((a, b) => b.time - a.time);
+  if (source !== 'live') month.coverageComplete = false;
+  if (month.transactions.length > WORKSHOP_LEDGER_TRANSACTIONS_LIMIT) {
+    const removed = month.transactions.splice(WORKSHOP_LEDGER_TRANSACTIONS_LIMIT);
+    month.archivedNaira += removed.reduce((sum, item) => sum + item.cost, 0);
+    month.archivedCount += removed.length;
+    month.coverageComplete = false;
+  }
+  trimWorkshopLedgerMonths(ledger);
+  return true;
+}
+
+function ensureWorkshopSpendingLedger() {
+  try {
+    const raw = localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY);
+    if (raw) {
+      const parsed = normalizeWorkshopSpendingLedger(JSON.parse(raw));
+      if (parsed) return parsed;
+    }
+    // Legacy migration can only use receipts still present in the old 12-row
+    // history. Mark each migrated month as partial; do not imply full coverage.
+    const ledger = emptyWorkshopSpendingLedger();
+    const legacyHistory = readWorkshopHistory().map((entry) => normalizeWorkshopBackupRecord({
+      time: Number(entry.time), service: entry.service, parts: entry.parts,
+      cost: entry.cost, walletAfter: entry.walletAfter,
+      conditionBefore: entry.conditionBefore, conditionAfter: entry.conditionAfter,
+    })).filter(Boolean);
+    for (const record of legacyHistory) addWorkshopLedgerRecord(ledger, record, 'legacy');
+    for (const month of Object.values(ledger.months)) month.coverageComplete = false;
+    saveWorkshopSpendingLedger(ledger);
+    return ledger;
+  } catch (error) {
+    console.warn('[Kano Life] Could not migrate legacy workshop receipts into the spending ledger.', error);
+    return emptyWorkshopSpendingLedger();
+  }
+}
+
+function recordWorkshopSpendingRecords(records, source = 'import') {
+  try {
+    const ledger = ensureWorkshopSpendingLedger();
+    let changed = false;
+    for (const record of records || []) changed = addWorkshopLedgerRecord(ledger, record, source) || changed;
+    if (!changed && localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY)) return true;
+    return saveWorkshopSpendingLedger(ledger);
+  } catch (error) {
+    console.warn('[Kano Life] Workshop spending ledger update failed.', error);
+    return false;
+  }
+}
+
+function mergeWorkshopSpendingLedgers(firstValue, secondValue) {
+  const first = normalizeWorkshopSpendingLedger(firstValue) || emptyWorkshopSpendingLedger();
+  const second = normalizeWorkshopSpendingLedger(secondValue) || emptyWorkshopSpendingLedger();
+  const merged = emptyWorkshopSpendingLedger();
+  for (const key of [...new Set([...Object.keys(first.months), ...Object.keys(second.months)])].sort()) {
+    const a = first.months[key];
+    const b = second.months[key];
+    if (!a || !b) {
+      merged.months[key] = JSON.parse(JSON.stringify(a || b));
+      continue;
+    }
+    const entries = new Map();
+    for (const entry of [...a.transactions, ...b.transactions]) {
+      if (!entries.has(entry.id)) entries.set(entry.id, { ...entry });
+    }
+    const transactions = [...entries.values()].sort((x, y) => y.time - x.time);
+    const archivedNaira = Math.max(a.archivedNaira, b.archivedNaira);
+    const archivedCount = Math.max(a.archivedCount, b.archivedCount);
+    let finalTransactions = transactions;
+    let extraArchived = 0;
+    let extraCount = 0;
+    if (finalTransactions.length > WORKSHOP_LEDGER_TRANSACTIONS_LIMIT) {
+      const overflow = finalTransactions.slice(WORKSHOP_LEDGER_TRANSACTIONS_LIMIT);
+      finalTransactions = finalTransactions.slice(0, WORKSHOP_LEDGER_TRANSACTIONS_LIMIT);
+      extraArchived = overflow.reduce((sum, entry) => sum + entry.cost, 0);
+      extraCount = overflow.length;
+    }
+    merged.months[key] = {
+      transactions: finalTransactions,
+      archivedNaira: Math.min(1000000000000, archivedNaira + extraArchived),
+      archivedCount: Math.min(1000000000, archivedCount + extraCount),
+      // If either side already archived rows, perfect cross-device de-duplication
+      // of those archived rows is impossible; surface the month as partial.
+      coverageComplete: Boolean(a.coverageComplete && b.coverageComplete)
+        && archivedCount === 0 && extraCount === 0,
+    };
+  }
+  trimWorkshopLedgerMonths(merged);
+  return normalizeWorkshopSpendingLedger(merged) || emptyWorkshopSpendingLedger();
+}
+
+function workshopSpendingLedgerHasEntries(ledger = readWorkshopSpendingLedger()) {
+  return Boolean(ledger && Object.values(ledger.months || {}).some((month) =>
+    month.transactions.length || month.archivedCount || month.archivedNaira));
+}
+
 async function importWorkshopHistoryFile(file) {
   if (!file) return;
   try {
@@ -977,6 +1209,7 @@ async function importWorkshopHistoryFile(file) {
       return;
     }
 
+    ensureWorkshopSpendingLedger();
     const current = readWorkshopHistory().map((entry) => normalizeWorkshopBackupRecord({
       time: Number(entry.time), service: entry.service, parts: entry.parts,
       cost: entry.cost, walletAfter: entry.walletAfter,
@@ -1000,13 +1233,28 @@ async function importWorkshopHistoryFile(file) {
       .sort((a, b) => b.time - a.time)
       .slice(0, WORKSHOP_HISTORY_LIMIT);
     const serialized = JSON.stringify(merged);
-    localStorage.setItem(WORKSHOP_HISTORY_KEY, serialized);
-    const verification = JSON.parse(localStorage.getItem(WORKSHOP_HISTORY_KEY) || 'null');
-    if (!Array.isArray(verification) || verification.length !== merged.length) {
-      throw new Error('The browser could not verify the restored service history.');
+    const previousHistory = localStorage.getItem(WORKSHOP_HISTORY_KEY);
+    const previousLedger = localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY);
+    try {
+      localStorage.setItem(WORKSHOP_HISTORY_KEY, serialized);
+      if (!recordWorkshopSpendingRecords(valid, 'import')) throw new Error('Monthly spending totals could not be updated.');
+      const verification = JSON.parse(localStorage.getItem(WORKSHOP_HISTORY_KEY) || 'null');
+      if (!Array.isArray(verification) || verification.length !== merged.length) {
+        throw new Error('The browser could not verify the restored service history.');
+      }
+    } catch (saveError) {
+      try {
+        if (previousHistory === null) localStorage.removeItem(WORKSHOP_HISTORY_KEY);
+        else localStorage.setItem(WORKSHOP_HISTORY_KEY, previousHistory);
+        if (previousLedger === null) localStorage.removeItem(WORKSHOP_SPENDING_LEDGER_KEY);
+        else localStorage.setItem(WORKSHOP_SPENDING_LEDGER_KEY, previousLedger);
+      } catch (rollbackError) {
+        console.warn('[Kano Life] Service-history import rollback could not fully restore browser storage.', rollbackError);
+      }
+      throw saveError;
     }
     const skipped = invalidCount ? ` ${invalidCount} invalid record${invalidCount === 1 ? ' was' : 's were'} skipped.` : '';
-    setWorkshopMessage(`IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} now saved on this device.${skipped} Wallet and vehicle condition unchanged.`);
+    setWorkshopMessage(`IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} now saved on this device.${skipped} Monthly ledger merged; imported months are marked partial where coverage cannot be verified. Wallet and vehicle condition unchanged.`);
     renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
   } catch (error) {
     console.warn('[Kano Life] Workshop history import failed safely.', error);
@@ -1077,8 +1325,9 @@ function downloadWorkshopPlanBackup() {
   const records = workshopPlanBackupRecords();
   const goal = readWorkshopSavingsGoal();
   const monthlyBudget = readWorkshopMonthlyBudget();
-  if (!records.length && !goal && !monthlyBudget) {
-    setWorkshopMessage('There is no saved service history, repair-fund target, or monthly spending cap to export yet.');
+  const ledger = ensureWorkshopSpendingLedger();
+  if (!records.length && !goal && !monthlyBudget && !workshopSpendingLedgerHasEntries(ledger)) {
+    setWorkshopMessage('There is no saved service history, repair-fund target, monthly spending cap, or spending ledger to export yet.');
     return;
   }
   try {
@@ -1086,7 +1335,7 @@ function downloadWorkshopPlanBackup() {
     const backup = {
       application: 'Kano Life',
       exportType: 'workshop-plan-backup',
-      formatVersion: 2,
+      formatVersion: 3,
       exportedAt,
       recordCount: records.length,
       savingsGoal: goal ? {
@@ -1098,7 +1347,8 @@ function downloadWorkshopPlanBackup() {
         monthlyLimitNaira: monthlyBudget.monthlyLimitNaira,
         updatedAt: monthlyBudget.updatedAt,
       } : null,
-      note: 'Contains local workshop service history, the optional repair-fund target, and the optional monthly workshop spending cap. Does not contain game money, vehicle state, or gameplay progress. Valid imported targets replace matching local settings; absent or null settings preserve destination-device settings.',
+      spendingLedger: ledger,
+      note: 'Contains recent service receipts, the repair-fund target, monthly spending cap, and a separate 12-month spending ledger. The ledger records spending independently of the 12 visible receipts. Legacy or imported months may be marked partial. Does not contain game money, vehicle state, or gameplay progress.',
       records,
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
@@ -1111,7 +1361,8 @@ function downloadWorkshopPlanBackup() {
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-    setWorkshopMessage(`WORKSHOP PLAN BACKUP PREPARED · ${records.length} service record${records.length === 1 ? '' : 's'} · ${goal ? 'repair-fund target' : 'no saved target'} · ${monthlyBudget ? 'monthly spending cap' : 'no monthly cap'} included. Game money and progress were not exported.`);
+    const monthCount = Object.keys(ledger.months).length;
+    setWorkshopMessage(`WORKSHOP PLAN BACKUP PREPARED · ${records.length} visible receipt${records.length === 1 ? '' : 's'} · ${monthCount} ledger month${monthCount === 1 ? '' : 's'} · ${goal ? 'repair-fund target' : 'no saved target'} · ${monthlyBudget ? 'monthly spending cap' : 'no monthly cap'} included. Game money and progress were not exported.`);
   } catch (error) {
     console.warn('[Kano Life] Full workshop-plan export failed.', error);
     setWorkshopMessage('Workshop plan export failed in this browser. Saved history, target, and gameplay data remain unchanged.');
@@ -1155,10 +1406,11 @@ async function importWorkshopPlanFile(file) {
     }
     if (!backup || typeof backup !== 'object' || Array.isArray(backup)
       || backup.application !== 'Kano Life' || backup.exportType !== 'workshop-plan-backup'
-      || ![1, 2].includes(backup.formatVersion) || !Array.isArray(backup.records)
+      || ![1, 2, 3].includes(backup.formatVersion) || !Array.isArray(backup.records)
       || backup.records.length > WORKSHOP_BACKUP_MAX_ROWS
       || !Object.prototype.hasOwnProperty.call(backup, 'savingsGoal')
-      || (backup.formatVersion === 2 && !Object.prototype.hasOwnProperty.call(backup, 'monthlyBudget'))) {
+      || (backup.formatVersion >= 2 && !Object.prototype.hasOwnProperty.call(backup, 'monthlyBudget'))
+      || (backup.formatVersion >= 3 && !Object.prototype.hasOwnProperty.call(backup, 'spendingLedger'))) {
       setWorkshopMessage('Plan backup rejected. Select a Kano Life Workshop Plan Backup. No saved data was changed.');
       return;
     }
@@ -1167,18 +1419,24 @@ async function importWorkshopPlanFile(file) {
     const invalidCount = backup.records.length - validRecords.length;
     const incomingGoal = backup.savingsGoal === null ? null : normalizeWorkshopPlanGoal(backup.savingsGoal);
     const goalIsInvalid = backup.savingsGoal !== null && !incomingGoal;
-    const incomingBudget = backup.formatVersion === 2 && backup.monthlyBudget !== null
+    const incomingBudget = backup.formatVersion >= 2 && backup.monthlyBudget !== null
       ? normalizeWorkshopMonthlyBudget(backup.monthlyBudget) : null;
-    const budgetIsInvalid = backup.formatVersion === 2 && backup.monthlyBudget !== null && !incomingBudget;
-    if (!validRecords.length && !incomingGoal && !incomingBudget) {
-      setWorkshopMessage(`Backup contains no valid service records, repair-fund target or monthly spending cap. Existing data was not changed.${invalidCount ? ` ${invalidCount} invalid record${invalidCount === 1 ? ' was' : 's were'} found.` : ''}${goalIsInvalid ? ' The target record was invalid.' : ''}${budgetIsInvalid ? ' The monthly budget record was invalid.' : ''}`);
+    const budgetIsInvalid = backup.formatVersion >= 2 && backup.monthlyBudget !== null && !incomingBudget;
+    const rawIncomingLedger = backup.formatVersion >= 3 ? normalizeWorkshopSpendingLedger(backup.spendingLedger) : null;
+    const ledgerIsInvalid = backup.formatVersion >= 3 && backup.spendingLedger !== null && !rawIncomingLedger;
+    const incomingLedger = rawIncomingLedger || null;
+    const hasIncomingLedger = workshopSpendingLedgerHasEntries(incomingLedger);
+    if (!validRecords.length && !incomingGoal && !incomingBudget && !hasIncomingLedger) {
+      setWorkshopMessage(`Backup contains no valid service records, repair-fund target, monthly spending cap or spending ledger. Existing data was not changed.${invalidCount ? ` ${invalidCount} invalid record${invalidCount === 1 ? ' was' : 's were'} found.` : ''}${goalIsInvalid ? ' The target record was invalid.' : ''}${budgetIsInvalid ? ' The monthly budget record was invalid.' : ''}${ledgerIsInvalid ? ' The spending ledger was invalid.' : ''}`);
       return;
     }
 
+    ensureWorkshopSpendingLedger();
     const currentGoal = readWorkshopSavingsGoal();
     const currentBudget = readWorkshopMonthlyBudget();
     const willReplaceGoal = Boolean(incomingGoal);
     const willReplaceBudget = Boolean(incomingBudget);
+    const willMergeLedger = Boolean(hasIncomingLedger);
     const prompt = [
       `Import ${validRecords.length} valid service record${validRecords.length === 1 ? '' : 's'} from this workshop plan backup?`,
       '',
@@ -1189,6 +1447,9 @@ async function importWorkshopPlanFile(file) {
       willReplaceBudget
         ? `The monthly workshop cap${currentBudget ? ` (${naira(currentBudget.monthlyLimitNaira)})` : ''} will be replaced with ${naira(incomingBudget.monthlyLimitNaira)}.`
         : 'The backup has no valid monthly workshop cap, so any cap already on this device will be preserved.',
+      willMergeLedger
+        ? 'The spending ledger will be merged by transaction identity to preserve recorded monthly totals and avoid importing duplicate tracked transactions.'
+        : 'The backup has no valid spending ledger. Imported receipts will be added to the local ledger, but their month coverage will be marked partial.',
       '',
       'Game wallet, vehicle condition, and gameplay progress will not be changed.',
     ].join('\n');
@@ -1201,11 +1462,16 @@ async function importWorkshopPlanFile(file) {
     const previousHistory = localStorage.getItem(WORKSHOP_HISTORY_KEY);
     const previousGoal = localStorage.getItem(WORKSHOP_SAVINGS_GOAL_KEY);
     const previousBudget = localStorage.getItem(WORKSHOP_MONTHLY_BUDGET_KEY);
+    const previousLedger = localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY);
     const historyToSave = JSON.stringify(merged);
     try {
       localStorage.setItem(WORKSHOP_HISTORY_KEY, historyToSave);
       if (incomingGoal) localStorage.setItem(WORKSHOP_SAVINGS_GOAL_KEY, JSON.stringify(incomingGoal));
       if (incomingBudget) localStorage.setItem(WORKSHOP_MONTHLY_BUDGET_KEY, JSON.stringify(incomingBudget));
+      let localLedger = readWorkshopSpendingLedger();
+      if (incomingLedger) localLedger = mergeWorkshopSpendingLedgers(localLedger, incomingLedger);
+      for (const record of validRecords) addWorkshopLedgerRecord(localLedger, record, incomingLedger ? 'backup-record' : 'import');
+      if (!saveWorkshopSpendingLedger(localLedger)) throw new Error('The monthly spending ledger could not be saved or verified.');
       const verifyHistory = JSON.parse(localStorage.getItem(WORKSHOP_HISTORY_KEY) || 'null');
       if (!Array.isArray(verifyHistory) || verifyHistory.length !== merged.length) {
         throw new Error('The browser could not verify imported workshop history.');
@@ -1222,6 +1488,10 @@ async function importWorkshopPlanFile(file) {
           throw new Error('The browser could not verify the imported monthly spending cap.');
         }
       }
+      const verifyLedger = normalizeWorkshopSpendingLedger(JSON.parse(localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY) || 'null'));
+      if (!verifyLedger || Object.keys(verifyLedger.months).length !== Object.keys(localLedger.months).length) {
+        throw new Error('The browser could not verify the restored spending ledger.');
+      }
     } catch (saveError) {
       // Best-effort rollback restores each affected local record if any write or
       // verification fails partway through the import.
@@ -1232,6 +1502,8 @@ async function importWorkshopPlanFile(file) {
         else localStorage.setItem(WORKSHOP_SAVINGS_GOAL_KEY, previousGoal);
         if (previousBudget === null) localStorage.removeItem(WORKSHOP_MONTHLY_BUDGET_KEY);
         else localStorage.setItem(WORKSHOP_MONTHLY_BUDGET_KEY, previousBudget);
+        if (previousLedger === null) localStorage.removeItem(WORKSHOP_SPENDING_LEDGER_KEY);
+        else localStorage.setItem(WORKSHOP_SPENDING_LEDGER_KEY, previousLedger);
       } catch (rollbackError) {
         console.warn('[Kano Life] Workshop plan import rollback could not fully restore browser storage.', rollbackError);
       }
@@ -1242,7 +1514,8 @@ async function importWorkshopPlanFile(file) {
     if (invalidCount) notes.push(`${invalidCount} invalid service record${invalidCount === 1 ? ' was' : 's were'} skipped`);
     if (goalIsInvalid) notes.push('the invalid target was ignored');
     if (budgetIsInvalid) notes.push('the invalid monthly cap was ignored');
-    setWorkshopMessage(`WORKSHOP PLAN IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} saved${incomingGoal ? ` · target ${naira(incomingGoal.targetNaira)} restored` : ' · existing target preserved'}${incomingBudget ? ` · monthly cap ${naira(incomingBudget.monthlyLimitNaira)} restored` : ' · existing monthly cap preserved'}. ${notes.length ? notes.join('; ') + '. ' : ''}Wallet, vehicle condition and game progress unchanged.`);
+    if (ledgerIsInvalid) notes.push('the invalid spending ledger was ignored');
+    setWorkshopMessage(`WORKSHOP PLAN IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} saved${incomingGoal ? ` · target ${naira(incomingGoal.targetNaira)} restored` : ' · existing target preserved'}${incomingBudget ? ` · monthly cap ${naira(incomingBudget.monthlyLimitNaira)} restored` : ' · existing monthly cap preserved'}${hasIncomingLedger ? ' · spending ledger merged' : ' · ledger updated from valid receipts'}. ${notes.length ? notes.join('; ') + '. ' : ''}Wallet, vehicle condition and game progress unchanged.`);
     renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
   } catch (error) {
     console.warn('[Kano Life] Workshop plan import failed safely.', error);
@@ -1646,18 +1919,26 @@ function handleWorkshopSavingsGoalAction(action) {
 
 function workshopMonthlyBudgetData() {
   const now = new Date();
+  const monthKey = workshopLedgerMonthKey(now.getTime());
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
   const currentHistory = readWorkshopHistory().filter((entry) => {
     const time = Number(entry.time);
     return Number.isFinite(time) && time >= monthStart && time < nextMonthStart && time <= now.getTime();
   });
-  const spent = currentHistory.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0);
+  const ledger = ensureWorkshopSpendingLedger();
+  const ledgerMonth = monthKey ? ledger.months[monthKey] : null;
+  const fallbackSpend = currentHistory.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0);
+  const spent = ledgerMonth ? workshopLedgerMonthTotal(ledgerMonth) : fallbackSpend;
   const budget = readWorkshopMonthlyBudget();
   return {
     now,
+    monthKey,
     monthLabel: now.toLocaleDateString('en-NG', { month: 'long', year: 'numeric' }),
     currentHistory,
+    ledgerMonth,
+    coverageComplete: ledgerMonth ? Boolean(ledgerMonth.coverageComplete) : currentHistory.length === 0,
+    ledgerTransactionCount: ledgerMonth ? ledgerMonth.transactions.length + ledgerMonth.archivedCount : currentHistory.length,
     spent,
     budget,
     remaining: budget ? Math.max(0, budget.monthlyLimitNaira - spent) : null,
@@ -1685,11 +1966,14 @@ function workshopMonthlyBudgetMarkup() {
       statusText = `${naira(data.remaining)} remains under this month’s workshop cap.`;
     }
   }
+  const coverageMarkup = data.coverageComplete
+    ? `<div class="kano-workshop-monthly-coverage" data-level="complete" role="status">LEDGER COVERAGE: COMPLETE FOR THIS CALENDAR MONTH · ${data.ledgerTransactionCount} TRACKED SERVICE${data.ledgerTransactionCount === 1 ? '' : 'S'}.</div>`
+    : '<div class="kano-workshop-monthly-coverage" data-level="partial" role="status">LEDGER COVERAGE: PARTIAL · The total includes tracked transactions, but services from before this upgrade or imported without a full ledger may be missing.</div>';
   const limit = data.budget ? String(data.budget.monthlyLimitNaira) : '';
   const meterMarkup = data.budget
     ? `<div class="kano-workshop-monthly-meter" role="progressbar" aria-label="Monthly recorded workshop spending compared with cap" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${data.progress}"><i style="width:${data.progress}%"></i></div><div class="kano-workshop-monthly-numbers"><span>RECORDED THIS MONTH<strong>${naira(data.spent)}</strong></span><span>MONTHLY CAP<strong>${naira(data.budget.monthlyLimitNaira)}</strong></span><span>REMAINING<strong>${data.exceeded ? `-${naira(data.spent - data.budget.monthlyLimitNaira)}` : naira(data.remaining)}</strong></span></div>`
     : '<div class="kano-workshop-monthly-empty">No monthly spending cap is saved on this device.</div>';
-  return `<section class="kano-workshop-monthly-budget" aria-labelledby="kano-workshop-monthly-budget-title"><div class="kano-workshop-monthly-heading"><h4 id="kano-workshop-monthly-budget-title">MONTHLY WORKSHOP BUDGET GUARD</h4><span>${escapeWorkshopHTML(data.monthLabel.toUpperCase())}</span></div><p class="kano-workshop-monthly-intro">Set a maximum for workshop spend this calendar month. This is a warning and planning tool, not a lock on game money.</p>${meterMarkup}<div class="kano-workshop-monthly-status" data-level="${level}" role="status">${escapeWorkshopHTML(statusText)}</div><form class="kano-workshop-monthly-form" data-kano-workshop-budget-form><label for="kano-workshop-monthly-limit">MONTHLY CAP (₦)<input id="kano-workshop-monthly-limit" data-kano-workshop-budget-amount type="number" min="1" max="100000000" step="500" inputmode="numeric" value="${limit}" placeholder="Enter monthly cap" /></label><div class="kano-workshop-monthly-actions"><button type="button" data-kano-workshop-budget-save>SAVE MONTHLY CAP</button>${data.budget ? '<button type="button" class="kano-workshop-monthly-remove" data-kano-workshop-budget-clear>REMOVE CAP</button>' : ''}</div></form><small class="kano-workshop-monthly-note">Spending is calculated from locally saved receipts for ${escapeWorkshopHTML(data.monthLabel)}. Workshop history holds at most ${WORKSHOP_HISTORY_LIMIT} recent records; if older services have been replaced by newer ones, this month's total may be incomplete. No money is reserved or deducted by this panel.</small></section>`;
+  return `<section class="kano-workshop-monthly-budget" aria-labelledby="kano-workshop-monthly-budget-title"><div class="kano-workshop-monthly-heading"><h4 id="kano-workshop-monthly-budget-title">MONTHLY WORKSHOP BUDGET GUARD</h4><span>${escapeWorkshopHTML(data.monthLabel.toUpperCase())}</span></div><p class="kano-workshop-monthly-intro">Set a maximum for workshop spend this calendar month. This is a warning and planning tool, not a lock on game money. A separate spending ledger keeps tracking new services after old receipts leave the recent-history list.</p>${meterMarkup}<div class="kano-workshop-monthly-status" data-level="${level}" role="status">${escapeWorkshopHTML(statusText)}</div>${coverageMarkup}<form class="kano-workshop-monthly-form" data-kano-workshop-budget-form><label for="kano-workshop-monthly-limit">MONTHLY CAP (₦)<input id="kano-workshop-monthly-limit" data-kano-workshop-budget-amount type="number" min="1" max="100000000" step="500" inputmode="numeric" value="${limit}" placeholder="Enter monthly cap" /></label><div class="kano-workshop-monthly-actions"><button type="button" data-kano-workshop-budget-save>SAVE MONTHLY CAP</button>${data.budget ? '<button type="button" class="kano-workshop-monthly-remove" data-kano-workshop-budget-clear>REMOVE CAP</button>' : ''}</div></form><small class="kano-workshop-monthly-note">Current-month spend comes from the local ledger, not just the latest ${WORKSHOP_HISTORY_LIMIT} receipts. The ledger retains up to ${WORKSHOP_LEDGER_MONTHS_LIMIT} calendar months and ${WORKSHOP_LEDGER_TRANSACTIONS_LIMIT} individually deduplicated transactions per month; months affected by legacy migration, partial imports, or archived overflow are flagged. No money is reserved or deducted by this panel.</small></section>`;
 }
 
 function handleWorkshopMonthlyBudgetAction(action) {
@@ -1742,7 +2026,11 @@ function renderWorkshopPanel(state = activeGame?.s) {
     .join(';');
   const goalSignature = JSON.stringify(readWorkshopSavingsGoal() || null);
   const monthlyBudgetSignature = JSON.stringify(readWorkshopMonthlyBudget() || null);
-  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}|${monthlyBudgetSignature}`;
+  const spendingLedger = ensureWorkshopSpendingLedger();
+  const ledgerSignature = Object.entries(spendingLedger.months).map(([monthKey, month]) =>
+    `${monthKey}:${workshopLedgerMonthTotal(month)}:${month.coverageComplete ? 1 : 0}:${month.transactions.length}:${month.archivedCount}`
+  ).join(';');
+  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}|${monthlyBudgetSignature}|${ledgerSignature}`;
   if (panel.dataset.signature === signature) return;
   panel.dataset.signature = signature;
 
@@ -1779,7 +2067,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
-    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button><button type="button" data-kano-workshop-import-trigger>IMPORT JSON BACKUP</button><button type="button" data-kano-workshop-plan-export ${readWorkshopHistory().length || readWorkshopSavingsGoal() || readWorkshopMonthlyBudget() ? '' : 'disabled'}>EXPORT PLAN BACKUP</button><button type="button" data-kano-workshop-plan-import-trigger>IMPORT PLAN BACKUP</button><input type="file" accept=".json,application/json" data-kano-workshop-import-file hidden aria-label="Choose a Kano Life service history JSON backup"><input type="file" accept=".json,application/json" data-kano-workshop-plan-import-file hidden aria-label="Choose a Kano Life workshop plan JSON backup"></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">EXPORT JSON BACKUP contains service receipts only. EXPORT PLAN BACKUP includes receipts, the repair-fund target and monthly spending cap for device transfer. Neither file contains the game wallet, vehicle save, or gameplay progress. Clearing browser storage removes these local records.</p></section>
+    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button><button type="button" data-kano-workshop-import-trigger>IMPORT JSON BACKUP</button><button type="button" data-kano-workshop-plan-export ${readWorkshopHistory().length || readWorkshopSavingsGoal() || readWorkshopMonthlyBudget() || workshopSpendingLedgerHasEntries(ensureWorkshopSpendingLedger()) ? '' : 'disabled'}>EXPORT PLAN BACKUP</button><button type="button" data-kano-workshop-plan-import-trigger>IMPORT PLAN BACKUP</button><input type="file" accept=".json,application/json" data-kano-workshop-import-file hidden aria-label="Choose a Kano Life service history JSON backup"><input type="file" accept=".json,application/json" data-kano-workshop-plan-import-file hidden aria-label="Choose a Kano Life workshop plan JSON backup"></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">EXPORT JSON BACKUP contains service receipts only. EXPORT PLAN BACKUP includes recent receipts, the repair-fund target, monthly spending cap and separate monthly spending ledger for device transfer. Neither file contains the game wallet, vehicle save, or gameplay progress. Clearing browser storage removes these local records.</p></section>
     <dialog id="kano-workshop-confirm" class="kano-workshop-confirm" aria-labelledby="kano-workshop-confirm-title"><div class="kano-workshop-confirm-inner"><p class="kano-workshop-eyebrow">PAYMENT CONFIRMATION</p><h3 id="kano-workshop-confirm-title">Confirm workshop service</h3><p id="kano-workshop-confirm-summary">Review the repair and total before paying.</p><div id="kano-workshop-confirm-breakdown" class="kano-workshop-confirm-breakdown"></div><div class="kano-workshop-confirm-wallet"><span>WALLET AFTER SERVICE</span><strong id="kano-workshop-wallet-after">—</strong></div><div class="kano-workshop-confirm-actions"><button type="button" class="kano-workshop-cancel" data-kano-workshop-cancel>Cancel</button><button type="button" class="kano-workshop-confirm-pay" data-kano-workshop-confirm>CONFIRM &amp; PAY</button></div></div></dialog>`;
   const status = panel.querySelector('#kano-workshop-status');
   status.textContent = panel.dataset.message || 'Select a service to see its cost.';
@@ -2049,6 +2337,8 @@ function installWorkshopUI() {
       .kano-workshop-monthly-numbers span{display:grid;gap:4px;min-width:0;padding:7px;border:1px solid #ffffff14;border-radius:7px;background:#00000012;color:#9fb4c8;font-size:7px;font-weight:900;overflow-wrap:anywhere}
       .kano-workshop-monthly-numbers strong{color:#eafff8;font-size:10px;line-height:1.25;overflow-wrap:anywhere}
       .kano-workshop-monthly-status{margin-top:7px;padding:8px;border:1px solid #4dd6ac35;border-radius:7px;background:#4dd6ac0a;color:#a5f3d4;font-size:9px;font-weight:900;line-height:1.4;overflow-wrap:anywhere}
+      .kano-workshop-monthly-coverage{margin-top:6px;padding:7px;border:1px solid #00b4d855;border-radius:7px;background:#00b4d80b;color:#a4eaf5;font-size:8px;font-weight:900;line-height:1.45;overflow-wrap:anywhere}
+      .kano-workshop-monthly-coverage[data-level="partial"]{border-color:#ffcc7a55;background:#ffcc7a0b;color:#ffdc9a}
       .kano-workshop-monthly-status[data-level="near"]{border-color:#ffcc7a55;background:#ffcc7a0b;color:#ffdc9a}
       .kano-workshop-monthly-status[data-level="reached"],.kano-workshop-monthly-status[data-level="over"]{border-color:#ff777755;background:#ff77770b;color:#ffaaaa}
       .kano-workshop-monthly-form{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:9px}
