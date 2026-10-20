@@ -7,7 +7,7 @@
 const STYLE_ID = 'kano-day-hud-styles';
 
 const CSS = `
-.kano-day-hud{position:absolute;left:8px;top:calc(env(safe-area-inset-top,0px) + 96px);z-index:6;
+.kano-day-hud{position:absolute;left:8px;top:calc(env(safe-area-inset-top,0px) + 236px);z-index:6;
   display:flex;flex-direction:column;gap:4px;pointer-events:none;font:700 11px/1.2 system-ui,sans-serif;color:#e8f1fb}
 .kano-day-hud .kdh-clock{background:#101a26cc;border:1px solid #ffffff22;border-radius:8px;padding:5px 8px;
   backdrop-filter:blur(4px);white-space:nowrap}
@@ -19,7 +19,7 @@ const CSS = `
 .kano-day-hud .kdh-bar i{display:block;height:100%;width:0;background:#9de6d7;transition:width .4s,background .4s}
 .kano-day-hud .kdh-bar i.warn{background:#f5c542}
 .kano-day-hud .kdh-bar i.crit{background:#ff6b6b}
-@media (max-width:760px){.kano-day-hud{top:calc(env(safe-area-inset-top,0px) + 84px)}
+@media (max-width:760px){.kano-day-hud{top:calc(env(safe-area-inset-top,0px) + 176px)}
   .kano-day-hud .kdh-row span{width:40px}}
 @media (prefers-reduced-motion:reduce){.kano-day-hud .kdh-bar i{transition:none}}
 `;
@@ -44,6 +44,7 @@ export class KanoDayHud {
     this.hunger = this.#row('Hunger');
     this.fatigue = this.#row('Fatigue');
     this.root.append(this.clock, this.hunger.row, this.fatigue.row);
+    this.root.style.display = 'none'; // shown only while driving
     this.container.appendChild(this.root);
   }
 

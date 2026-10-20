@@ -141,3 +141,34 @@ test('snapshot uses Hausa labels when asked', () => {
   assert.equal(cycle.snapshot('ha').periodLabel, 'Azahar');
   assert.equal(cycle.snapshot('en').period, 'zuhr');
 });
+
+test('beginShift: first shift keeps day 1, later shifts advance the day, clock and fatigue reset', () => {
+  const { cycle, events } = make();
+  cycle.state.minuteOfDay = 15 * 60; cycle.state.fatigue = 80;
+  cycle.beginShift({ breakfast: true, breakfastCost: 450 });
+  assert.equal(cycle.state.day, 1);
+  assert.equal(cycle.state.minuteOfDay, 420);
+  assert.equal(cycle.state.fatigue, 5);
+  cycle.beginShift({ breakfast: false });
+  assert.equal(cycle.state.day, 2);
+  assert.equal(events.filter((e) => e.type === 'shift_started').length, 2);
+});
+
+test('beginShift: a bigger breakfast leaves the driver less hungry, skipping it starts hungry', () => {
+  const hungerAfter = (opts) => { const { cycle } = make(); cycle.beginShift(opts); return cycle.state.hunger; };
+  const big = hungerAfter({ breakfast: true, breakfastCost: 450 });
+  const small = hungerAfter({ breakfast: true, breakfastCost: 250 });
+  const none = hungerAfter({ breakfast: false });
+  assert.ok(big < small && small < none);
+  assert.equal(big, 0);
+  assert.equal(none, 35);
+});
+
+test('beginShift re-arms warnings so a hungry start can warn again', () => {
+  const { cycle, events } = make();
+  cycle.state.hunger = 80; run(cycle, 1);
+  assert.equal(events.filter((e) => e.type === 'hunger_high').length, 1);
+  cycle.beginShift({ breakfast: true, breakfastCost: 450 });
+  cycle.state.hunger = 80; run(cycle, 1);
+  assert.equal(events.filter((e) => e.type === 'hunger_high').length, 2);
+});

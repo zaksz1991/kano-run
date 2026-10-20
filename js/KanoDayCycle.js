@@ -36,7 +36,8 @@ const MODIFIERS = Object.freeze({
   late:    { fareMultiplier: 0.8,  trafficDensity: 0.4, visibility: 0.5 },
 });
 
-const DEFAULTS = Object.freeze({ day: 1, minuteOfDay: 7 * 60, hunger: 10, fatigue: 5 });
+const SHIFT_START_MINUTE = 7 * 60; // the morning routine ends around 06:50
+const DEFAULTS = Object.freeze({ day: 1, minuteOfDay: SHIFT_START_MINUTE, hunger: 10, fatigue: 5, started: false });
 // Hysteresis: warn when crossing HIGH, re-arm only after dropping below LOW.
 const THRESHOLDS = Object.freeze({
   hunger:  { high: 70, low: 55, critical: 90 },
@@ -81,6 +82,7 @@ export class KanoDayCycle {
     s.minuteOfDay = ((Number(s.minuteOfDay) || DEFAULTS.minuteOfDay) % 1440 + 1440) % 1440;
     s.hunger = clamp(Number(s.hunger) || 0, 0, 100);
     s.fatigue = clamp(Number(s.fatigue) || 0, 0, 100);
+    s.started = s.started === true;
   }
 
   #load() {
@@ -144,6 +146,24 @@ export class KanoDayCycle {
     } else if (v < t.critical && level === 2) {
       this.level[key] = 1;
     }
+  }
+
+  /**
+   * Start of a driving shift (after the morning routine). Each shift is a new day of the career:
+   * the clock resets to the start of the shift, fatigue resets after a night's sleep, and hunger
+   * depends on breakfast. `breakfastCost` of 0 / `breakfast` false means breakfast was skipped.
+   */
+  beginShift({ breakfast = false, breakfastCost = 0 } = {}) {
+    const s = this.state;
+    if (s.started) s.day += 1;
+    s.started = true;
+    s.minuteOfDay = SHIFT_START_MINUTE;
+    s.fatigue = 5;
+    s.hunger = breakfast ? clamp(30 - (Number(breakfastCost) || 0) / 15, 0, 30) : 35;
+    this.level = { hunger: 0, fatigue: 0 };
+    this.lastPeriod = periodAt(s.minuteOfDay).id;
+    this.#emit('shift_started', { day: s.day, hunger: Math.round(s.hunger) });
+    this.save();
   }
 
   /** Caller charges the wallet; this only applies the effect. */

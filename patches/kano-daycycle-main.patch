@@ -1,5 +1,5 @@
 --- a/js/main.js	2026-10-20 20:39:12.071212849 +0100
-+++ b/js/main.js	2026-10-20 20:49:58.695281094 +0100
++++ b/js/main.js	2026-10-21 00:23:48.678138865 +0100
 @@ -22,6 +22,8 @@
  import { KanoAtmosphere } from './KanoAtmosphere.js';
  import { KanoInteractionReliability } from './KanoInteractionReliability.js';
@@ -9,16 +9,17 @@
  
  import '../css/kano-responsive-upgrade.css';
  
-@@ -92,6 +94,8 @@
+@@ -92,6 +94,9 @@
  let controls = null;
  let game = null;
  let workshopPanel = null;
 +let dayCycle = null;
 +let dayHud = null;
++let shiftPending = false;
  
  let renderMode = '2D';
  
-@@ -814,6 +818,43 @@
+@@ -814,6 +819,52 @@
    ui.bind?.(game);
  
    // ----------------------------------------------------------
@@ -54,6 +55,15 @@
 +
 +    // Lets game.js apply fare and steering effects. Both fall back to 1 when null.
 +    game.dayCycle = dayCycle;
++
++    // Each new run is a new shift. Breakfast is recorded just after start(),
++    // so it is applied on the first driving frame.
++    const startRun = game.start.bind(game);
++
++    game.start = (...args) => {
++      shiftPending = true;
++      return startRun(...args);
++    };
 +  } catch (error) {
 +    console.warn('[Kano Life] day cycle unavailable', error);
 +  }
@@ -62,24 +72,40 @@
    // WORKSHOP, REPAIRS, AND ROADSIDE RECOVERY
    // This DOM panel persists when switching between 2D and 3D.
    // ----------------------------------------------------------
-@@ -1096,6 +1137,16 @@
+@@ -1096,6 +1147,32 @@
  
      game?.tick(dt);
  
-+    // Day cycle runs only while actively driving.
-+    if (dayCycle && game?.state === 'PLAY') {
-+      dayCycle.update(dt, {
-+        speedKmh: game.s?.speed,
-+        passengerOnboard: (game.s?.passengers?.length || 0) > 0,
-+      });
++    // Day cycle runs only while actively driving; its HUD hides during
++    // menus, the morning routine and street events.
++    if (dayCycle) {
++      const driving = game?.state === 'PLAY';
 +
-+      dayHud?.render(dayCycle.snapshot());
++      dayHud?.show(driving);
++
++      if (driving && shiftPending) {
++        shiftPending = false;
++
++        dayCycle.beginShift({
++          breakfast: Boolean(game.s?.breakfastEaten),
++          breakfastCost: game.s?.breakfastCost || 0,
++        });
++      }
++
++      if (driving) {
++        dayCycle.update(dt, {
++          speedKmh: game.s?.speed,
++          passengerOnboard: (game.s?.passengers?.length || 0) > 0,
++        });
++
++        dayHud?.render(dayCycle.snapshot());
++      }
 +    }
 +
      interactionReliability?.update?.(
        dt,
        game?.s || {},
-@@ -1251,6 +1302,8 @@
+@@ -1251,6 +1328,8 @@
  
      try {
        liveUserCounter?.dispose?.();
