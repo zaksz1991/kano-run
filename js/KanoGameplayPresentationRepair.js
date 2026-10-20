@@ -87,6 +87,7 @@ function tuneRendererForClarity(owner) {
       }
       rendererQualityStates.set(gl, state);
       console.info(`[Kano Life] adaptive 3D clarity enabled · ${state.ratio.toFixed(2)}x initial pixel ratio`);
+      console.info('[Kano Life] responsive player keke suspension and chassis motion registered.');
       return;
     } catch (error) {
       if (!owner._kanoClarityWarningShown) {
@@ -160,6 +161,7 @@ const originalGameStart = Game.prototype.start;
 const originalGameTick = Game.prototype.tick;
 const originalSpawnTraffic = Game.prototype.spawnTraffic;
 const originalRendererDraw = Renderer3D.prototype.draw;
+const originalAnimateFallbackDriver = Renderer3D.prototype.animateFallbackDriver;
 const originalSyncTraffic = Renderer3D.prototype.syncTraffic;
 const originalMakeTrafficActor = Renderer3D.prototype.makeTrafficActor;
 const originalMakePothole = Renderer3D.prototype.makePotholeActor;
@@ -741,6 +743,85 @@ function attachRider(actor) {
   riderGroups.add(rider);
 }
 
+// -----------------------------------------------------------------------------
+// Player keke ride response. This augments the existing renderer animation only
+// while the road is active; it does not alter gameplay physics, speed, collisions,
+// steering state, or the garage/morning scenes.
+// -----------------------------------------------------------------------------
+function applyPlayerKekeRideResponse(renderer, state, dt) {
+  const player = renderer?.player;
+  if (!player?.isObject3D || renderer.lifeScene !== 'road') return;
+
+  const delta = clamp(Number(dt) || 0, 0, 0.05);
+  if (delta <= 0) return;
+
+  const signedSpeed = Number.isFinite(state?.signedSpeed)
+    ? state.signedSpeed
+    : state?.reverse
+      ? -Math.abs(Number(state?.speed) || 0)
+      : Math.abs(Number(state?.speed) || 0);
+  const speed = Math.abs(signedSpeed);
+  const speedFactor = clamp(speed / 38, 0, 1);
+  const steer = clamp(Number(state?.steer) || 0, -1, 1);
+
+  renderer._kanoRideTime = (Number(renderer._kanoRideTime) || 0)
+    + delta * (1.0 + speedFactor * 1.7);
+  const time = renderer._kanoRideTime;
+
+  // Low-amplitude suspension response. Wet and muddy surfaces feel rougher;
+  // road texture does not move independently of the game world's scroll.
+  const roadFactor = state?.environment === 'muddy'
+    ? 1.0
+    : state?.environment === 'rainPuddles'
+      ? 0.74
+      : 0.24;
+  const suspension = Math.sin(time * (5.8 + speedFactor * 5.4))
+    * (0.0015 + speedFactor * 0.0045) * roadFactor;
+  const impact = clamp(Number(state?.crashShake) || 0, 0, 1.25);
+  const impactPulse = Math.sin(time * 38) * impact * 0.006;
+  player.position.y += suspension + impactPulse;
+
+  // The stock renderer has already set its steering bank before it calls the
+  // driver animator. Add a small chassis response without accumulating angles.
+  const steeringBank = -steer * (0.008 + speedFactor * 0.012);
+  const surfaceRoll = Math.sin(time * 3.4) * roadFactor * 0.0018;
+  player.rotation.z = -steer * 0.075 + steeringBank + surfaceRoll;
+
+  // Subtle pitch makes throttle, braking and reversing easier to read visually.
+  const pitch = state?.reverse
+    ? speedFactor * 0.010
+    : state?.brake
+      ? speedFactor * 0.014
+      : state?.gas
+        ? -speedFactor * 0.006
+        : 0;
+  player.rotation.x = pitch + Math.sin(time * 31) * impact * 0.0025;
+
+  // Imported keke models may not provide their wheels through the native driver
+  // rig. Rotate only explicitly named wheels in that case to avoid double-spin.
+  const rigWheels = player.userData?.driverAnimationParts?.wheels;
+  if (Array.isArray(rigWheels) && rigWheels.length) return;
+
+  if (renderer._kanoPlayerWheelRoot !== player) {
+    const namedWheels = [];
+    const seen = new Set();
+    player.traverse?.((node) => {
+      if (node === player || !node?.isObject3D || seen.has(node)) return;
+      const name = `${node.name || ''} ${node.userData?.name || ''}`;
+      if (!/(wheel|tyre|tire)/i.test(name)) return;
+      if (!node.isMesh && !(node.children?.length)) return;
+      seen.add(node);
+      namedWheels.push(node);
+    });
+    renderer._kanoPlayerWheelRoot = player;
+    renderer._kanoPlayerNamedWheels = namedWheels;
+  }
+  for (const wheel of renderer._kanoPlayerNamedWheels || []) {
+    if (!wheel?.parent) continue;
+    try { wheel.rotateX(signedSpeed * delta * 0.08); } catch (_) {}
+  }
+}
+
 // Animate traffic wheels and suspension without replacing the vehicle models.
 // Imported GLBs use wheel/tire names when available; procedural fallbacks expose
 // the keke wheel list directly, with geometry-based detection for fallback cars
@@ -960,6 +1041,21 @@ Game.prototype.tick = function trackedGameTick(dt, ...args) {
   window.__KANO_LIFE_GAME__ = this;
   return originalGameTick.call(this, dt, ...args);
 };
+if (typeof originalAnimateFallbackDriver === 'function') {
+  Renderer3D.prototype.animateFallbackDriver = function responsivePlayerDriver(state, dt, ...args) {
+    const result = originalAnimateFallbackDriver.call(this, state, dt, ...args);
+    try {
+      applyPlayerKekeRideResponse(this, state, dt);
+    } catch (error) {
+      if (!this._kanoRideResponseWarningShown) {
+        this._kanoRideResponseWarningShown = true;
+        console.warn('[Kano Life] Player ride response skipped safely.', error);
+      }
+    }
+    return result;
+  };
+}
+
 if (typeof originalRendererDraw === 'function') {
   Renderer3D.prototype.draw = function patchedPresentationDraw(state, dt, ...args) {
     activeRenderer = this;
