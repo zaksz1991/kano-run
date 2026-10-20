@@ -552,3 +552,57 @@ test('day cycle: heavy fatigue slows steering but a missing day cycle does not',
   assert.ok(tired < normal);
   assert.ok(tired > 0);
 });
+
+test('day cycle: hunger break is offered when calm, eating spends earnings and relieves hunger', () => {
+  const calls = [];
+  const { game } = createHarness();
+  game.start('career');
+  game.dayCycle = { modifiers: () => ({}), eat: (n) => calls.push(['eat', n]), rest: (n) => calls.push(['rest', n]) };
+  game.s.eventCooldown = 0;
+  game.s.score = 500;
+  game.offerBreak('mealBreak');
+  game.updateEnvironment(0.016);
+  assert.equal(game.state, 'EVENT');
+  assert.equal(game.s.event, 'mealBreak');
+  game.resolveEvent('eatSuya');
+  assert.equal(game.state, 'PLAY');
+  assert.equal(game.s.score, 150);
+  assert.deepEqual(calls, [['eat', 50]]);
+});
+
+test('day cycle: cannot afford food or tea, nothing is applied; free rest always works', () => {
+  const calls = [];
+  const make = (type) => {
+    const { game } = createHarness();
+    game.start('career');
+    game.dayCycle = { modifiers: () => ({}), eat: (n) => calls.push(['eat', n]), rest: (n) => calls.push(['rest', n]) };
+    game.s.eventCooldown = 0;
+    game.s.score = 50;
+    game.offerBreak(type);
+    game.updateEnvironment(0.016);
+    return game;
+  };
+  let game = make('mealBreak');
+  game.resolveEvent('eatSuya');
+  assert.equal(game.s.score, 50);
+  game = make('restBreak');
+  game.resolveEvent('restTea');
+  assert.equal(game.s.score, 50);
+  game.s.event = 'restBreak'; game.state = 'EVENT';
+  game.resolveEvent('restShade');
+  assert.deepEqual(calls, [['rest', 50]]);
+});
+
+test('day cycle: break offer is ignored without a day cycle, and waits during another event', () => {
+  const { game } = createHarness();
+  game.start('career');
+  game.s.eventCooldown = 0;
+  game.offerBreak('restBreak');
+  game.updateEnvironment(0.016);
+  assert.equal(game.state, 'PLAY');
+  game.dayCycle = { modifiers: () => ({}), eat() {}, rest() {} };
+  game.s.event = 'robber'; game.state = 'EVENT';
+  game.updateEnvironment(0.016);
+  assert.equal(game.pendingBreak, 'restBreak');
+  assert.equal(game.s.event, 'robber');
+});

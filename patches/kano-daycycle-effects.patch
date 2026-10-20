@@ -1,6 +1,15 @@
 --- a/js/game.js	2026-10-20 20:43:56.314452127 +0100
-+++ b/js/game.js	2026-10-20 20:43:56.340479998 +0100
-@@ -800,11 +800,15 @@
++++ c/js/game.js	2026-10-20 20:49:58.680281136 +0100
+@@ -87,6 +87,8 @@
+   // ==========================================================
+ 
+   resetRun() {
++    this.pendingBreak = null;
++
+     const capacity = Math.max(
+       3,
+       5 + (this.driver.capacityMod || 0),
+@@ -800,11 +802,15 @@
      const tyreHandling =
        0.62 + 0.38 * (s.tyres / 100);
  
@@ -17,7 +26,7 @@
  
      s.steer +=
        (s.targetLane - s.steer) *
-@@ -1863,6 +1867,14 @@
+@@ -1863,6 +1869,14 @@
        this.dailyAdd('matchedDrops', 1);
      }
  
@@ -32,6 +41,105 @@
      s.passengers.shift();
  
      s.drops += 1;
+@@ -1996,9 +2010,30 @@
+   // ENVIRONMENT EVENTS
+   // ==========================================================
+ 
++  // Day-cycle recovery: the cycle asks for a meal or rest stop, and it is offered
++  // as a normal life event as soon as the run is in a calm state.
++  offerBreak(type) {
++    if (type === 'mealBreak' || type === 'restBreak') {
++      this.pendingBreak = type;
++    }
++  }
++
+   updateEnvironment(dt) {
+     const s = this.s;
+ 
++    if (
++      this.pendingBreak &&
++      this.dayCycle &&
++      this.state === 'PLAY' &&
++      !s.event &&
++      !(s.eventCooldown > 0)
++    ) {
++      const pending = this.pendingBreak;
++
++      this.pendingBreak = null;
++      this.beginEvent(pending);
++    }
++
+     s.lifeEventTimer -= dt;
+ 
+     if (
+@@ -2350,6 +2385,28 @@
+         ],
+       },
+ 
++      mealBreak: {
++        kicker: 'ROADSIDE FOOD · YUNWA',
++        title: 'Your stomach is complaining.',
++        copy: 'A suya stand and a woman selling kosai and fura da nono are beside the road. Eat now, or keep driving hungry and risk smaller tips.',
++        choices: [
++          ['SUYA PLATE · ₦350', 'eatSuya'],
++          ['KOSAI & FURA · ₦120', 'eatCheap'],
++          ['KEEP DRIVING', 'skipLife'],
++        ],
++      },
++
++      restBreak: {
++        kicker: 'GAJIYA · TIME TO REST',
++        title: 'Your arms are getting heavy.',
++        copy: 'There is shade under a neem tree by the motor park. A short rest costs time, not much money, and the steering will feel lighter after.',
++        choices: [
++          ['REST IN THE SHADE · FREE', 'restShade'],
++          ['SHAI & REST · ₦150', 'restTea'],
++          ['KEEP DRIVING', 'skipLife'],
++        ],
++      },
++
+       waterSeller: {
+         kicker: 'ROADSIDE KIOSK',
+         title: 'Pure water and phone top-up.',
+@@ -2742,6 +2799,38 @@
+           );
+         }
+       }
++    } else if (type === 'mealBreak') {
++      const meals = {
++        eatSuya: { cost: 350, relief: 50, text: 'Suya plate eaten · hunger gone' },
++        eatCheap: { cost: 120, relief: 25, text: 'Kosai and fura da nono · hunger eased' },
++      };
++      const meal = meals[action];
++
++      if (meal) {
++        if (s.score >= meal.cost) {
++          s.score -= meal.cost;
++          this.dayCycle?.eat?.(meal.relief);
++          this.ui.toast(meal.text);
++        } else {
++          this.ui.toast('Not enough run earnings for food · keep driving');
++        }
++      }
++    } else if (type === 'restBreak') {
++      const rests = {
++        restShade: { cost: 0, minutes: 50, text: 'Rested in the shade · fatigue eased' },
++        restTea: { cost: 150, minutes: 80, text: 'Shai and a proper rest · you feel fresh' },
++      };
++      const rest = rests[action];
++
++      if (rest) {
++        if (s.score >= rest.cost) {
++          s.score -= rest.cost;
++          this.dayCycle?.rest?.(rest.minutes);
++          this.ui.toast(rest.text);
++        } else {
++          this.ui.toast('Not enough run earnings for tea · try the free shade');
++        }
++      }
+     } else if (type === 'waterSeller') {
+       if (action === 'buyWater') {
+         if (s.score >= 100) {
 --- a/js/productionSystems.js	2026-10-20 20:43:56.314500178 +0100
 +++ b/js/productionSystems.js	2026-10-20 20:43:56.340771455 +0100
 @@ -723,6 +723,7 @@
