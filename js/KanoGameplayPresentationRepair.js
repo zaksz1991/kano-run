@@ -1205,6 +1205,148 @@ async function importWorkshopPlanFile(file) {
   }
 }
 
+
+// Workshop cost analytics are calculated from the locally saved receipt list.
+// History is deliberately capped at WORKSHOP_HISTORY_LIMIT; totals are not
+// advertised as lifetime totals and no missing values are fabricated.
+function workshopCostAnalyticsData() {
+  const history = readWorkshopHistory()
+    .filter((entry) => Number.isFinite(Number(entry.time)) && Number.isFinite(Number(entry.cost)) && Number(entry.cost) >= 0)
+    .slice(0, WORKSHOP_HISTORY_LIMIT);
+  const totalSpend = history.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0);
+  const averageCost = history.length ? Math.round(totalSpend / history.length) : 0;
+  const now = Date.now();
+  const period = 30 * 24 * 60 * 60 * 1000;
+  const current30 = history.reduce((sum, entry) => {
+    const time = Number(entry.time);
+    return time >= now - period && time <= now ? sum + Math.max(0, Math.floor(Number(entry.cost) || 0)) : sum;
+  }, 0);
+  const preceding30 = history.reduce((sum, entry) => {
+    const time = Number(entry.time);
+    return time >= now - (2 * period) && time < now - period ? sum + Math.max(0, Math.floor(Number(entry.cost) || 0)) : sum;
+  }, 0);
+  const labels = {
+    full: 'Full service',
+    body: 'Body repair',
+    engine: 'Engine service',
+    tyres: 'Tyre service',
+  };
+  const categories = Object.keys(labels).map((key) => {
+    const records = history.filter((entry) => entry.service === key);
+    return {
+      key,
+      label: labels[key],
+      count: records.length,
+      spend: records.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0),
+    };
+  });
+  const highestSpend = Math.max(0, ...categories.map((item) => item.spend));
+  const leadingCategory = categories.filter((item) => item.count).sort((a, b) => b.spend - a.spend)[0] || null;
+  const mostExpensiveReceipt = history.reduce((best, entry) => (!best || Number(entry.cost) > Number(best.cost) ? entry : best), null);
+  let periodChange = null;
+  if (preceding30 > 0) {
+    periodChange = Math.round(((current30 - preceding30) / preceding30) * 100);
+  }
+  return {
+    history, totalSpend, averageCost, current30, preceding30,
+    categories, highestSpend, leadingCategory, mostExpensiveReceipt,
+    periodChange,
+  };
+}
+
+function workshopCostAnalyticsMarkup() {
+  const data = workshopCostAnalyticsData();
+  const dateFormatter = (time) => {
+    const date = new Date(Number(time));
+    return Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleDateString('en-NG', { dateStyle: 'medium' });
+  };
+  let trendText = 'No service spending recorded in either 30-day comparison window.';
+  let trendLevel = 'neutral';
+  if (data.current30 > 0 && data.preceding30 === 0) {
+    trendText = 'Spending is recorded in the latest 30 days, with no spending recorded in the preceding 30 days.';
+    trendLevel = 'current';
+  } else if (data.preceding30 > 0 && data.periodChange !== null) {
+    const difference = Math.abs(data.current30 - data.preceding30);
+    if (data.periodChange > 0) {
+      trendText = `Recorded spend increased by ${Math.abs(data.periodChange)}% (${naira(difference)}) compared with the preceding 30 days.`;
+      trendLevel = 'up';
+    } else if (data.periodChange < 0) {
+      trendText = `Recorded spend decreased by ${Math.abs(data.periodChange)}% (${naira(difference)}) compared with the preceding 30 days.`;
+      trendLevel = 'down';
+    } else {
+      trendText = 'Recorded spend is unchanged compared with the preceding 30 days.';
+    }
+  } else if (data.current30 === 0 && data.preceding30 > 0) {
+    trendText = 'No spending is recorded in the latest 30 days; the preceding 30-day window contains spending.';
+    trendLevel = 'down';
+  }
+  const breakdown = data.categories.map((item) => {
+    const width = data.highestSpend > 0 ? Math.round((item.spend / data.highestSpend) * 100) : 0;
+    return `<div class="kano-workshop-cost-row"><div class="kano-workshop-cost-row-head"><strong>${item.label}</strong><span>${naira(item.spend)}</span></div><div class="kano-workshop-cost-bar" role="progressbar" aria-label="${item.label} share of saved service-category spending" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${width}"><i style="width:${width}%"></i></div><small>${item.count} saved service${item.count === 1 ? '' : 's'}</small></div>`;
+  }).join('');
+  const leading = data.leadingCategory
+    ? `${data.leadingCategory.label} has the highest recorded category spend (${naira(data.leadingCategory.spend)}).`
+    : 'No workshop service costs are recorded yet.';
+  const largestReceipt = data.mostExpensiveReceipt
+    ? `Largest saved receipt: ${naira(data.mostExpensiveReceipt.cost)} on ${dateFormatter(data.mostExpensiveReceipt.time)}.`
+    : 'No saved receipts are available for comparison.';
+  return `<section class="kano-workshop-cost-analytics" aria-labelledby="kano-workshop-cost-analytics-title"><div class="kano-workshop-cost-heading"><h4 id="kano-workshop-cost-analytics-title">WORKSHOP COST ANALYTICS</h4><span>${data.history.length} SAVED RECEIPT${data.history.length === 1 ? '' : 'S'}</span></div><p class="kano-workshop-cost-intro">A local spending summary based only on the most recent service records saved on this device.</p><div class="kano-workshop-cost-metrics"><div><span>SAVED SPEND</span><strong>${naira(data.totalSpend)}</strong></div><div><span>AVERAGE RECEIPT</span><strong>${naira(data.averageCost)}</strong></div><div><span>LAST 30 DAYS</span><strong>${naira(data.current30)}</strong></div></div><div class="kano-workshop-cost-period" data-level="${trendLevel}" role="status"><div><span>PREVIOUS 30 DAYS</span><strong>${naira(data.preceding30)}</strong></div><p>${escapeWorkshopHTML(trendText)}</p></div><div class="kano-workshop-cost-breakdown">${breakdown}</div><div class="kano-workshop-cost-insight"><p>${escapeWorkshopHTML(leading)}</p><p>${escapeWorkshopHTML(largestReceipt)}</p></div><button type="button" class="kano-workshop-cost-export" data-kano-workshop-cost-report ${data.history.length ? '' : 'disabled'}>EXPORT COST REPORT CSV</button><small class="kano-workshop-cost-note">The game stores up to ${WORKSHOP_HISTORY_LIMIT} recent receipts. Imported or older records may not represent every service ever completed. This report does not alter wallet funds or vehicle condition.</small></section>`;
+}
+
+function downloadWorkshopCostReport() {
+  const data = workshopCostAnalyticsData();
+  if (!data.history.length) {
+    setWorkshopMessage('No saved workshop receipts are available for a cost report.');
+    return;
+  }
+  const csvCell = (value) => {
+    let safe = String(value ?? '');
+    if (/^[\t\r ]*[=+\-@]/.test(safe)) safe = `'${safe}`;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  const rows = [
+    ['Kano Life workshop cost report', ''],
+    ['Generated at (ISO 8601)', new Date().toISOString()],
+    ['Data scope', `Saved local receipts only; latest ${WORKSHOP_HISTORY_LIMIT} records maximum`],
+    [],
+    ['Metric', 'Value'],
+    ['Saved service records', data.history.length],
+    ['Total saved spend (NGN)', data.totalSpend],
+    ['Average saved receipt (NGN)', data.averageCost],
+    ['Spend in last 30 days (NGN)', data.current30],
+    ['Spend in preceding 30 days (NGN)', data.preceding30],
+    [],
+    ['Service category', 'Service count', 'Spend (NGN)'],
+    ...data.categories.map((item) => [item.label, item.count, item.spend]),
+    [],
+    ['Service date (ISO 8601)', 'Service', 'Components', 'Cost (NGN)', 'Wallet after (NGN)'],
+    ...data.history.map((entry) => {
+      const time = new Date(Number(entry.time));
+      const date = Number.isNaN(time.getTime()) ? '' : time.toISOString();
+      const service = ({ full: 'Full service', body: 'Body repair', engine: 'Engine service', tyres: 'Tyre service' })[entry.service] || 'Workshop service';
+      const components = (Array.isArray(entry.parts) ? entry.parts : []).map((key) => WORKSHOP_PARTS[key]?.label || '').filter(Boolean).join('; ');
+      return [date, service, components, Math.max(0, Math.floor(Number(entry.cost) || 0)), Math.max(0, Math.floor(Number(entry.walletAfter) || 0))];
+    }),
+  ];
+  try {
+    const csv = '\ufeff' + rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kano-life-workshop-cost-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.style.display = 'none';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    setWorkshopMessage(`WORKSHOP COST REPORT PREPARED · ${data.history.length} saved receipt${data.history.length === 1 ? '' : 's'} included. No wallet or vehicle data was changed.`);
+  } catch (error) {
+    console.warn('[Kano Life] Workshop cost report export failed.', error);
+    setWorkshopMessage('Cost report export failed in this browser. Saved receipts, wallet funds and vehicle condition remain unchanged.');
+  }
+}
+
 function workshopHealth(state, partKey) {
   const config = WORKSHOP_PARTS[partKey];
   const raw = Number(state?.[config.stateKey]);
@@ -1501,6 +1643,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     ${workshopConditionTrendMarkup(values)}
     ${workshopBudgetPlannerMarkup(state, values, wallet)}
     ${workshopSavingsGoalMarkup(state, wallet)}
+    ${workshopCostAnalyticsMarkup()}
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
@@ -1734,6 +1877,34 @@ function installWorkshopUI() {
       .kano-workshop-goal-actions button.kano-workshop-goal-secondary{border-color:#00b4d866;background:#10243a;color:#d9f5ff}
       .kano-workshop-goal-actions button:disabled{opacity:.45;cursor:not-allowed}.kano-workshop-goal-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
       .kano-workshop-goal-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
+      .kano-workshop-cost-analytics{margin:11px 0;padding:10px;border:1px solid #00b4d833;border-radius:9px;background:linear-gradient(145deg,#00b4d808,#ffffff04);min-width:0}
+      .kano-workshop-cost-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+      .kano-workshop-cost-heading h4{margin:0;color:#edf5fd;font-size:10px;letter-spacing:.05em}
+      .kano-workshop-cost-heading span{color:#00c4e7;font-size:8px;font-weight:900;text-align:right}
+      .kano-workshop-cost-intro{margin:6px 0 9px;color:#9eb4c9;font-size:9px;line-height:1.45}
+      .kano-workshop-cost-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+      .kano-workshop-cost-metrics>div{display:grid;gap:5px;min-width:0;padding:8px;border:1px solid #ffffff14;border-radius:7px;background:#00000012}
+      .kano-workshop-cost-metrics span{color:#9fb4c8;font-size:7px;font-weight:900;letter-spacing:.04em}
+      .kano-workshop-cost-metrics strong{color:#ffe18b;font-size:11px;line-height:1.25;overflow-wrap:anywhere}
+      .kano-workshop-cost-period{margin-top:7px;padding:8px;border:1px solid #ffffff15;border-radius:7px;background:#ffffff04}
+      .kano-workshop-cost-period>div{display:flex;justify-content:space-between;gap:8px;align-items:center}
+      .kano-workshop-cost-period>div span{color:#9fb4c8;font-size:8px;font-weight:900}
+      .kano-workshop-cost-period>div strong{color:#eaf5ff;font-size:10px}
+      .kano-workshop-cost-period p{margin:5px 0 0;color:#a9bbcd;font-size:9px;line-height:1.4}
+      .kano-workshop-cost-period[data-level="up"]{border-color:#ffbc6b55}.kano-workshop-cost-period[data-level="up"] p{color:#ffd39a}
+      .kano-workshop-cost-period[data-level="down"]{border-color:#4dd6ac55}.kano-workshop-cost-period[data-level="down"] p{color:#a5f3d4}
+      .kano-workshop-cost-breakdown{display:grid;gap:8px;margin-top:10px}
+      .kano-workshop-cost-row{min-width:0}
+      .kano-workshop-cost-row-head{display:flex;justify-content:space-between;gap:8px;align-items:center}
+      .kano-workshop-cost-row-head strong{color:#dbe8f7;font-size:9px}.kano-workshop-cost-row-head span{color:#ffe18b;font-size:9px;font-weight:900;white-space:nowrap}
+      .kano-workshop-cost-bar{height:5px;margin:5px 0 3px;overflow:hidden;border-radius:99px;background:#2c3d50}
+      .kano-workshop-cost-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#00b4d8,#4dd6ac)}
+      .kano-workshop-cost-row small{display:block;color:#8198ad;font-size:8px}
+      .kano-workshop-cost-insight{margin-top:9px;padding-top:8px;border-top:1px solid #ffffff12}
+      .kano-workshop-cost-insight p{margin:4px 0;color:#a9bbcd;font-size:9px;line-height:1.4}
+      .kano-workshop-cost-export{width:100%;min-height:38px;margin-top:8px;padding:8px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:9px;font-weight:900;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-cost-export:disabled{opacity:.45;cursor:not-allowed}.kano-workshop-cost-export:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
+      .kano-workshop-cost-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
       .kano-workshop-parts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:14px 0}
       .kano-workshop-part{min-width:0;padding:9px;border:1px solid #ffffff16;border-radius:8px;background:#ffffff07}
       .kano-workshop-part-label{display:flex;justify-content:space-between;gap:4px;color:#eaf1f9;font-size:10px;font-weight:900}
@@ -1790,7 +1961,7 @@ function installWorkshopUI() {
       .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
       .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
       .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
@@ -1813,6 +1984,8 @@ function installWorkshopUI() {
         panel.querySelector('[data-kano-workshop-import-file]')?.click();
         return;
       }
+      const costReportButton = event.target.closest('[data-kano-workshop-cost-report]');
+      if (costReportButton) { if (!costReportButton.disabled) downloadWorkshopCostReport(); return; }
       const exportButton = event.target.closest('[data-kano-workshop-export]');
       if (exportButton) {
         if (!exportButton.disabled) downloadWorkshopHistory(exportButton.dataset.kanoWorkshopExport);
