@@ -1,16 +1,9 @@
-const MOVE_ZONES_PATCH = Symbol.for('kano.life.stopped-roadside-interaction.v2');
-const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v2');
-const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const MOVE_ZONES_PATCH = Symbol.for('kano.life.stopped-roadside-interaction.v1');
+const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v1');
+const CROWD_DIRECTION_PATCH = Symbol.for('kano.life.crowd-direction-fix.v1');
 
-// Renderer3D maps zone depth to world Z with z = -depth * 88 while the keke
-// stays near z=2. Game.moveZones' original active range spans 0.135 depth
-// units (almost 12 world units), which is much too large for a boarding stop.
-// Keep approach markers moving normally, but permit pickup/drop/fuel only in
-// a narrow world-space window beside the keke.
-const FAR_DEPTH_LIMIT = 0.01;
-const NEAR_DEPTH_LIMIT = -0.04;
-const FAR_ZONE_OFFSET = 0.18;   // keeps distant roadside zones outside trigger range
-const ACTIVE_ZONE_OFFSET = 0.12; // maps the close world-space window to Game's expected range
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const ROADSIDE_INTERACTION_DEPTH_OFFSET = 0.12;
 const ROADSIDE_TYPES = new Set(['pickup', 'drop', 'fuel']);
 const ZONE_LABELS = {
   pickup: 'PASSENGER PICKUP',
@@ -29,31 +22,13 @@ const AMBIENT_CHARACTER_KEYS = [
   'pedestrianWoman', 'pedestrian', 'passengerWoman', 'passengerMan', 'passenger', 'passengerVIP',
 ];
 
-function finite(value) {
+function isFiniteNumber(value) {
   return Number.isFinite(Number(value));
-}
-
-function depthOffset(depth) {
-  if (depth > FAR_DEPTH_LIMIT) return FAR_ZONE_OFFSET;
-  if (depth >= NEAR_DEPTH_LIMIT) return ACTIVE_ZONE_OFFSET;
-  return 0;
-}
-
-function guidanceDepth(depth, type) {
-  return ROADSIDE_TYPES.has(type) ? depth + depthOffset(depth) : depth;
 }
 
 function pickCachedKey(models, keys) {
   if (!models?.cache?.has || typeof models.getInstance !== 'function') return null;
   return keys.find((key) => models.cache.has(key)) || null;
-}
-
-function copyTransform(target, source) {
-  if (!target || !source) return;
-  target.position?.copy?.(source.position);
-  target.rotation?.copy?.(source.rotation);
-  target.scale?.copy?.(source.scale);
-  target.visible = source.visible;
 }
 
 function disposeOwnedActor(root) {
@@ -78,33 +53,43 @@ function disposeOwnedActor(root) {
     for (const material of values) {
       if (!material || materials.has(material)) continue;
       materials.add(material);
-      // Material instances are cloned by ModelManager. Textures may still be
-      // shared with cached templates, so never dispose textures here.
       material.dispose?.();
     }
   });
 }
 
-/** Return driving guidance based on the marker's actual displayed depth. */
+function copyTransform(target, source) {
+  if (!target || !source) return;
+  target.position?.copy?.(source.position);
+  target.rotation?.copy?.(source.rotation);
+  target.scale?.copy?.(source.scale);
+  target.visible = source.visible;
+}
+
+/** Return driving guidance consistent with the renderer-aligned stop window. */
 export function getInteractionAdvice(state, gameStatus = 'PLAY') {
   if (!state || gameStatus !== 'PLAY' || state.event) return null;
   const zones = Array.isArray(state.zones) ? state.zones : [];
   const nearby = zones
     .filter((zone) => {
-      if (!zone || !finite(zone.depth)) return false;
-      const depth = guidanceDepth(Number(zone.depth), zone.type);
+      if (!zone || !isFiniteNumber(zone.depth)) return false;
+      const depth = Number(zone.depth);
       if (zone.type === 'pothole') return depth >= -0.015 && depth <= 0.34;
-      return ROADSIDE_TYPES.has(zone.type) && depth >= -0.015 && depth <= 0.34;
+      if (ROADSIDE_TYPES.has(zone.type)) {
+        const interactionDepth = depth + ROADSIDE_INTERACTION_DEPTH_OFFSET;
+        return interactionDepth >= -0.015 && interactionDepth <= 0.34;
+      }
+      return false;
     })
     .sort((a, b) => {
-      const da = guidanceDepth(Number(a.depth), a.type);
-      const db = guidanceDepth(Number(b.depth), b.type);
-      return Math.abs(da - 0.14) - Math.abs(db - 0.14);
+      const depthA = Number(a.depth) + (ROADSIDE_TYPES.has(a.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
+      const depthB = Number(b.depth) + (ROADSIDE_TYPES.has(b.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
+      return Math.abs(depthA - 0.14) - Math.abs(depthB - 0.14);
     });
 
   const zone = nearby[0];
   if (!zone) return null;
-  const depth = guidanceDepth(Number(zone.depth), zone.type);
+  const depth = Number(zone.depth) + (ROADSIDE_TYPES.has(zone.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
   const type = zone.type;
   const label = ZONE_LABELS[type];
   const speed = Math.max(0, Number(state.speed) || 0);
@@ -146,37 +131,25 @@ export function getInteractionAdvice(state, gameStatus = 'PLAY') {
       detail: `Approach slowly; target ${Math.round(speedLimit)} km/h or less.`,
     };
   }
-  if (depth < 0.055) {
-    return {
-      type: 'missed', zone,
-      message: `${label} · YOU HAVE PASSED THE STOP POINT`,
-      detail: 'Continue safely; the next roadside stop will appear ahead.',
-    };
-  }
   if (speed > speedLimit) {
     return {
       type: 'brake', zone,
       message: `${label} · BRAKE TO ${Math.round(speedLimit)} KM/H OR LESS`,
-      detail: 'Keep the keke aligned with the passenger marker while slowing down.',
+      detail: 'Keep the Keke aligned with the roadside marker while slowing down.',
     };
   }
   return {
     type: 'ready', zone,
-    message: `${label} · STOP BESIDE THE MARKER`,
+    message: `${label} · STOP ZONE REACHED`,
     detail: type === 'pickup'
-      ? 'The passenger should be beside the keke now. Stop and remain aligned.'
+      ? 'Passenger boarding zone reached. Stop and remain aligned with the marker.'
       : type === 'drop'
-        ? 'Stop beside the drop-off marker.'
+        ? 'Stop when the drop-off marker is beside the keke.'
         : 'Stop beside the fuel marker to refuel.',
   };
 }
 
-/**
- * Limit the existing Game.moveZones interaction trigger to a close window.
- * The game remains authoritative for fares, seating, fuel, collisions and score.
- * A temporary per-zone depth offset changes only the interaction test; offsets
- * are removed before Renderer3D reads the simulation state.
- */
+/** Keeps existing game rules while enabling interaction at a full stop. */
 export function installStoppedInteractionCompatibility(game) {
   if (!game || typeof game.moveZones !== 'function') return () => {};
   if (game[MOVE_ZONES_PATCH]?.active) {
@@ -191,40 +164,39 @@ export function installStoppedInteractionCompatibility(game) {
 
   const original = game.moveZones;
   const entry = { active: true, references: 1, original, wrapper: null, restore: null };
-  entry.wrapper = function kanoCloseAlignedRoadsideMoveZones(dt) {
+  entry.wrapper = function kanoAlignedRoadsideMoveZones(dt) {
     const state = this?.s;
     if (!state || !Array.isArray(state.zones)) return original.call(this, dt);
 
-    const transforms = new Map();
-    const initialDepths = new Map();
-    for (const zone of state.zones) {
-      if (!zone || !ROADSIDE_TYPES.has(zone.type) || !finite(zone.depth)) continue;
-      const rawDepth = Number(zone.depth);
-      const offset = depthOffset(rawDepth);
-      transforms.set(zone, offset);
-      initialDepths.set(zone, rawDepth);
-      zone.depth = rawDepth + offset;
-    }
+    const shiftedZones = state.zones.filter((zone) =>
+      zone && ROADSIDE_TYPES.has(zone.type) && Number.isFinite(Number(zone.depth))
+    );
+    for (const zone of shiftedZones) zone.depth = Number(zone.depth) + ROADSIDE_INTERACTION_DEPTH_OFFSET;
 
     const canInteractWhileStopped = Boolean(
-      this.state === 'PLAY' && !state.event && !state.reverse &&
-      (Number(state.speed) || 0) <= 0.05 &&
-      Math.abs(Number(state.signedSpeed) || 0) <= 0.05,
+      this?.state === 'PLAY' && !state.event && !state.reverse &&
+      (Number(state.speed) || 0) <= 0.05 && (Number(state.signedSpeed) || 0) <= 0.05,
     );
     const previousSignedSpeed = state.signedSpeed;
-    if (canInteractWhileStopped) state.signedSpeed = 0.051;
+    const previousDepths = new Map();
+    if (canInteractWhileStopped) {
+      state.signedSpeed = 0.051;
+      for (const zone of state.zones) {
+        if (zone && Number.isFinite(Number(zone.depth))) previousDepths.set(zone, Number(zone.depth));
+      }
+    }
 
     try {
       return original.call(this, dt);
     } finally {
       if (canInteractWhileStopped) state.signedSpeed = previousSignedSpeed;
-      for (const [zone, offset] of transforms) {
-        if (!state.zones.includes(zone) || !finite(zone.depth)) continue;
-        // Stopped markers must not creep because of the tiny compatibility
-        // speed used to satisfy Game's existing moving-forward check.
-        zone.depth = canInteractWhileStopped
-          ? initialDepths.get(zone)
-          : Number(zone.depth) - offset;
+      for (const zone of shiftedZones) zone.depth = Number(zone.depth) - ROADSIDE_INTERACTION_DEPTH_OFFSET;
+      if (canInteractWhileStopped && Array.isArray(state.zones)) {
+        for (const [zone, oldDepth] of previousDepths) {
+          if (state.zones.includes(zone) && Number.isFinite(Number(zone.depth))) {
+            zone.depth = shiftedZones.includes(zone) ? oldDepth - ROADSIDE_INTERACTION_DEPTH_OFFSET : oldDepth;
+          }
+        }
       }
     }
   };
@@ -244,11 +216,83 @@ export function installStoppedInteractionCompatibility(game) {
   };
 }
 
-/** Swap available cached character GLBs into roadside slots without touching shared geometry. */
-function installCharacterFallbacks(renderer) {
-  if (!renderer || renderer[CHARACTER_PATCH]?.active) {
-    return renderer?.[CHARACTER_PATCH]?.restore || (() => {});
+/**
+ * Make the actual market crowd face its walking direction. The crowd is built
+ * by KanoSceneUpgrade as InstancedMesh geometry, not by the GLB animation
+ * module. This wrapper therefore patches the owning scene upgrade directly.
+ */
+function installCrowdDirectionFix(sceneUpgrade) {
+  if (!sceneUpgrade || sceneUpgrade[CROWD_DIRECTION_PATCH]?.active) {
+    return sceneUpgrade?.[CROWD_DIRECTION_PATCH]?.restore || (() => {});
   }
+  if (typeof sceneUpgrade.updateCrowdMatrices !== 'function' || !Array.isArray(sceneUpgrade.walkers)) {
+    return () => {};
+  }
+
+  const original = sceneUpgrade.updateCrowdMatrices;
+  const wrapper = function updateCrowdMatricesFacingTravel() {
+    if (!this.walkers?.length || this.disposed) return;
+    const write = this.writeMatrix;
+    if (typeof write !== 'function' || !this.dummy) return original.call(this);
+
+    this.walkers.forEach((walker, index) => {
+      // walker.direction is the sign of its movement along world Z. Models
+      // normally face local -Z, so a +Z walker receives a 180-degree yaw.
+      const direction = Number(walker.direction) < 0 ? -1 : 1;
+      const yaw = direction > 0 ? Math.PI : 0;
+      const phase = this.elapsed * 6.8 * walker.speed + walker.phase;
+      const step = Math.sin(phase) * 0.30;
+      const stride = Math.cos(phase) * 0.22;
+      const bob = Math.abs(step) * 0.035;
+      const height = walker.height;
+      const x = walker.x + Math.sin(this.elapsed * 1.1 + walker.phase) * walker.sway;
+      const z = walker.z;
+
+      write.call(this, this.crowdTorso, index, x, 0.98 * height + bob, z, yaw, 1, height, 0.90);
+      write.call(this, this.crowdHead, index, x, 1.58 * height + bob, z, yaw, 1, 1, 0.92);
+
+      for (const side of [-1, 1]) {
+        const partIndex = index * 2 + (side > 0 ? 1 : 0);
+        const armSwing = side * stride * direction * 0.32;
+        this.dummy.position.set(x + side * 0.22, 1.02 * height + bob, z);
+        this.dummy.rotation.set(armSwing, yaw, 0);
+        this.dummy.scale.set(1, 1, 1);
+        this.dummy.updateMatrix();
+        this.crowdArms.setMatrixAt(partIndex, this.dummy.matrix);
+
+        const legSwing = -side * stride * direction;
+        this.dummy.position.set(x + side * 0.09, 0.44 * height, z);
+        this.dummy.rotation.set(legSwing, yaw, 0);
+        this.dummy.scale.set(1, 1, 1);
+        this.dummy.updateMatrix();
+        this.crowdLegs.setMatrixAt(partIndex, this.dummy.matrix);
+      }
+    });
+
+    for (const mesh of [this.crowdTorso, this.crowdHead, this.crowdArms, this.crowdLegs]) {
+      if (mesh?.instanceMatrix) mesh.instanceMatrix.needsUpdate = true;
+    }
+  };
+
+  const patchState = {
+    active: true,
+    original,
+    wrapper,
+    restore() {
+      if (!patchState.active) return;
+      patchState.active = false;
+      if (sceneUpgrade.updateCrowdMatrices === wrapper) sceneUpgrade.updateCrowdMatrices = original;
+      try { delete sceneUpgrade[CROWD_DIRECTION_PATCH]; } catch { sceneUpgrade[CROWD_DIRECTION_PATCH] = undefined; }
+    },
+  };
+  Object.defineProperty(sceneUpgrade, CROWD_DIRECTION_PATCH, { configurable: true, value: patchState });
+  sceneUpgrade.updateCrowdMatrices = wrapper;
+  return patchState.restore;
+}
+
+/** Late GLB fallback bridge for roadside waiting actors and renderer pedestrians. */
+function installCharacterFallbacks(renderer) {
+  if (!renderer || renderer[CHARACTER_PATCH]?.active) return renderer?.[CHARACTER_PATCH]?.restore || (() => {});
   const restorers = [];
   const rememberPatch = (name, wrapFactory) => {
     const original = renderer[name];
@@ -265,7 +309,7 @@ function installCharacterFallbacks(renderer) {
     const models = this.models;
     for (const pedestrian of this.pedestrians || []) {
       if (!pedestrian?.actor || pedestrian.usingModel) continue;
-      const keys = Number(pedestrian.index) % 2 === 0
+      const keys = (Number(pedestrian.index) % 2 === 0)
         ? AMBIENT_CHARACTER_KEYS
         : ['pedestrian', 'passengerMan', 'passenger', 'pedestrianWoman', 'passengerWoman', 'passengerVIP'];
       const key = pickCachedKey(models, keys);
@@ -295,7 +339,7 @@ function installCharacterFallbacks(renderer) {
       const zone = zonesById.get(id);
       if (!zone || zone.type !== 'pickup' || !actor?.userData?.waitingActors?.length) continue;
       const currentActor = actor.userData.waitingActors[0];
-      const currentKey = currentActor?.userData?.modelKey || actor.userData.waitingModelKeyActive || null;
+      const currentKey = currentActor?.userData?.modelKey || currentActor?.userData?.characterType || actor.userData.waitingModelKeyActive || null;
       const keys = zone.hub ? WOMAN_CHARACTER_KEYS : MAN_CHARACTER_KEYS;
       const key = pickCachedKey(models, keys);
       if (!key) continue;
@@ -318,20 +362,6 @@ function installCharacterFallbacks(renderer) {
       actor.userData.waitingUsingModel = true;
       actor.userData.waitingModelKeyActive = key;
       console.info(`[Kano Life] roadside passenger fallback active: ${key}`);
-    }
-    return result;
-  });
-
-  // Move roadside markers inward to the outer keke lane edge. Their old X of
-  // +/-6.7 was several world units beyond the outer lane centres at +/-3.
-  rememberPatch('syncZones', (original) => function syncZonesWithAlignedRoadsideX(state, ...args) {
-    const result = original.call(this, state, ...args);
-    const zones = new Map((state?.zones || []).map((zone) => [zone.id, zone]));
-    for (const [id, actor] of this.zoneActors || []) {
-      const zone = zones.get(id);
-      if (!zone || !ROADSIDE_TYPES.has(zone.type) || !actor?.position) continue;
-      const side = Number(zone.side) || (Number(zone.lane) === 0 ? -1 : 1);
-      actor.position.x = side * 4.35;
     }
     return result;
   });
@@ -368,6 +398,8 @@ export class KanoInteractionReliability {
     this.restoreMoveZones = installStoppedInteractionCompatibility(game);
     this.characterRenderer = null;
     this.restoreCharacterFallbacks = null;
+    this.characterSceneUpgrade = null;
+    this.restoreCrowdDirection = null;
     this.installStyles();
     this.hint = this.createHint();
     this.diagnostics = this.debug ? this.createDiagnostics() : null;
@@ -415,10 +447,18 @@ export class KanoInteractionReliability {
 
   bindRendererFallbacks() {
     const renderer = this.getRenderer?.();
-    if (!renderer || renderer === this.characterRenderer) return;
-    try { this.restoreCharacterFallbacks?.(); } catch { /* Previous renderer may be gone. */ }
-    this.characterRenderer = renderer;
-    this.restoreCharacterFallbacks = installCharacterFallbacks(renderer);
+    if (renderer !== this.characterRenderer) {
+      try { this.restoreCharacterFallbacks?.(); } catch { /* Previous renderer may be gone. */ }
+      this.characterRenderer = renderer || null;
+      this.restoreCharacterFallbacks = renderer ? installCharacterFallbacks(renderer) : null;
+    }
+
+    const sceneUpgrade = this.getSceneUpgrade?.();
+    if (sceneUpgrade !== this.characterSceneUpgrade) {
+      try { this.restoreCrowdDirection?.(); } catch { /* Previous scene upgrade may be gone. */ }
+      this.characterSceneUpgrade = sceneUpgrade || null;
+      this.restoreCrowdDirection = sceneUpgrade ? installCrowdDirectionFix(sceneUpgrade) : null;
+    }
   }
 
   update(deltaSeconds = 0, state = this.game?.s || {}) {
@@ -485,9 +525,7 @@ export class KanoInteractionReliability {
     else seatStatus = 'no 3D player (2D renderer or not initialized)';
 
     const near = getInteractionAdvice(state, this.game.state);
-    const nearbyZone = near?.zone
-      ? `${near.zone.type} depth=${Number(near.zone.depth).toFixed(3)} lane=${near.zone.lane}`
-      : 'none';
+    const nearbyZone = near?.zone ? `${near.zone.type} depth=${Number(near.zone.depth).toFixed(3)} lane=${near.zone.lane}` : 'none';
     const status = [
       'KANO LIFE · SCENE DIAGNOSTICS',
       `Renderer: ${window.__KANO_RENDER_MODE__ || 'unknown'}`,
@@ -499,10 +537,11 @@ export class KanoInteractionReliability {
       `Named driver/wheel/seat nodes: ${namedNodes}`,
       `Visible passenger walkers: ${sceneUpgrade?.walkingPassengers?.length ?? 'n/a'}`,
       `Ambient crowd actors: ${sceneUpgrade?.walkers?.length ?? 'n/a'}`,
+      `Crowd facing correction: ${sceneUpgrade?.[CROWD_DIRECTION_PATCH]?.active ? 'active' : 'waiting / unavailable'}`,
       `Speed: ${Math.round(Number(state.speed) || 0)} km/h · gear: ${state.reverse ? 'REVERSE' : 'FORWARD'}`,
       `Nearby zone: ${nearbyZone}`,
       `Interaction guidance: ${near?.message || 'none'}`,
-      'Roadside trigger: narrowed to the near-side marker window',
+      'Roadside interaction timing: renderer-aligned',
       'Character fallback bridge: active when compatible GLBs are cached',
       'Note: seat check is a position heuristic, not a perfect visual verdict.',
     ].join('\n');
@@ -517,6 +556,9 @@ export class KanoInteractionReliability {
     this.restoreMoveZones = null;
     try { this.restoreCharacterFallbacks?.(); } catch { /* Renderer may already be disposed. */ }
     this.restoreCharacterFallbacks = null;
+    try { this.restoreCrowdDirection?.(); } catch { /* Scene upgrade may already be disposed. */ }
+    this.restoreCrowdDirection = null;
+    this.characterSceneUpgrade = null;
     this.characterRenderer = null;
     this.hint?.remove();
     this.diagnostics?.remove();
