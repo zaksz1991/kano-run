@@ -678,6 +678,7 @@ const WORKSHOP_HISTORY_KEY = 'kano-life-workshop-history-v1';
 const WORKSHOP_SAVINGS_GOAL_KEY = 'kano-life-workshop-savings-goal-v1';
 const WORKSHOP_MONTHLY_BUDGET_KEY = 'kano-life-workshop-monthly-budget-v1';
 const WORKSHOP_SPENDING_LEDGER_KEY = 'kano-life-workshop-spending-ledger-v1';
+const WORKSHOP_SPENDING_LEDGER_RECOVERY_KEY = 'kano-life-workshop-spending-ledger-recovery-v1';
 const WORKSHOP_LEDGER_MONTHS_LIMIT = 12;
 const WORKSHOP_LEDGER_TRANSACTIONS_LIMIT = 500;
 const WORKSHOP_HISTORY_LIMIT = 12;
@@ -1092,8 +1093,21 @@ function ensureWorkshopSpendingLedger() {
   try {
     const raw = localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY);
     if (raw) {
-      const parsed = normalizeWorkshopSpendingLedger(JSON.parse(raw));
-      if (parsed) return parsed;
+      try {
+        const parsed = normalizeWorkshopSpendingLedger(JSON.parse(raw));
+        if (parsed) return parsed;
+      } catch (_) {
+        // Preserve the original bytes below before rebuilding the usable ledger.
+      }
+      // Keep one recovery copy of invalid/unsupported ledger data before replacing
+      // it with a conservative migration from the receipts that still exist.
+      try {
+        if (!localStorage.getItem(WORKSHOP_SPENDING_LEDGER_RECOVERY_KEY)) {
+          localStorage.setItem(WORKSHOP_SPENDING_LEDGER_RECOVERY_KEY, raw.slice(0, 1000000));
+        }
+      } catch (recoveryError) {
+        console.warn('[Kano Life] Invalid workshop ledger could not be copied to recovery storage.', recoveryError);
+      }
     }
     // Legacy migration can only use receipts still present in the old 12-row
     // history. Mark each migrated month as partial; do not imply full coverage.
@@ -1165,6 +1179,243 @@ function mergeWorkshopSpendingLedgers(firstValue, secondValue) {
   }
   trimWorkshopLedgerMonths(merged);
   return normalizeWorkshopSpendingLedger(merged) || emptyWorkshopSpendingLedger();
+}
+
+function workshopLedgerAuditData() {
+  const ledger = readWorkshopSpendingLedger();
+  const history = readWorkshopHistory().map((entry) => normalizeWorkshopBackupRecord({
+    time: Number(entry.time), service: entry.service, parts: entry.parts,
+    cost: entry.cost, walletAfter: entry.walletAfter,
+    conditionBefore: entry.conditionBefore, conditionAfter: entry.conditionAfter,
+  })).filter(Boolean);
+  const receiptLookup = new Map();
+  for (const [monthKey, month] of Object.entries(ledger.months || {})) {
+    receiptLookup.set(monthKey, new Set((month.transactions || []).map((transaction) => transaction.id)));
+  }
+
+  const unmatchedReceipts = [];
+  let matchedReceipts = 0;
+  for (const record of history) {
+    const monthKey = workshopLedgerMonthKey(record.time);
+    const identity = workshopRecordIdentity(record);
+    if (monthKey && receiptLookup.get(monthKey)?.has(identity)) matchedReceipts += 1;
+    else unmatchedReceipts.push({
+      time: record.time,
+      service: record.service,
+      parts: [...record.parts],
+      cost: record.cost,
+      walletAfter: record.walletAfter,
+      identity,
+      monthKey,
+    });
+  }
+
+  const months = Object.entries(ledger.months || {}).sort((a, b) => a[0].localeCompare(b[0])).map(([monthKey, month]) => ({
+    month: monthKey,
+    transactionCount: month.transactions.length,
+    archivedCount: month.archivedCount,
+    trackedSpendNaira: workshopLedgerMonthTotal(month),
+    coverageComplete: Boolean(month.coverageComplete) && month.archivedCount === 0,
+  }));
+  const partialMonths = months.filter((month) => !month.coverageComplete);
+  const trackedTransactions = Object.values(ledger.months || {}).reduce((sum, month) => sum + month.transactions.length, 0);
+  const archivedTransactions = Object.values(ledger.months || {}).reduce((sum, month) => sum + month.archivedCount, 0);
+  const archivedSpendNaira = Object.values(ledger.months || {}).reduce((sum, month) => sum + month.archivedNaira, 0);
+  const now = new Date();
+  const currentMonthKey = workshopLedgerMonthKey(now.getTime());
+  const currentMonth = ledger.months[currentMonthKey] || null;
+
+  let recoveryCopyAvailable = false;
+  try { recoveryCopyAvailable = Boolean(localStorage.getItem(WORKSHOP_SPENDING_LEDGER_RECOVERY_KEY)); } catch (_) {}
+
+  let rawLedgerMalformed = false;
+  let rawDuplicateIdentities = 0;
+  try {
+    const raw = localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY);
+    if (raw) {
+      const value = JSON.parse(raw);
+      if (!normalizeWorkshopSpendingLedger(value)) rawLedgerMalformed = true;
+      const rawMonths = value?.months && typeof value.months === 'object' && !Array.isArray(value.months)
+        ? Object.values(value.months) : [];
+      for (const month of rawMonths) {
+        const ids = new Set();
+        for (const transaction of Array.isArray(month?.transactions) ? month.transactions : []) {
+          const id = typeof transaction?.id === 'string' ? transaction.id : '';
+          if (!id) continue;
+          if (ids.has(id)) rawDuplicateIdentities += 1;
+          ids.add(id);
+        }
+      }
+    }
+  } catch (_) {
+    rawLedgerMalformed = true;
+  }
+
+  const issues = [];
+  if (recoveryCopyAvailable) issues.push('A recovery copy of an earlier invalid or unsupported ledger is available for export.');
+  if (rawLedgerMalformed) issues.push('The currently stored ledger format failed validation.');
+  if (rawDuplicateIdentities) issues.push(`${rawDuplicateIdentities} repeated transaction identity/identities were found in raw ledger storage.`);
+  if (unmatchedReceipts.length) issues.push(`${unmatchedReceipts.length} recent receipt(s) are not represented by a matching tracked ledger transaction.`);
+  if (partialMonths.length) issues.push(`${partialMonths.length} ledger month(s) have partial coverage or archived entries.`);
+  if (!issues.length) issues.push('No mismatch was detected between the recent saved receipts and individually tracked ledger transactions.');
+
+  let status = 'ALIGNED';
+  let level = 'good';
+  if (rawLedgerMalformed || rawDuplicateIdentities || recoveryCopyAvailable || unmatchedReceipts.length) {
+    status = 'REVIEW REQUIRED';
+    level = 'critical';
+  } else if (partialMonths.length) {
+    status = 'PARTIAL COVERAGE';
+    level = 'warning';
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status,
+    level,
+    historyCount: history.length,
+    matchedReceipts,
+    unmatchedReceipts,
+    unmatchedReceiptCount: unmatchedReceipts.length,
+    unmatchedReceiptSpendNaira: unmatchedReceipts.reduce((sum, record) => sum + record.cost, 0),
+    trackedTransactions,
+    archivedTransactions,
+    archivedSpendNaira,
+    monthCount: months.length,
+    partialMonthCount: partialMonths.length,
+    currentMonthKey,
+    currentMonthCoverage: currentMonth ? (currentMonth.coverageComplete && currentMonth.archivedCount === 0 ? 'COMPLETE' : 'PARTIAL') : 'NO TRACKED TRANSACTIONS',
+    recoveryCopyAvailable,
+    rawLedgerMalformed,
+    rawDuplicateIdentities,
+    months,
+    issues,
+  };
+}
+
+function workshopLedgerAuditMarkup(data = workshopLedgerAuditData()) {
+  const recoveryButton = data.recoveryCopyAvailable
+    ? '<button type="button" data-kano-workshop-ledger-recovery-export>EXPORT RECOVERY COPY</button>'
+    : '';
+  const issueMarkup = data.issues.map((issue) => `<li>${escapeWorkshopHTML(issue)}</li>`).join('');
+  return `<section class="kano-workshop-ledger-audit" aria-labelledby="kano-workshop-ledger-audit-title"><div class="kano-workshop-audit-heading"><h4 id="kano-workshop-ledger-audit-title">SPENDING LEDGER INTEGRITY</h4><span>${data.monthCount} TRACKED MONTH${data.monthCount === 1 ? '' : 'S'}</span></div><p class="kano-workshop-audit-intro">Checks recent service receipts against the separate monthly ledger. Auditing does not charge money or alter vehicle condition.</p><div class="kano-workshop-audit-status" data-level="${data.level}" role="status"><strong>${data.status}</strong><span>${data.matchedReceipts} of ${data.historyCount} recent receipts matched to ledger entries.</span></div><div class="kano-workshop-audit-metrics"><div><span>NEEDS RECONCILIATION</span><strong>${data.unmatchedReceiptCount}</strong><small>${naira(data.unmatchedReceiptSpendNaira)} in unmatched recent receipts</small></div><div><span>PARTIAL MONTHS</span><strong>${data.partialMonthCount}</strong><small>Older imports or archived records may limit coverage</small></div><div><span>ARCHIVED TRANSACTIONS</span><strong>${data.archivedTransactions}</strong><small>${naira(data.archivedSpendNaira)} archived amount</small></div></div><ul class="kano-workshop-audit-issues">${issueMarkup}</ul><div class="kano-workshop-audit-actions"><button type="button" data-kano-workshop-ledger-reconcile ${data.unmatchedReceiptCount ? '' : 'disabled'}>RECONCILE RECENT RECEIPTS</button><button type="button" data-kano-workshop-ledger-audit-export>EXPORT AUDIT REPORT</button>${recoveryButton}</div><small class="kano-workshop-audit-note">Reconciliation adds unmatched records only from the latest ${WORKSHOP_HISTORY_LIMIT} saved receipts. It does not recreate older missing transactions. The audit report contains workshop records and ledger coverage details, but excludes game wallet state, vehicle save and driving progress.</small></section>`;
+}
+
+function downloadWorkshopLedgerAudit() {
+  const data = workshopLedgerAuditData();
+  const report = {
+    application: 'Kano Life',
+    exportType: 'workshop-ledger-integrity-audit',
+    formatVersion: 1,
+    generatedAt: data.generatedAt,
+    status: data.status,
+    summary: {
+      recentReceipts: data.historyCount,
+      matchedReceipts: data.matchedReceipts,
+      unmatchedRecentReceipts: data.unmatchedReceiptCount,
+      unmatchedRecentReceiptSpendNaira: data.unmatchedReceiptSpendNaira,
+      trackedTransactions: data.trackedTransactions,
+      archivedTransactions: data.archivedTransactions,
+      archivedSpendNaira: data.archivedSpendNaira,
+      trackedMonths: data.monthCount,
+      partialMonths: data.partialMonthCount,
+      currentMonthCoverage: data.currentMonthCoverage,
+      recoveryCopyAvailable: data.recoveryCopyAvailable,
+      rawLedgerMalformed: data.rawLedgerMalformed,
+      rawDuplicateIdentities: data.rawDuplicateIdentities,
+    },
+    issues: data.issues,
+    months: data.months,
+    unmatchedRecentReceipts: data.unmatchedReceipts.map((record) => ({
+      date: new Date(record.time).toISOString(),
+      service: record.service,
+      parts: record.parts,
+      costNaira: record.cost,
+      walletAfterNaira: record.walletAfter,
+      month: record.monthKey,
+    })),
+    note: 'Audit report of locally stored workshop history and spending ledger. It does not contain the game wallet, vehicle save, or gameplay progress. PARTIAL coverage means the report cannot prove that every historic transaction is present.',
+  };
+  try {
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kano-life-workshop-ledger-audit-${new Date().toISOString().slice(0, 10)}.json`;
+    link.style.display = 'none';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    setWorkshopMessage(`LEDGER AUDIT EXPORTED · ${data.status} · ${data.unmatchedReceiptCount} recent receipt(s) need reconciliation. No wallet or vehicle data was changed.`);
+  } catch (error) {
+    console.warn('[Kano Life] Workshop ledger audit export failed.', error);
+    setWorkshopMessage('Ledger audit export failed in this browser. Existing workshop records and game progress were not changed.');
+  }
+}
+
+function downloadWorkshopLedgerRecoveryCopy() {
+  let raw = null;
+  try { raw = localStorage.getItem(WORKSHOP_SPENDING_LEDGER_RECOVERY_KEY); } catch (_) {}
+  if (!raw) {
+    setWorkshopMessage('No workshop ledger recovery copy is available on this device.');
+    return;
+  }
+  try {
+    const blob = new Blob([raw], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kano-life-workshop-ledger-recovery-${new Date().toISOString().slice(0, 10)}.txt`;
+    link.style.display = 'none';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    setWorkshopMessage('RECOVERY COPY EXPORTED as raw text. Keep it as evidence of the earlier ledger state; it was not automatically restored.');
+  } catch (error) {
+    console.warn('[Kano Life] Workshop ledger recovery export failed.', error);
+    setWorkshopMessage('Recovery-copy export failed in this browser. Saved workshop data was not intentionally changed.');
+  }
+}
+
+function reconcileWorkshopRecentReceipts() {
+  const data = workshopLedgerAuditData();
+  if (!data.unmatchedReceiptCount) {
+    setWorkshopMessage('LEDGER CHECK COMPLETE · All recent receipts are already represented in tracked ledger transactions.');
+    return;
+  }
+  const confirmed = window.confirm(
+    `Reconcile ${data.unmatchedReceiptCount} recent service receipt(s) into the spending ledger?\n\n` +
+    `The unmatched receipts total ${naira(data.unmatchedReceiptSpendNaira)}. Existing transaction identities will not be added twice. ` +
+    'This changes workshop tracking only; it will not change the game wallet, vehicle condition, service prices, or driving progress.'
+  );
+  if (!confirmed) {
+    setWorkshopMessage('Ledger reconciliation cancelled. Saved workshop history and gameplay data were not changed.');
+    return;
+  }
+  const records = data.unmatchedReceipts.map((record) => ({
+    time: record.time,
+    service: record.service,
+    parts: record.parts,
+    cost: record.cost,
+    walletAfter: record.walletAfter,
+  }));
+  const ok = recordWorkshopSpendingRecords(records, 'reconcile');
+  if (!ok) {
+    setWorkshopMessage('Ledger reconciliation could not be saved and verified. The game wallet and vehicle condition were not changed.');
+    return;
+  }
+  const after = workshopLedgerAuditData();
+  const resolved = Math.max(0, data.unmatchedReceiptCount - after.unmatchedReceiptCount);
+  const left = after.unmatchedReceiptCount;
+  const detail = left
+    ? ` ${left} remain unmatched because older archived ledger data or retention limits prevent a confident automatic merge.`
+    : '';
+  const panel = document.getElementById('kano-workshop-panel');
+  if (panel) panel.dataset.signature = '';
+  setWorkshopMessage(`LEDGER RECONCILIATION COMPLETE · ${resolved} recent receipt(s) reconciled.${detail} Monthly coverage remains marked partial when complete history cannot be verified. Wallet and vehicle condition unchanged.`);
+  renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
 }
 
 function workshopSpendingLedgerHasEntries(ledger = readWorkshopSpendingLedger()) {
@@ -2030,7 +2281,9 @@ function renderWorkshopPanel(state = activeGame?.s) {
   const ledgerSignature = Object.entries(spendingLedger.months).map(([monthKey, month]) =>
     `${monthKey}:${workshopLedgerMonthTotal(month)}:${month.coverageComplete ? 1 : 0}:${month.transactions.length}:${month.archivedCount}`
   ).join(';');
-  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}|${monthlyBudgetSignature}|${ledgerSignature}`;
+  const ledgerAudit = workshopLedgerAuditData();
+  const auditSignature = `${ledgerAudit.status}:${ledgerAudit.unmatchedReceiptCount}:${ledgerAudit.partialMonthCount}:${ledgerAudit.recoveryCopyAvailable ? 1 : 0}:${ledgerAudit.rawDuplicateIdentities}`;
+  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}|${monthlyBudgetSignature}|${ledgerSignature}|${auditSignature}`;
   if (panel.dataset.signature === signature) return;
   panel.dataset.signature = signature;
 
@@ -2064,6 +2317,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     ${workshopSavingsGoalMarkup(state, wallet)}
     ${workshopCostAnalyticsMarkup()}
     ${workshopMonthlyBudgetMarkup()}
+    ${workshopLedgerAuditMarkup(ledgerAudit)}
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
@@ -2350,6 +2604,28 @@ function installWorkshopUI() {
       .kano-workshop-monthly-actions .kano-workshop-monthly-remove{border-color:#ff777744;background:#381d29;color:#ffb7bd}
       .kano-workshop-monthly-actions button:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
       .kano-workshop-monthly-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
+      .kano-workshop-ledger-audit{margin:11px 0;padding:10px;border:1px solid #ffffff18;border-radius:9px;background:#ffffff05;min-width:0}
+      .kano-workshop-audit-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+      .kano-workshop-audit-heading h4{margin:0;color:#edf5fd;font-size:10px;letter-spacing:.05em}
+      .kano-workshop-audit-heading span{color:#00c4e7;font-size:8px;font-weight:900;text-align:right}
+      .kano-workshop-audit-intro{margin:6px 0 9px;color:#9eb4c9;font-size:9px;line-height:1.45}
+      .kano-workshop-audit-status{display:grid;gap:4px;padding:8px;border:1px solid #4dd6ac55;border-radius:7px;background:#4dd6ac0b;color:#a5f3d4}
+      .kano-workshop-audit-status[data-level="warning"]{border-color:#ffcc7a66;background:#ffcc7a0b;color:#ffdc9a}
+      .kano-workshop-audit-status[data-level="critical"]{border-color:#ff777766;background:#ff77770b;color:#ffaaaa}
+      .kano-workshop-audit-status strong{font-size:9px;letter-spacing:.05em}
+      .kano-workshop-audit-status span{font-size:8px;line-height:1.4}
+      .kano-workshop-audit-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}
+      .kano-workshop-audit-metrics>div{display:grid;align-content:start;gap:4px;min-width:0;padding:7px;border:1px solid #ffffff12;border-radius:7px;background:#00000012}
+      .kano-workshop-audit-metrics span{color:#9fb4c8;font-size:7px;font-weight:900;line-height:1.35}
+      .kano-workshop-audit-metrics strong{color:#ffe18b;font-size:13px;overflow-wrap:anywhere}
+      .kano-workshop-audit-metrics small{color:#8198ad;font-size:7px;line-height:1.35;overflow-wrap:anywhere}
+      .kano-workshop-audit-issues{display:grid;gap:4px;margin:8px 0;padding-left:15px;color:#b9cbdd;font-size:8px;line-height:1.4}
+      .kano-workshop-audit-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+      .kano-workshop-audit-actions button{min-height:36px;min-width:0;padding:7px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:8px;font-weight:900;line-height:1.25;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-audit-actions button[data-kano-workshop-ledger-reconcile]{border-color:#4dd6ac66;background:#0f403d;color:#c8fff0}
+      .kano-workshop-audit-actions button:disabled{opacity:.45;cursor:not-allowed}
+      .kano-workshop-audit-actions button:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
+      .kano-workshop-audit-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
       .kano-workshop-parts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:14px 0}
       .kano-workshop-part{min-width:0;padding:9px;border:1px solid #ffffff16;border-radius:8px;background:#ffffff07}
       .kano-workshop-part-label{display:flex;justify-content:space-between;gap:4px;color:#eaf1f9;font-size:10px;font-weight:900}
@@ -2406,7 +2682,7 @@ function installWorkshopUI() {
       .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
       .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
       .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
@@ -2433,6 +2709,12 @@ function installWorkshopUI() {
         panel.querySelector('[data-kano-workshop-import-file]')?.click();
         return;
       }
+      const ledgerReconcileButton = event.target.closest('[data-kano-workshop-ledger-reconcile]');
+      if (ledgerReconcileButton) { if (!ledgerReconcileButton.disabled) reconcileWorkshopRecentReceipts(); return; }
+      const ledgerAuditExportButton = event.target.closest('[data-kano-workshop-ledger-audit-export]');
+      if (ledgerAuditExportButton) { downloadWorkshopLedgerAudit(); return; }
+      const ledgerRecoveryExportButton = event.target.closest('[data-kano-workshop-ledger-recovery-export]');
+      if (ledgerRecoveryExportButton) { downloadWorkshopLedgerRecoveryCopy(); return; }
       const costReportButton = event.target.closest('[data-kano-workshop-cost-report]');
       if (costReportButton) { if (!costReportButton.disabled) downloadWorkshopCostReport(); return; }
       const exportButton = event.target.closest('[data-kano-workshop-export]');
