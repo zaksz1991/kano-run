@@ -27,6 +27,58 @@ let recordRequestInFlight = false;
 let recordRefreshTimer = null;
 const riderGroups = new Set();
 const potholeActors = new Set();
+const tunedWebGLRenderers = new WeakSet();
+
+// Preserve high-density rendering on mobile without changing game simulation.
+function findWebGLRenderer(owner) {
+  const candidates = [
+    owner?.renderer, owner?.webglRenderer, owner?.glRenderer,
+    owner?.threeRenderer, owner?._renderer, owner?.webgl, owner?.renderContext,
+  ];
+  return candidates.find((candidate) => candidate
+    && typeof candidate.setPixelRatio === 'function'
+    && typeof candidate.setSize === 'function'
+    && candidate.domElement) || null;
+}
+
+function tuneRendererForClarity(owner) {
+  const gl = findWebGLRenderer(owner);
+  if (!gl || tunedWebGLRenderers.has(gl)) return;
+  try {
+    const touchDevice = (navigator.maxTouchPoints || 0) > 0
+      || window.matchMedia?.('(max-width: 760px)').matches;
+    const pixelRatioCap = touchDevice ? 2.0 : 2.25;
+    const pixelRatio = Math.max(1, Math.min(Number(window.devicePixelRatio) || 1, pixelRatioCap));
+    gl.setPixelRatio(pixelRatio);
+
+    // Match browser display colour space. Only enable tone mapping when the
+    // renderer is using Three.js' un-toned default; preserve custom pipelines.
+    if ('outputColorSpace' in gl && THREE.SRGBColorSpace) {
+      gl.outputColorSpace = THREE.SRGBColorSpace;
+    }
+    if (gl.toneMapping === THREE.NoToneMapping && THREE.ACESFilmicToneMapping !== undefined) {
+      gl.toneMapping = THREE.ACESFilmicToneMapping;
+      gl.toneMappingExposure = Math.max(1, Number(gl.toneMappingExposure) || 1);
+    }
+
+    const canvas = gl.domElement;
+    if (canvas?.style) {
+      canvas.style.display = 'block';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.imageRendering = 'auto';
+      canvas.style.webkitTapHighlightColor = 'transparent';
+    }
+    tunedWebGLRenderers.add(gl);
+    console.info(`[Kano Life] 3D clarity tuned · pixel ratio ${pixelRatio.toFixed(2)}x`);
+  } catch (error) {
+    // Keep the original renderer configuration if a Three.js build differs.
+    if (!owner._kanoClarityWarningShown) {
+      owner._kanoClarityWarningShown = true;
+      console.warn('[Kano Life] 3D clarity tuning skipped; retaining native renderer settings.', error);
+    }
+  }
+}
 
 // Preserve the original story function so the morning routine remains optional.
 const originalBeginMorningRoutine = UI.prototype.beginMorningRoutine;
@@ -418,7 +470,10 @@ function installRecordUI() {
       .kano-overall-record{display:inline-flex!important;align-items:center;gap:5px;max-width:100%;padding:5px 8px;border-radius:8px;border:1px solid #f5c54288;background:rgba(8,17,28,.92);color:#ffe18b;font-size:10px;font-weight:900;line-height:1.3;white-space:normal;visibility:visible!important;opacity:1!important}
       .kano-start-record{display:block!important;flex:1 1 100%;width:100%;color:#f5d77d;font-size:12px;font-weight:900;padding:7px 0 2px;line-height:1.35;visibility:visible!important;opacity:1!important}
       #hud .hud-bottom{display:flex;flex-wrap:wrap;align-items:center;row-gap:5px}
-      @media(max-width:520px){.kano-overall-record{font-size:9px;padding:4px 6px}.kano-start-record{font-size:10px}}
+      #game-canvas{display:block;width:100%;height:100%;image-rendering:auto;touch-action:none;outline:none}
+      #app,#game-container{min-width:0;max-width:100vw}
+      #drive-controls .control{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+      @media(max-width:760px){#game-canvas{width:100%;height:100%}.kano-overall-record{font-size:9px;padding:4px 6px}.kano-start-record{font-size:10px}}
     `;
     document.head.append(style);
   }
@@ -674,6 +729,7 @@ Game.prototype.tick = function trackedGameTick(dt, ...args) {
 if (typeof originalRendererDraw === 'function') {
   Renderer3D.prototype.draw = function patchedPresentationDraw(state, dt, ...args) {
     activeRenderer = this;
+    tuneRendererForClarity(this);
     this._kanoRepairTime = (Number(this._kanoRepairTime) || 0) + clamp(dt, 0, 0.05);
     const game = activeGame || window.__KANO_LIFE_GAME__;
     const eventType = typeof game?.s?.event === 'string' ? game.s.event : null;
