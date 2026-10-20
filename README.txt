@@ -1,23 +1,32 @@
-KANO LIFE — CLOUD SAVE ACTIVATION FIX
+KANO LIFE — VERCEL BUILD REPAIR
 
-Finding
-The current public index.html loads radio.js, GlobalLeaderboardBridge.js, and main.js, but it does not load js/KanoCloudSave.js. The KanoCloudSave.js file builds its panel and adds the CLOUD SAVE buttons only when its module executes. Without the script tag, the cloud-save UI and its initialization never run.
+ROOT CAUSE
+The repository's current root package.json contains only:
+  { "type": "module", "private": true }
+It declares no dependencies. Vercel therefore reports `up to date`, installs no Vite executable,
+and then fails at `vite build` with `vite: command not found`.
 
-Files
-- index.html: complete replacement matching the current repository page and adding the missing KanoCloudSave.js module script.
+COMPLETE REPLACEMENT
+Replace the entire package.json at the repository root with the package.json in this folder.
+It declares Vite and Three.js, preserves ES module mode, includes normal Vite scripts, and selects
+Node 24.x, which is supported by Vercel and meets current Vite runtime requirements.
 
-Installation
-Replace the entire project-root index.html with this file.
-Keep the existing js/KanoCloudSave.js, js/storage.js, js/GlobalLeaderboardBridge.js and other files. The cloud module and its SQL table must already exist from the previous Cloud Save package. You must still configure the Supabase project URL/public anon or publishable key and run the supplied SQL schema before cloud synchronization can work.
+WHY THREE.JS IS INCLUDED
+js/renderer3d.js and js/ModelManager.js import `three`; ModelManager also imports
+`three/addons/loaders/GLTFLoader.js`. These imports require the Three.js npm package.
 
-Safety
-Do not use a Supabase service_role or secret key in the browser. Cloud save is account-backed, and the database must enforce row-level security for authenticated users.
+WHAT NOT TO CHANGE
+Do not replace index.html, game.js, renderer3d.js, ModelManager.js, vite.config.js, vercel.json,
+or any model/audio assets for this repair.
 
-Verification performed in this package
-- HTML parsed successfully.
-- All existing key canvas, UI and control IDs were preserved from the current public index.html.
-- radio.js, GlobalLeaderboardBridge.js, and main.js script tags were preserved.
-- KanoCloudSave.js script tag is present exactly once.
+BUILD SETTINGS
+The log shows a direct `vite build` command, so adding the Vite dependency is the essential fix.
+If the Vercel dashboard's Build Command is overridden, `vite build` will continue to work because
+Vite is now a declared dependency. Alternatively, the package now defines `npm run build`.
+Vite's default output directory is `dist`.
 
-Not tested
-No live browser, Supabase project, auth credentials or actual cloud-save operation was available for verification. This file activates the existing module; it does not configure a Supabase backend on its own.
+VALIDATION LIMITATION
+The package.json was parsed and checked for required dependencies and scripts, and this ZIP was
+validated. The full application build has not been run against the entire repository in this runtime.
+After this replacement, check the next build log: dependency installation should install Vite, and
+if another missing package or source error exists it will appear as the next specific error.
