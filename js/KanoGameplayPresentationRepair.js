@@ -674,7 +674,59 @@ const WORKSHOP_PARTS = {
   tyres:  { stateKey: 'tyres',     label: 'TYRES',  rate: 6,  color: '#4dd6ac' },
 };
 const WORKSHOP_LABOUR_FEE = 100;
+const WORKSHOP_HISTORY_KEY = 'kano-life-workshop-history-v1';
+const WORKSHOP_HISTORY_LIMIT = 12;
 const naira = (value) => `₦${Math.max(0, Math.floor(Number(value) || 0)).toLocaleString('en-NG')}`;
+const escapeWorkshopHTML = (value) => String(value ?? '').replace(/[&<>\"']/g, (character) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;',
+}[character]));
+
+function readWorkshopHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WORKSHOP_HISTORY_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry) => entry && Number.isFinite(Number(entry.time))
+      && Number.isFinite(Number(entry.cost)) && Number(entry.cost) >= 0
+      && Array.isArray(entry.parts)).slice(0, WORKSHOP_HISTORY_LIMIT);
+  } catch (_) {
+    return [];
+  }
+}
+
+function appendWorkshopHistory(entry) {
+  try {
+    const history = readWorkshopHistory();
+    history.unshift({
+      time: Date.now(),
+      service: String(entry.service || 'service').slice(0, 20),
+      parts: Array.isArray(entry.parts) ? entry.parts.filter((key) => WORKSHOP_PARTS[key]).slice(0, 3) : [],
+      cost: Math.max(0, Math.floor(Number(entry.cost) || 0)),
+      walletAfter: Math.max(0, Math.floor(Number(entry.walletAfter) || 0)),
+    });
+    localStorage.setItem(WORKSHOP_HISTORY_KEY, JSON.stringify(history.slice(0, WORKSHOP_HISTORY_LIMIT)));
+    return true;
+  } catch (error) {
+    console.warn('[Kano Life] Workshop service completed but its local receipt could not be saved.', error);
+    return false;
+  }
+}
+
+function workshopHistoryMarkup() {
+  const history = readWorkshopHistory();
+  if (!history.length) {
+    return '<li class="kano-workshop-history-empty">No workshop services recorded on this device yet.</li>';
+  }
+  return history.map((entry) => {
+    const date = new Date(Number(entry.time));
+    const dateLabel = Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+    const serviceLabel = entry.service === 'full' ? 'FULL SERVICE'
+      : entry.service === 'body' ? 'BODY REPAIR'
+        : entry.service === 'engine' ? 'ENGINE SERVICE'
+          : entry.service === 'tyres' ? 'TYRE SERVICE' : 'WORKSHOP SERVICE';
+    const partsLabel = entry.parts.map((key) => WORKSHOP_PARTS[key]?.label || '').filter(Boolean).join(' · ');
+    return `<li class="kano-workshop-history-item"><div class="kano-workshop-history-top"><strong>${serviceLabel}</strong><b>${naira(entry.cost)}</b></div><span>${escapeWorkshopHTML(partsLabel || 'Vehicle service')}</span><small>${escapeWorkshopHTML(dateLabel)} · Wallet after: ${naira(entry.walletAfter)}</small></li>`;
+  }).join('');
+}
 
 function workshopHealth(state, partKey) {
   const config = WORKSHOP_PARTS[partKey];
@@ -737,8 +789,10 @@ function renderWorkshopPanel(state = activeGame?.s) {
     <div class="kano-workshop-header"><div><p class="kano-workshop-eyebrow">KANO LIFE · MECHANIC'S BAY</p><h3 id="kano-workshop-title">Service your keke</h3><p>Repairs use banked funds and restore the selected components to 100%.</p></div><div class="kano-workshop-wallet"><small>BANKED WALLET</small><strong>${naira(wallet)}</strong></div></div>
     <div class="kano-workshop-parts">${partsMarkup}</div>
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
-    <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. No charge is made until a service button is selected.</p>
-    <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>`;
+    <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
+    <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
+    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE</span></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">Receipts are saved in this browser on this device. Clearing browser storage removes them.</p></section>
+    <dialog id="kano-workshop-confirm" class="kano-workshop-confirm" aria-labelledby="kano-workshop-confirm-title"><div class="kano-workshop-confirm-inner"><p class="kano-workshop-eyebrow">PAYMENT CONFIRMATION</p><h3 id="kano-workshop-confirm-title">Confirm workshop service</h3><p id="kano-workshop-confirm-summary">Review the repair and total before paying.</p><div id="kano-workshop-confirm-breakdown" class="kano-workshop-confirm-breakdown"></div><div class="kano-workshop-confirm-wallet"><span>WALLET AFTER SERVICE</span><strong id="kano-workshop-wallet-after">—</strong></div><div class="kano-workshop-confirm-actions"><button type="button" class="kano-workshop-cancel" data-kano-workshop-cancel>Cancel</button><button type="button" class="kano-workshop-confirm-pay" data-kano-workshop-confirm>CONFIRM &amp; PAY</button></div></div></dialog>`;
   const status = panel.querySelector('#kano-workshop-status');
   status.textContent = panel.dataset.message || 'Select a service to see its cost.';
 }
@@ -749,6 +803,55 @@ function updateWorkshopWalletLabels() {
     const element = document.querySelector(selector);
     if (element) element.textContent = balance;
   }
+}
+
+function requestWorkshopService(serviceKey) {
+  const game = activeGame || window.__KANO_LIFE_GAME__;
+  const panel = document.getElementById('kano-workshop-panel');
+  const garage = document.getElementById('garage-screen');
+  const garageVisible = garage && !garage.classList.contains('hidden')
+    && getComputedStyle(garage).display !== 'none' && getComputedStyle(garage).visibility !== 'hidden';
+  if (!game?.s || !panel || !garageVisible) {
+    performWorkshopService(serviceKey);
+    return;
+  }
+  const quote = workshopQuote(game.s, serviceKey);
+  const wallet = Math.max(0, Math.floor(Number(save.money) || 0));
+  if (!quote.cost || quote.cost > wallet) {
+    performWorkshopService(serviceKey);
+    return;
+  }
+
+  const dialog = panel.querySelector('#kano-workshop-confirm');
+  if (!dialog) {
+    setWorkshopMessage('Confirmation dialog unavailable. No money was deducted. Reopen the Garage and try again.');
+    return;
+  }
+  const serviceNames = { body: 'BODY REPAIR', engine: 'ENGINE SERVICE', tyres: 'TYRE SERVICE', full: 'FULL SERVICE' };
+  const summary = dialog.querySelector('#kano-workshop-confirm-summary');
+  const breakdown = dialog.querySelector('#kano-workshop-confirm-breakdown');
+  const walletAfter = dialog.querySelector('#kano-workshop-wallet-after');
+  const confirm = dialog.querySelector('[data-kano-workshop-confirm]');
+  if (summary) summary.textContent = `${serviceNames[serviceKey] || 'WORKSHOP SERVICE'} will restore the listed components to 100%.`;
+  if (breakdown) {
+    breakdown.innerHTML = `${quote.parts.map((part) => `<div><span>${escapeWorkshopHTML(part.label)} · ${part.deficit}% restored</span><strong>${naira(part.cost)}</strong></div>`).join('')}<div><span>Labour</span><strong>${naira(quote.labour)}</strong></div><div class="kano-workshop-confirm-total"><span>TOTAL</span><strong>${naira(quote.cost)}</strong></div>`;
+  }
+  if (walletAfter) walletAfter.textContent = naira(wallet - quote.cost);
+  if (confirm) confirm.textContent = `CONFIRM & PAY ${naira(quote.cost)}`;
+  dialog.dataset.service = serviceKey;
+  try {
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  } catch (_) {
+    // Do not silently charge if the confirmation interface cannot be displayed.
+    setWorkshopMessage('Confirmation window unavailable. No money was deducted. Reopen the Garage and try again.');
+  }
+}
+
+function closeWorkshopConfirmation(dialog) {
+  if (!dialog) return;
+  try { if (typeof dialog.close === 'function' && dialog.open) dialog.close(); } catch (_) {}
+  dialog.removeAttribute('open');
 }
 
 function performWorkshopService(serviceKey) {
@@ -808,12 +911,18 @@ function performWorkshopService(serviceKey) {
   }
 
   try { game.ui?.update?.(game.s, game.route, game.driver); } catch (_) {}
+  const historySaved = appendWorkshopHistory({
+    service: serviceKey,
+    parts: quote.parts.map((part) => part.key),
+    cost: quote.cost,
+    walletAfter: save.money,
+  });
   updateWorkshopWalletLabels();
   updateVehicleHealthBadge(game.s);
   const completed = quote.parts.map((part) => part.label).join(', ');
-  setWorkshopMessage(`SERVICE COMPLETE · ${completed} restored to 100% · ${naira(quote.cost)} deducted.`);
+  setWorkshopMessage(`SERVICE COMPLETE · ${completed} restored to 100% · ${naira(quote.cost)} deducted.${historySaved ? ' Receipt saved.' : ' Receipt could not be saved; the service itself is complete.'}`);
   renderWorkshopPanel(game.s);
-  window.dispatchEvent(new CustomEvent('kano:workshop-service-complete', { detail: { service: serviceKey, cost: quote.cost, wallet: save.money, parts: quote.parts.map((part) => part.key) } }));
+  window.dispatchEvent(new CustomEvent('kano:workshop-service-complete', { detail: { service: serviceKey, cost: quote.cost, wallet: save.money, parts: quote.parts.map((part) => part.key), historySaved } }));
 }
 
 function installWorkshopUI() {
@@ -858,6 +967,38 @@ function installWorkshopUI() {
       .kano-workshop-service:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
       .kano-workshop-cost-note{margin:9px 0 6px;color:#9eb2c6;font-size:9px;line-height:1.4}
       .kano-workshop-status{min-height:17px;margin:7px 0 0;padding:8px;border:1px solid #4dd6ac3d;border-radius:7px;background:#4dd6ac0d;color:#a5f3d4;font-size:10px;font-weight:800;line-height:1.4;overflow-wrap:anywhere}
+      .kano-workshop-history{margin-top:13px;padding-top:11px;border-top:1px solid #ffffff17}
+      .kano-workshop-history-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+      .kano-workshop-history-heading h4{margin:0;color:#f3f7fc;font-size:10px;letter-spacing:.06em}
+      .kano-workshop-history-heading span{color:#8fa5bb;font-size:8px;font-weight:900}
+      #kano-workshop-history-list{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+      .kano-workshop-history-item{padding:8px;border:1px solid #ffffff13;border-radius:7px;background:#ffffff05;min-width:0}
+      .kano-workshop-history-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+      .kano-workshop-history-top strong{color:#d9e8f7;font-size:9px}
+      .kano-workshop-history-top b{color:#ffe18b;font-size:10px;white-space:nowrap}
+      .kano-workshop-history-item>span,.kano-workshop-history-item small{display:block;margin-top:4px;color:#a9bbcd;font-size:9px;line-height:1.35;overflow-wrap:anywhere}
+      .kano-workshop-history-item small{color:#8198ad}
+      .kano-workshop-history-empty,.kano-workshop-history-note{color:#8198ad;font-size:9px;line-height:1.4}
+      .kano-workshop-history-empty{padding:8px;border:1px dashed #ffffff1b;border-radius:7px}
+      .kano-workshop-history-note{margin:7px 0 0}
+      .kano-workshop-confirm{width:min(440px,calc(100vw - 28px));max-width:calc(100vw - 28px);box-sizing:border-box;padding:0;border:1px solid #00b4d899;border-radius:14px;background:#0b1e3a;color:#eff6ff;box-shadow:0 24px 80px #0009}
+      .kano-workshop-confirm::backdrop{background:rgba(2,8,16,.78);backdrop-filter:blur(3px)}
+      .kano-workshop-confirm-inner{padding:17px}
+      .kano-workshop-confirm h3{margin:0;color:#fff;font-size:18px}
+      .kano-workshop-confirm-inner>p:not(.kano-workshop-eyebrow){margin:7px 0 12px;color:#b7c9db;font-size:11px;line-height:1.45}
+      .kano-workshop-confirm-breakdown{display:grid;gap:7px;padding:10px;border-radius:8px;background:#ffffff08}
+      .kano-workshop-confirm-breakdown>div{display:flex;justify-content:space-between;gap:10px;color:#bcd0e3;font-size:11px}
+      .kano-workshop-confirm-breakdown>div strong{color:#f4f7fb;white-space:nowrap}
+      .kano-workshop-confirm-breakdown .kano-workshop-confirm-total{margin-top:3px;padding-top:8px;border-top:1px solid #ffffff22;color:#ffe18b;font-weight:900}
+      .kano-workshop-confirm-breakdown .kano-workshop-confirm-total strong{color:#ffe18b;font-size:14px}
+      .kano-workshop-confirm-wallet{display:flex;justify-content:space-between;gap:8px;align-items:center;margin:11px 0;padding:9px;border:1px solid #f5c54255;border-radius:8px;background:#f5c5420a}
+      .kano-workshop-confirm-wallet span{color:#f5d77d;font-size:9px;font-weight:900}
+      .kano-workshop-confirm-wallet strong{color:#ffe18b;font-size:13px}
+      .kano-workshop-confirm-actions{display:grid;grid-template-columns:1fr 1.4fr;gap:8px}
+      .kano-workshop-confirm-actions button{min-height:42px;padding:8px;border-radius:8px;font-size:10px;font-weight:900;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
+      .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
+      .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
       @media(max-width:440px){#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
@@ -866,9 +1007,22 @@ function installWorkshopUI() {
   if (!panel.dataset.bound) {
     panel.dataset.bound = 'true';
     panel.addEventListener('click', (event) => {
+      const cancelButton = event.target.closest('[data-kano-workshop-cancel]');
+      if (cancelButton) {
+        closeWorkshopConfirmation(panel.querySelector('#kano-workshop-confirm'));
+        return;
+      }
+      const confirmButton = event.target.closest('[data-kano-workshop-confirm]');
+      if (confirmButton) {
+        const dialog = panel.querySelector('#kano-workshop-confirm');
+        const serviceKey = dialog?.dataset.service;
+        closeWorkshopConfirmation(dialog);
+        if (serviceKey) performWorkshopService(serviceKey);
+        return;
+      }
       const button = event.target.closest('[data-kano-workshop-service]');
       if (!button || button.disabled) return;
-      performWorkshopService(button.dataset.kanoWorkshopService);
+      requestWorkshopService(button.dataset.kanoWorkshopService);
     });
   }
   renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
