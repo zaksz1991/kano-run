@@ -15,7 +15,6 @@
       <canvas id="game-canvas" aria-label="Kano Life driving game"></canvas>
       <div class="sky-label">KANO STATE · NORTHERN NIGERIA</div>
       <div class="render-badge" id="render-badge">2D MODE · ROAD VISIBLE</div>
-
       <section class="hud" id="hud" aria-live="polite">
         <div class="hud-top">
           <div class="stat money"><small>WALLET / RUN</small><strong>₦<span id="score">0</span></strong></div>
@@ -39,7 +38,6 @@
         <div class="mission-pill" id="mission-label">Mission loading…</div>
         <aside class="passenger-list hidden" id="passenger-list" aria-live="polite" aria-label="Passengers aboard"></aside>
       </section>
-
       <div class="minimap" aria-label="Route minimap"><span class="map-road"></span><span class="map-dot"></span><small id="map-label">KANO</small></div>
       <div class="toast" id="toast" role="status"></div>
       <section class="event-card hidden" id="event-card" role="dialog" aria-modal="true">
@@ -48,7 +46,6 @@
         <p id="event-copy"></p>
         <div class="event-actions" id="event-actions"></div>
       </section>
-
       <section class="screen" id="start-screen">
         <div class="start-card">
           <div class="brand-mark">KL<span>+</span></div>
@@ -71,7 +68,6 @@
           <div class="promo"><a href="https://ruffneck-entertainment.vercel.app" target="_blank" rel="noopener">RUFFNECK ENTERTAINMENT</a><span>·</span><a href="https://ruffneck-lms.vercel.app" target="_blank" rel="noopener">RUFFNECK LEARN</a></div>
         </div>
       </section>
-
       <section class="screen hidden life-routine-screen" id="life-routine-screen" aria-labelledby="life-title">
         <div class="life-routine-card">
           <header class="life-routine-header">
@@ -92,7 +88,6 @@
           </div>
         </div>
       </section>
-
       <section class="screen hidden" id="menu-screen">
         <div class="panel">
           <button class="close-x" data-close="menu-screen">×</button>
@@ -107,7 +102,6 @@
           <div class="menu-actions"><button id="radio-btn">CHANGE RADIO</button><button id="rank-btn">NAIJA RANK</button><button id="menu-garage-btn">GARAGE</button><button id="daily-login-btn-menu">CLAIM DAILY LOGIN</button><button id="resume-btn" class="primary">RESUME DRIVE</button></div>
         </div>
       </section>
-
       <section class="screen hidden" id="garage-screen">
         <div class="panel garage-panel">
           <button class="close-x" data-close="garage-screen" aria-label="Close garage">×</button>
@@ -118,7 +112,6 @@
           <button class="primary full" data-close="garage-screen">BACK</button>
         </div>
       </section>
-
       <section class="screen hidden" id="over-screen">
         <div class="panel over-panel">
           <p class="eyebrow">RUN REPORT</p><h2 id="over-title">Run complete</h2>
@@ -132,7 +125,6 @@
           <div class="menu-actions"><button id="continue-btn" class="primary hidden">USE LIFE SAVER</button><button id="again-btn" class="primary">DRIVE AGAIN</button><button id="home-btn">MAIN MENU</button></div>
         </div>
       </section>
-
       <section class="screen hidden" id="help-screen">
         <div class="panel">
           <button class="close-x" data-close="help-screen">×</button>
@@ -148,7 +140,6 @@
           <button class="primary full" data-close="help-screen">GOT IT</button>
         </div>
       </section>
-
       <nav class="drive-controls" id="drive-controls" aria-label="Driving controls">
         <button class="control lane" data-action="left" aria-label="Steer left">←</button>
         <button class="control lane" data-action="right" aria-label="Steer right">→</button>
@@ -159,7 +150,7 @@
       <button class="menu-button" id="menu-btn" aria-label="Open game menu">☰</button>
     </div>
   </main>
-  <!-- Register compatibility repairs before main.js constructs the game. -->
-  <script type="module" src="/js/KanoGameplayPresentationRepair.js"></script>
+  <!-- Bootstrap the GLB quality pass before the existing game hooks and main.js. -->
+  <script type="module" src="/js/KanoModelAssetVisualUpgrade.js"></script>
 </body>
 </html>
