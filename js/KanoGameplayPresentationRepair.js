@@ -1181,6 +1181,145 @@ function mergeWorkshopSpendingLedgers(firstValue, secondValue) {
   return normalizeWorkshopSpendingLedger(merged) || emptyWorkshopSpendingLedger();
 }
 
+function workshopLedgerStatementMonthOptions(ledger = ensureWorkshopSpendingLedger()) {
+  const currentMonth = workshopLedgerMonthKey(Date.now());
+  return [...new Set([currentMonth, ...Object.keys(ledger.months || {})])]
+    .filter((key) => /^\d{4}-(0[1-9]|1[0-2])$/.test(key))
+    .sort((a, b) => b.localeCompare(a));
+}
+
+function workshopLedgerStatementData(requestedMonth = '') {
+  const ledger = ensureWorkshopSpendingLedger();
+  const options = workshopLedgerStatementMonthOptions(ledger);
+  const selectedMonth = options.includes(requestedMonth)
+    ? requestedMonth
+    : (options[0] || workshopLedgerMonthKey(Date.now()));
+  const month = ledger.months[selectedMonth] || null;
+  const history = readWorkshopHistory().map((entry) => normalizeWorkshopBackupRecord({
+    time: Number(entry.time), service: entry.service, parts: entry.parts,
+    cost: entry.cost, walletAfter: entry.walletAfter,
+    conditionBefore: entry.conditionBefore, conditionAfter: entry.conditionAfter,
+  })).filter(Boolean);
+  const receipts = new Map(history.map((record) => [workshopRecordIdentity(record), record]));
+  const transactions = (month?.transactions || []).slice().sort((a, b) => b.time - a.time).map((entry) => {
+    const receipt = receipts.get(entry.id) || null;
+    const date = new Date(entry.time);
+    const serviceLabels = { full: 'Full service', body: 'Body repair', engine: 'Engine service', tyres: 'Tyre service' };
+    return {
+      id: entry.id,
+      time: entry.time,
+      dateISO: Number.isNaN(date.getTime()) ? '' : date.toISOString(),
+      dateLabel: Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' }),
+      service: receipt ? (serviceLabels[receipt.service] || 'Workshop service') : 'Ledger transaction',
+      components: receipt ? receipt.parts.map((key) => WORKSHOP_PARTS[key]?.label || '').filter(Boolean).join(' · ') : '',
+      cost: Math.max(0, Math.floor(Number(entry.cost) || 0)),
+      walletAfter: receipt ? receipt.walletAfter : null,
+      receiptAvailable: Boolean(receipt),
+    };
+  });
+  const archivedCount = Math.max(0, Math.floor(Number(month?.archivedCount) || 0));
+  const archivedNaira = Math.max(0, Math.floor(Number(month?.archivedNaira) || 0));
+  const trackedSpend = transactions.reduce((sum, row) => sum + row.cost, 0);
+  const totalSpend = trackedSpend + archivedNaira;
+  const coverageComplete = Boolean(month?.coverageComplete) && archivedCount === 0 && archivedNaira === 0;
+  const coverage = !month && !transactions.length && !archivedCount && !archivedNaira
+    ? 'NO TRACKED RECORDS'
+    : coverageComplete ? 'COMPLETE' : 'PARTIAL';
+  return {
+    selectedMonth,
+    monthLabel: (() => {
+      const [year, monthNumber] = selectedMonth.split('-').map(Number);
+      return new Date(year, monthNumber - 1, 1, 12).toLocaleDateString('en-NG', { month: 'long', year: 'numeric' });
+    })(),
+    options,
+    transactions,
+    trackedCount: transactions.length,
+    trackedSpend,
+    archivedCount,
+    archivedNaira,
+    totalSpend,
+    coverageComplete,
+    coverage,
+    monthExists: Boolean(month),
+  };
+}
+
+function workshopLedgerStatementBodyMarkup(requestedMonth = '') {
+  const data = workshopLedgerStatementData(requestedMonth);
+  const statusLevel = data.coverage === 'COMPLETE' ? 'complete' : data.coverage === 'PARTIAL' ? 'partial' : 'empty';
+  const rows = data.transactions.length
+    ? data.transactions.map((row) => `<tr><td>${escapeWorkshopHTML(row.dateLabel)}</td><td><strong>${escapeWorkshopHTML(row.service)}</strong><small>${escapeWorkshopHTML(row.receiptAvailable ? 'Receipt available' : 'Receipt not retained')}</small></td><td>${escapeWorkshopHTML(row.components || 'Details unavailable')}</td><td class="kano-workshop-ledger-money">${naira(row.cost)}</td></tr>`).join('')
+    : `<tr><td colspan="4" class="kano-workshop-ledger-no-rows">No individually tracked workshop transactions are available for ${escapeWorkshopHTML(data.monthLabel)}. This does not prove that no workshop spending occurred if historic coverage is partial.</td></tr>`;
+  const coverageNote = data.coverage === 'COMPLETE'
+    ? 'The saved ledger marks this calendar month complete and contains no archived overflow.'
+    : data.coverage === 'PARTIAL'
+      ? 'This month is partial. The amount shown includes individually tracked transactions and any archived total, but archived transactions do not retain individual service details.'
+      : 'No ledger month is saved for this period. Older or unrecorded spending cannot be inferred.';
+  return `<div class="kano-workshop-ledger-statement-status" data-level="${statusLevel}" role="status"><strong>${escapeWorkshopHTML(data.coverage)}</strong><span>${escapeWorkshopHTML(data.monthLabel)} · ${data.trackedCount} individually tracked transaction${data.trackedCount === 1 ? '' : 's'}</span></div><div class="kano-workshop-ledger-statement-metrics"><div><span>TRACKED TRANSACTIONS</span><strong>${data.trackedCount}</strong><small>${naira(data.trackedSpend)} itemised spend</small></div><div><span>ARCHIVED TRANSACTIONS</span><strong>${data.archivedCount}</strong><small>${naira(data.archivedNaira)} archived spend</small></div><div><span>MONTH TOTAL RECORDED</span><strong>${naira(data.totalSpend)}</strong><small>Tracked plus archived amount</small></div></div><div class="kano-workshop-ledger-table-wrap"><table class="kano-workshop-ledger-table"><thead><tr><th>DATE</th><th>SERVICE</th><th>COMPONENTS</th><th>AMOUNT</th></tr></thead><tbody>${rows}</tbody></table></div><p class="kano-workshop-ledger-coverage-note">${escapeWorkshopHTML(coverageNote)}</p>`;
+}
+
+function workshopLedgerStatementMarkup(requestedMonth = '') {
+  const data = workshopLedgerStatementData(requestedMonth);
+  const options = data.options.map((key) => {
+    const [year, monthNumber] = key.split('-').map(Number);
+    const label = new Date(year, monthNumber - 1, 1, 12).toLocaleDateString('en-NG', { month: 'long', year: 'numeric' });
+    return `<option value="${key}" ${key === data.selectedMonth ? 'selected' : ''}>${escapeWorkshopHTML(label)}</option>`;
+  }).join('');
+  return `<section class="kano-workshop-ledger-statement" aria-labelledby="kano-workshop-ledger-statement-title"><div class="kano-workshop-ledger-statement-heading"><div><h4 id="kano-workshop-ledger-statement-title">MONTHLY LEDGER STATEMENT</h4><p>Inspect individual tracked transactions beyond the 12-receipt history window.</p></div><button type="button" data-kano-workshop-ledger-statement-export>EXPORT MONTH CSV</button></div><label class="kano-workshop-ledger-month-picker">STATEMENT PERIOD<select data-kano-workshop-statement-month aria-label="Choose workshop statement month">${options}</select></label><div data-kano-workshop-ledger-statement-body>${workshopLedgerStatementBodyMarkup(data.selectedMonth)}</div><small class="kano-workshop-ledger-statement-note">The statement reads the local spending ledger. Individual service names and components are shown only when a matching recent receipt is still available. Archived amounts remain included in totals but cannot be expanded into itemised rows. Export excludes game wallet save, vehicle state, score, and driving progress.</small></section>`;
+}
+
+function downloadWorkshopLedgerMonthStatement(requestedMonth = '') {
+  const data = workshopLedgerStatementData(requestedMonth);
+  const csvCell = (value) => {
+    let safe = String(value ?? '');
+    if (/^[\t\r ]*[=+\-@]/.test(safe)) safe = `'${safe}`;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  const header = [
+    'Statement month', 'Coverage', 'Entry type', 'Service date (ISO 8601)',
+    'Transaction identity', 'Service', 'Components', 'Cost (NGN)',
+    'Wallet after (NGN)', 'Recent receipt available', 'Archived transaction count',
+    'Archived amount (NGN)', 'Total month recorded (NGN)',
+  ];
+  const rows = data.transactions.map((row) => [
+    data.selectedMonth, data.coverage, 'TRACKED TRANSACTION', row.dateISO,
+    row.id, row.service, row.components, row.cost,
+    row.walletAfter === null ? '' : row.walletAfter, row.receiptAvailable ? 'Yes' : 'No',
+    '', '', '',
+  ]);
+  if (data.archivedCount || data.archivedNaira) {
+    rows.push([data.selectedMonth, data.coverage, 'ARCHIVED SUMMARY', '', '',
+      'Unitemised archived transactions', '', data.archivedNaira, '', 'No',
+      data.archivedCount, data.archivedNaira, data.totalSpend]);
+  }
+  if (!rows.length) {
+    rows.push([data.selectedMonth, data.coverage, 'MONTH TOTAL', '', '',
+      'No tracked ledger transactions', '', data.totalSpend, '', 'No',
+      data.archivedCount, data.archivedNaira, data.totalSpend]);
+  } else {
+    rows.push([data.selectedMonth, data.coverage, 'MONTH TOTAL', '', '',
+      'Recorded month total', '', data.totalSpend, '', 'No',
+      data.archivedCount, data.archivedNaira, data.totalSpend]);
+  }
+  const csv = '\uFEFF' + [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+  try {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kano-life-workshop-ledger-${data.selectedMonth}.csv`;
+    link.style.display = 'none';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    setWorkshopMessage(`MONTHLY LEDGER EXPORTED · ${data.monthLabel} · ${naira(data.totalSpend)} recorded, ${data.coverage.toLowerCase()} coverage. No game wallet or vehicle data was changed.`);
+  } catch (error) {
+    console.warn('[Kano Life] Monthly workshop ledger statement export failed.', error);
+    setWorkshopMessage('Monthly ledger export failed in this browser. Saved workshop records and game progress were not changed.');
+  }
+}
+
 function workshopLedgerAuditData() {
   const ledger = readWorkshopSpendingLedger();
   const history = readWorkshopHistory().map((entry) => normalizeWorkshopBackupRecord({
@@ -2318,6 +2457,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     ${workshopCostAnalyticsMarkup()}
     ${workshopMonthlyBudgetMarkup()}
     ${workshopLedgerAuditMarkup(ledgerAudit)}
+    ${workshopLedgerStatementMarkup(panel.dataset.ledgerStatementMonth || '')}
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
@@ -2682,6 +2822,33 @@ function installWorkshopUI() {
       .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
       .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
       .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
+      .kano-workshop-ledger-statement{margin:11px 0;padding:10px;border:1px solid #ffffff18;border-radius:9px;background:#ffffff05;min-width:0}
+      .kano-workshop-ledger-statement-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-width:0}
+      .kano-workshop-ledger-statement-heading h4{margin:0;color:#f3f7fc;font-size:10px;letter-spacing:.06em}
+      .kano-workshop-ledger-statement-heading p{margin:5px 0 0;color:#9db1c5;font-size:9px;line-height:1.4}
+      .kano-workshop-ledger-statement-heading button{flex:0 0 auto;min-height:35px;padding:7px 9px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:8px;font-weight:900;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-ledger-month-picker{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;margin:10px 0;color:#9fb4c8;font-size:8px;font-weight:900;letter-spacing:.04em}
+      .kano-workshop-ledger-month-picker select{width:100%;min-height:38px;padding:8px;border:1px solid #ffffff25;border-radius:7px;background:#10243a;color:#f2f7fc;font:inherit;font-size:11px;letter-spacing:normal}
+      .kano-workshop-ledger-statement-status{display:flex;justify-content:space-between;gap:8px;align-items:center;margin:7px 0;padding:9px;border:1px solid #ffffff17;border-radius:7px;background:#ffffff06}
+      .kano-workshop-ledger-statement-status strong{font-size:9px;color:#ffe18b}
+      .kano-workshop-ledger-statement-status span{font-size:9px;color:#b4c6d8;text-align:right}
+      .kano-workshop-ledger-statement-status[data-level="complete"]{border-color:#4dd6ac55}.kano-workshop-ledger-statement-status[data-level="complete"] strong{color:#a5f3d4}
+      .kano-workshop-ledger-statement-status[data-level="partial"]{border-color:#f5c54255}.kano-workshop-ledger-statement-status[data-level="partial"] strong{color:#ffe18b}
+      .kano-workshop-ledger-statement-status[data-level="empty"] strong{color:#a8bad0}
+      .kano-workshop-ledger-statement-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}
+      .kano-workshop-ledger-statement-metrics>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:8px;border:1px solid #ffffff13;border-radius:7px;background:#ffffff04}
+      .kano-workshop-ledger-statement-metrics span{color:#9fb4c8;font-size:7px;font-weight:900;letter-spacing:.03em;line-height:1.3}
+      .kano-workshop-ledger-statement-metrics strong{color:#f5d77d;font-size:11px;overflow-wrap:anywhere}
+      .kano-workshop-ledger-statement-metrics small{color:#8198ad;font-size:8px;line-height:1.35}
+      .kano-workshop-ledger-table-wrap{max-width:100%;overflow-x:auto;border:1px solid #ffffff12;border-radius:7px}
+      .kano-workshop-ledger-table{width:100%;min-width:410px;border-collapse:collapse;font-size:9px}
+      .kano-workshop-ledger-table th{padding:8px 7px;background:#14263a;color:#9fb4c8;text-align:left;font-size:7px;letter-spacing:.04em;white-space:nowrap}
+      .kano-workshop-ledger-table td{padding:8px 7px;border-top:1px solid #ffffff10;color:#c3d3e2;vertical-align:top;line-height:1.35}
+      .kano-workshop-ledger-table td strong,.kano-workshop-ledger-table td small{display:block}.kano-workshop-ledger-table td strong{color:#eaf3fc;font-size:9px}.kano-workshop-ledger-table td small{margin-top:3px;color:#8298ad;font-size:8px}
+      .kano-workshop-ledger-table .kano-workshop-ledger-money{text-align:right;color:#ffe18b;font-weight:900;white-space:nowrap}
+      .kano-workshop-ledger-no-rows{padding:12px!important;color:#9fb4c8!important;line-height:1.5!important}
+      .kano-workshop-ledger-coverage-note,.kano-workshop-ledger-statement-note{display:block;margin:8px 0 0;color:#8298ad;font-size:8px;line-height:1.45}
+      .kano-workshop-ledger-statement button:focus-visible,.kano-workshop-ledger-month-picker select:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
       @media(max-width:440px){.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
@@ -2711,6 +2878,12 @@ function installWorkshopUI() {
       }
       const ledgerReconcileButton = event.target.closest('[data-kano-workshop-ledger-reconcile]');
       if (ledgerReconcileButton) { if (!ledgerReconcileButton.disabled) reconcileWorkshopRecentReceipts(); return; }
+      const ledgerMonthExportButton = event.target.closest('[data-kano-workshop-ledger-statement-export]');
+      if (ledgerMonthExportButton) {
+        const monthKey = panel.querySelector('[data-kano-workshop-statement-month]')?.value || '';
+        downloadWorkshopLedgerMonthStatement(monthKey);
+        return;
+      }
       const ledgerAuditExportButton = event.target.closest('[data-kano-workshop-ledger-audit-export]');
       if (ledgerAuditExportButton) { downloadWorkshopLedgerAudit(); return; }
       const ledgerRecoveryExportButton = event.target.closest('[data-kano-workshop-ledger-recovery-export]');
@@ -2740,6 +2913,16 @@ function installWorkshopUI() {
       requestWorkshopService(button.dataset.kanoWorkshopService);
     });
     panel.addEventListener('change', (event) => {
+      const statementMonthSelect = event.target.closest('[data-kano-workshop-statement-month]');
+      if (statementMonthSelect) {
+        const selected = statementMonthSelect.value;
+        if (/^\d{4}-(0[1-9]|1[0-2])$/.test(selected)) {
+          panel.dataset.ledgerStatementMonth = selected;
+          const statementBody = panel.querySelector('[data-kano-workshop-ledger-statement-body]');
+          if (statementBody) statementBody.innerHTML = workshopLedgerStatementBodyMarkup(selected);
+        }
+        return;
+      }
       const planInput = event.target.closest('[data-kano-workshop-plan-import-file]');
       if (planInput) {
         const file = planInput.files?.[0] || null;
