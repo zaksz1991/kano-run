@@ -1,5 +1,5 @@
 /**
- * KANO LIFE — PRESENTATION, WORKSHOP EXPORT/IMPORT + PERSISTENT VEHICLE DAMAGE
+ * KANO LIFE — MAINTENANCE TREND PLANNER + WORKSHOP EXPORT/IMPORT + PERSISTENT VEHICLE DAMAGE
  *
  * Production-safe additive repair layer. Core simulation/storage remains in
  * Game, UI and Renderer3D. This module is loaded by index.html and imports
@@ -1077,6 +1077,60 @@ function workshopMaintenanceMarkup(values, wallet) {
   return `<section class="kano-workshop-maintenance" data-level="${level}" aria-live="polite"><div class="kano-workshop-maintenance-heading"><span class="kano-workshop-maintenance-indicator" aria-hidden="true"></span><strong>${headline}</strong></div><p>${escapeWorkshopHTML(message)}</p>${estimate ? `<small>${escapeWorkshopHTML(estimate)}</small>` : ''}<small class="kano-workshop-maintenance-footnote">In-game condition guidance for body, engine and tyres only; no repair is applied automatically.</small></section>`;
 }
 
+function workshopConditionTrendMarkup(values) {
+  const history = readWorkshopHistory();
+  if (!history.length) {
+    return `<section class="kano-workshop-trend" aria-labelledby="kano-workshop-trend-title"><div class="kano-workshop-trend-heading"><h4 id="kano-workshop-trend-title">CONDITION TREND</h4><span>BASELINE NOT SET</span></div><p>No completed service receipt is saved yet. After the first detailed service receipt, this panel will compare the recorded post-service condition with the current in-game condition.</p></section>`;
+  }
+
+  // Compare with the newest receipt, not an older detailed receipt. Using an
+  // older baseline when newer legacy receipts exist could misrepresent the
+  // change interval and would imply information not contained in the records.
+  const latest = history[0];
+  const baseline = normalizeConditionSnapshot(latest.conditionAfter);
+  const date = new Date(Number(latest.time));
+  const dateLabel = Number.isNaN(date.getTime())
+    ? 'date unavailable'
+    : date.toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+
+  if (!baseline) {
+    return `<section class="kano-workshop-trend" aria-labelledby="kano-workshop-trend-title"><div class="kano-workshop-trend-heading"><h4 id="kano-workshop-trend-title">CONDITION TREND</h4><span>AWAITING BASELINE</span></div><p>The newest saved receipt (${escapeWorkshopHTML(dateLabel)}) does not contain condition snapshots. Complete another service to begin a reliable comparison. Older data will not be guessed or backfilled.</p></section>`;
+  }
+
+  const rows = Object.keys(WORKSHOP_PARTS).map((key) => {
+    const current = Number(values[key]);
+    const prior = baseline[key];
+    const delta = current - prior;
+    const deltaLabel = delta < 0 ? `−${Math.abs(delta)} pts` : delta > 0 ? `+${delta} pts` : '0 pts';
+    const deltaClass = delta < 0 ? 'down' : delta > 0 ? 'up' : 'same';
+    const colour = WORKSHOP_PARTS[key].color;
+    return `<div class="kano-workshop-trend-row"><div class="kano-workshop-trend-top"><strong>${WORKSHOP_PARTS[key].label}</strong><span>NOW ${current}%</span></div><div class="kano-workshop-trend-bar" role="img" aria-label="${WORKSHOP_PARTS[key].label} after last service ${prior} percent; current ${current} percent"><div class="kano-workshop-trend-baseline"><i style="width:${prior}%"></i></div><div class="kano-workshop-trend-current"><i style="width:${current}%;background:${colour}"></i></div></div><small>AFTER LAST SERVICE ${prior}% <b class="${deltaClass}">${deltaLabel}</b></small></div>`;
+  }).join('');
+  const totalLoss = Object.keys(WORKSHOP_PARTS).reduce((sum, key) => sum + Math.max(0, baseline[key] - Number(values[key])), 0);
+  return `<section class="kano-workshop-trend" aria-labelledby="kano-workshop-trend-title"><div class="kano-workshop-trend-heading"><h4 id="kano-workshop-trend-title">CONDITION TREND</h4><span>VS LAST RECEIPT</span></div><p>Baseline recorded ${escapeWorkshopHTML(dateLabel)}. The comparison reports condition-point changes only; it does not estimate distance travelled or predict mechanical failure.</p><div class="kano-workshop-trend-grid">${rows}</div><div class="kano-workshop-trend-foot"><span>RECORDED POINTS LOST</span><strong>${totalLoss}</strong></div></section>`;
+}
+
+function workshopBudgetPlannerMarkup(state, values, wallet) {
+  const ranked = Object.keys(WORKSHOP_PARTS).sort((a, b) => values[a] - values[b]);
+  const rankLabel = (health) => health < 25 ? 'CRITICAL' : health < 50 ? 'HIGH PRIORITY' : health < 80 ? 'PLAN SERVICE' : 'GOOD';
+  const rows = ranked.map((key, index) => {
+    const config = WORKSHOP_PARTS[key];
+    const health = values[key];
+    const quote = workshopQuote(state, key);
+    const priorityClass = health < 25 ? 'critical' : health < 50 ? 'high' : health < 80 ? 'plan' : 'good';
+    const price = quote.cost ? naira(quote.cost) : 'UP TO DATE';
+    return `<li class="kano-workshop-plan-row" data-level="${priorityClass}"><span class="kano-workshop-plan-rank">${index + 1}</span><div class="kano-workshop-plan-part"><strong>${config.label}</strong><small>${health}% CONDITION · ${rankLabel(health)}</small></div><b class="kano-workshop-plan-cost">${price}</b></li>`;
+  }).join('');
+  const fullQuote = workshopQuote(state, 'full');
+  let budgetText = 'All tracked components are at 100%; no service budget is currently required.';
+  if (fullQuote.cost > 0) {
+    budgetText = wallet >= fullQuote.cost
+      ? `Full-service estimate ${naira(fullQuote.cost)} · covered by the current wallet.`
+      : `Full-service estimate ${naira(fullQuote.cost)} · short by ${naira(fullQuote.cost - wallet)} at the current wallet balance.`;
+  }
+  return `<section class="kano-workshop-planner" aria-labelledby="kano-workshop-planner-title"><div class="kano-workshop-planner-heading"><h4 id="kano-workshop-planner-title">REPAIR PRIORITY &amp; BUDGET</h4><span>LOWEST CONDITION FIRST</span></div><ol class="kano-workshop-plan-list">${rows}</ol><div class="kano-workshop-plan-total"><div><span>FULL SERVICE</span><strong>${fullQuote.cost ? naira(fullQuote.cost) : '₦0'}</strong></div><p>${escapeWorkshopHTML(budgetText)}</p></div><small class="kano-workshop-planner-note">Priority is sorted using the game's current BODY, ENGINE and TYRES values. Individual service prices include labour per transaction; a full service includes one labour fee. This is an in-game budget aid, not a real-world vehicle inspection.</small></section>`;
+}
+
 function renderWorkshopPanel(state = activeGame?.s) {
   const panel = document.getElementById('kano-workshop-panel');
   if (!panel || !state) return;
@@ -1117,6 +1171,8 @@ function renderWorkshopPanel(state = activeGame?.s) {
     <div class="kano-workshop-header"><div><p class="kano-workshop-eyebrow">KANO LIFE · MECHANIC'S BAY</p><h3 id="kano-workshop-title">Service your keke</h3><p>Repairs use banked funds and restore the selected components to 100%.</p></div><div class="kano-workshop-wallet"><small>BANKED WALLET</small><strong>${naira(wallet)}</strong></div></div>
     ${workshopMaintenanceMarkup(values, wallet)}
     <div class="kano-workshop-parts">${partsMarkup}</div>
+    ${workshopConditionTrendMarkup(values)}
+    ${workshopBudgetPlannerMarkup(state, values, wallet)}
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
@@ -1299,6 +1355,35 @@ function installWorkshopUI() {
       .kano-workshop-maintenance p{margin:6px 0 0;color:#c5d5e5;font-size:10px;line-height:1.45;overflow-wrap:anywhere}
       .kano-workshop-maintenance small{display:block;margin-top:5px;color:#ffe18b;font-size:9px;line-height:1.4;overflow-wrap:anywhere}
       .kano-workshop-maintenance .kano-workshop-maintenance-footnote{color:#8198ad}
+      .kano-workshop-trend,.kano-workshop-planner{margin:11px 0;padding:10px;border:1px solid #ffffff18;border-radius:9px;background:#ffffff05;min-width:0}
+      .kano-workshop-trend-heading,.kano-workshop-planner-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+      .kano-workshop-trend-heading h4,.kano-workshop-planner-heading h4{margin:0;color:#edf5fd;font-size:10px;letter-spacing:.05em}
+      .kano-workshop-trend-heading span,.kano-workshop-planner-heading span{color:#00c4e7;font-size:8px;font-weight:900;text-align:right}
+      .kano-workshop-trend>p{margin:6px 0 9px;color:#9eb4c9;font-size:9px;line-height:1.45}
+      .kano-workshop-trend-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+      .kano-workshop-trend-row{padding:7px;border:1px solid #ffffff12;border-radius:7px;background:#00000012;min-width:0}
+      .kano-workshop-trend-top{display:flex;justify-content:space-between;align-items:center;gap:4px;color:#eaf4fc}
+      .kano-workshop-trend-top strong{font-size:9px}.kano-workshop-trend-top span{font-size:8px;font-weight:900;white-space:nowrap}
+      .kano-workshop-trend-bar{display:grid;gap:4px;margin:7px 0}
+      .kano-workshop-trend-baseline,.kano-workshop-trend-current{height:4px;overflow:hidden;border-radius:99px;background:#2b3b4d}
+      .kano-workshop-trend-baseline i,.kano-workshop-trend-current i{display:block;height:100%;border-radius:99px;background:#8395a8}
+      .kano-workshop-trend-current i{background:#00b4d8}
+      .kano-workshop-trend-row small{display:flex;justify-content:space-between;flex-wrap:wrap;gap:3px;color:#8fa5bb;font-size:7px;line-height:1.3}
+      .kano-workshop-trend-row small b{font-size:8px}.kano-workshop-trend-row .down{color:#ff8d8d}.kano-workshop-trend-row .up{color:#86e6b9}.kano-workshop-trend-row .same{color:#b5c7d8}
+      .kano-workshop-trend-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;padding-top:7px;border-top:1px solid #ffffff14}
+      .kano-workshop-trend-foot span{color:#9eb4c9;font-size:8px;font-weight:900}.kano-workshop-trend-foot strong{color:#ffcc7a;font-size:11px}
+      .kano-workshop-plan-list{display:grid;gap:5px;margin:8px 0;padding:0;list-style:none}
+      .kano-workshop-plan-row{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:7px;padding:7px;border:1px solid #ffffff12;border-radius:7px;background:#ffffff04;min-width:0}
+      .kano-workshop-plan-rank{display:grid;place-items:center;width:19px;height:19px;border-radius:6px;background:#26394c;color:#dce9f5;font-size:8px;font-weight:900}
+      .kano-workshop-plan-part{display:grid;gap:3px;min-width:0}.kano-workshop-plan-part strong{color:#edf5fd;font-size:9px}.kano-workshop-plan-part small{color:#8fa5bb;font-size:7px;font-weight:900;letter-spacing:.03em}
+      .kano-workshop-plan-cost{color:#ffe18b;font-size:9px;text-align:right;white-space:nowrap}
+      .kano-workshop-plan-row[data-level="critical"]{border-color:#ff626255}.kano-workshop-plan-row[data-level="critical"] .kano-workshop-plan-rank{background:#682c35;color:#ffd5d5}
+      .kano-workshop-plan-row[data-level="high"]{border-color:#ffd16655}.kano-workshop-plan-row[data-level="high"] .kano-workshop-plan-rank{background:#5a4720;color:#ffe7a3}
+      .kano-workshop-plan-row[data-level="plan"] .kano-workshop-plan-rank{background:#14465a;color:#9aefff}
+      .kano-workshop-plan-total{padding:9px;border:1px solid #f5c5423d;border-radius:7px;background:#f5c54208}
+      .kano-workshop-plan-total>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.kano-workshop-plan-total span{color:#f5d77d;font-size:8px;font-weight:900}.kano-workshop-plan-total strong{color:#ffe18b;font-size:12px}
+      .kano-workshop-plan-total p{margin:5px 0 0;color:#c5d5e5;font-size:9px;line-height:1.4}
+      .kano-workshop-planner-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
       .kano-workshop-parts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:14px 0}
       .kano-workshop-part{min-width:0;padding:9px;border:1px solid #ffffff16;border-radius:8px;background:#ffffff07}
       .kano-workshop-part-label{display:flex;justify-content:space-between;gap:4px;color:#eaf1f9;font-size:10px;font-weight:900}
@@ -1355,7 +1440,7 @@ function installWorkshopUI() {
       .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
       .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
       .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
