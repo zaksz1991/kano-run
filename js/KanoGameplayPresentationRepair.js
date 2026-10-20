@@ -676,6 +676,7 @@ const WORKSHOP_PARTS = {
 const WORKSHOP_LABOUR_FEE = 100;
 const WORKSHOP_HISTORY_KEY = 'kano-life-workshop-history-v1';
 const WORKSHOP_SAVINGS_GOAL_KEY = 'kano-life-workshop-savings-goal-v1';
+const WORKSHOP_MONTHLY_BUDGET_KEY = 'kano-life-workshop-monthly-budget-v1';
 const WORKSHOP_HISTORY_LIMIT = 12;
 const WORKSHOP_BACKUP_MAX_BYTES = 1024 * 1024;
 const WORKSHOP_BACKUP_MAX_ROWS = 500;
@@ -1031,6 +1032,25 @@ function normalizeWorkshopPlanGoal(value) {
   };
 }
 
+function normalizeWorkshopMonthlyBudget(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const monthlyLimitNaira = Math.floor(Number(value.monthlyLimitNaira));
+  if (!Number.isFinite(monthlyLimitNaira) || monthlyLimitNaira < 1 || monthlyLimitNaira > 100000000) return null;
+  const updatedAtRaw = Number(value.updatedAt);
+  return {
+    monthlyLimitNaira,
+    updatedAt: Number.isFinite(updatedAtRaw) && updatedAtRaw >= 0 ? Math.floor(updatedAtRaw) : 0,
+  };
+}
+
+function readWorkshopMonthlyBudget() {
+  try {
+    return normalizeWorkshopMonthlyBudget(JSON.parse(localStorage.getItem(WORKSHOP_MONTHLY_BUDGET_KEY) || 'null'));
+  } catch (_) {
+    return null;
+  }
+}
+
 function workshopPlanBackupRecords() {
   const serviceLabels = {
     full: 'Full service',
@@ -1056,8 +1076,9 @@ function workshopPlanBackupRecords() {
 function downloadWorkshopPlanBackup() {
   const records = workshopPlanBackupRecords();
   const goal = readWorkshopSavingsGoal();
-  if (!records.length && !goal) {
-    setWorkshopMessage('There is no saved service history or repair-fund target to export yet.');
+  const monthlyBudget = readWorkshopMonthlyBudget();
+  if (!records.length && !goal && !monthlyBudget) {
+    setWorkshopMessage('There is no saved service history, repair-fund target, or monthly spending cap to export yet.');
     return;
   }
   try {
@@ -1065,7 +1086,7 @@ function downloadWorkshopPlanBackup() {
     const backup = {
       application: 'Kano Life',
       exportType: 'workshop-plan-backup',
-      formatVersion: 1,
+      formatVersion: 2,
       exportedAt,
       recordCount: records.length,
       savingsGoal: goal ? {
@@ -1073,7 +1094,11 @@ function downloadWorkshopPlanBackup() {
         dueDate: goal.dueDate,
         updatedAt: goal.updatedAt,
       } : null,
-      note: 'Contains workshop service history and the optional local repair-fund target. Does not contain game money, vehicle state, or gameplay progress. An imported target replaces the local target only when this backup contains a valid target. A null target preserves the destination device target.',
+      monthlyBudget: monthlyBudget ? {
+        monthlyLimitNaira: monthlyBudget.monthlyLimitNaira,
+        updatedAt: monthlyBudget.updatedAt,
+      } : null,
+      note: 'Contains local workshop service history, the optional repair-fund target, and the optional monthly workshop spending cap. Does not contain game money, vehicle state, or gameplay progress. Valid imported targets replace matching local settings; absent or null settings preserve destination-device settings.',
       records,
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
@@ -1086,7 +1111,7 @@ function downloadWorkshopPlanBackup() {
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-    setWorkshopMessage(`WORKSHOP PLAN BACKUP PREPARED · ${records.length} service record${records.length === 1 ? '' : 's'} and ${goal ? 'one repair-fund target' : 'no saved target'} included. Game money and progress were not exported.`);
+    setWorkshopMessage(`WORKSHOP PLAN BACKUP PREPARED · ${records.length} service record${records.length === 1 ? '' : 's'} · ${goal ? 'repair-fund target' : 'no saved target'} · ${monthlyBudget ? 'monthly spending cap' : 'no monthly cap'} included. Game money and progress were not exported.`);
   } catch (error) {
     console.warn('[Kano Life] Full workshop-plan export failed.', error);
     setWorkshopMessage('Workshop plan export failed in this browser. Saved history, target, and gameplay data remain unchanged.');
@@ -1130,9 +1155,10 @@ async function importWorkshopPlanFile(file) {
     }
     if (!backup || typeof backup !== 'object' || Array.isArray(backup)
       || backup.application !== 'Kano Life' || backup.exportType !== 'workshop-plan-backup'
-      || backup.formatVersion !== 1 || !Array.isArray(backup.records)
+      || ![1, 2].includes(backup.formatVersion) || !Array.isArray(backup.records)
       || backup.records.length > WORKSHOP_BACKUP_MAX_ROWS
-      || !Object.prototype.hasOwnProperty.call(backup, 'savingsGoal')) {
+      || !Object.prototype.hasOwnProperty.call(backup, 'savingsGoal')
+      || (backup.formatVersion === 2 && !Object.prototype.hasOwnProperty.call(backup, 'monthlyBudget'))) {
       setWorkshopMessage('Plan backup rejected. Select a Kano Life Workshop Plan Backup. No saved data was changed.');
       return;
     }
@@ -1141,20 +1167,28 @@ async function importWorkshopPlanFile(file) {
     const invalidCount = backup.records.length - validRecords.length;
     const incomingGoal = backup.savingsGoal === null ? null : normalizeWorkshopPlanGoal(backup.savingsGoal);
     const goalIsInvalid = backup.savingsGoal !== null && !incomingGoal;
-    if (!validRecords.length && !incomingGoal) {
-      setWorkshopMessage(`Backup contains no valid service records or repair-fund target. Existing data was not changed.${invalidCount ? ` ${invalidCount} invalid record${invalidCount === 1 ? ' was' : 's were'} found.` : ''}${goalIsInvalid ? ' The target record was invalid.' : ''}`);
+    const incomingBudget = backup.formatVersion === 2 && backup.monthlyBudget !== null
+      ? normalizeWorkshopMonthlyBudget(backup.monthlyBudget) : null;
+    const budgetIsInvalid = backup.formatVersion === 2 && backup.monthlyBudget !== null && !incomingBudget;
+    if (!validRecords.length && !incomingGoal && !incomingBudget) {
+      setWorkshopMessage(`Backup contains no valid service records, repair-fund target or monthly spending cap. Existing data was not changed.${invalidCount ? ` ${invalidCount} invalid record${invalidCount === 1 ? ' was' : 's were'} found.` : ''}${goalIsInvalid ? ' The target record was invalid.' : ''}${budgetIsInvalid ? ' The monthly budget record was invalid.' : ''}`);
       return;
     }
 
     const currentGoal = readWorkshopSavingsGoal();
+    const currentBudget = readWorkshopMonthlyBudget();
     const willReplaceGoal = Boolean(incomingGoal);
+    const willReplaceBudget = Boolean(incomingBudget);
     const prompt = [
       `Import ${validRecords.length} valid service record${validRecords.length === 1 ? '' : 's'} from this workshop plan backup?`,
       '',
       'Service records will be merged with this device’s history; only the newest 12 will be retained.',
       willReplaceGoal
         ? `The saved repair-fund target${currentGoal ? ` (${naira(currentGoal.targetNaira)})` : ''} will be replaced with ${naira(incomingGoal.targetNaira)}${incomingGoal.dueDate ? `, due ${incomingGoal.dueDate}` : ', with no target date'}.`
-        : 'The backup has no repair-fund target, so any target already on this device will be preserved.',
+        : 'The backup has no valid repair-fund target, so any target already on this device will be preserved.',
+      willReplaceBudget
+        ? `The monthly workshop cap${currentBudget ? ` (${naira(currentBudget.monthlyLimitNaira)})` : ''} will be replaced with ${naira(incomingBudget.monthlyLimitNaira)}.`
+        : 'The backup has no valid monthly workshop cap, so any cap already on this device will be preserved.',
       '',
       'Game wallet, vehicle condition, and gameplay progress will not be changed.',
     ].join('\n');
@@ -1166,10 +1200,12 @@ async function importWorkshopPlanFile(file) {
     const merged = mergeWorkshopBackupRecords(validRecords);
     const previousHistory = localStorage.getItem(WORKSHOP_HISTORY_KEY);
     const previousGoal = localStorage.getItem(WORKSHOP_SAVINGS_GOAL_KEY);
+    const previousBudget = localStorage.getItem(WORKSHOP_MONTHLY_BUDGET_KEY);
     const historyToSave = JSON.stringify(merged);
     try {
       localStorage.setItem(WORKSHOP_HISTORY_KEY, historyToSave);
       if (incomingGoal) localStorage.setItem(WORKSHOP_SAVINGS_GOAL_KEY, JSON.stringify(incomingGoal));
+      if (incomingBudget) localStorage.setItem(WORKSHOP_MONTHLY_BUDGET_KEY, JSON.stringify(incomingBudget));
       const verifyHistory = JSON.parse(localStorage.getItem(WORKSHOP_HISTORY_KEY) || 'null');
       if (!Array.isArray(verifyHistory) || verifyHistory.length !== merged.length) {
         throw new Error('The browser could not verify imported workshop history.');
@@ -1180,14 +1216,22 @@ async function importWorkshopPlanFile(file) {
           throw new Error('The browser could not verify the imported repair-fund target.');
         }
       }
+      if (incomingBudget) {
+        const verifyBudget = readWorkshopMonthlyBudget();
+        if (!verifyBudget || verifyBudget.monthlyLimitNaira !== incomingBudget.monthlyLimitNaira) {
+          throw new Error('The browser could not verify the imported monthly spending cap.');
+        }
+      }
     } catch (saveError) {
-      // Best-effort rollback means the two related local records are not left
-      // partially replaced if storage fails during import.
+      // Best-effort rollback restores each affected local record if any write or
+      // verification fails partway through the import.
       try {
         if (previousHistory === null) localStorage.removeItem(WORKSHOP_HISTORY_KEY);
         else localStorage.setItem(WORKSHOP_HISTORY_KEY, previousHistory);
         if (previousGoal === null) localStorage.removeItem(WORKSHOP_SAVINGS_GOAL_KEY);
         else localStorage.setItem(WORKSHOP_SAVINGS_GOAL_KEY, previousGoal);
+        if (previousBudget === null) localStorage.removeItem(WORKSHOP_MONTHLY_BUDGET_KEY);
+        else localStorage.setItem(WORKSHOP_MONTHLY_BUDGET_KEY, previousBudget);
       } catch (rollbackError) {
         console.warn('[Kano Life] Workshop plan import rollback could not fully restore browser storage.', rollbackError);
       }
@@ -1197,7 +1241,8 @@ async function importWorkshopPlanFile(file) {
     const notes = [];
     if (invalidCount) notes.push(`${invalidCount} invalid service record${invalidCount === 1 ? ' was' : 's were'} skipped`);
     if (goalIsInvalid) notes.push('the invalid target was ignored');
-    setWorkshopMessage(`WORKSHOP PLAN IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} saved${incomingGoal ? ` · target ${naira(incomingGoal.targetNaira)} restored` : ' · existing target preserved'}. ${notes.length ? notes.join('; ') + '. ' : ''}Wallet, vehicle condition and game progress unchanged.`);
+    if (budgetIsInvalid) notes.push('the invalid monthly cap was ignored');
+    setWorkshopMessage(`WORKSHOP PLAN IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} saved${incomingGoal ? ` · target ${naira(incomingGoal.targetNaira)} restored` : ' · existing target preserved'}${incomingBudget ? ` · monthly cap ${naira(incomingBudget.monthlyLimitNaira)} restored` : ' · existing monthly cap preserved'}. ${notes.length ? notes.join('; ') + '. ' : ''}Wallet, vehicle condition and game progress unchanged.`);
     renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
   } catch (error) {
     console.warn('[Kano Life] Workshop plan import failed safely.', error);
@@ -1599,6 +1644,91 @@ function handleWorkshopSavingsGoalAction(action) {
   }
 }
 
+function workshopMonthlyBudgetData() {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+  const currentHistory = readWorkshopHistory().filter((entry) => {
+    const time = Number(entry.time);
+    return Number.isFinite(time) && time >= monthStart && time < nextMonthStart && time <= now.getTime();
+  });
+  const spent = currentHistory.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0);
+  const budget = readWorkshopMonthlyBudget();
+  return {
+    now,
+    monthLabel: now.toLocaleDateString('en-NG', { month: 'long', year: 'numeric' }),
+    currentHistory,
+    spent,
+    budget,
+    remaining: budget ? Math.max(0, budget.monthlyLimitNaira - spent) : null,
+    exceeded: Boolean(budget && spent > budget.monthlyLimitNaira),
+    progress: budget ? Math.min(100, Math.round((spent / budget.monthlyLimitNaira) * 100)) : 0,
+  };
+}
+
+function workshopMonthlyBudgetMarkup() {
+  const data = workshopMonthlyBudgetData();
+  let level = 'empty';
+  let statusText = 'Set a monthly workshop cap to monitor spending recorded in this browser.';
+  if (data.budget) {
+    if (data.spent > data.budget.monthlyLimitNaira) {
+      level = 'over';
+      statusText = `MONTHLY CAP EXCEEDED by ${naira(data.spent - data.budget.monthlyLimitNaira)}.`;
+    } else if (data.spent >= data.budget.monthlyLimitNaira) {
+      level = 'reached';
+      statusText = 'MONTHLY CAP REACHED. No budget remains for additional recorded workshop spending.';
+    } else if (data.progress >= 75) {
+      level = 'near';
+      statusText = `${data.progress}% of this month’s cap is used. ${naira(data.remaining)} remains.`;
+    } else {
+      level = 'good';
+      statusText = `${naira(data.remaining)} remains under this month’s workshop cap.`;
+    }
+  }
+  const limit = data.budget ? String(data.budget.monthlyLimitNaira) : '';
+  const meterMarkup = data.budget
+    ? `<div class="kano-workshop-monthly-meter" role="progressbar" aria-label="Monthly recorded workshop spending compared with cap" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${data.progress}"><i style="width:${data.progress}%"></i></div><div class="kano-workshop-monthly-numbers"><span>RECORDED THIS MONTH<strong>${naira(data.spent)}</strong></span><span>MONTHLY CAP<strong>${naira(data.budget.monthlyLimitNaira)}</strong></span><span>REMAINING<strong>${data.exceeded ? `-${naira(data.spent - data.budget.monthlyLimitNaira)}` : naira(data.remaining)}</strong></span></div>`
+    : '<div class="kano-workshop-monthly-empty">No monthly spending cap is saved on this device.</div>';
+  return `<section class="kano-workshop-monthly-budget" aria-labelledby="kano-workshop-monthly-budget-title"><div class="kano-workshop-monthly-heading"><h4 id="kano-workshop-monthly-budget-title">MONTHLY WORKSHOP BUDGET GUARD</h4><span>${escapeWorkshopHTML(data.monthLabel.toUpperCase())}</span></div><p class="kano-workshop-monthly-intro">Set a maximum for workshop spend this calendar month. This is a warning and planning tool, not a lock on game money.</p>${meterMarkup}<div class="kano-workshop-monthly-status" data-level="${level}" role="status">${escapeWorkshopHTML(statusText)}</div><form class="kano-workshop-monthly-form" data-kano-workshop-budget-form><label for="kano-workshop-monthly-limit">MONTHLY CAP (₦)<input id="kano-workshop-monthly-limit" data-kano-workshop-budget-amount type="number" min="1" max="100000000" step="500" inputmode="numeric" value="${limit}" placeholder="Enter monthly cap" /></label><div class="kano-workshop-monthly-actions"><button type="button" data-kano-workshop-budget-save>SAVE MONTHLY CAP</button>${data.budget ? '<button type="button" class="kano-workshop-monthly-remove" data-kano-workshop-budget-clear>REMOVE CAP</button>' : ''}</div></form><small class="kano-workshop-monthly-note">Spending is calculated from locally saved receipts for ${escapeWorkshopHTML(data.monthLabel)}. Workshop history holds at most ${WORKSHOP_HISTORY_LIMIT} recent records; if older services have been replaced by newer ones, this month's total may be incomplete. No money is reserved or deducted by this panel.</small></section>`;
+}
+
+function handleWorkshopMonthlyBudgetAction(action) {
+  const panel = document.getElementById('kano-workshop-panel');
+  const game = activeGame || window.__KANO_LIFE_GAME__;
+  if (!panel) return;
+  if (action === 'clear') {
+    if (!window.confirm('Remove the saved monthly workshop spending cap? Service history, game money and vehicle condition will remain unchanged.')) return;
+    try {
+      localStorage.removeItem(WORKSHOP_MONTHLY_BUDGET_KEY);
+      panel.dataset.signature = '';
+      panel.dataset.message = 'Monthly workshop cap removed. Service history and gameplay data were not changed.';
+      renderWorkshopPanel(game?.s || window.__KANO_LIFE_GAME__?.s);
+    } catch (_) {
+      setWorkshopMessage('Could not remove the monthly cap because browser storage is unavailable.');
+    }
+    return;
+  }
+  if (action !== 'save') return;
+  const input = panel.querySelector('[data-kano-workshop-budget-amount]');
+  const monthlyLimitNaira = Math.floor(Number(input?.value));
+  if (!Number.isFinite(monthlyLimitNaira) || monthlyLimitNaira < 1 || monthlyLimitNaira > 100000000) {
+    setWorkshopMessage('Enter a monthly cap from ₦1 to ₦100,000,000. No setting was changed.');
+    input?.focus();
+    return;
+  }
+  try {
+    const record = { monthlyLimitNaira, updatedAt: Date.now() };
+    localStorage.setItem(WORKSHOP_MONTHLY_BUDGET_KEY, JSON.stringify(record));
+    const verify = readWorkshopMonthlyBudget();
+    if (!verify || verify.monthlyLimitNaira !== monthlyLimitNaira) throw new Error('Saved monthly cap could not be verified.');
+    panel.dataset.signature = '';
+    panel.dataset.message = `Monthly workshop spending cap saved at ${naira(monthlyLimitNaira)}. It does not reserve money or block repairs.`;
+    renderWorkshopPanel(game?.s || window.__KANO_LIFE_GAME__?.s);
+  } catch (_) {
+    setWorkshopMessage('Could not save the monthly cap because browser storage is unavailable. Wallet and vehicle condition were not changed.');
+  }
+}
+
 function renderWorkshopPanel(state = activeGame?.s) {
   const panel = document.getElementById('kano-workshop-panel');
   if (!panel || !state) return;
@@ -1611,7 +1741,8 @@ function renderWorkshopPanel(state = activeGame?.s) {
     .map((entry) => `${entry.time}:${entry.service}:${entry.cost}:${entry.walletAfter}:${entry.parts.join(',')}:${JSON.stringify(entry.conditionBefore || null)}:${JSON.stringify(entry.conditionAfter || null)}`)
     .join(';');
   const goalSignature = JSON.stringify(readWorkshopSavingsGoal() || null);
-  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}`;
+  const monthlyBudgetSignature = JSON.stringify(readWorkshopMonthlyBudget() || null);
+  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}|${monthlyBudgetSignature}`;
   if (panel.dataset.signature === signature) return;
   panel.dataset.signature = signature;
 
@@ -1644,10 +1775,11 @@ function renderWorkshopPanel(state = activeGame?.s) {
     ${workshopBudgetPlannerMarkup(state, values, wallet)}
     ${workshopSavingsGoalMarkup(state, wallet)}
     ${workshopCostAnalyticsMarkup()}
+    ${workshopMonthlyBudgetMarkup()}
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
-    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button><button type="button" data-kano-workshop-import-trigger>IMPORT JSON BACKUP</button><button type="button" data-kano-workshop-plan-export ${readWorkshopHistory().length || readWorkshopSavingsGoal() ? '' : 'disabled'}>EXPORT PLAN BACKUP</button><button type="button" data-kano-workshop-plan-import-trigger>IMPORT PLAN BACKUP</button><input type="file" accept=".json,application/json" data-kano-workshop-import-file hidden aria-label="Choose a Kano Life service history JSON backup"><input type="file" accept=".json,application/json" data-kano-workshop-plan-import-file hidden aria-label="Choose a Kano Life workshop plan JSON backup"></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">EXPORT JSON BACKUP contains service receipts only. EXPORT PLAN BACKUP includes receipts and the repair-fund target for device transfer. Neither file contains the game wallet, vehicle save, or gameplay progress. Clearing browser storage removes these local records.</p></section>
+    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button><button type="button" data-kano-workshop-import-trigger>IMPORT JSON BACKUP</button><button type="button" data-kano-workshop-plan-export ${readWorkshopHistory().length || readWorkshopSavingsGoal() || readWorkshopMonthlyBudget() ? '' : 'disabled'}>EXPORT PLAN BACKUP</button><button type="button" data-kano-workshop-plan-import-trigger>IMPORT PLAN BACKUP</button><input type="file" accept=".json,application/json" data-kano-workshop-import-file hidden aria-label="Choose a Kano Life service history JSON backup"><input type="file" accept=".json,application/json" data-kano-workshop-plan-import-file hidden aria-label="Choose a Kano Life workshop plan JSON backup"></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">EXPORT JSON BACKUP contains service receipts only. EXPORT PLAN BACKUP includes receipts, the repair-fund target and monthly spending cap for device transfer. Neither file contains the game wallet, vehicle save, or gameplay progress. Clearing browser storage removes these local records.</p></section>
     <dialog id="kano-workshop-confirm" class="kano-workshop-confirm" aria-labelledby="kano-workshop-confirm-title"><div class="kano-workshop-confirm-inner"><p class="kano-workshop-eyebrow">PAYMENT CONFIRMATION</p><h3 id="kano-workshop-confirm-title">Confirm workshop service</h3><p id="kano-workshop-confirm-summary">Review the repair and total before paying.</p><div id="kano-workshop-confirm-breakdown" class="kano-workshop-confirm-breakdown"></div><div class="kano-workshop-confirm-wallet"><span>WALLET AFTER SERVICE</span><strong id="kano-workshop-wallet-after">—</strong></div><div class="kano-workshop-confirm-actions"><button type="button" class="kano-workshop-cancel" data-kano-workshop-cancel>Cancel</button><button type="button" class="kano-workshop-confirm-pay" data-kano-workshop-confirm>CONFIRM &amp; PAY</button></div></div></dialog>`;
   const status = panel.querySelector('#kano-workshop-status');
   status.textContent = panel.dataset.message || 'Select a service to see its cost.';
@@ -1905,6 +2037,29 @@ function installWorkshopUI() {
       .kano-workshop-cost-export{width:100%;min-height:38px;margin-top:8px;padding:8px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:9px;font-weight:900;cursor:pointer;touch-action:manipulation}
       .kano-workshop-cost-export:disabled{opacity:.45;cursor:not-allowed}.kano-workshop-cost-export:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
       .kano-workshop-cost-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
+      .kano-workshop-monthly-budget{margin:11px 0;padding:10px;border:1px solid #4dd6ac4d;border-radius:9px;background:linear-gradient(145deg,#4dd6ac08,#ffffff04);min-width:0}
+      .kano-workshop-monthly-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+      .kano-workshop-monthly-heading h4{margin:0;color:#e8fff6;font-size:10px;letter-spacing:.04em}
+      .kano-workshop-monthly-heading span{color:#76e7c1;font-size:8px;font-weight:900;text-align:right}
+      .kano-workshop-monthly-intro{margin:6px 0 8px;color:#a9bbcd;font-size:9px;line-height:1.45}
+      .kano-workshop-monthly-empty{padding:8px;border:1px dashed #ffffff25;border-radius:7px;color:#94a9bd;font-size:9px}
+      .kano-workshop-monthly-meter{height:8px;margin:9px 0;overflow:hidden;border-radius:99px;background:#2e4050}
+      .kano-workshop-monthly-meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#00b4d8,#4dd6ac);transition:width .2s ease}
+      .kano-workshop-monthly-numbers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+      .kano-workshop-monthly-numbers span{display:grid;gap:4px;min-width:0;padding:7px;border:1px solid #ffffff14;border-radius:7px;background:#00000012;color:#9fb4c8;font-size:7px;font-weight:900;overflow-wrap:anywhere}
+      .kano-workshop-monthly-numbers strong{color:#eafff8;font-size:10px;line-height:1.25;overflow-wrap:anywhere}
+      .kano-workshop-monthly-status{margin-top:7px;padding:8px;border:1px solid #4dd6ac35;border-radius:7px;background:#4dd6ac0a;color:#a5f3d4;font-size:9px;font-weight:900;line-height:1.4;overflow-wrap:anywhere}
+      .kano-workshop-monthly-status[data-level="near"]{border-color:#ffcc7a55;background:#ffcc7a0b;color:#ffdc9a}
+      .kano-workshop-monthly-status[data-level="reached"],.kano-workshop-monthly-status[data-level="over"]{border-color:#ff777755;background:#ff77770b;color:#ffaaaa}
+      .kano-workshop-monthly-form{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:9px}
+      .kano-workshop-monthly-form label{display:grid;gap:5px;color:#9fb4c8;font-size:8px;font-weight:900}
+      .kano-workshop-monthly-form input{width:100%;min-width:0;box-sizing:border-box;padding:9px;border:1px solid #ffffff20;border-radius:7px;background:#061426;color:#f1f8ff;font-size:12px}
+      .kano-workshop-monthly-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+      .kano-workshop-monthly-actions button{min-height:36px;padding:7px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:8px;font-weight:900;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-monthly-actions button[data-kano-workshop-budget-save]{background:#0f403d;border-color:#4dd6ac66;color:#c8fff0}
+      .kano-workshop-monthly-actions .kano-workshop-monthly-remove{border-color:#ff777744;background:#381d29;color:#ffb7bd}
+      .kano-workshop-monthly-actions button:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
+      .kano-workshop-monthly-note{display:block;margin-top:7px;color:#8198ad;font-size:8px;line-height:1.4}
       .kano-workshop-parts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:14px 0}
       .kano-workshop-part{min-width:0;padding:9px;border:1px solid #ffffff16;border-radius:8px;background:#ffffff07}
       .kano-workshop-part-label{display:flex;justify-content:space-between;gap:4px;color:#eaf1f9;font-size:10px;font-weight:900}
@@ -1961,7 +2116,7 @@ function installWorkshopUI() {
       .kano-workshop-cancel{border:1px solid #ffffff25;background:#14263a;color:#d7e4f0}
       .kano-workshop-confirm-pay{border:1px solid #ffe18b;background:#f5c542;color:#142033}
       .kano-workshop-confirm-actions button:focus-visible{outline:2px solid #00d0ef;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
@@ -1969,6 +2124,10 @@ function installWorkshopUI() {
   if (!panel.dataset.bound) {
     panel.dataset.bound = 'true';
     panel.addEventListener('click', (event) => {
+      const budgetSaveButton = event.target.closest('[data-kano-workshop-budget-save]');
+      if (budgetSaveButton) { handleWorkshopMonthlyBudgetAction('save'); return; }
+      const budgetClearButton = event.target.closest('[data-kano-workshop-budget-clear]');
+      if (budgetClearButton) { handleWorkshopMonthlyBudgetAction('clear'); return; }
       const goalSaveButton = event.target.closest('[data-kano-workshop-goal-save]');
       if (goalSaveButton) { handleWorkshopSavingsGoalAction('save'); return; }
       const goalQuoteButton = event.target.closest('[data-kano-workshop-goal-use-quote]');
