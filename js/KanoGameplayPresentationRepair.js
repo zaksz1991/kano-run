@@ -127,6 +127,7 @@ function installExistingGlbPoolCompatibility() {
   });
 
   ModelManager.prototype.load = function loadWithExistingGlbPool(key) {
+    if (typeof window !== 'undefined') window.__KANO_ACTIVE_MODEL_MANAGER__ = this;
     const configured = MODEL_KEYS[key];
     const counts = EXISTING_GLB_POOL_LIMITS[key];
     const desiredCount = counts
@@ -320,43 +321,43 @@ const KANO_EXISTING_ENVIRONMENT_ASSETS = [
     id: 'dirtGround',
     path: 'environment/ground/low_poly_dirt_ground.glb',
     role: 'shoulder-dirt',
-    targetSpan: 4.6,
+    targetSpan: 8.2,
     placements: [
-      { x: -8.6, z: -27 }, { x: 8.7, z: -91 }, { x: -9.1, z: -156 },
+      { x: -7.25, z: -27 }, { x: 7.35, z: -91 }, { x: -7.65, z: -156 },
     ],
     mobilePlacements: [
-      { x: -8.6, z: -27 }, { x: 8.7, z: -112 },
+      { x: -7.25, z: -27 }, { x: 7.35, z: -112 },
     ],
   },
   {
     id: 'sandTracks',
     path: 'environment/ground/close_sand_with_tracks.glb',
     role: 'tracked-sand-shoulder',
-    targetSpan: 4.3,
+    targetSpan: 7.3,
     placements: [
-      { x: 8.4, z: -48 }, { x: -8.7, z: -119 }, { x: 8.6, z: -196 },
+      { x: 7.1, z: -48 }, { x: -7.4, z: -119 }, { x: 7.45, z: -196 },
     ],
     mobilePlacements: [
-      { x: 8.4, z: -48 }, { x: -8.7, z: -157 },
+      { x: 7.1, z: -48 }, { x: -7.4, z: -157 },
     ],
   },
   {
     id: 'sandHandprints',
     path: 'environment/ground/sand_with_handprints_tile_texture.glb',
     role: 'sandy-shoulder-detail',
-    targetSpan: 3.5,
+    targetSpan: 5.7,
     placements: [
-      { x: -8.4, z: -72 }, { x: 8.7, z: -163 },
+      { x: -7.0, z: -72 }, { x: 7.35, z: -163 },
     ],
     mobilePlacements: [
-      { x: -8.4, z: -78 },
+      { x: -7.0, z: -78 },
     ],
   },
   {
     id: 'brokenAsphalt',
     path: 'environment/ground/manhole_cover_on_broken_asphalt_road.glb',
     role: 'road-surface-detail',
-    targetSpan: 2.15,
+    targetSpan: 2.75,
     placements: [
       { x: -4.65, z: -57 }, { x: 4.55, z: -128 }, { x: -4.75, z: -205 },
     ],
@@ -5037,6 +5038,169 @@ if (typeof presentationTrackedTick === 'function') {
     return result;
   };
 }
+
+
+
+// ============================================================
+// LAST-MILE GLB VISIBILITY FIX
+// The stock renderer intentionally replaces only two building slots on touch
+// devices. That makes the rest of the world remain procedural even when the
+// existing GLBs loaded correctly. Fill the remaining visible building slots
+// from the existing loaded pools, and provide an optional on-screen audit so
+// a missing/bad URL is distinguishable from a renderer not using the model.
+// ============================================================
+const KANO_GLB_VISIBLE_WORLD_PATCH = Symbol.for('kano.life.glbVisibleWorld.v2');
+function kanoDisposeProceduralBuilding(root) {
+  if (!root?.traverse) return;
+  const geometries = new Set();
+  const materials = new Set();
+  root.traverse((object) => {
+    if (object.geometry && !geometries.has(object.geometry)) {
+      geometries.add(object.geometry);
+      object.geometry.dispose?.();
+    }
+    const mats = Array.isArray(object.material) ? object.material : object.material ? [object.material] : [];
+    for (const material of mats) {
+      if (!material || materials.has(material)) continue;
+      materials.add(material);
+      material.dispose?.();
+    }
+  });
+}
+
+if (!Renderer3D.prototype[KANO_GLB_VISIBLE_WORLD_PATCH]) {
+  const originalWorldUpgradeVisiblePass = Renderer3D.prototype.upgradeWorldAssets;
+  Object.defineProperty(Renderer3D.prototype, KANO_GLB_VISIBLE_WORLD_PATCH, { value: true });
+  Renderer3D.prototype.upgradeWorldAssets = function upgradeAllVisibleExistingGlbWorldAssets(...args) {
+    let result;
+    try {
+      result = originalWorldUpgradeVisiblePass?.apply(this, args);
+    } catch (error) {
+      if (!this._kanoVisibleWorldUpgradeWarned) {
+        this._kanoVisibleWorldUpgradeWarned = true;
+        console.warn('[Kano GLB visibility] Base world replacement failed; trying remaining slots.', error);
+      }
+    }
+    const manager = this.models;
+    if (!manager?.cache || !Array.isArray(this.buildingSlots)) return result;
+
+    // Mobile uses 10 real GLB facade instances instead of only two. Desktop
+    // can use every configured building slot. The pool still shares geometry.
+    const maximum = this.mobile ? Math.min(10, this.buildingSlots.length) : this.buildingSlots.length;
+    let added = 0;
+    for (let index = 0; index < maximum; index += 1) {
+      const slot = this.buildingSlots[index];
+      if (!slot || slot.replaced) continue;
+      const key = slot.industrial ? 'industrialBuilding' : 'building';
+      if (!manager.cache.has(key)) continue;
+      let model = null;
+      try { model = manager.getInstance(key); } catch (error) {
+        console.warn('[Kano GLB visibility] Could not clone loaded building', key, error);
+      }
+      if (!model) continue;
+      const targetHeight = Number(model.userData?.targetHeight) || (slot.industrial ? 5.2 : 4.5);
+      model.scale.multiplyScalar((Number(slot.height) || targetHeight) / targetHeight);
+      model.position.set(Number(slot.x) || 0, 0, Number(slot.z) || 0);
+      model.rotation.y = Number(slot.side) < 0 ? Math.PI / 2 : -Math.PI / 2;
+      model.userData.kanoWorldGlbActive = true;
+      model.userData.kanoWorldSlotIndex = index;
+      model.userData.kanoWorldCategory = key;
+      const previous = slot.actor;
+      this.world.remove(previous);
+      kanoDisposeProceduralBuilding(previous);
+      this.world.add(model);
+      slot.actor = model;
+      slot.replaced = true;
+      added += 1;
+    }
+    if (added && !this._kanoWorldGlbActivationLogged) {
+      this._kanoWorldGlbActivationLogged = true;
+      console.info(`[Kano GLB visibility] activated ${added} additional existing building GLB(s) in ${this.mobile ? 'mobile' : 'desktop'} world.`);
+    }
+    return result;
+  };
+}
+
+function kanoBuildModelVisibilityReport() {
+  const renderer = activeRenderer || window.__KANO_ACTIVE_RENDERER__ || null;
+  const manager = renderer?.models || window.__KANO_ACTIVE_MODEL_MANAGER__ || null;
+  const pool = typeof window.kanoExistingGlbModelPoolReport === 'function'
+    ? window.kanoExistingGlbModelPoolReport() : null;
+  const environment = typeof window.kanoEnvironmentGlbUsageReport === 'function'
+    ? window.kanoEnvironmentGlbUsageReport() : null;
+  const worldCounts = { glbRoots: 0, worldBuildings: 0, worldRoadside: 0, modelPaths: [] };
+  const seenPaths = new Set();
+  renderer?.world?.traverse?.((node) => {
+    if (!node?.userData) return;
+    const path = node.userData.modelPath || node.userData.kanoEnvironmentAsset;
+    if (!path || !node.visible) return;
+    if (node.userData.modelPath) {
+      worldCounts.glbRoots += 1;
+      if (node.userData.kanoWorldGlbActive) worldCounts.worldBuildings += 1;
+      if (node.userData.roadPropKey || node.userData.flyoverModel || node.userData.lifeSceneModel) worldCounts.worldRoadside += 1;
+    }
+    if (!seenPaths.has(path)) { seenPaths.add(path); worldCounts.modelPaths.push(path); }
+  });
+  return {
+    renderMode: renderer?.renderer?.isWebGLRenderer ? '3D WebGL' : (renderer ? renderer.constructor?.name || 'renderer active' : 'renderer not yet available'),
+    mobile: Boolean(renderer?.mobile),
+    rendererReady: Boolean(renderer?.ready),
+    manager: manager?.getStatus?.() || null,
+    visibleWorld: worldCounts,
+    buildingSlots: Array.isArray(renderer?.buildingSlots) ? {
+      total: renderer.buildingSlots.length,
+      replacedByGlb: renderer.buildingSlots.filter((slot) => slot?.replaced && slot.actor?.userData?.modelPath).length,
+      stillProcedural: renderer.buildingSlots.filter((slot) => !slot?.replaced).length,
+    } : null,
+    pools: pool,
+    environment,
+    assetAudit: pool?.assetAudit || (typeof getModelAssetAuditReport === 'function' ? getModelAssetAuditReport() : null),
+    timestamp: new Date().toISOString(),
+  };
+}
+if (typeof window !== 'undefined') {
+  window.kanoGlbVisibilityReport = kanoBuildModelVisibilityReport;
+  // Keep the normal game screen clean. Add the audit panel only on the explicit
+  // ?assetAudit=1 URL, so it never becomes a permanent game HUD element.
+  let enableAssetAudit = false;
+  try { enableAssetAudit = new URLSearchParams(window.location.search).get('assetAudit') === '1'; } catch (_) {}
+  if (enableAssetAudit) {
+    const mountAuditPanel = () => {
+      if (document.getElementById('kano-glb-visibility-audit')) return;
+      const panel = document.createElement('section');
+      panel.id = 'kano-glb-visibility-audit';
+      panel.style.cssText = 'position:fixed;z-index:99999;top:12px;right:12px;width:min(560px,calc(100vw - 24px));max-height:70vh;display:flex;flex-direction:column;background:rgba(8,18,32,.97);color:#e9f5ff;border:1px solid #00b4d8;border-radius:10px;box-shadow:0 8px 30px #0008;font:12px/1.4 system-ui,sans-serif;';
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #31516b;font-weight:800;';
+      header.textContent = 'KANO LIFE · GLB VISIBILITY AUDIT';
+      const close = document.createElement('button');
+      close.type = 'button'; close.textContent = 'HIDE';
+      close.style.cssText = 'background:#00b4d8;border:0;border-radius:5px;padding:5px 8px;font-weight:800;color:#062033;';
+      close.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'flex' : 'none'; close.textContent = panel.style.display === 'none' ? 'SHOW' : 'HIDE'; });
+      header.appendChild(close);
+      const body = document.createElement('pre');
+      body.id = 'kano-glb-visibility-audit-body';
+      body.style.cssText = 'margin:0;padding:10px 12px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;';
+      panel.append(header, body);
+      document.body.appendChild(panel);
+      const refresh = () => {
+        const output = document.getElementById('kano-glb-visibility-audit-body');
+        if (!output || !panel.isConnected) return;
+        try {
+          const report = kanoBuildModelVisibilityReport();
+          output.textContent = JSON.stringify(report, null, 2);
+        } catch (error) {
+          output.textContent = `Audit could not be built: ${error?.stack || error}`;
+        }
+      };
+      refresh();
+      window.setInterval(refresh, 1500);
+    };
+    if (document.body) mountAuditPanel();
+    else document.addEventListener('DOMContentLoaded', mountAuditPanel, { once: true });
+  }
+}
+
 
 // Register all hooks before the actual game entry point creates its objects.
 await import('./main.js');
