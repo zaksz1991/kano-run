@@ -1273,7 +1273,7 @@ function workshopAnnualReportBodyMarkup(requestedYear = '') {
 function workshopAnnualReportMarkup(requestedYear = '') {
   const data = workshopAnnualReportData(requestedYear);
   const options = data.options.map((year) => `<option value="${year}" ${year === data.selectedYear ? 'selected' : ''}>${year}</option>`).join('');
-  return `<section class="kano-workshop-annual-report" aria-labelledby="kano-workshop-annual-report-title"><div class="kano-workshop-annual-heading"><div><h4 id="kano-workshop-annual-report-title">YEARLY &amp; QUARTERLY WORKSHOP REPORT</h4><p>Review saved workshop spending by month and quarter.</p></div><button type="button" data-kano-workshop-annual-export>EXPORT YEAR CSV</button></div><label class="kano-workshop-annual-year-picker">REPORT YEAR<select data-kano-workshop-annual-year aria-label="Choose workshop report year">${options}</select></label><div data-kano-workshop-annual-body>${workshopAnnualReportBodyMarkup(data.selectedYear)}</div><small class="kano-workshop-annual-note">This report is read-only. It does not charge the wallet or change vehicle condition or driving progress.</small></section>`;
+  return `<section class="kano-workshop-annual-report" aria-labelledby="kano-workshop-annual-report-title"><div class="kano-workshop-annual-heading"><div><h4 id="kano-workshop-annual-report-title">YEARLY &amp; QUARTERLY WORKSHOP REPORT</h4><p>Review saved workshop spending by month and quarter.</p></div><div class="kano-workshop-annual-actions"><button type="button" data-kano-workshop-annual-export>EXPORT YEAR CSV</button><button type="button" data-kano-workshop-annual-print>PRINT / SAVE PDF</button></div></div><label class="kano-workshop-annual-year-picker">REPORT YEAR<select data-kano-workshop-annual-year aria-label="Choose workshop report year">${options}</select></label><div data-kano-workshop-annual-body>${workshopAnnualReportBodyMarkup(data.selectedYear)}</div><small class="kano-workshop-annual-note">This report is read-only. It does not charge the wallet or change vehicle condition or driving progress.</small></section>`;
 }
 
 function downloadWorkshopAnnualReport(requestedYear = '') {
@@ -1312,6 +1312,51 @@ function downloadWorkshopAnnualReport(requestedYear = '') {
   } catch (error) {
     console.warn('[Kano Life] Could not export annual workshop report.', error);
     try { window.prompt('Copy the annual workshop report CSV:', csv); } catch (_) {}
+    return false;
+  }
+}
+
+function openWorkshopAnnualReportPrint(requestedYear = '') {
+  const data = workshopAnnualReportData(requestedYear);
+  const money = (value) => naira(value);
+  const htmlEscape = (value) => escapeWorkshopHTML(value);
+  const monthRows = data.months.map((month) => `<tr><td>${htmlEscape(month.monthName)}</td><td>${htmlEscape(month.coverage)}</td><td class="num">${month.trackedCount}</td><td class="num">${money(month.trackedSpend)}</td><td class="num">${month.archivedCount} / ${money(month.archivedNaira)}</td><td class="num total">${money(month.totalSpend)}</td></tr>`).join('');
+  const quarterRows = data.quarters.map((quarter) => `<tr><td>${quarter.name}</td><td>${quarter.monthsWithData} of ${quarter.months.length}</td><td class="num">${quarter.trackedCount}</td><td class="num">${money(quarter.trackedSpend)}</td><td class="num">${quarter.archivedCount} / ${money(quarter.archivedNaira)}</td><td class="num total">${money(quarter.totalSpend)}</td></tr>`).join('');
+  const coverageSummary = `${data.completeMonths} complete month(s), ${data.partialMonths} partial month(s), ${data.noDataMonths} month(s) without ledger data`;
+  const highestMonth = data.highestSpendMonth ? `${data.highestSpendMonth.monthName}: ${money(data.highestSpendMonth.totalSpend)}` : 'No ledger months recorded';
+  const preparedAt = new Date().toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+  const printDocument = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kano Life Workshop Report ${htmlEscape(data.selectedYear)}</title><style>
+    :root{color-scheme:light}*{box-sizing:border-box}body{margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#142033;background:#fff;font-size:11px;line-height:1.4}
+    .toolbar{display:flex;gap:8px;justify-content:flex-end;margin:0 0 16px}.toolbar button{padding:9px 13px;border:1px solid #223d5a;border-radius:6px;background:#10243a;color:#fff;font-size:11px;font-weight:700;cursor:pointer}
+    header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:13px;border-bottom:3px solid #10243a}h1{font-size:22px;margin:0 0 4px;color:#10243a}header p{margin:0;color:#52637a}header .meta{text-align:right;font-size:10px;color:#52637a;white-space:nowrap}
+    .period{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:13px 0;padding:9px 11px;background:#eef4f9;border:1px solid #d6e0eb;border-radius:5px}.period strong{font-size:12px;color:#10243a}.period span{color:#45566d;text-align:right}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 14px}.metric{border:1px solid #d6e0eb;border-radius:5px;padding:10px;min-width:0}.metric span{display:block;color:#52637a;font-size:9px;font-weight:bold;text-transform:uppercase}.metric strong{display:block;margin:5px 0 2px;color:#10243a;font-size:17px;overflow-wrap:anywhere}.metric small{color:#67778b}
+    h2{margin:16px 0 7px;color:#10243a;font-size:13px}table{width:100%;border-collapse:collapse;table-layout:auto}th,td{border:1px solid #d5dee8;padding:6px 7px;vertical-align:top}th{background:#eaf0f6;color:#23364d;text-align:left;font-size:9px;text-transform:uppercase}tbody tr:nth-child(even){background:#f8fafc}.num{text-align:right;white-space:nowrap}.total{font-weight:bold;color:#10243a}.coverage{margin:9px 0;padding:9px;border-left:3px solid #d5a600;background:#fff9df;color:#53451d}.foot{margin-top:20px;padding-top:8px;border-top:1px solid #d5dee8;color:#637186;font-size:9px}
+    @page{size:landscape;margin:12mm}@media print{body{padding:0;font-size:9px}.toolbar{display:none}.metrics{gap:5px}.metric{padding:7px}.metric strong{font-size:14px}h2{margin-top:12px}th,td{padding:4px 5px;break-inside:avoid}header,.period,.metrics,table{break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}.foot{margin-top:12px}}
+    @media(max-width:650px){body{padding:12px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}header{flex-direction:column}.meta{text-align:left!important}.period{align-items:flex-start;flex-direction:column}.period span{text-align:left}}
+  </style></head><body><div class="toolbar"><button type="button" onclick="window.print()">PRINT / SAVE AS PDF</button><button type="button" onclick="window.close()">CLOSE</button></div><header><div><h1>KANO LIFE</h1><p>Workshop Spending Report · Yearly &amp; Quarterly Summary</p></div><div class="meta"><div><strong>Report year:</strong> ${htmlEscape(data.selectedYear)}</div><div><strong>Prepared:</strong> ${htmlEscape(preparedAt)}</div></div></header><div class="period"><strong>${htmlEscape(data.periodLabel)}</strong><span>${htmlEscape(coverageSummary)}</span></div><section class="metrics"><div class="metric"><span>Total recorded spend</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived amount</small></div><div class="metric"><span>Tracked transactions</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised spend</small></div><div class="metric"><span>Archived spend</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div class="metric"><span>Average tracked cost</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></section><div class="coverage"><strong>Coverage note:</strong> Months marked NO DATA are unknown, not proof of zero spending. Archived amounts are included but cannot be itemised from the retained ledger. This report is limited to the available local records and is not a guaranteed lifetime accounting statement.</div><h2>Quarter Summary</h2><table><thead><tr><th>Quarter</th><th>Months with data</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${quarterRows || '<tr><td colspan="6">No quarter records available.</td></tr>'}</tbody></table><h2>Monthly Summary</h2><table><thead><tr><th>Month</th><th>Coverage</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th class="num">${data.trackedCount}</th><th class="num">${money(data.trackedSpend)}</th><th class="num">${data.archivedCount} / ${money(data.archivedNaira)}</th><th class="num total">${money(data.totalSpend)}</th></tr></tfoot></table><h2>Highest Recorded-Spend Month</h2><p>${htmlEscape(highestMonth)}</p><div class="foot">Generated from the workshop spending ledger saved in this browser. Printing or saving this report does not modify wallet funds, vehicle condition, scores or gameplay progress.</div></body></html>`;
+  let printWindow = null;
+  try {
+    // Must be called directly in the user's button-click gesture for popup blockers.
+    printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      try { window.alert('The print window was blocked. Allow pop-ups for Kano Life, then select PRINT / SAVE PDF again.'); } catch (_) {}
+      return false;
+    }
+    printWindow.document.open();
+    printWindow.document.write(printDocument);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      try { if (!printWindow.closed) printWindow.print(); } catch (error) {
+        console.warn('[Kano Life] Browser print dialog could not be opened.', error);
+      }
+    }, 300);
+    return true;
+  } catch (error) {
+    console.warn('[Kano Life] Could not prepare annual workshop report for printing.', error);
+    try { printWindow?.close(); } catch (_) {}
+    try { window.alert('The printable report could not be opened in this browser. Use EXPORT YEAR CSV instead.'); } catch (_) {}
     return false;
   }
 }
@@ -2989,7 +3034,7 @@ function installWorkshopUI() {
       .kano-workshop-annual-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-width:0}
       .kano-workshop-annual-heading h4{margin:0;color:#f3f7fc;font-size:10px;letter-spacing:.05em;line-height:1.45}
       .kano-workshop-annual-heading p{margin:5px 0 0;color:#9db1c5;font-size:9px;line-height:1.4}
-      .kano-workshop-annual-heading button{flex:0 0 auto;min-height:35px;padding:7px 9px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:8px;font-weight:900;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-annual-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.kano-workshop-annual-heading button{flex:0 0 auto;min-height:35px;padding:7px 9px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:8px;font-weight:900;cursor:pointer;touch-action:manipulation}
       .kano-workshop-annual-year-picker{display:grid;gap:5px;margin:10px 0;color:#9fb4c8;font-size:8px;font-weight:900;letter-spacing:.04em}
       .kano-workshop-annual-year-picker select{width:100%;min-height:38px;padding:8px;border:1px solid #ffffff25;border-radius:7px;background:#10243a;color:#f2f7fc;font:inherit;font-size:11px;letter-spacing:normal}
       .kano-workshop-annual-period{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:7px 0;padding:9px;border:1px solid #ffffff17;border-radius:7px;background:#ffffff06}
@@ -3010,7 +3055,7 @@ function installWorkshopUI() {
       .kano-workshop-annual-status[data-level="complete"]{border-color:#4dd6ac55;color:#a5f3d4}.kano-workshop-annual-status[data-level="partial"]{border-color:#f5c54255;color:#ffe18b}
       .kano-workshop-annual-coverage-note,.kano-workshop-annual-note{display:block;margin:8px 0 0;color:#8298ad;font-size:8px;line-height:1.45}
       .kano-workshop-annual-report button:focus-visible,.kano-workshop-annual-year-picker select:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-annual-heading{flex-direction:column}.kano-workshop-annual-actions{width:100%;justify-content:stretch}.kano-workshop-annual-actions button{flex:1;white-space:normal}.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
@@ -3039,6 +3084,12 @@ function installWorkshopUI() {
       }
       const ledgerReconcileButton = event.target.closest('[data-kano-workshop-ledger-reconcile]');
       if (ledgerReconcileButton) { if (!ledgerReconcileButton.disabled) reconcileWorkshopRecentReceipts(); return; }
+      const annualReportPrintButton = event.target.closest('[data-kano-workshop-annual-print]');
+      if (annualReportPrintButton) {
+        const year = panel.querySelector('[data-kano-workshop-annual-year]')?.value || '';
+        openWorkshopAnnualReportPrint(year);
+        return;
+      }
       const annualReportExportButton = event.target.closest('[data-kano-workshop-annual-export]');
       if (annualReportExportButton) {
         const year = panel.querySelector('[data-kano-workshop-annual-year]')?.value || '';
