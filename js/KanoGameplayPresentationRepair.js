@@ -1181,6 +1181,141 @@ function mergeWorkshopSpendingLedgers(firstValue, secondValue) {
   return normalizeWorkshopSpendingLedger(merged) || emptyWorkshopSpendingLedger();
 }
 
+function workshopAnnualReportYearOptions(ledger = ensureWorkshopSpendingLedger()) {
+  const currentYear = String(new Date().getFullYear());
+  const years = new Set([currentYear]);
+  for (const key of Object.keys(ledger.months || {})) {
+    const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(key);
+    if (match) years.add(match[1]);
+  }
+  return [...years].sort((a, b) => Number(b) - Number(a));
+}
+
+function workshopAnnualReportData(requestedYear = '') {
+  const ledger = ensureWorkshopSpendingLedger();
+  const options = workshopAnnualReportYearOptions(ledger);
+  const currentYear = new Date().getFullYear();
+  const selectedYear = options.includes(String(requestedYear)) ? String(requestedYear) : String(currentYear);
+  const yearNumber = Number(selectedYear);
+  const isCurrentYear = yearNumber === currentYear;
+  const monthLimit = isCurrentYear ? new Date().getMonth() + 1 : 12;
+  const monthNames = Array.from({ length: 12 }, (_, index) => new Date(yearNumber, index, 1, 12)
+    .toLocaleDateString('en-NG', { month: 'long' }));
+  const months = [];
+  for (let number = 1; number <= monthLimit; number += 1) {
+    const key = `${selectedYear}-${String(number).padStart(2, '0')}`;
+    const raw = ledger.months?.[key] || null;
+    const transactions = Array.isArray(raw?.transactions) ? raw.transactions : [];
+    const trackedCount = transactions.length;
+    const trackedSpend = transactions.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0);
+    const archivedCount = Math.max(0, Math.floor(Number(raw?.archivedCount) || 0));
+    const archivedNaira = Math.max(0, Math.floor(Number(raw?.archivedNaira) || 0));
+    const totalSpend = trackedSpend + archivedNaira;
+    const coverage = !raw
+      ? 'NO DATA'
+      : Boolean(raw.coverageComplete) && archivedCount === 0 && archivedNaira === 0
+        ? 'COMPLETE'
+        : 'PARTIAL';
+    months.push({
+      key, monthNumber: number, monthName: monthNames[number - 1], shortName: monthNames[number - 1].slice(0, 3),
+      trackedCount, trackedSpend, archivedCount, archivedNaira, totalSpend, coverage,
+      hasLedgerMonth: Boolean(raw),
+    });
+  }
+  const trackedCount = months.reduce((sum, month) => sum + month.trackedCount, 0);
+  const trackedSpend = months.reduce((sum, month) => sum + month.trackedSpend, 0);
+  const archivedCount = months.reduce((sum, month) => sum + month.archivedCount, 0);
+  const archivedNaira = months.reduce((sum, month) => sum + month.archivedNaira, 0);
+  const totalSpend = trackedSpend + archivedNaira;
+  const completeMonths = months.filter((month) => month.coverage === 'COMPLETE').length;
+  const partialMonths = months.filter((month) => month.coverage === 'PARTIAL').length;
+  const noDataMonths = months.filter((month) => month.coverage === 'NO DATA').length;
+  const dataMonths = months.filter((month) => month.hasLedgerMonth);
+  const highestSpendMonth = dataMonths.reduce((best, month) => !best || month.totalSpend > best.totalSpend ? month : best, null);
+  const quarters = [0, 1, 2, 3].map((index) => {
+    const quarterMonths = months.filter((month) => Math.floor((month.monthNumber - 1) / 3) === index);
+    return {
+      name: `Q${index + 1}`,
+      months: quarterMonths,
+      trackedCount: quarterMonths.reduce((sum, month) => sum + month.trackedCount, 0),
+      trackedSpend: quarterMonths.reduce((sum, month) => sum + month.trackedSpend, 0),
+      archivedCount: quarterMonths.reduce((sum, month) => sum + month.archivedCount, 0),
+      archivedNaira: quarterMonths.reduce((sum, month) => sum + month.archivedNaira, 0),
+      totalSpend: quarterMonths.reduce((sum, month) => sum + month.totalSpend, 0),
+      monthsWithData: quarterMonths.filter((month) => month.hasLedgerMonth).length,
+    };
+  }).filter((quarter) => quarter.months.length > 0);
+  return {
+    selectedYear, options, months, quarters, isCurrentYear, trackedCount, trackedSpend,
+    archivedCount, archivedNaira, totalSpend,
+    averageTrackedCost: trackedCount ? Math.round(trackedSpend / trackedCount) : 0,
+    completeMonths, partialMonths, noDataMonths,
+    highestSpendMonth,
+    periodLabel: isCurrentYear ? `JANUARY–${monthNames[monthLimit - 1].toUpperCase()} ${selectedYear}` : `JANUARY–DECEMBER ${selectedYear}`,
+  };
+}
+
+function workshopAnnualReportBodyMarkup(requestedYear = '') {
+  const data = workshopAnnualReportData(requestedYear);
+  const money = (value) => naira(value);
+  const coverageLabel = `${data.completeMonths} complete · ${data.partialMonths} partial · ${data.noDataMonths} without data`;
+  const monthRows = data.months.map((month) => {
+    const statusClass = month.coverage === 'COMPLETE' ? 'complete' : month.coverage === 'PARTIAL' ? 'partial' : 'empty';
+    return `<tr><td><strong>${escapeWorkshopHTML(month.monthName)}</strong></td><td><span class="kano-workshop-annual-status" data-level="${statusClass}">${escapeWorkshopHTML(month.coverage)}</span></td><td>${month.trackedCount}</td><td class="kano-workshop-annual-money">${money(month.trackedSpend)}</td><td class="kano-workshop-annual-money">${money(month.archivedNaira)}${month.archivedCount ? `<small>${month.archivedCount} archived</small>` : ''}</td><td class="kano-workshop-annual-money"><strong>${money(month.totalSpend)}</strong></td></tr>`;
+  }).join('');
+  const quarterRows = data.quarters.map((quarter) => `<div class="kano-workshop-annual-quarter"><div><strong>${quarter.name}</strong><small>${quarter.monthsWithData}/ ${quarter.months.length} months with ledger data</small></div><strong>${money(quarter.totalSpend)}</strong></div>`).join('');
+  const highest = data.highestSpendMonth
+    ? `${data.highestSpendMonth.monthName}: ${money(data.highestSpendMonth.totalSpend)}`
+    : 'No ledger months recorded';
+  return `<div class="kano-workshop-annual-period" role="status"><strong>${escapeWorkshopHTML(data.periodLabel)}</strong><span>${escapeWorkshopHTML(coverageLabel)}</span></div><div class="kano-workshop-annual-metrics"><div><span>TOTAL RECORDED</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived</small></div><div><span>TRACKED TRANSACTIONS</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised total</small></div><div><span>ARCHIVED SPEND</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div><span>AVERAGE TRACKED COST</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></div><div class="kano-workshop-annual-highlights"><div><span>HIGHEST RECORDED MONTH</span><strong>${escapeWorkshopHTML(highest)}</strong></div><div class="kano-workshop-annual-quarter-list"><span>QUARTER TOTALS</span>${quarterRows}</div></div><div class="kano-workshop-ledger-table-wrap kano-workshop-annual-table-wrap"><table class="kano-workshop-ledger-table kano-workshop-annual-table"><thead><tr><th>MONTH</th><th>COVERAGE</th><th>TRANSACTIONS</th><th>TRACKED SPEND</th><th>ARCHIVED SPEND</th><th>TOTAL RECORDED</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th>${data.trackedCount}</th><th class="kano-workshop-annual-money">${money(data.trackedSpend)}</th><th class="kano-workshop-annual-money">${money(data.archivedNaira)}</th><th class="kano-workshop-annual-money">${money(data.totalSpend)}</th></tr></tfoot></table></div><p class="kano-workshop-annual-coverage-note">Months labelled NO DATA are unknown, not proof of zero spending. Annual totals include only months retained in this browser's spending ledger. Archived amounts are included but cannot be itemised. An incomplete period must not be treated as a guaranteed lifetime or accounting total.</p>`;
+}
+
+function workshopAnnualReportMarkup(requestedYear = '') {
+  const data = workshopAnnualReportData(requestedYear);
+  const options = data.options.map((year) => `<option value="${year}" ${year === data.selectedYear ? 'selected' : ''}>${year}</option>`).join('');
+  return `<section class="kano-workshop-annual-report" aria-labelledby="kano-workshop-annual-report-title"><div class="kano-workshop-annual-heading"><div><h4 id="kano-workshop-annual-report-title">YEARLY &amp; QUARTERLY WORKSHOP REPORT</h4><p>Review saved workshop spending by month and quarter.</p></div><button type="button" data-kano-workshop-annual-export>EXPORT YEAR CSV</button></div><label class="kano-workshop-annual-year-picker">REPORT YEAR<select data-kano-workshop-annual-year aria-label="Choose workshop report year">${options}</select></label><div data-kano-workshop-annual-body>${workshopAnnualReportBodyMarkup(data.selectedYear)}</div><small class="kano-workshop-annual-note">This report is read-only. It does not charge the wallet or change vehicle condition or driving progress.</small></section>`;
+}
+
+function downloadWorkshopAnnualReport(requestedYear = '') {
+  const data = workshopAnnualReportData(requestedYear);
+  const csvCell = (value) => {
+    let safe = String(value ?? '');
+    if (/^[\t\r ]*[=+\-@]/.test(safe)) safe = `'${safe}`;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  const header = [
+    'Report year', 'Period type', 'Period', 'Coverage', 'Tracked transaction count',
+    'Tracked spend (NGN)', 'Archived transaction count', 'Archived spend (NGN)', 'Total recorded spend (NGN)',
+  ];
+  const rows = data.months.map((month) => [data.selectedYear, 'MONTH', month.key, month.coverage,
+    month.trackedCount, month.trackedSpend, month.archivedCount, month.archivedNaira, month.totalSpend]);
+  for (const quarter of data.quarters) {
+    rows.push([data.selectedYear, 'QUARTER', quarter.name, `${quarter.monthsWithData}/${quarter.months.length} months with ledger data`,
+      quarter.trackedCount, quarter.trackedSpend, quarter.archivedCount, quarter.archivedNaira, quarter.totalSpend]);
+  }
+  rows.push([data.selectedYear, 'YEAR TOTAL', data.periodLabel,
+    `${data.completeMonths} complete; ${data.partialMonths} partial; ${data.noDataMonths} without data`,
+    data.trackedCount, data.trackedSpend, data.archivedCount, data.archivedNaira, data.totalSpend]);
+  const csv = '\uFEFF' + [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+  try {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kano-life-workshop-annual-report-${data.selectedYear}.csv`;
+    link.style.display = 'none';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  } catch (error) {
+    console.warn('[Kano Life] Could not export annual workshop report.', error);
+    try { window.prompt('Copy the annual workshop report CSV:', csv); } catch (_) {}
+    return false;
+  }
+}
+
 function workshopLedgerStatementMonthOptions(ledger = ensureWorkshopSpendingLedger()) {
   const currentMonth = workshopLedgerMonthKey(Date.now());
   return [...new Set([currentMonth, ...Object.keys(ledger.months || {})])]
@@ -2458,6 +2593,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     ${workshopMonthlyBudgetMarkup()}
     ${workshopLedgerAuditMarkup(ledgerAudit)}
     ${workshopLedgerStatementMarkup(panel.dataset.ledgerStatementMonth || '')}
+    ${workshopAnnualReportMarkup(panel.dataset.annualReportYear || '')}
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
@@ -2849,6 +2985,31 @@ function installWorkshopUI() {
       .kano-workshop-ledger-no-rows{padding:12px!important;color:#9fb4c8!important;line-height:1.5!important}
       .kano-workshop-ledger-coverage-note,.kano-workshop-ledger-statement-note{display:block;margin:8px 0 0;color:#8298ad;font-size:8px;line-height:1.45}
       .kano-workshop-ledger-statement button:focus-visible,.kano-workshop-ledger-month-picker select:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
+      .kano-workshop-annual-report{margin:11px 0;padding:10px;border:1px solid #ffffff18;border-radius:9px;background:#ffffff05;min-width:0}
+      .kano-workshop-annual-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-width:0}
+      .kano-workshop-annual-heading h4{margin:0;color:#f3f7fc;font-size:10px;letter-spacing:.05em;line-height:1.45}
+      .kano-workshop-annual-heading p{margin:5px 0 0;color:#9db1c5;font-size:9px;line-height:1.4}
+      .kano-workshop-annual-heading button{flex:0 0 auto;min-height:35px;padding:7px 9px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:8px;font-weight:900;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-annual-year-picker{display:grid;gap:5px;margin:10px 0;color:#9fb4c8;font-size:8px;font-weight:900;letter-spacing:.04em}
+      .kano-workshop-annual-year-picker select{width:100%;min-height:38px;padding:8px;border:1px solid #ffffff25;border-radius:7px;background:#10243a;color:#f2f7fc;font:inherit;font-size:11px;letter-spacing:normal}
+      .kano-workshop-annual-period{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:7px 0;padding:9px;border:1px solid #ffffff17;border-radius:7px;background:#ffffff06}
+      .kano-workshop-annual-period strong{font-size:9px;color:#ffe18b}.kano-workshop-annual-period span{font-size:8px;color:#b4c6d8;text-align:right}
+      .kano-workshop-annual-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0}
+      .kano-workshop-annual-metrics>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:8px;border:1px solid #ffffff13;border-radius:7px;background:#ffffff04}
+      .kano-workshop-annual-metrics span,.kano-workshop-annual-highlights>div>span{color:#9fb4c8;font-size:7px;font-weight:900;letter-spacing:.035em;line-height:1.35}
+      .kano-workshop-annual-metrics strong{color:#f5d77d;font-size:12px;overflow-wrap:anywhere}.kano-workshop-annual-metrics small{color:#8198ad;font-size:8px;line-height:1.35}
+      .kano-workshop-annual-highlights{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin:8px 0;padding:9px;border:1px solid #ffffff13;border-radius:7px;background:#ffffff04}
+      .kano-workshop-annual-highlights>div{display:flex;flex-direction:column;gap:6px;min-width:0}.kano-workshop-annual-highlights>div>strong{color:#eaf3fc;font-size:10px;overflow-wrap:anywhere}
+      .kano-workshop-annual-quarter-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+      .kano-workshop-annual-quarter{display:flex;justify-content:space-between;gap:8px;padding:7px;border-radius:6px;background:#ffffff06}
+      .kano-workshop-annual-quarter>div{display:flex;flex-direction:column;gap:3px;min-width:0}.kano-workshop-annual-quarter>div>strong{color:#d9e7f5;font-size:9px}.kano-workshop-annual-quarter small{color:#8198ad;font-size:7px}
+      .kano-workshop-annual-quarter>strong{color:#ffe18b;font-size:9px;white-space:nowrap}
+      .kano-workshop-annual-table{min-width:560px}.kano-workshop-annual-table tfoot th{padding:9px 7px;border-top:1px solid #ffffff20;color:#ffe18b;background:#14263a;text-align:left;font-size:8px}
+      .kano-workshop-annual-money{white-space:nowrap;text-align:right}.kano-workshop-annual-money small{display:block;margin-top:3px;color:#8198ad;font-size:7px;text-align:right;white-space:normal}
+      .kano-workshop-annual-status{display:inline-block;padding:3px 5px;border:1px solid #ffffff1a;border-radius:4px;color:#a8bad0;font-size:7px;font-weight:900;white-space:nowrap}
+      .kano-workshop-annual-status[data-level="complete"]{border-color:#4dd6ac55;color:#a5f3d4}.kano-workshop-annual-status[data-level="partial"]{border-color:#f5c54255;color:#ffe18b}
+      .kano-workshop-annual-coverage-note,.kano-workshop-annual-note{display:block;margin:8px 0 0;color:#8298ad;font-size:8px;line-height:1.45}
+      .kano-workshop-annual-report button:focus-visible,.kano-workshop-annual-year-picker select:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
       @media(max-width:440px){.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
@@ -2878,6 +3039,12 @@ function installWorkshopUI() {
       }
       const ledgerReconcileButton = event.target.closest('[data-kano-workshop-ledger-reconcile]');
       if (ledgerReconcileButton) { if (!ledgerReconcileButton.disabled) reconcileWorkshopRecentReceipts(); return; }
+      const annualReportExportButton = event.target.closest('[data-kano-workshop-annual-export]');
+      if (annualReportExportButton) {
+        const year = panel.querySelector('[data-kano-workshop-annual-year]')?.value || '';
+        downloadWorkshopAnnualReport(year);
+        return;
+      }
       const ledgerMonthExportButton = event.target.closest('[data-kano-workshop-ledger-statement-export]');
       if (ledgerMonthExportButton) {
         const monthKey = panel.querySelector('[data-kano-workshop-statement-month]')?.value || '';
@@ -2913,6 +3080,16 @@ function installWorkshopUI() {
       requestWorkshopService(button.dataset.kanoWorkshopService);
     });
     panel.addEventListener('change', (event) => {
+      const annualYearSelect = event.target.closest('[data-kano-workshop-annual-year]');
+      if (annualYearSelect) {
+        const selectedYear = annualYearSelect.value;
+        if (/^\d{4}$/.test(selectedYear) && selectedYear >= '1900' && selectedYear <= '9999') {
+          panel.dataset.annualReportYear = selectedYear;
+          const annualBody = panel.querySelector('[data-kano-workshop-annual-body]');
+          if (annualBody) annualBody.innerHTML = workshopAnnualReportBodyMarkup(selectedYear);
+        }
+        return;
+      }
       const statementMonthSelect = event.target.closest('[data-kano-workshop-statement-month]');
       if (statementMonthSelect) {
         const selected = statementMonthSelect.value;
