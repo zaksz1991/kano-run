@@ -4,6 +4,12 @@
 //
 // Responsive workshop and roadside recovery interface.
 //
+// SAFETY FIX:
+// - The panel owns a dedicated #kano-workshop-panel element.
+// - Game containers are treated as mounting locations, never as
+//   the panel root.
+// - Rendering the workshop cannot overwrite the game interface.
+//
 // Features:
 // - Player wallet and vehicle condition
 // - Workshop repair estimates
@@ -92,10 +98,46 @@ export class KanoWorkshopPanel {
     this.options = options;
     this.game = options.game || null;
 
+    /*
+     * CRITICAL DOM PROTECTION
+     *
+     * Only an element explicitly identified as the workshop
+     * panel may be used as this.root.
+     *
+     * An application container, game container, or canvas parent
+     * must never become the root whose innerHTML is replaced.
+     */
+
+    const rootCandidates = [
+      options.root,
+      options.element,
+      options.container,
+    ];
+
     this.root =
-      options.root ||
+      rootCandidates.find(
+        (element) => element?.id === PANEL_ID,
+      ) || null;
+
+    /*
+     * Existing host elements are mount targets only.
+     * We append a dedicated workshop section to them.
+     */
+    this.mountTarget =
+      options.mount ||
+      options.mountPoint ||
+      options.parent ||
       options.container ||
-      options.element ||
+      (
+        options.root?.id !== PANEL_ID
+          ? options.root
+          : null
+      ) ||
+      (
+        options.element?.id !== PANEL_ID
+          ? options.element
+          : null
+      ) ||
       null;
 
     this.ownsRoot = false;
@@ -144,6 +186,8 @@ export class KanoWorkshopPanel {
         --kw-gold: #fbbf24;
         --kw-green: #37d996;
         --kw-red: #ff7474;
+
+        position: relative;
         color: var(--kw-text);
         font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont,
           "Segoe UI", sans-serif;
@@ -629,7 +673,14 @@ export class KanoWorkshopPanel {
   ensureRoot() {
     if (typeof document === 'undefined') return;
 
-    if (this.root && this.root.isConnected) {
+    /*
+     * Reuse only the dedicated workshop element.
+     * Never treat the game container as this.root.
+     */
+    if (
+      this.root?.id === PANEL_ID &&
+      this.root.isConnected
+    ) {
       return;
     }
 
@@ -637,19 +688,22 @@ export class KanoWorkshopPanel {
 
     if (existing) {
       this.root = existing;
+      this.ownsRoot = false;
       return;
     }
 
+    // Create a dedicated workshop element.
     this.root = document.createElement('section');
     this.root.id = PANEL_ID;
     this.ownsRoot = true;
 
     const target =
-      this.options.mount ||
-      this.options.mountPoint ||
-      this.options.parent ||
-      document.body;
+      this.mountTarget?.isConnected &&
+      this.mountTarget !== this.root
+        ? this.mountTarget
+        : document.body;
 
+    // Append a child instead of replacing the host's contents.
     target.appendChild(this.root);
   }
 
@@ -837,6 +891,7 @@ export class KanoWorkshopPanel {
         'Generate a repair estimate before booking.',
         'error',
       );
+
       return {
         ok: false,
         reason: 'invalid_quote',
@@ -897,6 +952,7 @@ export class KanoWorkshopPanel {
         'Enter the roadside location before requesting assistance.',
         'error',
       );
+
       return {
         ok: false,
         reason: 'location_required',
@@ -1036,7 +1092,7 @@ export class KanoWorkshopPanel {
   }
 
   renderWorkshopForm(snapshot) {
-    const workshops = snapshot.workshops.filter(
+    const workshops = (snapshot.workshops || []).filter(
       (workshop) => workshop.open,
     );
 
@@ -1235,7 +1291,7 @@ export class KanoWorkshopPanel {
   }
 
   renderRecoveries(snapshot) {
-    const calls = [...snapshot.recoveryCalls].sort(
+    const calls = [...(snapshot.recoveryCalls || [])].sort(
       (a, b) => (b.createdAt || 0) - (a.createdAt || 0),
     );
 
@@ -1321,7 +1377,7 @@ export class KanoWorkshopPanel {
   }
 
   renderJobs(snapshot) {
-    const jobs = [...snapshot.jobs].sort(
+    const jobs = [...(snapshot.jobs || [])].sort(
       (a, b) => (b.createdAt || 0) - (a.createdAt || 0),
     );
 
@@ -1388,7 +1444,13 @@ export class KanoWorkshopPanel {
   // ----------------------------------------------------------
 
   render() {
-    if (this.destroyed || !this.root) return;
+    /*
+     * Every innerHTML operation in this class is now scoped to
+     * the dedicated workshop element created by ensureRoot().
+     */
+    if (this.destroyed || !this.root || this.root.id !== PANEL_ID) {
+      return;
+    }
 
     let snapshot;
 
@@ -1466,7 +1528,7 @@ export class KanoWorkshopPanel {
   // ----------------------------------------------------------
 
   bindEvents() {
-    if (!this.root) return;
+    if (!this.root || this.root.id !== PANEL_ID) return;
 
     this.root.querySelectorAll('[data-action]').forEach((button) => {
       button.addEventListener('click', async (event) => {
@@ -1557,7 +1619,7 @@ export class KanoWorkshopPanel {
 
     this.ensureRoot();
 
-    if (this.root) {
+    if (this.root?.id === PANEL_ID) {
       this.root.hidden = false;
       this.root.style.display = '';
     }
@@ -1573,7 +1635,7 @@ export class KanoWorkshopPanel {
       return;
     }
 
-    if (this.root) {
+    if (this.root?.id === PANEL_ID) {
       this.root.hidden = true;
       this.root.style.display = 'none';
     }
@@ -1584,7 +1646,11 @@ export class KanoWorkshopPanel {
 
     this.destroyed = true;
 
-    if (this.root) {
+    /*
+     * Empty or remove only this panel's dedicated element.
+     * Never clear the surrounding game container.
+     */
+    if (this.root?.id === PANEL_ID) {
       this.root.replaceChildren();
 
       if (this.ownsRoot) {
@@ -1598,6 +1664,7 @@ export class KanoWorkshopPanel {
     }
 
     this.root = null;
+    this.mountTarget = null;
     this.game = null;
     this.currentQuote = null;
   }
