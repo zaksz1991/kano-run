@@ -615,6 +615,279 @@ function kanoDisposeRoots(roots) {
   return source;
 }
 
+
+export function patchRenderer3dModelActivation(source) {
+  const marker = '// KANO GLB SCENE ACTIVATION AND AUDIT PATCH';
+  if (source.includes(marker)) return source;
+  let output = source;
+
+  // The original mobile renderer only replaced two building slots with GLBs.
+  // Keep the existing slot count and activate every slot the renderer already creates.
+  const buildingGate = /const activeBuildingSlots = this\.mobile\s*\?\s*this\.buildingSlots\.slice\(0,\s*2\)\s*:\s*this\.buildingSlots;/;
+  if (!buildingGate.test(output)) {
+    throw new Error('[Kano GLB Scene] Could not locate the original mobile building-slot limit; no renderer source was rewritten.');
+  }
+  output = output.replace(buildingGate, `// Every existing frontage slot may use a loaded GLB, including mobile.
+    const activeBuildingSlots = this.buildingSlots;`);
+
+  // Bring mobile frontages somewhat closer to the roadside camera without placing
+  // their centres inside the paved road. Desktop coordinates remain untouched.
+  const buildingX = /const x = side \* \(9 \+ \(index % 3\) \* 2\.8\);/;
+  if (!buildingX.test(output)) {
+    throw new Error('[Kano GLB Scene] Could not locate the original building placement expression; no renderer source was rewritten.');
+  }
+  output = output.replace(buildingX,
+    'const x = side * (this.mobile ? 7.8 + (index % 3) * 1.9 : 9 + (index % 3) * 2.8);');
+
+  // Existing normalisation scales some frontage models down to 2.2m. Use a
+  // modest architectural minimum while preserving slot height differences.
+  const buildingHeight = /const normalizedHeight =\s*model\.userData\.targetHeight\s*\|\|\s*\(slot\.industrial \? 5\.2 : 4\.5\);\s*model\.scale\.multiplyScalar\(\s*slot\.height \/ normalizedHeight,\s*\);/;
+  if (!buildingHeight.test(output)) {
+    throw new Error('[Kano GLB Scene] Could not locate the original building-size correction; no renderer source was rewritten.');
+  }
+  output = output.replace(buildingHeight, `const normalizedHeight =
+        model.userData.targetHeight ||
+        (slot.industrial ? 5.2 : 4.5);
+      const displayHeight = (slot.industrial ? 5.4 : 4.5) +
+        Math.max(0, slot.height - 2.2) * 0.55;
+      model.scale.multiplyScalar(displayHeight / normalizedHeight);
+      model.userData.sceneDisplayHeight = displayHeight;`);
+
+  // One extra mobile slot gives a second opportunity to show an existing
+  // market-stall variant while remaining inside the 245-unit world loop.
+  const propCount = 'const count = this.mobile ? 5 : 10;';
+  if (!output.includes(propCount)) {
+    throw new Error('[Kano GLB Scene] Could not locate the roadside-prop count; no renderer source was rewritten.');
+  }
+  output = output.replace(propCount, 'const count = this.mobile ? 6 : 10;');
+
+  // Mobile previously had no streetlight slots at all, so roadlight GLBs could
+  // never replace the primitive streetlight fallback on phones.
+  const streetlightStart = '    if (!this.mobile) {\n      for (let index = 0; index < 6; index += 1) {\n        for (const side of [-1, 1]) {';
+  if (!output.includes(streetlightStart)) {
+    throw new Error('[Kano GLB Scene] Could not locate the mobile streetlight exclusion; no renderer source was rewritten.');
+  }
+  output = output.replace(streetlightStart,
+    '    for (let index = 0; index < (this.mobile ? 3 : 6); index += 1) {\n        for (const side of [-1, 1]) {');
+  const streetlightEnd = '          this.streetLights.push(pole);\n        }\n      }\n    }\n  }\n\n  buildRoadsideProps() {';
+  if (!output.includes(streetlightEnd)) {
+    throw new Error('[Kano GLB Scene] Could not close the streetlight-loop patch safely; no renderer source was rewritten.');
+  }
+  output = output.replace(streetlightEnd,
+    '          this.streetLights.push(pole);\n        }\n      }\n  }\n\n  buildRoadsideProps() {');
+
+  // Diagnostic records include the actual source path only when the active
+  // scene actor carries ModelManager metadata. Primitive fallbacks are labelled
+  // explicitly, preventing a configured/loaded model from being mistaken for a
+  // model currently visible in the renderer.
+  const usageMethod = `  getGlbSceneUsageReport() {
+    const rows = [];
+    const toEntry = (kind, category, actor, index, extra = {}) => {
+      let modelPath = actor?.userData?.modelPath || null;
+      let meshCount = 0;
+      let visibleMeshCount = 0;
+      let bounds = null;
+      if (actor?.traverse) {
+        actor.traverse((object) => {
+          if (object.userData?.modelPath && !modelPath) modelPath = object.userData.modelPath;
+          if (object.isMesh) {
+            meshCount += 1;
+            if (object.visible !== false) visibleMeshCount += 1;
+          }
+        });
+        try {
+          actor.updateMatrixWorld?.(true);
+          const box = new THREE.Box3().setFromObject(actor);
+          if (!box.isEmpty()) {
+            const size = box.getSize(new THREE.Vector3());
+            bounds = {
+              x: Number(size.x.toFixed(3)),
+              y: Number(size.y.toFixed(3)),
+              z: Number(size.z.toFixed(3)),
+            };
+          }
+        } catch { /* malformed bounds do not break gameplay */ }
+      }
+      const position = actor?.position
+        ? { x: Number(actor.position.x.toFixed(3)), y: Number(actor.position.y.toFixed(3)), z: Number(actor.position.z.toFixed(3)) }
+        : null;
+      const entry = {
+        kind,
+        category: category || actor?.userData?.modelKey || 'unknown',
+        modelPath,
+        rendering: modelPath ? 'GLB' : 'procedural-fallback',
+        visible: actor?.visible !== false,
+        meshCount,
+        visibleMeshCount,
+        position,
+        worldBounds: bounds,
+        index,
+        ...extra,
+      };
+      rows.push(entry);
+      return entry;
+    };
+
+    for (const [index, slot] of (this.buildingSlots || []).entries()) {
+      toEntry('building', slot.industrial ? 'industrialBuilding' : 'building', slot.actor, index, { industrial: !!slot.industrial, replaced: !!slot.replaced });
+    }
+    for (const [index, slot] of (this.roadProps || []).entries()) {
+      toEntry('road-prop', slot.key, slot.actor, index, { replaced: !!slot.replaced });
+    }
+    for (const [index, actor] of (this.streetLights || []).entries()) {
+      toEntry('streetlight', 'roadlight', actor, index);
+    }
+    for (const [index, actor] of (this.flyovers || []).entries()) {
+      toEntry('flyover', 'flyover', actor, index, { procedural: !!actor?.userData?.proceduralFlyover });
+    }
+    for (const [index, pedestrian] of (this.pedestrians || []).entries()) {
+      toEntry('pedestrian', pedestrian.actor?.userData?.characterType || 'pedestrian', pedestrian.actor, index, { usingModel: !!pedestrian.usingModel });
+    }
+    for (const [id, actor] of (this.trafficActors || new Map()).entries()) {
+      toEntry('traffic', actor?.userData?.modelKey || actor?.userData?.vehicleType || 'traffic', actor, String(id), { vehicleType: actor?.userData?.vehicleType || null });
+    }
+    for (const [index, slot] of (this.garageVehicleSlots || []).entries()) {
+      toEntry('garage-vehicle', 'keke', slot.actor, index, { replaced: !!slot.replaced });
+    }
+    for (const [index, slot] of (this.lifeAssetSlots || []).entries()) {
+      toEntry('life-scene', slot.key, slot.actor, index, { sceneName: slot.sceneName, replaced: !!slot.replaced });
+    }
+
+    const glbRows = rows.filter((row) => row.modelPath);
+    const fallbackRows = rows.filter((row) => !row.modelPath);
+    return {
+      generatedAt: new Date().toISOString(),
+      renderMode: this.renderer?.isWebGLRenderer ? 'webgl' : 'unknown',
+      mobile: !!this.mobile,
+      summary: {
+        totalSceneActors: rows.length,
+        visibleGlbActors: glbRows.filter((row) => row.visible && row.visibleMeshCount > 0).length,
+        glbActors: glbRows.length,
+        fallbackActors: fallbackRows.length,
+        uniqueGlbPaths: [...new Set(glbRows.map((row) => row.modelPath))].length,
+      },
+      modelManager: this.models?.getStatus?.() || null,
+      actors: rows,
+    };
+  }
+
+  setupGlbSceneAuditPanel() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    try {
+      if (new URLSearchParams(window.location.search).get('assetAudit') !== '1') return;
+    } catch { return; }
+    if (document.getElementById('kano-glb-scene-audit')) return;
+
+    const panel = document.createElement('section');
+    panel.id = 'kano-glb-scene-audit';
+    panel.style.cssText = 'position:fixed;z-index:2147483000;top:8px;right:8px;width:min(390px,calc(100vw - 16px));max-height:58vh;overflow:auto;background:rgba(8,18,30,.96);color:#f4f7fa;border:1px solid #00b4d8;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.45);padding:10px;font:12px/1.4 system-ui,sans-serif;';
+    const title = document.createElement('div');
+    title.textContent = 'KANO LIFE · GLB SCENE AUDIT';
+    title.style.cssText = 'font-weight:800;color:#00d4f4;letter-spacing:.04em;margin-bottom:6px;';
+    const controls = document.createElement('div');
+    controls.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;';
+    const createButton = (label, onClick) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.style.cssText = 'background:#153047;color:#fff;border:1px solid #416277;border-radius:6px;padding:6px 9px;font:600 11px system-ui;cursor:pointer;';
+      button.addEventListener('click', onClick);
+      controls.appendChild(button);
+      return button;
+    };
+    const output = document.createElement('pre');
+    output.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font:10px/1.35 ui-monospace,monospace;color:#e0ebf2;';
+    const refresh = () => {
+      const report = this.getGlbSceneUsageReport();
+      const summary = report.summary;
+      const grouped = new Map();
+      for (const actor of report.actors) {
+        const entry = grouped.get(actor.kind) || { total: 0, glb: 0, fallback: 0 };
+        entry.total += 1;
+        if (actor.modelPath) entry.glb += 1;
+        else entry.fallback += 1;
+        grouped.set(actor.kind, entry);
+      }
+      const categories = [...grouped.entries()].map(([name, value]) =>
+        name.padEnd(15) + String(value.glb).padStart(3) + ' GLB / ' + String(value.fallback).padStart(3) + ' fallback'
+      ).join('\\n');
+      const paths = report.actors.filter((row) => row.modelPath).slice(0, 18).map((row) =>
+        row.kind + ': ' + row.modelPath + (row.visible && row.visibleMeshCount ? '' : ' [NOT VISIBLE]')
+      ).join('\\n');
+      output.textContent = [
+        'Mode: ' + report.renderMode + ' | Mobile: ' + report.mobile,
+        'GLB actors visible: ' + summary.visibleGlbActors,
+        'GLB actors total: ' + summary.glbActors,
+        'Fallback actors: ' + summary.fallbackActors,
+        'Unique GLB paths: ' + summary.uniqueGlbPaths,
+        '', 'BY ACTOR TYPE', categories || '(no actors recorded)',
+        '', 'ACTIVE MODEL PATHS (first 18)', paths || '(no GLB model has replaced an actor yet)',
+        '', 'Generated: ' + report.generatedAt,
+      ].join('\\n');
+    };
+    createButton('REFRESH', refresh);
+    createButton('DOWNLOAD JSON', () => {
+      refresh();
+      const report = this.getGlbSceneUsageReport();
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'kano-life-glb-scene-usage.json';
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    createButton('CLOSE', () => {
+      if (this.glbSceneAuditTimer) clearInterval(this.glbSceneAuditTimer);
+      this.glbSceneAuditTimer = null;
+      panel.remove();
+    });
+    panel.append(title, controls, output);
+    document.body.appendChild(panel);
+    refresh();
+    this.glbSceneAuditTimer = window.setInterval(refresh, 2500);
+  }
+
+`;
+  const methodAnchor = '  upgradeWorldAssets() {';
+  if (!output.includes(methodAnchor)) {
+    throw new Error('[Kano GLB Scene] Could not locate upgradeWorldAssets() for audit method insertion.');
+  }
+  output = output.replace(methodAnchor, usageMethod + methodAnchor);
+
+  const constructorEnd = '    this.buildLifeDioramas();\n\n    this.ready = true;\n  }';
+  if (!output.includes(constructorEnd)) {
+    throw new Error('[Kano GLB Scene] Could not locate the Renderer3D constructor end for audit setup.');
+  }
+  output = output.replace(constructorEnd, `    this.buildLifeDioramas();
+
+    this.ready = true;
+    this.glbSceneAuditTimer = null;
+    if (typeof window !== 'undefined') {
+      window.kanoGetGlbSceneUsageReport = () => this.getGlbSceneUsageReport();
+      window.kanoDownloadGlbSceneUsageReport = () => {
+        const report = this.getGlbSceneUsageReport();
+        const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'kano-life-glb-scene-usage.json';
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return report;
+      };
+    }
+    this.setupGlbSceneAuditPanel();
+  }`);
+
+  const classMarker = 'export class Renderer3D {';
+  if (!output.includes(classMarker)) {
+    throw new Error('[Kano GLB Scene] Renderer3D class marker is missing.');
+  }
+  output = output.replace(classMarker, marker + '\n' + classMarker);
+  return output;
+}
+
 function replaceCatalog(source, catalog) {
   const startToken = 'const CATALOG = {';
   const marker = '// MODEL DIMENSIONS';
@@ -669,6 +942,10 @@ export function createGlbCatalogSyncPlugin() {
     },
     async transform(source, id) {
       const normalizedId = id.split('?')[0].replace(/\\/g, '/');
+      if (normalizedId.endsWith('/js/renderer3d.js')) {
+        const transformedRenderer = patchRenderer3dModelActivation(source);
+        return { code: transformedRenderer, map: null };
+      }
       if (!normalizedId.endsWith('/js/ModelManager.js')) return null;
       const report = await refreshReport();
       if (!report.discoveredCount) return null;

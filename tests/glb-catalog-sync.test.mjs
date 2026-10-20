@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { scanGlbCatalog, createGlbCatalogSyncPlugin, patchModelManagerVariants } from '../scripts/glb-catalog-sync.mjs';
+import { scanGlbCatalog, createGlbCatalogSyncPlugin, patchModelManagerVariants, patchRenderer3dModelActivation } from '../scripts/glb-catalog-sync.mjs';
 
 function writeTinyGlb(filePath, names = []) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -210,4 +210,110 @@ test('variant transformer is idempotent and refuses unsupported ModelManager lay
   fs.writeFileSync(syntaxPath, first);
   try { execFileSync(process.execPath, ['--check', syntaxPath]); } finally { fs.rmSync(syntaxPath, { force: true }); }
   assert.throws(() => patchModelManagerVariants('export class ModelManager {}'), /constructor markers were not found/);
+});
+
+
+function rendererFixture() {
+  return `import * as THREE from 'three';
+export class Renderer3D {
+  constructor(canvas, models, { mobile = false } = {}) {
+    this.canvas = canvas;
+    this.models = models;
+    this.mobile = mobile;
+    this.ready = false;
+    this.buildWorld();
+    this.player = this.makeKeke();
+    this.buildGarageScene();
+    this.buildLifeDioramas();
+
+    this.ready = true;
+  }
+
+  buildWorld() {
+    const buildingCount = this.mobile ? 10 : 24;
+    for (let index = 0; index < buildingCount; index += 1) {
+      const side = index % 2 ? 1 : -1;
+      const x = side * (9 + (index % 3) * 2.8);
+      const height = 2.2 + (index % 4) * 0.7;
+      this.buildingSlots.push({ x, height, side, industrial: index % 6 === 3, replaced: false });
+    }
+  }
+
+  buildSidewalkLife() {
+    if (!this.mobile) {
+      for (let index = 0; index < 6; index += 1) {
+        for (const side of [-1, 1]) {
+          const pole = new THREE.Group();
+          pole.position.set(side * 7.6, 0, -24 - index * 34);
+          pole.userData.proceduralStreetLight = true;
+          this.world.add(pole);
+          this.streetLights.push(pole);
+        }
+      }
+    }
+  }
+
+  buildRoadsideProps() {
+    const count = this.mobile ? 5 : 10;
+  }
+
+
+  upgradeWorldAssets() {
+    if (!this.models) return;
+    const activeBuildingSlots = this.mobile
+      ? this.buildingSlots.slice(0, 2)
+      : this.buildingSlots;
+    for (const slot of activeBuildingSlots) {
+      if (slot.replaced) continue;
+      const key = slot.industrial ? 'industrialBuilding' : 'building';
+      if (!this.models.cache.has(key)) continue;
+      const model = this.models.getInstance(key);
+      if (!model) continue;
+      const normalizedHeight =
+        model.userData.targetHeight ||
+        (slot.industrial ? 5.2 : 4.5);
+      model.scale.multiplyScalar(
+        slot.height / normalizedHeight,
+      );
+      model.position.set(slot.x, 0, slot.z);
+      this.world.remove(slot.actor);
+      this.world.add(model);
+      slot.actor = model;
+      slot.replaced = true;
+    }
+  }
+}
+`;
+}
+
+test('renderer activation upgrades all mobile building slots, frontage placement, size, props, and streetlights', () => {
+  const source = rendererFixture();
+  const patched = patchRenderer3dModelActivation(source);
+  assert.ok(patched.includes('const activeBuildingSlots = this.buildingSlots;'));
+  assert.ok(patched.includes('this.mobile ? 7.8 + (index % 3) * 1.9 : 9 + (index % 3) * 2.8'));
+  assert.ok(patched.includes('model.userData.sceneDisplayHeight = displayHeight;'));
+  assert.ok(patched.includes('const count = this.mobile ? 6 : 10;'));
+  assert.ok(patched.includes('index < (this.mobile ? 3 : 6)'));
+  assert.ok(patched.includes('getGlbSceneUsageReport()'));
+  assert.ok(patched.includes('kanoDownloadGlbSceneUsageReport'));
+  assert.ok(patched.includes('KANO GLB SCENE ACTIVATION AND AUDIT PATCH'));
+});
+
+test('renderer transformation is idempotent and generated source remains valid JavaScript', () => {
+  const patched = patchRenderer3dModelActivation(rendererFixture());
+  assert.equal(patchRenderer3dModelActivation(patched), patched);
+  const syntaxPath = path.join(os.tmpdir(), `kano-renderer-transform-${process.pid}.mjs`);
+  fs.writeFileSync(syntaxPath, patched);
+  try {
+    execFileSync(process.execPath, ['--check', syntaxPath]);
+  } finally {
+    fs.rmSync(syntaxPath, { force: true });
+  }
+});
+
+test('Vite plugin transforms renderer even independently of the GLB catalog', async () => {
+  const plugin = createGlbCatalogSyncPlugin();
+  const transformed = await plugin.transform(rendererFixture(), '/repo/js/renderer3d.js');
+  assert.ok(transformed?.code.includes('KANO GLB SCENE ACTIVATION AND AUDIT PATCH'));
+  assert.ok(transformed?.code.includes('this.buildingSlots;'));
 });
