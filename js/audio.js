@@ -62,12 +62,19 @@ export class AudioManager {
     this.lastEngineSampleAt = 0;
     this.acceleration = 0;
     this.radioAudio = null;
+    this.radioEnabled = Boolean(save?.radioEnabled);
     this.radioIndex = -1;
     this.radioRequestIndex = -1;
     this.radioSyncVersion = 0;
     this.radioResolveCache = new Map();
     this.radioWarned = false;
     this.activeEffects = new Set();
+
+    // Radio UI shares this instance; never create a second manager/player.
+    if (typeof window !== 'undefined') {
+      window.__KANO_AUDIO_MANAGER__ = this;
+      window.kanoAudioManager = this;
+    }
   }
 
   ensure() {
@@ -388,7 +395,6 @@ export class AudioManager {
   }
 
   beep(frequency = 440, duration = 0.09, volume = 0.045) {
-    this.syncRadioStation(true);
     return this.playTone({ frequency, duration, volume, type: 'sine', filterFrequency: 3200 });
   }
 
@@ -467,7 +473,7 @@ export class AudioManager {
   }
 
   async syncRadioStation(force = false) {
-    if (this.disposed || !this.enabled) return false;
+    if (this.disposed || !this.enabled || !this.radioEnabled) return false;
     const index = this.currentRadioIndex();
     if (!force && index === this.radioIndex && this.radioAudio) return true;
     if (!force && index === this.radioRequestIndex) return false;
@@ -520,11 +526,18 @@ export class AudioManager {
   // Compatibility for js/radio.js. This manages only the radio track;
   // it does not start a second engine recording.
   startRadioBed() {
-    if (!this.enabled || this.disposed) return false;
+    if (this.disposed) return false;
+    this.radioEnabled = true;
+    save.radioEnabled = true;
+    try { persist(); } catch {}
+    if (!this.enabled) return false;
     return this.syncRadioStation(true);
   }
 
   stopRadioBed() {
+    this.radioEnabled = false;
+    save.radioEnabled = false;
+    try { persist(); } catch {}
     this.radioSyncVersion += 1;
     this.radioRequestIndex = -1;
     this.stopRadio();
@@ -621,6 +634,10 @@ export class AudioManager {
     this.cleanupEngineLayers();
     if (this.ctx && this.ctx.state !== 'closed') this.ctx.close().catch(() => {});
     this.ctx = null;
+    if (typeof window !== 'undefined') {
+      if (window.__KANO_AUDIO_MANAGER__ === this) delete window.__KANO_AUDIO_MANAGER__;
+      if (window.kanoAudioManager === this) delete window.kanoAudioManager;
+    }
   }
 }
 

@@ -1,342 +1,113 @@
 /**
- * KANO LIFE — LOCAL RADIO PLAYBACK
+ * KANO LIFE — SHARED RADIO CONTROLLER
  *
- * Plays the project's local radio MP3s when available, supports power on/off,
- * station selection, previous/next station, and optional Hausa announcements.
+ * Uses the same AudioManager instance as the driving engine. The station track
+ * is not played by a second HTMLAudioElement, so radio OFF truly stops music
+ * without muting engine/horn audio. The selected station remains independent
+ * of the global sound/mute setting.
  *
- * Expected local audio location:
- *   public/assets/models/audio/
- *
- * The module retains the Radio API used by the existing UI.
  * Developer: Hassan Zakariya
  */
 
-import * as AudioModule from './audio.js';
-import { CONFIG } from './config.js';
+import { RADIO } from './config.js';
 import { save, persist } from './storage.js';
 
-const AUDIO_ROOTS = [
-  '/assets/models/audio/',
-  '/assets/audio/',
-  '/audio/',
-];
+const POWER_EVENT = 'kano:radiochange';
+const FRAME_ANNOUNCEMENT_INTERVAL = 900;
 
-const STATION_CATALOG = [
-  { id: 'freedom', name: 'Freedom Radio', tag: "Kano's voice", file: 'freedom.mp3' },
-  { id: 'arewa', name: 'Arewa Radio', tag: 'Arewa daidai', file: 'arewa.mp3' },
-  { id: 'rahama', name: 'Rahama Radio', tag: 'Rahama', file: 'rahama.mp3' },
-  { id: 'kanoradio', name: 'Radio Kano', tag: 'Hausa radio', file: 'radio-kano.mp3' },
-  { id: 'coolfm', name: 'Cool FM', tag: 'The cool one', file: 'cool.mp3' },
-  { id: 'wazobia', name: 'Wazobia FM', tag: 'Naija pidgin radio', file: 'wazobia.mp3' },
-  { id: 'ruffneck', name: 'RuffNeck Radio', tag: 'RuffNeck Entertainment', file: 'ruffneck.mp3' },
-];
-
-const ANNOUNCEMENTS = [
-  'Sannu da safe. Traffic heavy near Sabon Gari.',
-  'KAROTA active on Zoo Road. Drive carefully.',
-  'Mu tafi lafiya. Safe journey in Kano.',
-  'Fuel price update coming after this track.',
-  'Adaidaita Sahu. Drive carefully and watch the road.',
-  'Na gode for listening. This is Kano Life radio.',
-  'Ina kwana. Good morning Kano State.',
-  'Please drive safely and watch for pedestrians.',
-];
-
-const ANNOUNCEMENT_INTERVAL = 900;
-const STORAGE_KEY = 'kano-life-radio-v1';
-
-function normalize(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function stationList() {
+  return Array.isArray(RADIO) && RADIO.length
+    ? RADIO
+    : [{ name: 'Radio Kano', freq: '' }];
 }
 
-function assetForStation(station) {
-  const id = normalize(station?.id);
-  const name = normalize(station?.name);
-  const explicit = station?.file || station?.audioFile || station?.src || station?.url;
-  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
-
-  const match = STATION_CATALOG.find((item) => {
-    const catalogId = normalize(item.id);
-    const catalogName = normalize(item.name);
-    return id === catalogId || name === catalogName ||
-      (catalogId === 'kanoradio' && (id.includes('radio-kano') || name.includes('radiokano'))) ||
-      (catalogId === 'coolfm' && (id.includes('cool') || name.includes('coolfm')));
-  });
-
-  return match?.file || null;
+function boundedIndex(value, count) {
+  const number = Number(value);
+  const index = Number.isFinite(number) ? Math.trunc(number) : 0;
+  return ((index % count) + count) % count;
 }
 
-function normalizeStation(station, index) {
-  if (typeof station === 'string') {
-    const key = normalize(station);
-    const match = STATION_CATALOG.find((item) =>
-      normalize(item.id) === key || normalize(item.name) === key
-    );
-    return match || {
-      id: key || `station-${index}`,
-      name: station,
-      tag: 'Local station',
-      file: null,
-    };
+function sharedAudioManager() {
+  if (typeof window === 'undefined') return null;
+  return window.__KANO_AUDIO_MANAGER__ || window.kanoAudioManager || null;
+}
+
+function tryMethod(target, name, ...args) {
+  if (typeof target?.[name] !== 'function') return false;
+  try {
+    return target[name](...args);
+  } catch (error) {
+    console.warn(`[Kano Radio] ${name} failed.`, error);
+    return false;
   }
-
-  const value = station && typeof station === 'object' ? station : {};
-  const normalized = {
-    ...value,
-    id: String(value.id || value.key || `station-${index}`),
-    name: String(value.name || value.title || `Radio ${index + 1}`),
-    tag: String(value.tag || value.description || ''),
-  };
-  normalized.file = assetForStation(normalized);
-  return normalized;
 }
 
-function safeInvoke(target, methodNames, ...args) {
-  if (!target) return false;
-  for (const methodName of methodNames) {
-    if (typeof target[methodName] !== 'function') continue;
-    try {
-      target[methodName](...args);
-      return true;
-    } catch (error) {
-      console.warn(`[Kano Radio] ${methodName} failed.`, error);
-      return false;
-    }
-  }
-  return false;
-}
-
-function resolveAudioManager() {
-  const candidate = AudioModule.AudioManager || AudioModule.Audio || AudioModule.default;
-  if (!candidate) return null;
-  if (typeof candidate === 'object') return candidate;
-  if (typeof candidate === 'function') {
-    try {
-      if (candidate.prototype && typeof candidate.prototype.startRadioBed === 'function') {
-        return new candidate();
-      }
-    } catch (error) {
-      console.warn('[Kano Radio] Audio manager initialisation failed.', error);
-    }
-  }
-  return candidate;
-}
-
-function candidatesFor(path) {
-  if (!path) return [];
-  if (/^(https?:|blob:|data:|\/)/i.test(path)) return [path];
-  return AUDIO_ROOTS.map((root) => `${root}${encodeURIComponent(path)}`);
+function displayName(station) {
+  if (!station) return 'RADIO';
+  return `${station.name || 'RADIO'}${station.freq ? ` ${station.freq}` : ''}`;
 }
 
 export const Radio = {
   index: 0,
   timer: 0,
-  playing: false,
-
-  _audioManager: null,
-  _element: null,
-  _generation: 0,
-  _sources: [],
-  _sourceIndex: -1,
+  playing: Boolean(save?.radioEnabled),
   _lastAnnouncementFrame: -1,
   _announcementEnabled: true,
-  _reportedUnavailable: new Set(),
+  _uiBound: false,
+  _controls: [],
+  _radioButton: null,
 
   stations() {
-    const configured = Array.isArray(CONFIG?.RADIO) ? CONFIG.RADIO : [];
-    const list = (configured.length ? configured : STATION_CATALOG)
-      .map(normalizeStation);
-    return list.length ? list : STATION_CATALOG.map(normalizeStation);
+    return stationList();
   },
 
   current() {
     const list = this.stations();
-    if (!list.length) return null;
-    this.index = ((Math.trunc(Number(this.index) || 0) % list.length) + list.length) % list.length;
+    this.index = boundedIndex(save?.radioIndex ?? this.index, list.length);
     return list[this.index];
   },
 
   isPlaying() {
+    const audio = sharedAudioManager();
+    this.playing = Boolean(audio?.radioEnabled ?? save?.radioEnabled ?? this.playing);
     return this.playing;
   },
 
-  _getManager() {
-    if (!this._audioManager) this._audioManager = resolveAudioManager();
-    return this._audioManager;
-  },
-
-  _ensureElement() {
-    if (this._element || typeof window === 'undefined') return this._element;
-    const element = new window.Audio();
-    element.preload = 'auto';
-    element.loop = true;
-    element.volume = 0.48;
-    element.setAttribute('playsinline', '');
-    element.addEventListener('error', () => {
-      this._tryNextSource(this._generation);
-    });
-    this._element = element;
-    return element;
-  },
-
-  _persistSelection() {
-    try {
-      if (save && typeof save === 'object') {
-        save.radioIndex = this.index;
-        const station = this.current();
-        if (station) save.radioStation = station.id;
-        persist?.();
-      }
-    } catch (error) {
-      console.warn('[Kano Radio] Could not persist station selection.', error);
-    }
-
-    try {
-      const station = this.current();
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        index: this.index,
-        stationId: station?.id || null,
-      }));
-    } catch (_) {
-      // Storage may be unavailable in private browsing modes.
-    }
-  },
-
-  _restoreSelection() {
-    try {
-      const bySave = Number(save?.radioIndex);
-      if (Number.isFinite(bySave) && bySave >= 0) {
-        this.index = Math.trunc(bySave);
-        return;
-      }
-    } catch (_) {
-      // Continue to local storage.
-    }
-    try {
-      const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null');
-      if (!stored) return;
-      const list = this.stations();
-      const matchIndex = list.findIndex((station) => station.id === stored.stationId);
-      this.index = matchIndex >= 0 ? matchIndex : Math.max(0, Number(stored.index) || 0);
-    } catch (_) {
-      this.index = 0;
-    }
-  },
-
-  _clearBedAudio() {
-    const manager = this._getManager();
-    safeInvoke(manager, ['stopRadioBed', 'stopRadio', 'radioStop']);
-  },
-
-  _startSourceList(generation) {
-    if (!this.playing || generation !== this._generation) return;
-    const station = this.current();
-    const element = this._ensureElement();
-    if (!station || !element) return;
-
-    this._sources = candidatesFor(station.file);
-    this._sourceIndex = -1;
-
-    if (!this._sources.length) {
-      this._reportUnavailable(station);
-      return;
-    }
-    this._tryNextSource(generation);
-  },
-
-  _tryNextSource(generation) {
-    if (!this.playing || generation !== this._generation) return;
-    const element = this._element;
-    if (!element) return;
-
-    this._sourceIndex += 1;
-    if (this._sourceIndex >= this._sources.length) {
-      this._reportUnavailable(this.current());
-      return;
-    }
-
-    const source = this._sources[this._sourceIndex];
-    element.pause();
-    element.src = source;
-    element.load();
-
-    let playResult;
-    try {
-      playResult = element.play();
-    } catch (error) {
-      this._tryNextSource(generation);
-      return;
-    }
-
-    if (playResult && typeof playResult.catch === 'function') {
-      playResult.catch((error) => {
-        if (!this.playing || generation !== this._generation) return;
-        if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
-          this._emit('kano:radioerror', {
-            reason: 'user-gesture-required',
-            station: this.current(),
-          });
-          return;
-        }
-        this._tryNextSource(generation);
-      });
-    }
-  },
-
-  _reportUnavailable(station) {
-    const id = station?.id || 'unknown';
-    if (this._reportedUnavailable.has(id)) return;
-    this._reportedUnavailable.add(id);
-    console.warn(`[Kano Radio] No playable local audio found for ${station?.name || id}. Checked ${AUDIO_ROOTS.join(', ')}.`);
-    this._emit('kano:radioerror', {
-      reason: 'station-audio-unavailable',
-      station,
-    });
-    const manager = this._getManager();
-    safeInvoke(manager, ['radioTune', 'tuneRadio', 'selectStation'], station?.name || 'Kano Radio');
-  },
-
   start() {
-    if (!this.stations().length) return null;
-    this._restoreSelection();
+    const audio = sharedAudioManager();
+    const station = this.current();
+
+    if (!audio) {
+      console.warn('[Kano Radio] The game AudioManager is not ready yet.');
+      return station;
+    }
+
+    // Persist preference even if the selected station file is absent.
     this.playing = true;
-    this.timer = 0;
-    this._lastAnnouncementFrame = -1;
-    this._clearBedAudio();
+    save.radioEnabled = true;
+    try { persist(); } catch {}
 
-    const manager = this._getManager();
-    safeInvoke(manager, ['ensure', 'init', 'initialize', 'resume']);
-
-    this._generation += 1;
-    this._startSourceList(this._generation);
-    this._emit('kano:radiochange');
-    return this.current();
+    tryMethod(audio, 'radioTune', station?.name);
+    tryMethod(audio, 'startRadioBed');
+    this._emitChange();
+    return station;
   },
 
   stop() {
+    const audio = sharedAudioManager();
     this.playing = false;
     this.timer = 0;
-    this._generation += 1;
-
-    if (this._element) {
-      try {
-        this._element.pause();
-      } catch (_) {}
-    }
-
-    const manager = this._getManager();
-    safeInvoke(manager, ['stopRadioBed', 'stopRadio', 'radioStop', 'stopSpeech', 'cancelSpeech']);
+    save.radioEnabled = false;
+    try { persist(); } catch {}
+    if (audio) tryMethod(audio, 'stopRadioBed');
     try {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-    } catch (_) {}
-
-    this._emit('kano:radiochange');
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel?.();
+    } catch {}
+    this._emitChange();
   },
 
   toggle() {
-    if (this.playing) this.stop();
+    if (this.isPlaying()) this.stop();
     else this.start();
     return this.playing;
   },
@@ -345,41 +116,39 @@ export const Radio = {
     const list = this.stations();
     if (!list.length) return null;
 
-    let targetIndex = -1;
+    let target = -1;
     if (typeof value === 'number' && Number.isFinite(value)) {
-      targetIndex = Math.trunc(value);
+      target = Math.trunc(value);
     } else {
-      const key = normalize(value);
-      targetIndex = list.findIndex((station) =>
-        normalize(station.id) === key || normalize(station.name) === key
+      const needle = String(value ?? '').trim().toLowerCase();
+      target = list.findIndex((station) =>
+        String(station?.id ?? '').toLowerCase() === needle ||
+        String(station?.name ?? '').toLowerCase() === needle ||
+        String(station?.freq ?? '').toLowerCase() === needle
       );
     }
-    if (targetIndex < 0 || targetIndex >= list.length) return null;
+    if (target < 0 || target >= list.length) return null;
 
-    this.index = targetIndex;
-    this._persistSelection();
-    const station = this.current();
+    this.index = target;
+    save.radioIndex = target;
+    try { persist(); } catch {}
 
-    if (this.playing) {
-      this._generation += 1;
-      this._clearBedAudio();
-      this._startSourceList(this._generation);
-    }
+    const station = list[target];
+    const audio = sharedAudioManager();
+    if (audio) tryMethod(audio, 'radioTune', station?.name);
 
-    this._emit('kano:radiochange');
+    this._emitChange();
     return station;
   },
 
   next() {
     const list = this.stations();
-    if (!list.length) return null;
-    return this.select((this.index + 1) % list.length);
+    return list.length ? this.select((this.index + 1) % list.length) : null;
   },
 
   previous() {
     const list = this.stations();
-    if (!list.length) return null;
-    return this.select((this.index - 1 + list.length) % list.length);
+    return list.length ? this.select((this.index - 1 + list.length) % list.length) : null;
   },
 
   setAnnouncementsEnabled(enabled) {
@@ -387,57 +156,134 @@ export const Radio = {
   },
 
   update(frame) {
-    if (!this.playing || !this._announcementEnabled) return;
+    if (!this.isPlaying() || !this._announcementEnabled) return;
     const value = Number(frame);
-    if (!Number.isFinite(value) || value <= 0 || value % ANNOUNCEMENT_INTERVAL !== 0) return;
+    if (!Number.isFinite(value) || value <= 0 || value % FRAME_ANNOUNCEMENT_INTERVAL !== 0) return;
     if (value === this._lastAnnouncementFrame) return;
     this._lastAnnouncementFrame = value;
 
-    const line = ANNOUNCEMENTS[Math.floor(Math.random() * ANNOUNCEMENTS.length)];
-    const manager = this._getManager();
-    if (safeInvoke(manager, ['speak', 'announce'], line, {
-      rate: 0.92,
-      pitch: 1.02,
-      volume: 0.75,
-    })) return;
+    const lines = [
+      'Sannu da safe. Traffic heavy near Sabon Gari.',
+      'KAROTA active on Zoo Road. Drive carefully.',
+      'Mu tafi lafiya. Safe journey in Kano.',
+      'Fuel price update coming after this song.',
+      'Adaidaita Sahu. Drive carefully and watch the road.',
+      'Ina kwana. Good morning Kano State.',
+    ];
+    const audio = sharedAudioManager();
+    tryMethod(audio, 'speak', lines[Math.floor(Math.random() * lines.length)], {
+      rate: 0.92, pitch: 1.02, volume: 0.65,
+    });
+  },
 
+  _emitChange() {
+    this._syncUI();
     try {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
-        const utterance = new SpeechSynthesisUtterance(line);
-        utterance.rate = 0.92;
-        utterance.pitch = 1.02;
-        utterance.volume = 0.75;
-        window.speechSynthesis.speak(utterance);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(POWER_EVENT, {
+          detail: {
+            playing: this.isPlaying(),
+            index: this.index,
+            station: this.current(),
+          },
+        }));
       }
-    } catch (_) {
-      // Voice announcements are optional.
+    } catch {}
+  },
+
+  _syncUI() {
+    const station = this.current();
+    const powered = this.isPlaying();
+    const label = document.getElementById('radio-label');
+    if (label) label.textContent = `${displayName(station)} · ${powered ? 'ON' : 'OFF'}`.toUpperCase();
+
+    if (this._radioButton) {
+      this._radioButton.textContent = 'NEXT STATION';
+      this._radioButton.setAttribute('aria-label', 'Select next radio station');
+    }
+
+    for (const control of this._controls) {
+      control.power.textContent = powered ? 'RADIO ON' : 'RADIO OFF';
+      control.power.setAttribute('aria-pressed', String(powered));
+      control.power.title = powered ? 'Turn radio off' : 'Turn radio on';
+      control.select.value = String(this.index);
     }
   },
 
-  _emit(eventName, detail = null) {
-    try {
-      if (typeof window === 'undefined') return;
-      window.dispatchEvent(new CustomEvent(eventName, {
-        detail: detail || {
-          playing: this.playing,
-          index: this.index,
-          station: this.current(),
-        },
-      }));
-    } catch (_) {}
+  _makeControls(parent, className) {
+    if (!parent || parent.querySelector(`[data-kano-radio-controls="${className}"]`)) return;
+
+    const group = document.createElement('div');
+    group.dataset.kanoRadioControls = className;
+    group.style.cssText = 'display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;';
+
+    const power = document.createElement('button');
+    power.type = 'button';
+    power.className = 'kano-radio-power';
+    power.textContent = 'RADIO OFF';
+    power.style.cssText = 'min-height:30px;padding:5px 8px;border:1px solid #00b4d8;border-radius:7px;background:#0b1e3a;color:#fff;font:700 11px system-ui;touch-action:manipulation;';
+    power.addEventListener('click', () => this.toggle());
+
+    const select = document.createElement('select');
+    select.className = 'kano-radio-station';
+    select.setAttribute('aria-label', 'Select radio station');
+    select.style.cssText = 'max-width:150px;min-width:112px;min-height:30px;padding:4px 6px;border:1px solid #60788b;border-radius:7px;background:#15293b;color:#fff;font:600 11px system-ui;';
+    this.stations().forEach((station, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = displayName(station);
+      select.append(option);
+    });
+    select.addEventListener('change', () => this.select(Number(select.value)));
+
+    group.append(power, select);
+    parent.append(group);
+    this._controls.push({ group, power, select });
+  },
+
+  _bindUI() {
+    if (this._uiBound || typeof document === 'undefined') return;
+    this._uiBound = true;
+
+    this._radioButton = document.getElementById('radio-btn');
+    if (this._radioButton) {
+      // Capture prevents UI.bind() from also incrementing save.radioIndex.
+      this._radioButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        this.next();
+      }, true);
+      this._radioButton.textContent = 'NEXT STATION';
+    }
+
+    // Controls on the start/menu screen.
+    this._makeControls(document.querySelector('.menu-actions'), 'menu');
+
+    // Independent controls inside the live driving HUD.
+    const hudBottom = document.querySelector('.hud-bottom');
+    if (hudBottom) this._makeControls(hudBottom, 'hud');
+
+    window.addEventListener(POWER_EVENT, () => this._syncUI());
+    window.addEventListener('storage', () => this._syncUI());
+    this._syncUI();
   },
 
   dispose() {
     this.stop();
-    if (this._element) {
-      this._element.removeAttribute('src');
-      this._element.load();
-    }
-    this._element = null;
-    this._audioManager = null;
-    this._sources = [];
-    this._sourceIndex = -1;
+    this._controls = [];
+    this._radioButton = null;
+    this._uiBound = false;
   },
 };
+
+if (typeof window !== 'undefined') {
+  window.KanoRadio = Radio;
+  const init = () => Radio._bindUI();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+}
 
 export default Radio;
