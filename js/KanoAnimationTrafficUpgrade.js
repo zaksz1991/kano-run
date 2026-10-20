@@ -484,18 +484,50 @@ export class KanoGLBAnimationManager {
   }
 
   chooseClip(clips, role) {
-    if (!clips?.length) return null;
+    if (!Array.isArray(clips) || clips.length === 0) return null;
 
-    const patterns = role === 'walk'
-      ? [/walk/i, /run/i, /jog/i, /move/i, /locom/i]
-      : [/idle/i, /stand/i, /walk/i, /run/i, /move/i];
+    if (role === 'walk') {
+      const movementPatterns = [
+        /walk/i,
+        /run/i,
+        /jog/i,
+        /locomotion/i,
+        /move/i,
+      ];
 
-    for (const pattern of patterns) {
+      for (const pattern of movementPatterns) {
+        const match = clips.find((clip) => pattern.test(clip.name || ''));
+        if (match) return match;
+      }
+
+      // Traffic actors may use the first available movement clip when the
+      // source asset has unnamed animation tracks.
+      return clips[0] || null;
+    }
+
+    // Ambient roadside pedestrians and waiting passengers are carried
+    // toward the camera by the scrolling-world illusion. Playing a walk
+    // cycle on them makes their feet cycle against that movement, creating
+    // the appearance of walking backwards. Only use a genuine idle/wait clip
+    // for these stationary scene actors. The caller applies a restrained
+    // idle sway when the model has no matching clip.
+    const idlePatterns = [
+      /idle/i,
+      /stand/i,
+      /wait/i,
+      /breath/i,
+      /look/i,
+      /shift/i,
+      /sit/i,
+      /talk/i,
+    ];
+
+    for (const pattern of idlePatterns) {
       const match = clips.find((clip) => pattern.test(clip.name || ''));
       if (match) return match;
     }
 
-    return clips[0] || null;
+    return null;
   }
 
   collectAnimatedRoots() {
@@ -506,7 +538,10 @@ export class KanoGLBAnimationManager {
     };
 
     for (const pedestrian of this.renderer.pedestrians || []) {
-      if (pedestrian.usingModel) add(pedestrian.actor, 'walk');
+      // These are roadside set-dressing actors moved by renderer world-scroll,
+      // not actors with their own world-space locomotion. Use idle clips so
+      // walking root motion cannot make them appear to moonwalk backwards.
+      if (pedestrian.usingModel) add(pedestrian.actor, 'idle');
     }
 
     // Character models used by traffic actors.
