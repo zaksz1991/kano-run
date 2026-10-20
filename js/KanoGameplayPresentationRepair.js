@@ -37,7 +37,7 @@ const originalSpawnTraffic = Game.prototype.spawnTraffic;
 const originalRendererDraw = Renderer3D.prototype.draw;
 const originalSyncTraffic = Renderer3D.prototype.syncTraffic;
 const originalMakeTrafficActor = Renderer3D.prototype.makeTrafficActor;
-const originalMakePothole = Renderer3D.prototype.makePothole;
+const originalMakePothole = Renderer3D.prototype.makePotholeActor;
 const originalAudioEngine = AudioManager.prototype.engine;
 
 // -----------------------------------------------------------------------------
@@ -300,10 +300,11 @@ function animateEventVisual(renderer, dt) {
 }
 
 // -----------------------------------------------------------------------------
-// Pothole visibility: keep the existing gameplay actor and add subtle edge detail.
+// Pothole visibility: hook the renderer's actual makePotholeActor method,
+// keep the existing gameplay actor, and add subtle edge detail around it.
 // -----------------------------------------------------------------------------
 if (typeof originalMakePothole === 'function') {
-  Renderer3D.prototype.makePothole = function patchedMakePothole(...args) {
+  Renderer3D.prototype.makePotholeActor = function patchedMakePotholeActor(...args) {
     const actor = originalMakePothole.apply(this, args);
     if (!actor?.isObject3D || actor.userData?.kanoRepairPotholeFX) return actor;
 
@@ -525,7 +526,12 @@ async function refreshOverallRecord(force = false) {
 function hasNamedRider(actor) {
   let found = false;
   actor?.traverse?.((node) => {
-    if (/(rider|motorist|motorcycle.?driver|helmet|humanoid|pedestrian|person)/i.test(node.name || '')) found = true;
+    // A helmet by itself is not a rider. Some motorcycle GLBs contain a
+    // helmet or helmet prop but omit the human model, which caused the old
+    // check to suppress the rider fallback incorrectly.
+    if (/(rider|motorist|motorcycle.?driver|humanoid|pedestrian|person|driver.?body|biker)/i.test(node.name || '')) {
+      found = true;
+    }
   });
   return found;
 }
@@ -591,7 +597,11 @@ if (typeof originalSyncTraffic === 'function') {
       if (vehicle?.type !== 'motorcycle') continue;
       const actor = this.trafficActors?.get?.(vehicle.id) || this.trafficActors?.[vehicle.id];
       if (!actor) continue;
-      if (actor.userData?.kanoLoadedTrafficModel) attachRider(actor);
+      // Attach to every motorcycle actor. The rider helper intentionally
+      // skips this layer's procedural fallback bikes because renderer3d.js
+      // already builds a torso and helmet for those. Loaded GLBs are checked
+      // by their human-rig names, not by the presence of a helmet alone.
+      attachRider(actor);
       const rider = actor.userData?.kanoRepairRider;
       if (rider) {
         const time = Number(this._kanoRepairTime) || 0;
@@ -683,11 +693,9 @@ if (typeof originalRendererDraw === 'function') {
       let node = rider;
       let attached = false;
       while (node) { if (node === worldFor(this)) { attached = true; break; } node = node.parent; }
-      if (!attached && !rider.parent) {
+      if (!attached) {
         riderGroups.delete(rider);
-        const resources = rider.userData?.kanoRepairResources;
-        for (const geometry of resources?.geometries || []) { try { geometry.dispose(); } catch (_) {} }
-        for (const material of resources?.materials || []) { try { material.dispose(); } catch (_) {} }
+        disposeRoot(rider);
       }
     }
     return result;
