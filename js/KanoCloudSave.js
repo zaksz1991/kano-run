@@ -11,6 +11,7 @@ const CONFIG_KEY = 'kano-life-cloud-config-v1';
 const SESSION_KEY = 'kano-life-cloud-session-v1';
 const USER_KEY = 'kano-life-cloud-user-v1';
 const TABLE = 'kano_life_cloud_saves';
+const PROBE_TABLE = 'kano_life_cloud_save_probes';
 const LINK_KEY_PREFIX = 'kano-life-cloud-link-v1-';
 const MAX_BACKUP_BYTES = 1_000_000;
 
@@ -28,6 +29,7 @@ let syncInFlight = false;
 let syncQueued = false;
 let lastStatus = '';
 let remoteSnapshot = null;
+let writeProbeInFlight = false;
 
 function readJson(key, fallback) {
   try {
@@ -495,6 +497,130 @@ function importLocalBackup(file) {
   };
   reader.readAsText(file);
 }
+function appendDiagnosticResult(titleText, detailText, tone = 'normal') {
+  const container = ui.diagnosticResults;
+  if (!container) return;
+  container.hidden = false;
+  let list = container.querySelector('.kcs-diagnostics-list');
+  if (!list) {
+    list = document.createElement('div');
+    list.className = 'kcs-diagnostics-list';
+    container.replaceChildren(list);
+  }
+  const item = document.createElement('div');
+  item.className = 'kcs-diagnostic-item';
+  item.dataset.tone = tone;
+  const title = document.createElement('strong');
+  title.textContent = `${tone === 'success' ? '✓' : tone === 'error' ? '✕' : '!'} ${titleText}`;
+  const detail = document.createElement('p');
+  detail.textContent = detailText;
+  item.append(title, detail);
+  list.prepend(item);
+}
+
+/**
+ * Verifies authenticated INSERT + SELECT + DELETE using a dedicated table.
+ * It never touches the real cloud save row or the local game save.
+ */
+async function runCloudWriteProbe() {
+  if (writeProbeInFlight) return;
+  if (!configured()) {
+    const message = 'Save your Supabase project URL and public anon/publishable key first.';
+    appendDiagnosticResult('Cloud write test', message, 'warning');
+    setStatus(message, 'warning');
+    return;
+  }
+  if (!session?.access_token) {
+    const message = 'Sign in to your cloud account before testing database write permissions.';
+    appendDiagnosticResult('Cloud write test', message, 'warning');
+    setStatus(message, 'warning');
+    return;
+  }
+
+  writeProbeInFlight = true;
+  if (ui.writeProbeButton) ui.writeProbeButton.disabled = true;
+  setStatus('Testing a temporary cloud probe record. Your game save and wallet will not be changed…', 'normal');
+
+  let activeUserId = '';
+  let probeId = '';
+  let wrote = false;
+  let readBack = false;
+  let deleted = false;
+  let testError = null;
+  let cleanupError = null;
+
+  try {
+    const activeUser = await ensureFreshSession();
+    activeUserId = String(activeUser?.id || '');
+    if (!activeUserId) throw new Error('Supabase did not return the signed-in user ID.');
+
+    probeId = globalThis.crypto?.randomUUID
+      ? globalThis.crypto.randomUUID()
+      : `probe-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+
+    const row = {
+      probe_id: probeId,
+      user_id: activeUserId,
+      checked_at: new Date().toISOString(),
+    };
+
+    // Do not request a representation on INSERT: the separate SELECT below
+    // independently tests read access rather than making INSERT depend on it.
+    await requestJson(`/rest/v1/${PROBE_TABLE}`, {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(row),
+    }, 'session');
+    wrote = true;
+
+    const query = `?select=probe_id,checked_at&user_id=eq.${encodeURIComponent(activeUserId)}&probe_id=eq.${encodeURIComponent(probeId)}&limit=1`;
+    const rows = await requestJson(`/rest/v1/${PROBE_TABLE}${query}`, { method: 'GET' }, 'session');
+    if (!Array.isArray(rows) || rows.length !== 1 || rows[0]?.probe_id !== probeId) {
+      throw new Error('The inserted probe could not be read back with the signed-in account. Check SELECT grants and row-level security policies.');
+    }
+    readBack = true;
+  } catch (error) {
+    testError = error instanceof Error ? error : new Error(String(error));
+  } finally {
+    if (wrote && activeUserId && probeId) {
+      try {
+        const filter = `?user_id=eq.${encodeURIComponent(activeUserId)}&probe_id=eq.${encodeURIComponent(probeId)}`;
+        await requestJson(`/rest/v1/${PROBE_TABLE}${filter}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } }, 'session');
+        const remaining = await requestJson(`/rest/v1/${PROBE_TABLE}?select=probe_id&user_id=eq.${encodeURIComponent(activeUserId)}&probe_id=eq.${encodeURIComponent(probeId)}&limit=1`, { method: 'GET' }, 'session');
+        if (!Array.isArray(remaining) || remaining.some((entry) => entry?.probe_id === probeId)) {
+          throw new Error('DELETE returned but the temporary probe still exists. Check the DELETE grant and row-level security policy.');
+        }
+        deleted = true;
+      } catch (error) {
+        cleanupError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+    writeProbeInFlight = false;
+    if (ui.writeProbeButton) ui.writeProbeButton.disabled = false;
+  }
+
+  if (testError) {
+    const cleanup = cleanupError ? ` Cleanup also failed: ${cleanupError.message}.` : '';
+    const message = `${testError.message} Check that supabase/kano_life_cloud_write_probes.sql was run and that the authenticated table grants/policies exist.${cleanup}`;
+    appendDiagnosticResult('Cloud write/read test failed', message, 'error');
+    setStatus(`Cloud write test failed: ${testError.message}`, 'error');
+    return;
+  }
+
+  if (wrote && readBack && deleted && !cleanupError) {
+    const message = 'Authenticated INSERT, SELECT and DELETE all passed. The temporary diagnostic row was removed; your local and cloud game-save records were not modified.';
+    appendDiagnosticResult('Cloud write/read test passed', message, 'success');
+    setStatus('Cloud write verification passed. Actual saves will still sync through the normal revision-checked flow.', 'success');
+    return;
+  }
+
+  const message = cleanupError
+    ? `The probe could be written and read, but its temporary row could not be confirmed deleted: ${cleanupError.message}. It contains only a diagnostic ID and timestamp, not game-save data.`
+    : 'The cloud write test did not complete all required operations.';
+  appendDiagnosticResult('Cloud write/read test needs attention', message, 'warning');
+  setStatus(message, 'warning');
+}
+
 async function runDiagnostics() {
   const checks = [];
   const addCheck = (title, detail, tone = 'success') => checks.push({ title, detail, tone });
@@ -688,7 +814,7 @@ function buildPanel() {
       <div class="kcs-actions"><button class="primary" id="kcs-signin" type="button">SIGN IN</button><button id="kcs-signup" type="button">CREATE ACCOUNT</button><button class="danger" id="kcs-signout" type="button" hidden>SIGN OUT</button></div>
       <div class="kcs-info"><strong id="kcs-account">NOT SIGNED IN</strong><br><span>Only your authenticated account can access its own cloud save. Never enter a service_role or secret key here.</span></div>
       <div class="kcs-status" id="kcs-status" role="status" aria-live="polite">Cloud save is optional. Configure Supabase and sign in to enable cross-device sync.</div>
-      <div class="kcs-diagnostics"><button id="kcs-diagnostics-button" type="button">TEST CLOUD SAVE HEALTH</button><div id="kcs-diagnostic-results" hidden aria-live="polite"></div></div>
+      <div class="kcs-diagnostics"><div class="kcs-actions"><button id="kcs-diagnostics-button" type="button">TEST CLOUD SAVE HEALTH</button><button id="kcs-write-probe-button" type="button">TEST CLOUD WRITE + READ</button></div><div id="kcs-diagnostic-results" hidden aria-live="polite"></div></div>
       <div class="kcs-info" id="kcs-sync-actions" hidden>
         <strong>Current progress</strong>
         <div id="kcs-local-summary" style="margin:6px 0">This device · —</div>
@@ -712,7 +838,7 @@ function buildPanel() {
     localSummary: $('kcs-local-summary'), cloudSummary: $('kcs-cloud-summary'), syncNow: $('kcs-sync-now'), export: $('kcs-export'),
     importBtn: $('kcs-import-btn'), importFile: $('kcs-import-file'), download: $('kcs-download'), choice: $('kcs-choice'),
     choiceTitle: $('kcs-choice-title'), overwrite: $('kcs-overwrite'), close: $('kcs-close'),
-    diagnosticsButton: $('kcs-diagnostics-button'), diagnosticResults: $('kcs-diagnostic-results'),
+    diagnosticsButton: $('kcs-diagnostics-button'), writeProbeButton: $('kcs-write-probe-button'), diagnosticResults: $('kcs-diagnostic-results'),
   };
   if (config?.url) ui.url.value = config.url;
   if (config?.anonKey) ui.anonKey.value = config.anonKey;
@@ -722,6 +848,7 @@ function buildPanel() {
   ui.signOut.addEventListener('click', signOut);
   ui.syncNow.addEventListener('click', syncNow);
   ui.diagnosticsButton.addEventListener('click', runDiagnostics);
+  ui.writeProbeButton.addEventListener('click', runCloudWriteProbe);
   ui.export.addEventListener('click', () => exportData(cloneSave()));
   ui.importBtn.addEventListener('click', () => ui.importFile.click());
   ui.importFile.addEventListener('change', () => { importLocalBackup(ui.importFile.files?.[0]); ui.importFile.value = ''; });
