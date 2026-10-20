@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "description": "Optional exact-name GLB category overrides. Paths are relative to public/assets/models/ and must match the actual paths and filename case exactly. A category listed under categories replaces auto-detected candidates for that category. Use an empty list to intentionally disable a category. Use exclude to remove specific files from an automatically detected category.",
+  "categories": {},
+  "exclude": {}
+}

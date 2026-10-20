@@ -62,3 +62,81 @@ test('Vite transform replaces the stale CATALOG without modifying other modules'
   assert.ok(transformed.code.includes('// MODEL DIMENSIONS'));
   assert.equal(await plugin.transform(source, path.join(root, 'js', 'game.js')), null);
 });
+
+test('manual override maps generic renamed world models to explicitly chosen categories', async (t) => {
+  const { root, modelRoot } = makeFixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const overridesFile = path.join(root, 'scripts', 'glb-catalog-overrides.json');
+  fs.mkdirSync(path.dirname(overridesFile), { recursive: true });
+  fs.writeFileSync(overridesFile, JSON.stringify({
+    schemaVersion: 1,
+    categories: {
+      marketStall: ['world/buildings-suburban/frontage-renamed.glb'],
+      busStop: [],
+    },
+    exclude: {},
+  }));
+  const report = await scanGlbCatalog(modelRoot, overridesFile);
+  assert.deepEqual(report.catalog.marketStall, ['world/buildings-suburban/frontage-renamed.glb']);
+  assert.deepEqual(report.catalog.busStop, []);
+  const frontage = report.files.find((entry) => entry.path === 'world/buildings-suburban/frontage-renamed.glb');
+  assert.ok(frontage.categories.includes('marketStall'));
+  assert.equal(report.overrideAudit.status, 'applied');
+  assert.ok(report.overrideAudit.appliedCategories.includes('marketStall'));
+});
+
+test('invalid all-missing override preserves automatic category and reports exact filename mismatch', async (t) => {
+  const { root, modelRoot } = makeFixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const overridesFile = path.join(root, 'scripts', 'glb-catalog-overrides.json');
+  fs.mkdirSync(path.dirname(overridesFile), { recursive: true });
+  fs.writeFileSync(overridesFile, JSON.stringify({
+    schemaVersion: 1,
+    categories: { building: ['world/buildings-suburban/Frontage-Renamed.glb'] },
+    exclude: {},
+  }));
+  const report = await scanGlbCatalog(modelRoot, overridesFile);
+  assert.deepEqual(report.catalog.building, ['world/buildings-suburban/frontage-renamed.glb']);
+  assert.ok(report.overrideAudit.errors.some((line) => line.includes('Filename case does not match')));
+  assert.equal(report.overrideAudit.status, 'needs_attention');
+});
+
+test('valid entries win when a category mixes found and missing paths', async (t) => {
+  const { root, modelRoot } = makeFixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const overridesFile = path.join(root, 'scripts', 'glb-catalog-overrides.json');
+  fs.mkdirSync(path.dirname(overridesFile), { recursive: true });
+  fs.writeFileSync(overridesFile, JSON.stringify({
+    schemaVersion: 1,
+    categories: { building: [
+      'world/buildings-suburban/frontage-renamed.glb',
+      'world/missing-other-frontage.glb'
+    ] },
+    exclude: { dirtmound: ['environment/ground/surface-revised.glb'] },
+  }));
+  const report = await scanGlbCatalog(modelRoot, overridesFile);
+  assert.deepEqual(report.catalog.building, ['world/buildings-suburban/frontage-renamed.glb']);
+  assert.ok(!report.catalog.dirtmound.includes('environment/ground/surface-revised.glb'));
+  assert.ok(report.overrideAudit.missingPaths.includes('world/missing-other-frontage.glb'));
+  assert.equal(report.overrideAudit.status, 'applied_with_warnings');
+});
+
+test('Vite transform uses manually overridden catalog paths and ignores other modules', async (t) => {
+  const { root, modelRoot } = makeFixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const overridesFile = path.join(root, 'scripts', 'glb-catalog-overrides.json');
+  fs.mkdirSync(path.dirname(overridesFile), { recursive: true });
+  fs.writeFileSync(overridesFile, JSON.stringify({
+    schemaVersion: 1,
+    categories: { marketStall: ['world/buildings-suburban/frontage-renamed.glb'] },
+    exclude: {},
+  }));
+  const plugin = createGlbCatalogSyncPlugin();
+  await plugin.configResolved({ root, publicDir: path.join(root, 'public') });
+  const source = 'const CATALOG = {\n  keke: [\'vehicles/keke/old-name.glb\'],\n};\n\n// ============================================================\n// MODEL DIMENSIONS\nconst TARGET_HEIGHT = {};';
+  const transformed = await plugin.transform(source, path.join(root, 'js', 'ModelManager.js'));
+  assert.ok(transformed.code.includes('frontage-renamed.glb'));
+  assert.ok(transformed.code.includes('marketStall'));
+  assert.ok(!transformed.code.includes('old-name.glb'));
+  assert.equal(await plugin.transform(source, path.join(root, 'js', 'game.js')), null);
+});
