@@ -1255,8 +1255,87 @@ function workshopAnnualReportData(requestedYear = '') {
   };
 }
 
+function workshopAnnualComparisonData(requestedYear = '') {
+  const report = workshopAnnualReportData(requestedYear);
+  const selectedYear = report.selectedYear;
+  const previousYear = String(Number(selectedYear) - 1);
+  const monthCount = report.months.length;
+  const ledger = ensureWorkshopSpendingLedger();
+
+  const summarizeYear = (year) => {
+    const months = [];
+    for (let number = 1; number <= monthCount; number += 1) {
+      const key = `${year}-${String(number).padStart(2, '0')}`;
+      const raw = ledger.months?.[key] || null;
+      const transactions = Array.isArray(raw?.transactions) ? raw.transactions : [];
+      const trackedCount = transactions.length;
+      const trackedSpend = transactions.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0);
+      const archivedCount = Math.max(0, Math.floor(Number(raw?.archivedCount) || 0));
+      const archivedNaira = Math.max(0, Math.floor(Number(raw?.archivedNaira) || 0));
+      const totalSpend = trackedSpend + archivedNaira;
+      const coverage = !raw
+        ? 'NO DATA'
+        : Boolean(raw.coverageComplete) && archivedCount === 0 && archivedNaira === 0
+          ? 'COMPLETE'
+          : 'PARTIAL';
+      months.push({
+        key, monthNumber: number,
+        monthName: new Date(2020, number - 1, 1, 12).toLocaleDateString('en-NG', { month: 'long' }),
+        trackedCount, trackedSpend, archivedCount, archivedNaira, totalSpend, coverage,
+        hasLedgerMonth: Boolean(raw),
+      });
+    }
+    const totals = months.reduce((sum, month) => ({
+      trackedCount: sum.trackedCount + month.trackedCount,
+      trackedSpend: sum.trackedSpend + month.trackedSpend,
+      archivedCount: sum.archivedCount + month.archivedCount,
+      archivedNaira: sum.archivedNaira + month.archivedNaira,
+      totalSpend: sum.totalSpend + month.totalSpend,
+    }), { trackedCount: 0, trackedSpend: 0, archivedCount: 0, archivedNaira: 0, totalSpend: 0 });
+    return {
+      year, months, ...totals,
+      monthsWithData: months.filter((month) => month.hasLedgerMonth).length,
+      completeMonths: months.filter((month) => month.coverage === 'COMPLETE').length,
+      partialMonths: months.filter((month) => month.coverage === 'PARTIAL').length,
+      noDataMonths: months.filter((month) => month.coverage === 'NO DATA').length,
+      hasAnyData: months.some((month) => month.hasLedgerMonth),
+    };
+  };
+
+  const current = summarizeYear(selectedYear);
+  const previous = summarizeYear(previousYear);
+  const spendChange = current.hasAnyData && previous.hasAnyData ? current.totalSpend - previous.totalSpend : null;
+  const spendChangePercent = spendChange !== null && previous.totalSpend > 0 ? (spendChange / previous.totalSpend) * 100 : null;
+  const transactionChange = current.hasAnyData && previous.hasAnyData ? current.trackedCount - previous.trackedCount : null;
+  const quarters = [0, 1, 2, 3].map((index) => {
+    const start = index * 3;
+    const currentMonths = current.months.slice(start, start + 3);
+    const previousMonths = previous.months.slice(start, start + 3);
+    const sum = (months) => months.reduce((total, month) => total + month.totalSpend, 0);
+    return {
+      name: `Q${index + 1}`,
+      monthsCompared: currentMonths.length,
+      currentSpend: currentMonths.some((month) => month.hasLedgerMonth) ? sum(currentMonths) : null,
+      previousSpend: previousMonths.some((month) => month.hasLedgerMonth) ? sum(previousMonths) : null,
+      currentMonthsWithData: currentMonths.filter((month) => month.hasLedgerMonth).length,
+      previousMonthsWithData: previousMonths.filter((month) => month.hasLedgerMonth).length,
+    };
+  }).filter((quarter) => quarter.monthsCompared > 0);
+
+  const monthEnd = report.months[report.months.length - 1]?.monthName || 'December';
+  const comparablePeriodLabel = `JANUARY–${monthEnd.toUpperCase()}`;
+  const hasIncompleteCoverage = [...current.months, ...previous.months].some((month) => month.coverage !== 'COMPLETE');
+  return {
+    selectedYear, previousYear, monthCount, comparablePeriodLabel,
+    current, previous, spendChange, spendChangePercent, transactionChange, quarters,
+    hasIncompleteCoverage,
+    baselineLabel: !current.hasAnyData ? 'NO SELECTED-YEAR DATA' : !previous.hasAnyData ? 'NO PRIOR-YEAR DATA' : previous.totalSpend > 0 ? 'AVAILABLE' : 'ZERO RECORDED SPEND',
+  };
+}
+
 function workshopAnnualReportBodyMarkup(requestedYear = '') {
   const data = workshopAnnualReportData(requestedYear);
+  const comparison = workshopAnnualComparisonData(data.selectedYear);
   const money = (value) => naira(value);
   const coverageLabel = `${data.completeMonths} complete · ${data.partialMonths} partial · ${data.noDataMonths} without data`;
   const monthRows = data.months.map((month) => {
@@ -1267,7 +1346,17 @@ function workshopAnnualReportBodyMarkup(requestedYear = '') {
   const highest = data.highestSpendMonth
     ? `${data.highestSpendMonth.monthName}: ${money(data.highestSpendMonth.totalSpend)}`
     : 'No ledger months recorded';
-  return `<div class="kano-workshop-annual-period" role="status"><strong>${escapeWorkshopHTML(data.periodLabel)}</strong><span>${escapeWorkshopHTML(coverageLabel)}</span></div><div class="kano-workshop-annual-metrics"><div><span>TOTAL RECORDED</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived</small></div><div><span>TRACKED TRANSACTIONS</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised total</small></div><div><span>ARCHIVED SPEND</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div><span>AVERAGE TRACKED COST</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></div><div class="kano-workshop-annual-highlights"><div><span>HIGHEST RECORDED MONTH</span><strong>${escapeWorkshopHTML(highest)}</strong></div><div class="kano-workshop-annual-quarter-list"><span>QUARTER TOTALS</span>${quarterRows}</div></div><div class="kano-workshop-ledger-table-wrap kano-workshop-annual-table-wrap"><table class="kano-workshop-ledger-table kano-workshop-annual-table"><thead><tr><th>MONTH</th><th>COVERAGE</th><th>TRANSACTIONS</th><th>TRACKED SPEND</th><th>ARCHIVED SPEND</th><th>TOTAL RECORDED</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th>${data.trackedCount}</th><th class="kano-workshop-annual-money">${money(data.trackedSpend)}</th><th class="kano-workshop-annual-money">${money(data.archivedNaira)}</th><th class="kano-workshop-annual-money">${money(data.totalSpend)}</th></tr></tfoot></table></div><p class="kano-workshop-annual-coverage-note">Months labelled NO DATA are unknown, not proof of zero spending. Annual totals include only months retained in this browser's spending ledger. Archived amounts are included but cannot be itemised. An incomplete period must not be treated as a guaranteed lifetime or accounting total.</p>`;
+  const changeClass = comparison.spendChange === null ? 'unknown' : comparison.spendChange > 0 ? 'up' : comparison.spendChange < 0 ? 'down' : 'flat';
+  const changeAmount = comparison.spendChange === null ? comparison.baselineLabel : comparison.spendChange > 0 ? `+${money(comparison.spendChange)}` : comparison.spendChange < 0 ? `−${money(Math.abs(comparison.spendChange))}` : money(0);
+  const changePercent = comparison.spendChangePercent === null ? comparison.baselineLabel : `${comparison.spendChangePercent > 0 ? '+' : ''}${comparison.spendChangePercent.toFixed(1)}%`;
+  const barMaximum = Math.max(1, ...comparison.quarters.flatMap((quarter) => [quarter.currentSpend, quarter.previousSpend]));
+  const comparisonRows = comparison.quarters.map((quarter) => {
+    const currentWidth = Math.max(0, Math.min(100, ((quarter.currentSpend || 0) / barMaximum) * 100));
+    const previousWidth = Math.max(0, Math.min(100, ((quarter.previousSpend || 0) / barMaximum) * 100));
+    return `<div class="kano-workshop-yoy-quarter"><div class="kano-workshop-yoy-quarter-head"><strong>${quarter.name}</strong><span>${quarter.currentMonthsWithData}/${quarter.monthsCompared} current · ${quarter.previousMonthsWithData}/${quarter.monthsCompared} prior months with data</span></div><div class="kano-workshop-yoy-barline"><span>${comparison.selectedYear}</span><div class="kano-workshop-yoy-track"><i data-year="current" style="width:${currentWidth.toFixed(2)}%"></i></div><strong>${quarter.currentSpend === null ? 'NO DATA' : money(quarter.currentSpend)}</strong></div><div class="kano-workshop-yoy-barline"><span>${comparison.previousYear}</span><div class="kano-workshop-yoy-track"><i data-year="previous" style="width:${previousWidth.toFixed(2)}%"></i></div><strong>${quarter.previousSpend === null ? 'NO DATA' : money(quarter.previousSpend)}</strong></div></div>`;
+  }).join('');
+  const comparisonMarkup = `<section class="kano-workshop-yoy" aria-labelledby="kano-workshop-yoy-title"><div class="kano-workshop-yoy-heading"><div><h5 id="kano-workshop-yoy-title">YEAR-OVER-YEAR COMPARISON</h5><p>${escapeWorkshopHTML(comparison.comparablePeriodLabel)} ${comparison.selectedYear} vs ${comparison.previousYear}</p></div><span class="kano-workshop-yoy-badge" data-change="${changeClass}">${escapeWorkshopHTML(changeAmount)}</span></div><div class="kano-workshop-yoy-metrics"><div><span>${comparison.selectedYear} RECORDED SPEND</span><strong>${comparison.current.hasAnyData ? money(comparison.current.totalSpend) : 'NO DATA'}</strong><small>${comparison.current.trackedCount} tracked transactions · ${comparison.current.monthsWithData}/${comparison.monthCount} months with data</small></div><div><span>${comparison.previousYear} COMPARABLE SPEND</span><strong>${comparison.previous.hasAnyData ? money(comparison.previous.totalSpend) : 'NO DATA'}</strong><small>${comparison.previous.trackedCount} tracked transactions · ${comparison.previous.monthsWithData}/${comparison.monthCount} months with data</small></div><div><span>SPENDING CHANGE</span><strong>${escapeWorkshopHTML(changePercent)}</strong><small>${comparison.transactionChange === null ? 'Transaction comparison unavailable' : `${comparison.transactionChange > 0 ? '+' : ''}${comparison.transactionChange} tracked transaction difference`}</small></div></div><div class="kano-workshop-yoy-chart"><div class="kano-workshop-yoy-chart-title"><strong>QUARTERLY SPENDING</strong><span><i data-year="current"></i>${comparison.selectedYear}<i data-year="previous"></i>${comparison.previousYear}</span></div>${comparisonRows}</div><p class="kano-workshop-yoy-note">Both years use the same month range. Missing ledger months are unknown, not zero spending. ${comparison.hasIncompleteCoverage ? 'At least one compared month is partial or missing, so the difference may be incomplete.' : 'All compared months have complete coverage in both periods.'} Archived amounts are included in totals where recorded.</p></section>`;
+  return `<div class="kano-workshop-annual-period" role="status"><strong>${escapeWorkshopHTML(data.periodLabel)}</strong><span>${escapeWorkshopHTML(coverageLabel)}</span></div><div class="kano-workshop-annual-metrics"><div><span>TOTAL RECORDED</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived</small></div><div><span>TRACKED TRANSACTIONS</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised total</small></div><div><span>ARCHIVED SPEND</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div><span>AVERAGE TRACKED COST</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></div>${comparisonMarkup}<div class="kano-workshop-annual-highlights"><div><span>HIGHEST RECORDED MONTH</span><strong>${escapeWorkshopHTML(highest)}</strong></div><div class="kano-workshop-annual-quarter-list"><span>QUARTER TOTALS</span>${quarterRows}</div></div><div class="kano-workshop-ledger-table-wrap kano-workshop-annual-table-wrap"><table class="kano-workshop-ledger-table kano-workshop-annual-table"><thead><tr><th>MONTH</th><th>COVERAGE</th><th>TRANSACTIONS</th><th>TRACKED SPEND</th><th>ARCHIVED SPEND</th><th>TOTAL RECORDED</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th>${data.trackedCount}</th><th class="kano-workshop-annual-money">${money(data.trackedSpend)}</th><th class="kano-workshop-annual-money">${money(data.archivedNaira)}</th><th class="kano-workshop-annual-money">${money(data.totalSpend)}</th></tr></tfoot></table></div><p class="kano-workshop-annual-coverage-note">Months labelled NO DATA are unknown, not proof of zero spending. Annual totals include only months retained in this browser's spending ledger. Archived amounts are included but cannot be itemised. An incomplete period must not be treated as a guaranteed lifetime or accounting total.</p>`;
 }
 
 function workshopAnnualReportMarkup(requestedYear = '') {
@@ -1278,6 +1367,7 @@ function workshopAnnualReportMarkup(requestedYear = '') {
 
 function downloadWorkshopAnnualReport(requestedYear = '') {
   const data = workshopAnnualReportData(requestedYear);
+  const comparison = workshopAnnualComparisonData(data.selectedYear);
   const csvCell = (value) => {
     let safe = String(value ?? '');
     if (/^[\t\r ]*[=+\-@]/.test(safe)) safe = `'${safe}`;
@@ -1286,16 +1376,27 @@ function downloadWorkshopAnnualReport(requestedYear = '') {
   const header = [
     'Report year', 'Period type', 'Period', 'Coverage', 'Tracked transaction count',
     'Tracked spend (NGN)', 'Archived transaction count', 'Archived spend (NGN)', 'Total recorded spend (NGN)',
+    'Comparison baseline year', 'Prior-period total spend (NGN)', 'Selected-period total spend (NGN)', 'Spend change (NGN)', 'Spend change (%)',
   ];
   const rows = data.months.map((month) => [data.selectedYear, 'MONTH', month.key, month.coverage,
-    month.trackedCount, month.trackedSpend, month.archivedCount, month.archivedNaira, month.totalSpend]);
+    month.trackedCount, month.trackedSpend, month.archivedCount, month.archivedNaira, month.totalSpend, '', '', '', '', '']);
   for (const quarter of data.quarters) {
     rows.push([data.selectedYear, 'QUARTER', quarter.name, `${quarter.monthsWithData}/${quarter.months.length} months with ledger data`,
-      quarter.trackedCount, quarter.trackedSpend, quarter.archivedCount, quarter.archivedNaira, quarter.totalSpend]);
+      quarter.trackedCount, quarter.trackedSpend, quarter.archivedCount, quarter.archivedNaira, quarter.totalSpend, '', '', '', '', '']);
   }
   rows.push([data.selectedYear, 'YEAR TOTAL', data.periodLabel,
     `${data.completeMonths} complete; ${data.partialMonths} partial; ${data.noDataMonths} without data`,
-    data.trackedCount, data.trackedSpend, data.archivedCount, data.archivedNaira, data.totalSpend]);
+    data.trackedCount, data.trackedSpend, data.archivedCount, data.archivedNaira, data.totalSpend, '', '', '', '', '']);
+  rows.push([data.selectedYear, 'YEAR-OVER-YEAR COMPARISON', `${comparison.selectedYear} vs ${comparison.previousYear}`,
+    `${comparison.comparablePeriodLabel}; ${comparison.monthCount} matched months; prior coverage: ${comparison.previous.completeMonths} complete, ${comparison.previous.partialMonths} partial, ${comparison.previous.noDataMonths} missing`,
+    '', '', '', '', '', comparison.previousYear, comparison.previous.hasAnyData ? comparison.previous.totalSpend : 'N/A', comparison.current.hasAnyData ? comparison.current.totalSpend : 'N/A', comparison.spendChange,
+    comparison.spendChangePercent === null ? 'N/A' : comparison.spendChangePercent.toFixed(2)]);
+  for (const quarter of comparison.quarters) {
+    const quarterComparable = quarter.currentSpend !== null && quarter.previousSpend !== null;
+    const quarterChange = quarterComparable ? quarter.currentSpend - quarter.previousSpend : '';
+    const percent = quarterComparable && quarter.previousSpend > 0 ? (quarterChange / quarter.previousSpend) * 100 : null;
+    rows.push([data.selectedYear, 'QUARTER COMPARISON', quarter.name, `${quarter.monthsCompared} matched month(s); current coverage ${quarter.currentMonthsWithData}, prior coverage ${quarter.previousMonthsWithData}`, '', '', '', '', '', comparison.previousYear, quarter.previousSpend === null ? 'N/A' : quarter.previousSpend, quarter.currentSpend === null ? 'N/A' : quarter.currentSpend, quarterChange, percent === null ? 'N/A' : percent.toFixed(2)]);
+  }
   const csv = '\uFEFF' + [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
   try {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -1318,10 +1419,22 @@ function downloadWorkshopAnnualReport(requestedYear = '') {
 
 function openWorkshopAnnualReportPrint(requestedYear = '') {
   const data = workshopAnnualReportData(requestedYear);
+  const comparison = workshopAnnualComparisonData(data.selectedYear);
   const money = (value) => naira(value);
   const htmlEscape = (value) => escapeWorkshopHTML(value);
   const monthRows = data.months.map((month) => `<tr><td>${htmlEscape(month.monthName)}</td><td>${htmlEscape(month.coverage)}</td><td class="num">${month.trackedCount}</td><td class="num">${money(month.trackedSpend)}</td><td class="num">${month.archivedCount} / ${money(month.archivedNaira)}</td><td class="num total">${money(month.totalSpend)}</td></tr>`).join('');
   const quarterRows = data.quarters.map((quarter) => `<tr><td>${quarter.name}</td><td>${quarter.monthsWithData} of ${quarter.months.length}</td><td class="num">${quarter.trackedCount}</td><td class="num">${money(quarter.trackedSpend)}</td><td class="num">${quarter.archivedCount} / ${money(quarter.archivedNaira)}</td><td class="num total">${money(quarter.totalSpend)}</td></tr>`).join('');
+  const comparisonQuarterRows = comparison.quarters.map((quarter) => {
+    const comparable = quarter.currentSpend !== null && quarter.previousSpend !== null;
+    const change = comparable ? quarter.currentSpend - quarter.previousSpend : null;
+    const percent = comparable && quarter.previousSpend > 0 ? `${change > 0 ? '+' : ''}${((change / quarter.previousSpend) * 100).toFixed(1)}%` : 'N/A';
+    const previousLabel = quarter.previousSpend === null ? 'NO DATA' : money(quarter.previousSpend);
+    const currentLabel = quarter.currentSpend === null ? 'NO DATA' : money(quarter.currentSpend);
+    const changeLabel = change === null ? 'N/A' : `${change > 0 ? '+' : change < 0 ? '−' : ''}${money(Math.abs(change))}`;
+    return `<tr><td>${quarter.name}</td><td>${quarter.monthsCompared}</td><td class="num">${previousLabel}</td><td class="num">${currentLabel}</td><td class="num">${changeLabel}</td><td class="num">${percent}</td></tr>`;
+  }).join('');
+  const comparisonChange = comparison.spendChange === null ? comparison.baselineLabel : comparison.spendChange > 0 ? `+${money(comparison.spendChange)}` : comparison.spendChange < 0 ? `−${money(Math.abs(comparison.spendChange))}` : money(0);
+  const comparisonPercent = comparison.spendChangePercent === null ? comparison.baselineLabel : `${comparison.spendChangePercent > 0 ? '+' : ''}${comparison.spendChangePercent.toFixed(1)}%`;
   const coverageSummary = `${data.completeMonths} complete month(s), ${data.partialMonths} partial month(s), ${data.noDataMonths} month(s) without ledger data`;
   const highestMonth = data.highestSpendMonth ? `${data.highestSpendMonth.monthName}: ${money(data.highestSpendMonth.totalSpend)}` : 'No ledger months recorded';
   const preparedAt = new Date().toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
@@ -1331,10 +1444,11 @@ function openWorkshopAnnualReportPrint(requestedYear = '') {
     header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:13px;border-bottom:3px solid #10243a}h1{font-size:22px;margin:0 0 4px;color:#10243a}header p{margin:0;color:#52637a}header .meta{text-align:right;font-size:10px;color:#52637a;white-space:nowrap}
     .period{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:13px 0;padding:9px 11px;background:#eef4f9;border:1px solid #d6e0eb;border-radius:5px}.period strong{font-size:12px;color:#10243a}.period span{color:#45566d;text-align:right}
     .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 14px}.metric{border:1px solid #d6e0eb;border-radius:5px;padding:10px;min-width:0}.metric span{display:block;color:#52637a;font-size:9px;font-weight:bold;text-transform:uppercase}.metric strong{display:block;margin:5px 0 2px;color:#10243a;font-size:17px;overflow-wrap:anywhere}.metric small{color:#67778b}
+    .comparison{margin:12px 0;padding:10px;border:1px solid #c8d5e3;border-radius:5px}.comparison h2{margin-top:0}.comparison-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:9px}.comparison-metric{padding:8px;border:1px solid #dbe4ed;border-radius:4px;min-width:0}.comparison-metric span{display:block;color:#52637a;font-size:8px;font-weight:bold}.comparison-metric strong{display:block;margin-top:4px;color:#10243a;font-size:13px;overflow-wrap:anywhere}.comparison p{margin:7px 0;color:#52637a;font-size:9px}
     h2{margin:16px 0 7px;color:#10243a;font-size:13px}table{width:100%;border-collapse:collapse;table-layout:auto}th,td{border:1px solid #d5dee8;padding:6px 7px;vertical-align:top}th{background:#eaf0f6;color:#23364d;text-align:left;font-size:9px;text-transform:uppercase}tbody tr:nth-child(even){background:#f8fafc}.num{text-align:right;white-space:nowrap}.total{font-weight:bold;color:#10243a}.coverage{margin:9px 0;padding:9px;border-left:3px solid #d5a600;background:#fff9df;color:#53451d}.foot{margin-top:20px;padding-top:8px;border-top:1px solid #d5dee8;color:#637186;font-size:9px}
-    @page{size:landscape;margin:12mm}@media print{body{padding:0;font-size:9px}.toolbar{display:none}.metrics{gap:5px}.metric{padding:7px}.metric strong{font-size:14px}h2{margin-top:12px}th,td{padding:4px 5px;break-inside:avoid}header,.period,.metrics,table{break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}.foot{margin-top:12px}}
+    @page{size:landscape;margin:12mm}@media print{body{padding:0;font-size:9px}.toolbar{display:none}.metrics{gap:5px}.metric{padding:7px}.metric strong{font-size:14px}.comparison{padding:7px}.comparison-metrics{gap:5px}.comparison-metric{padding:5px}.comparison-metric strong{font-size:11px}h2{margin-top:12px}th,td{padding:4px 5px;break-inside:avoid}header,.period,.metrics,.comparison,table{break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}.foot{margin-top:12px}}
     @media(max-width:650px){body{padding:12px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}header{flex-direction:column}.meta{text-align:left!important}.period{align-items:flex-start;flex-direction:column}.period span{text-align:left}}
-  </style></head><body><div class="toolbar"><button type="button" onclick="window.print()">PRINT / SAVE AS PDF</button><button type="button" onclick="window.close()">CLOSE</button></div><header><div><h1>KANO LIFE</h1><p>Workshop Spending Report · Yearly &amp; Quarterly Summary</p></div><div class="meta"><div><strong>Report year:</strong> ${htmlEscape(data.selectedYear)}</div><div><strong>Prepared:</strong> ${htmlEscape(preparedAt)}</div></div></header><div class="period"><strong>${htmlEscape(data.periodLabel)}</strong><span>${htmlEscape(coverageSummary)}</span></div><section class="metrics"><div class="metric"><span>Total recorded spend</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived amount</small></div><div class="metric"><span>Tracked transactions</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised spend</small></div><div class="metric"><span>Archived spend</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div class="metric"><span>Average tracked cost</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></section><div class="coverage"><strong>Coverage note:</strong> Months marked NO DATA are unknown, not proof of zero spending. Archived amounts are included but cannot be itemised from the retained ledger. This report is limited to the available local records and is not a guaranteed lifetime accounting statement.</div><h2>Quarter Summary</h2><table><thead><tr><th>Quarter</th><th>Months with data</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${quarterRows || '<tr><td colspan="6">No quarter records available.</td></tr>'}</tbody></table><h2>Monthly Summary</h2><table><thead><tr><th>Month</th><th>Coverage</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th class="num">${data.trackedCount}</th><th class="num">${money(data.trackedSpend)}</th><th class="num">${data.archivedCount} / ${money(data.archivedNaira)}</th><th class="num total">${money(data.totalSpend)}</th></tr></tfoot></table><h2>Highest Recorded-Spend Month</h2><p>${htmlEscape(highestMonth)}</p><div class="foot">Generated from the workshop spending ledger saved in this browser. Printing or saving this report does not modify wallet funds, vehicle condition, scores or gameplay progress.</div></body></html>`;
+  </style></head><body><div class="toolbar"><button type="button" onclick="window.print()">PRINT / SAVE AS PDF</button><button type="button" onclick="window.close()">CLOSE</button></div><header><div><h1>KANO LIFE</h1><p>Workshop Spending Report · Yearly &amp; Quarterly Summary</p></div><div class="meta"><div><strong>Report year:</strong> ${htmlEscape(data.selectedYear)}</div><div><strong>Prepared:</strong> ${htmlEscape(preparedAt)}</div></div></header><div class="period"><strong>${htmlEscape(data.periodLabel)}</strong><span>${htmlEscape(coverageSummary)}</span></div><section class="metrics"><div class="metric"><span>Total recorded spend</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived amount</small></div><div class="metric"><span>Tracked transactions</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised spend</small></div><div class="metric"><span>Archived spend</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div class="metric"><span>Average tracked cost</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></section><section class="comparison"><h2>Year-over-Year Comparison · ${htmlEscape(comparison.comparablePeriodLabel)} ${htmlEscape(comparison.selectedYear)} vs ${htmlEscape(comparison.previousYear)}</h2><div class="comparison-metrics"><div class="comparison-metric"><span>SELECTED PERIOD</span><strong>${comparison.current.hasAnyData ? money(comparison.current.totalSpend) : 'NO DATA'}</strong></div><div class="comparison-metric"><span>PRIOR COMPARABLE PERIOD</span><strong>${comparison.previous.hasAnyData ? money(comparison.previous.totalSpend) : 'NO DATA'}</strong></div><div class="comparison-metric"><span>SPENDING CHANGE</span><strong>${htmlEscape(comparisonChange)} · ${htmlEscape(comparisonPercent)}</strong></div></div><table><thead><tr><th>Quarter</th><th>Matched months</th><th>${htmlEscape(comparison.previousYear)} spend</th><th>${htmlEscape(comparison.selectedYear)} spend</th><th>Change</th><th>Change %</th></tr></thead><tbody>${comparisonQuarterRows}</tbody></table><p>Both periods use the same months. Missing months are unknown, not zero spending. ${comparison.hasIncompleteCoverage ? 'At least one compared month is partial or missing; changes may be incomplete.' : 'Both periods have complete ledger coverage for all compared months.'} Archived amounts are included where retained.</p></section><div class="coverage"><strong>Coverage note:</strong> Months marked NO DATA are unknown, not proof of zero spending. Archived amounts are included but cannot be itemised from the retained ledger. This report is limited to the available local records and is not a guaranteed lifetime accounting statement.</div><h2>Quarter Summary</h2><table><thead><tr><th>Quarter</th><th>Months with data</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${quarterRows || '<tr><td colspan="6">No quarter records available.</td></tr>'}</tbody></table><h2>Monthly Summary</h2><table><thead><tr><th>Month</th><th>Coverage</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th class="num">${data.trackedCount}</th><th class="num">${money(data.trackedSpend)}</th><th class="num">${data.archivedCount} / ${money(data.archivedNaira)}</th><th class="num total">${money(data.totalSpend)}</th></tr></tfoot></table><h2>Highest Recorded-Spend Month</h2><p>${htmlEscape(highestMonth)}</p><div class="foot">Generated from the workshop spending ledger saved in this browser. Printing or saving this report does not modify wallet funds, vehicle condition, scores or gameplay progress.</div></body></html>`;
   let printWindow = null;
   try {
     // Must be called directly in the user's button-click gesture for popup blockers.
@@ -3043,6 +3157,12 @@ function installWorkshopUI() {
       .kano-workshop-annual-metrics>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:8px;border:1px solid #ffffff13;border-radius:7px;background:#ffffff04}
       .kano-workshop-annual-metrics span,.kano-workshop-annual-highlights>div>span{color:#9fb4c8;font-size:7px;font-weight:900;letter-spacing:.035em;line-height:1.35}
       .kano-workshop-annual-metrics strong{color:#f5d77d;font-size:12px;overflow-wrap:anywhere}.kano-workshop-annual-metrics small{color:#8198ad;font-size:8px;line-height:1.35}
+      .kano-workshop-yoy{margin:8px 0;padding:10px;border:1px solid #f5c54235;border-radius:8px;background:linear-gradient(145deg,#f5c5420b,#ffffff03)}
+      .kano-workshop-yoy-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.kano-workshop-yoy-heading h5{margin:0;color:#f5d77d;font-size:10px;letter-spacing:.04em}.kano-workshop-yoy-heading p{margin:4px 0 0;color:#91a8bd;font-size:8px}
+      .kano-workshop-yoy-badge{padding:5px 7px;border:1px solid #ffffff20;border-radius:6px;color:#eaf3fc;font-size:10px;font-weight:900;white-space:nowrap}.kano-workshop-yoy-badge[data-change="up"]{border-color:#fb718555;color:#fecaca}.kano-workshop-yoy-badge[data-change="down"]{border-color:#4dd6ac55;color:#a5f3d4}.kano-workshop-yoy-badge[data-change="flat"]{color:#d9e7f5}.kano-workshop-yoy-badge[data-change="unknown"]{color:#f5d77d;white-space:normal}
+      .kano-workshop-yoy-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}.kano-workshop-yoy-metrics>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:8px;border:1px solid #ffffff12;border-radius:6px;background:#ffffff04}.kano-workshop-yoy-metrics span{color:#93a9be;font-size:7px;font-weight:900;line-height:1.4}.kano-workshop-yoy-metrics strong{color:#f5d77d;font-size:11px;overflow-wrap:anywhere}.kano-workshop-yoy-metrics small{color:#8198ad;font-size:7px;line-height:1.4}
+      .kano-workshop-yoy-chart{padding:8px;border-radius:6px;background:#ffffff03}.kano-workshop-yoy-chart-title{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.kano-workshop-yoy-chart-title>strong{color:#dce8f4;font-size:8px}.kano-workshop-yoy-chart-title>span{display:flex;align-items:center;gap:4px;color:#91a8bd;font-size:7px}.kano-workshop-yoy-chart-title i{display:inline-block;width:7px;height:7px;margin-left:5px;border-radius:2px;background:#f5c542}.kano-workshop-yoy-chart-title i[data-year="previous"]{background:#58a6ff}
+      .kano-workshop-yoy-quarter{padding:7px 0;border-top:1px solid #ffffff0d}.kano-workshop-yoy-quarter-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:5px}.kano-workshop-yoy-quarter-head strong{color:#dce8f4;font-size:8px}.kano-workshop-yoy-quarter-head span{color:#8198ad;font-size:7px;text-align:right}.kano-workshop-yoy-barline{display:grid;grid-template-columns:35px minmax(30px,1fr) auto;align-items:center;gap:6px;margin:4px 0}.kano-workshop-yoy-barline>span{color:#91a8bd;font-size:7px}.kano-workshop-yoy-barline>strong{color:#dbe8f5;font-size:8px;white-space:nowrap}.kano-workshop-yoy-track{height:7px;overflow:hidden;border-radius:6px;background:#ffffff0d}.kano-workshop-yoy-track i{display:block;height:100%;min-width:0;border-radius:6px;background:#f5c542}.kano-workshop-yoy-track i[data-year="previous"]{background:#58a6ff}.kano-workshop-yoy-note{margin:8px 0 0;color:#8198ad;font-size:8px;line-height:1.45}
       .kano-workshop-annual-highlights{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin:8px 0;padding:9px;border:1px solid #ffffff13;border-radius:7px;background:#ffffff04}
       .kano-workshop-annual-highlights>div{display:flex;flex-direction:column;gap:6px;min-width:0}.kano-workshop-annual-highlights>div>strong{color:#eaf3fc;font-size:10px;overflow-wrap:anywhere}
       .kano-workshop-annual-quarter-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
@@ -3055,7 +3175,7 @@ function installWorkshopUI() {
       .kano-workshop-annual-status[data-level="complete"]{border-color:#4dd6ac55;color:#a5f3d4}.kano-workshop-annual-status[data-level="partial"]{border-color:#f5c54255;color:#ffe18b}
       .kano-workshop-annual-coverage-note,.kano-workshop-annual-note{display:block;margin:8px 0 0;color:#8298ad;font-size:8px;line-height:1.45}
       .kano-workshop-annual-report button:focus-visible,.kano-workshop-annual-year-picker select:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-annual-heading{flex-direction:column}.kano-workshop-annual-actions{width:100%;justify-content:stretch}.kano-workshop-annual-actions button{flex:1;white-space:normal}.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-annual-heading{flex-direction:column}.kano-workshop-annual-actions{width:100%;justify-content:stretch}.kano-workshop-annual-actions button{flex:1;white-space:normal}.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-yoy-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-yoy-heading{flex-direction:column}.kano-workshop-yoy-quarter-head{align-items:flex-start;flex-direction:column;gap:3px}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
