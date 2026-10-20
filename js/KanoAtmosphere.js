@@ -3,6 +3,7 @@ import { save, persist } from './storage.js';
 import { AudioManager } from './audio.js';
 import { Renderer3D } from './renderer3d.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
+import './KanoPersistentDailySchedule.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -854,7 +855,8 @@ export class KanoAtmosphere {
     const temp = this.panel.querySelector('[data-world-temp]');
     if (temp) temp.textContent = `${season.label} · ${timeNames[this.settings.timeOfDay] || 'Auto day cycle'} · simulated feel ${temperature}`;
     const clockLabel = this.panel.querySelector('[data-world-clock]');
-    if (clockLabel) clockLabel.textContent = `GAME TIME ${clock} · ${activePart.toUpperCase()}${this.settings.timeOfDay === 'auto' ? ' · CLOCK-SYNCED' : ' · MANUAL TIME'}`;
+    const worldDay = Math.max(1, Math.floor(Number(save.lifestyle?.worldDayNumber) || 1));
+    if (clockLabel) clockLabel.textContent = `DAY ${worldDay} · GAME TIME ${clock} · ${activePart.toUpperCase()}${this.settings.timeOfDay === 'auto' ? ' · CLOCK-SYNCED' : ' · MANUAL TIME'}`;
     const routineButton = this.panel.querySelector('[data-world-routine]');
     if (routineButton && !this.routineRunning) routineButton.textContent = `Play ${activePart} routine`;
     const rent = this.panel.querySelector('[data-world-rent]');
