@@ -495,6 +495,140 @@ function importLocalBackup(file) {
   };
   reader.readAsText(file);
 }
+async function runDiagnostics() {
+  const checks = [];
+  const addCheck = (title, detail, tone = 'success') => checks.push({ title, detail, tone });
+  if (ui.diagnosticsButton) ui.diagnosticsButton.disabled = true;
+  if (ui.diagnosticResults) {
+    ui.diagnosticResults.hidden = false;
+    ui.diagnosticResults.replaceChildren();
+  }
+  setStatus('Checking local save, network, account session and cloud table…', 'normal');
+
+  // 1. Verify this browser can write and read a disposable diagnostic key.
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage || typeof storage.setItem !== 'function' || typeof storage.getItem !== 'function') {
+      throw new Error('Browser localStorage is unavailable.');
+    }
+    const probe = `kano-life-health-probe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    storage.setItem(probe, 'verified');
+    const verified = storage.getItem(probe) === 'verified';
+    storage.removeItem(probe);
+    if (!verified) throw new Error('The test value did not match after writing.');
+    addCheck('Browser storage', 'Read/write test passed. The test value was removed.', 'success');
+  } catch (error) {
+    addCheck('Browser storage', error?.message || 'The browser could not verify a local write.', 'error');
+  }
+
+  // 2. Inspect the game's saved file without modifying it.
+  try {
+    const raw = globalThis.localStorage?.getItem('kano-life-save-v4');
+    if (!raw) {
+      addCheck('Local game save', 'No kano-life-save-v4 record exists yet. Start the game and make a successful save.', 'warning');
+    } else {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Saved data is not a save object.');
+      const money = Math.max(0, Number(parsed.money) || 0);
+      const best = Math.max(0, Number(parsed.highScore) || 0);
+      const achievements = Array.isArray(parsed.achievements) ? parsed.achievements.length : 0;
+      const runs = Array.isArray(parsed.lastRuns) ? parsed.lastRuns.length : 0;
+      const transactions = Array.isArray(parsed.banking?.transactions) ? parsed.banking.transactions.length : 0;
+      addCheck('Local game save', `Readable save found · ₦${money.toLocaleString()} banked · best ${best.toLocaleString()} · ${achievements} achievements · ${runs} recent runs · ${transactions} banking records.`, 'success');
+    }
+  } catch (error) {
+    addCheck('Local game save', `Saved data could not be parsed: ${error?.message || 'invalid JSON'}`, 'error');
+  }
+
+  // 3. Browser/network and configuration checks.
+  if (globalThis.navigator && navigator.onLine === false) {
+    addCheck('Network', 'This browser reports offline. Cloud tests were skipped.', 'warning');
+  } else {
+    addCheck('Network', 'Browser reports an online connection. This does not by itself prove that Supabase is reachable.', 'success');
+  }
+
+  if (!configured()) {
+    addCheck('Supabase configuration', 'Project URL and public anon/publishable key are not both saved. Cloud sync cannot run yet.', 'warning');
+    addCheck('Cloud account and table', 'Skipped until Supabase configuration and sign-in are complete.', 'warning');
+  } else if (globalThis.navigator && navigator.onLine === false) {
+    addCheck('Supabase configuration', `A project URL and public key are saved for ${savedConfigUrl()}.`, 'success');
+    addCheck('Cloud account and table', 'Skipped while offline. Your local save remains available.', 'warning');
+  } else {
+    addCheck('Supabase configuration', `Project URL and public key are saved for ${savedConfigUrl()}. The key value is not displayed.`, 'success');
+    if (!session?.access_token) {
+      addCheck('Cloud account', 'No signed-in cloud session exists on this device. Sign in through the Cloud Save panel to test account access.', 'warning');
+      addCheck('Cloud save table', 'Skipped until an account is signed in.', 'warning');
+    } else {
+      try {
+        const profile = await requestJson('/auth/v1/user', { method: 'GET' }, 'session');
+        const activeUserId = String(profile?.id || session?.user?.id || '');
+        if (!activeUserId) throw new Error('Supabase did not return an authenticated user ID.');
+        user = profile;
+        if (session) session.user = profile;
+        writeJson(USER_KEY, user);
+        if (session) writeJson(SESSION_KEY, session);
+        updateAccountDisplay();
+        addCheck('Cloud account', `Authenticated session verified${profile.email ? ` for ${profile.email}` : ''}.`, 'success');
+        try {
+          const query = `?select=user_id,revision,updated_at&user_id=eq.${encodeURIComponent(activeUserId)}&limit=1`;
+          const rows = await requestJson(`/rest/v1/${TABLE}${query}`, { method: 'GET' }, 'session');
+          if (!Array.isArray(rows)) throw new Error('The cloud table returned an unexpected response.');
+          if (!rows.length) {
+            addCheck('Cloud save table', 'The table is accessible under this account, but no cloud save exists yet. Use UPLOAD THIS DEVICE to create one.', 'warning');
+          } else {
+            const row = rows[0];
+            const revision = Number(row.revision) || 1;
+            addCheck('Cloud save table', `Read access passed · revision ${revision} · last updated ${readableDate(row.updated_at)}.`, 'success');
+          }
+        } catch (error) {
+          addCheck('Cloud save table', `Could not read ${TABLE}: ${error?.message || 'request failed'}. Check that the SQL schema ran successfully and RLS policies/grants are present.`, 'error');
+        }
+        const baseline = readLink(activeUserId);
+        if (cloudReady && !pausedForConflict) {
+          addCheck('Automatic sync', 'Active in this session. Local successful saves are debounced before upload.', 'success');
+        } else if (pausedForConflict) {
+          addCheck('Automatic sync', 'Paused because the local and cloud saves need an explicit conflict choice.', 'warning');
+        } else if (baseline?.userId === activeUserId && baseline?.hash) {
+          addCheck('Automatic sync', 'A prior link exists, but sync is not active in memory. Reopen Cloud Save and synchronize or resolve any choice shown.', 'warning');
+        } else {
+          addCheck('Automatic sync', 'Not active yet. Choose USE CLOUD SAVE or UPLOAD THIS DEVICE when prompted to link the two copies.', 'warning');
+        }
+      } catch (error) {
+        addCheck('Cloud account', `Session validation failed: ${error?.message || 'request failed'}. Sign in again if the session has expired.`, 'error');
+        addCheck('Cloud save table', 'Skipped because account validation failed.', 'warning');
+      }
+    }
+  }
+
+  if (ui.diagnosticResults) {
+    const list = document.createElement('div');
+    list.className = 'kcs-diagnostics-list';
+    for (const check of checks) {
+      const item = document.createElement('div');
+      item.className = 'kcs-diagnostic-item';
+      item.dataset.tone = check.tone;
+      const title = document.createElement('strong');
+      title.textContent = `${check.tone === 'success' ? '✓' : check.tone === 'error' ? '✕' : '!' } ${check.title}`;
+      const detail = document.createElement('p');
+      detail.textContent = check.detail;
+      item.append(title, detail);
+      list.appendChild(item);
+    }
+    ui.diagnosticResults.replaceChildren(list);
+  }
+
+  const errors = checks.filter((check) => check.tone === 'error').length;
+  const warnings = checks.filter((check) => check.tone === 'warning').length;
+  setStatus(
+    errors ? `Cloud save health check finished with ${errors} error(s). Read the results below.`
+      : warnings ? `Health check completed with ${warnings} item(s) requiring attention. Read the results below.`
+        : 'Cloud save health checks passed.',
+    errors ? 'error' : warnings ? 'warning' : 'success'
+  );
+  if (ui.diagnosticsButton) ui.diagnosticsButton.disabled = false;
+  refreshSummary();
+}
+
 function buildPanel() {
   if (panel || typeof document === 'undefined') return;
   const style = document.createElement('style');
@@ -518,6 +652,14 @@ function buildPanel() {
     #kano-cloud-save-panel .kcs-status[data-tone=warning]{border-color:#886d2d;color:#ffe09a}
     #kano-cloud-save-panel .kcs-status[data-tone=error]{border-color:#8d3b45;color:#ffb9bf}
     #kano-cloud-save-panel .kcs-info{background:#15243a;border:1px solid #2f4764;border-radius:10px;padding:10px;margin:9px 0;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+    #kano-cloud-save-panel .kcs-diagnostics{margin-top:8px}
+    #kano-cloud-save-panel .kcs-diagnostics-list{display:grid;gap:8px;margin-top:8px}
+    #kano-cloud-save-panel .kcs-diagnostic-item{padding:10px;border:1px solid #34485f;border-radius:9px;background:#0b1625}
+    #kano-cloud-save-panel .kcs-diagnostic-item[data-tone=success]{border-color:#287b62}
+    #kano-cloud-save-panel .kcs-diagnostic-item[data-tone=warning]{border-color:#886d2d}
+    #kano-cloud-save-panel .kcs-diagnostic-item[data-tone=error]{border-color:#8d3b45}
+    #kano-cloud-save-panel .kcs-diagnostic-item strong{font-size:12px;letter-spacing:.02em}
+    #kano-cloud-save-panel .kcs-diagnostic-item p{margin:5px 0 0;font-size:12px}
     #kano-cloud-save-panel .kcs-info strong{color:#f5c542}
     #kano-cloud-save-panel .kcs-close{font-size:19px;padding:3px 11px}
     #kano-cloud-save-panel [hidden]{display:none!important}
@@ -546,6 +688,7 @@ function buildPanel() {
       <div class="kcs-actions"><button class="primary" id="kcs-signin" type="button">SIGN IN</button><button id="kcs-signup" type="button">CREATE ACCOUNT</button><button class="danger" id="kcs-signout" type="button" hidden>SIGN OUT</button></div>
       <div class="kcs-info"><strong id="kcs-account">NOT SIGNED IN</strong><br><span>Only your authenticated account can access its own cloud save. Never enter a service_role or secret key here.</span></div>
       <div class="kcs-status" id="kcs-status" role="status" aria-live="polite">Cloud save is optional. Configure Supabase and sign in to enable cross-device sync.</div>
+      <div class="kcs-diagnostics"><button id="kcs-diagnostics-button" type="button">TEST CLOUD SAVE HEALTH</button><div id="kcs-diagnostic-results" hidden aria-live="polite"></div></div>
       <div class="kcs-info" id="kcs-sync-actions" hidden>
         <strong>Current progress</strong>
         <div id="kcs-local-summary" style="margin:6px 0">This device · —</div>
@@ -569,6 +712,7 @@ function buildPanel() {
     localSummary: $('kcs-local-summary'), cloudSummary: $('kcs-cloud-summary'), syncNow: $('kcs-sync-now'), export: $('kcs-export'),
     importBtn: $('kcs-import-btn'), importFile: $('kcs-import-file'), download: $('kcs-download'), choice: $('kcs-choice'),
     choiceTitle: $('kcs-choice-title'), overwrite: $('kcs-overwrite'), close: $('kcs-close'),
+    diagnosticsButton: $('kcs-diagnostics-button'), diagnosticResults: $('kcs-diagnostic-results'),
   };
   if (config?.url) ui.url.value = config.url;
   if (config?.anonKey) ui.anonKey.value = config.anonKey;
@@ -577,6 +721,7 @@ function buildPanel() {
   ui.signIn.addEventListener('click', signIn);
   ui.signOut.addEventListener('click', signOut);
   ui.syncNow.addEventListener('click', syncNow);
+  ui.diagnosticsButton.addEventListener('click', runDiagnostics);
   ui.export.addEventListener('click', () => exportData(cloneSave()));
   ui.importBtn.addEventListener('click', () => ui.importFile.click());
   ui.importFile.addEventListener('change', () => { importLocalBackup(ui.importFile.files?.[0]); ui.importFile.value = ''; });
