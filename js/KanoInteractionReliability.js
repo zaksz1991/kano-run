@@ -1,6 +1,6 @@
 const MOVE_ZONES_PATCH = Symbol.for('kano.life.stopped-roadside-interaction.v1');
 const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v1');
-const CROWD_DIRECTION_PATCH = Symbol.for('kano.life.crowd-direction-fix.v1');
+const SCENE_ANIMATION_PATCH = Symbol.for('kano.life.scene-crowd-animation-fix.v1');
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const ROADSIDE_INTERACTION_DEPTH_OFFSET = 0.12;
@@ -11,7 +11,6 @@ const ZONE_LABELS = {
   fuel: 'FUEL STOP',
   pothole: 'POTHOLE',
 };
-
 const WOMAN_CHARACTER_KEYS = [
   'passengerWoman', 'pedestrianWoman', 'passenger', 'passengerMan', 'pedestrian', 'passengerVIP',
 ];
@@ -86,7 +85,6 @@ export function getInteractionAdvice(state, gameStatus = 'PLAY') {
       const depthB = Number(b.depth) + (ROADSIDE_TYPES.has(b.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
       return Math.abs(depthA - 0.14) - Math.abs(depthB - 0.14);
     });
-
   const zone = nearby[0];
   if (!zone) return null;
   const depth = Number(zone.depth) + (ROADSIDE_TYPES.has(zone.type) ? ROADSIDE_INTERACTION_DEPTH_OFFSET : 0);
@@ -110,12 +108,10 @@ export function getInteractionAdvice(state, gameStatus = 'PLAY') {
       detail: 'Roadside interactions activate only in forward gear.',
     };
   }
-
   const targetLane = clamp(Math.round(Number(zone.lane) || 0), 0, 2) - 1;
   const steer = Number(state.steer) || 0;
   const laneAligned = Math.abs(steer - targetLane) <= 0.48;
   const speedLimit = zone.hub ? 6.5 : 12;
-
   if (!laneAligned) {
     const laneName = targetLane < -0.35 ? 'LEFT LANE' : targetLane > 0.35 ? 'RIGHT LANE' : 'CENTRE LANE';
     return {
@@ -161,18 +157,14 @@ export function installStoppedInteractionCompatibility(game) {
       if (entry.references <= 0) entry.restore();
     };
   }
-
   const original = game.moveZones;
   const entry = { active: true, references: 1, original, wrapper: null, restore: null };
   entry.wrapper = function kanoAlignedRoadsideMoveZones(dt) {
     const state = this?.s;
     if (!state || !Array.isArray(state.zones)) return original.call(this, dt);
-
-    const shiftedZones = state.zones.filter((zone) =>
-      zone && ROADSIDE_TYPES.has(zone.type) && Number.isFinite(Number(zone.depth))
-    );
+    const originalZones = state.zones.slice();
+    const shiftedZones = originalZones.filter((zone) => zone && ROADSIDE_TYPES.has(zone.type) && Number.isFinite(Number(zone.depth)));
     for (const zone of shiftedZones) zone.depth = Number(zone.depth) + ROADSIDE_INTERACTION_DEPTH_OFFSET;
-
     const canInteractWhileStopped = Boolean(
       this?.state === 'PLAY' && !state.event && !state.reverse &&
       (Number(state.speed) || 0) <= 0.05 && (Number(state.signedSpeed) || 0) <= 0.05,
@@ -185,7 +177,6 @@ export function installStoppedInteractionCompatibility(game) {
         if (zone && Number.isFinite(Number(zone.depth))) previousDepths.set(zone, Number(zone.depth));
       }
     }
-
     try {
       return original.call(this, dt);
     } finally {
@@ -216,82 +207,8 @@ export function installStoppedInteractionCompatibility(game) {
   };
 }
 
-/**
- * Make the actual market crowd face its walking direction. The crowd is built
- * by KanoSceneUpgrade as InstancedMesh geometry, not by the GLB animation
- * module. This wrapper therefore patches the owning scene upgrade directly.
- */
-function installCrowdDirectionFix(sceneUpgrade) {
-  if (!sceneUpgrade || sceneUpgrade[CROWD_DIRECTION_PATCH]?.active) {
-    return sceneUpgrade?.[CROWD_DIRECTION_PATCH]?.restore || (() => {});
-  }
-  if (typeof sceneUpgrade.updateCrowdMatrices !== 'function' || !Array.isArray(sceneUpgrade.walkers)) {
-    return () => {};
-  }
-
-  const original = sceneUpgrade.updateCrowdMatrices;
-  const wrapper = function updateCrowdMatricesFacingTravel() {
-    if (!this.walkers?.length || this.disposed) return;
-    const write = this.writeMatrix;
-    if (typeof write !== 'function' || !this.dummy) return original.call(this);
-
-    this.walkers.forEach((walker, index) => {
-      // walker.direction is the sign of its movement along world Z. Models
-      // normally face local -Z, so a +Z walker receives a 180-degree yaw.
-      const direction = Number(walker.direction) < 0 ? -1 : 1;
-      const yaw = direction > 0 ? Math.PI : 0;
-      const phase = this.elapsed * 6.8 * walker.speed + walker.phase;
-      const step = Math.sin(phase) * 0.30;
-      const stride = Math.cos(phase) * 0.22;
-      const bob = Math.abs(step) * 0.035;
-      const height = walker.height;
-      const x = walker.x + Math.sin(this.elapsed * 1.1 + walker.phase) * walker.sway;
-      const z = walker.z;
-
-      write.call(this, this.crowdTorso, index, x, 0.98 * height + bob, z, yaw, 1, height, 0.90);
-      write.call(this, this.crowdHead, index, x, 1.58 * height + bob, z, yaw, 1, 1, 0.92);
-
-      for (const side of [-1, 1]) {
-        const partIndex = index * 2 + (side > 0 ? 1 : 0);
-        const armSwing = side * stride * direction * 0.32;
-        this.dummy.position.set(x + side * 0.22, 1.02 * height + bob, z);
-        this.dummy.rotation.set(armSwing, yaw, 0);
-        this.dummy.scale.set(1, 1, 1);
-        this.dummy.updateMatrix();
-        this.crowdArms.setMatrixAt(partIndex, this.dummy.matrix);
-
-        const legSwing = -side * stride * direction;
-        this.dummy.position.set(x + side * 0.09, 0.44 * height, z);
-        this.dummy.rotation.set(legSwing, yaw, 0);
-        this.dummy.scale.set(1, 1, 1);
-        this.dummy.updateMatrix();
-        this.crowdLegs.setMatrixAt(partIndex, this.dummy.matrix);
-      }
-    });
-
-    for (const mesh of [this.crowdTorso, this.crowdHead, this.crowdArms, this.crowdLegs]) {
-      if (mesh?.instanceMatrix) mesh.instanceMatrix.needsUpdate = true;
-    }
-  };
-
-  const patchState = {
-    active: true,
-    original,
-    wrapper,
-    restore() {
-      if (!patchState.active) return;
-      patchState.active = false;
-      if (sceneUpgrade.updateCrowdMatrices === wrapper) sceneUpgrade.updateCrowdMatrices = original;
-      try { delete sceneUpgrade[CROWD_DIRECTION_PATCH]; } catch { sceneUpgrade[CROWD_DIRECTION_PATCH] = undefined; }
-    },
-  };
-  Object.defineProperty(sceneUpgrade, CROWD_DIRECTION_PATCH, { configurable: true, value: patchState });
-  sceneUpgrade.updateCrowdMatrices = wrapper;
-  return patchState.restore;
-}
-
-/** Late GLB fallback bridge for roadside waiting actors and renderer pedestrians. */
-function installCharacterFallbacks(renderer) {
+/** Replace procedural render fallbacks when a compatible GLB is already cached. */
+function installCharacterFallbacks(renderer, onRestore) {
   if (!renderer || renderer[CHARACTER_PATCH]?.active) return renderer?.[CHARACTER_PATCH]?.restore || (() => {});
   const restorers = [];
   const rememberPatch = (name, wrapFactory) => {
@@ -303,7 +220,6 @@ function installCharacterFallbacks(renderer) {
       if (renderer[name] === wrapper) renderer[name] = original;
     });
   };
-
   rememberPatch('upgradePedestrians', (original) => function upgradePedestriansWithFallback(...args) {
     const result = original.apply(this, args);
     const models = this.models;
@@ -330,7 +246,6 @@ function installCharacterFallbacks(renderer) {
     }
     return result;
   });
-
   rememberPatch('syncZones', (original) => function syncZonesWithPassengerFallback(state, ...args) {
     const result = original.call(this, state, ...args);
     const models = this.models;
@@ -339,7 +254,7 @@ function installCharacterFallbacks(renderer) {
       const zone = zonesById.get(id);
       if (!zone || zone.type !== 'pickup' || !actor?.userData?.waitingActors?.length) continue;
       const currentActor = actor.userData.waitingActors[0];
-      const currentKey = currentActor?.userData?.modelKey || currentActor?.userData?.characterType || actor.userData.waitingModelKeyActive || null;
+      const currentKey = currentActor?.userData?.modelKey || actor.userData.waitingModelKeyActive || null;
       const keys = zone.hub ? WOMAN_CHARACTER_KEYS : MAN_CHARACTER_KEYS;
       const key = pickCachedKey(models, keys);
       if (!key) continue;
@@ -365,19 +280,116 @@ function installCharacterFallbacks(renderer) {
     }
     return result;
   });
+  const state = { active: true, restore: () => {
+    if (!state.active) return;
+    state.active = false;
+    for (const restore of restorers.reverse()) {
+      try { restore(); } catch { /* Renderer may already be disposed. */ }
+    }
+    try { delete renderer[CHARACTER_PATCH]; } catch { renderer[CHARACTER_PATCH] = undefined; }
+    onRestore?.();
+  } };
+  Object.defineProperty(renderer, CHARACTER_PATCH, { configurable: true, value: state });
+  return state.restore;
+}
+
+/**
+ * Fixes the actual KanoSceneUpgrade instanced crowd and temporary passenger rigs.
+ * The existing crowd code overwrote each arm/leg matrix with rotation-only matrices,
+ * losing its position. This wrapper keeps each limb attached, faces actors along their
+ * walking vector, and leaves the scene module and game loop intact.
+ */
+function installSceneUpgradeAnimationFix(sceneUpgrade) {
+  if (!sceneUpgrade) return () => {};
+  const existing = sceneUpgrade[SCENE_ANIMATION_PATCH];
+  if (existing?.active) return existing.restore;
+  const restorers = [];
+
+  if (typeof sceneUpgrade.updateCrowdMatrices === 'function') {
+    const original = sceneUpgrade.updateCrowdMatrices;
+    const wrapper = function updateCrowdMatricesWithProperLimbTransforms() {
+      if (
+        this.disposed || !Array.isArray(this.walkers) ||
+        !this.walkers.length || typeof this.writeMatrix !== 'function' ||
+        !this.crowdTorso || !this.crowdHead || !this.crowdArms || !this.crowdLegs
+      ) {
+        return original.call(this);
+      }
+      this.walkers.forEach((walker, index) => {
+        const direction = Number(walker.direction) < 0 ? -1 : 1;
+        const heading = direction < 0 ? Math.PI : 0;
+        const phase = this.elapsed * 6.8 * (Number(walker.speed) || 0.4) + (Number(walker.phase) || 0);
+        const step = Math.sin(phase) * 0.30;
+        const stride = Math.cos(phase) * 0.22;
+        const bob = Math.abs(step) * 0.035;
+        const height = Number(walker.height) || 1;
+        const x = (Number(walker.x) || 0) + Math.sin(this.elapsed * 1.1 + (Number(walker.phase) || 0)) * (Number(walker.sway) || 0.06);
+        const z = Number(walker.z) || 0;
+
+        this.writeMatrix(this.crowdTorso, index, x, 0.98 * height + bob, z, heading, 1, height, 0.90);
+        this.writeMatrix(this.crowdHead, index, x, 1.58 * height + bob, z, heading, 1, 1, 0.92);
+
+        for (const side of [-1, 1]) {
+          const partIndex = index * 2 + (side > 0 ? 1 : 0);
+          // Put limb joints back at their shoulder/hip before applying rotations.
+          const armRot = side * (0.10 + step * 0.45);
+          this.writeMatrix(
+            this.crowdArms, partIndex,
+            x + side * 0.22, 1.02 * height + bob, z,
+            heading, 1, 1, 1, armRot, 0,
+          );
+          const legRot = stride * side;
+          this.writeMatrix(
+            this.crowdLegs, partIndex,
+            x + side * 0.09, 0.44 * height, z,
+            heading, 1, 1, 1, legRot, 0,
+          );
+        }
+      });
+      for (const mesh of [this.crowdTorso, this.crowdHead, this.crowdArms, this.crowdLegs]) {
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+    };
+    sceneUpgrade.updateCrowdMatrices = wrapper;
+    restorers.push(() => {
+      if (sceneUpgrade.updateCrowdMatrices === wrapper) sceneUpgrade.updateCrowdMatrices = original;
+    });
+  }
+
+  if (typeof sceneUpgrade.updatePassengerWalkers === 'function') {
+    const original = sceneUpgrade.updatePassengerWalkers;
+    const wrapper = function orientPassengerWalkersAlongPath(dt, scroll) {
+      const result = original.call(this, dt, scroll);
+      for (const item of this.walkingPassengers || []) {
+        if (!item?.rig?.root || !item.start || !item.end) continue;
+        const dx = Number(item.end.x) - Number(item.start.x);
+        const dz = Number(item.end.z) - Number(item.start.z);
+        if (Math.hypot(dx, dz) > 0.001) {
+          // With this rig's forward axis along +Z, atan2(X, Z) faces the path.
+          item.rig.root.rotation.y = Math.atan2(dx, dz);
+        }
+      }
+      return result;
+    };
+    sceneUpgrade.updatePassengerWalkers = wrapper;
+    restorers.push(() => {
+      if (sceneUpgrade.updatePassengerWalkers === wrapper) sceneUpgrade.updatePassengerWalkers = original;
+    });
+  }
 
   const state = {
     active: true,
-    restore: () => {
+    restore() {
       if (!state.active) return;
       state.active = false;
       for (const restore of restorers.reverse()) {
-        try { restore(); } catch { /* Renderer may already be disposed. */ }
+        try { restore(); } catch { /* Scene instance may already be disposed. */ }
       }
-      try { delete renderer[CHARACTER_PATCH]; } catch { renderer[CHARACTER_PATCH] = undefined; }
+      try { delete sceneUpgrade[SCENE_ANIMATION_PATCH]; } catch { sceneUpgrade[SCENE_ANIMATION_PATCH] = undefined; }
     },
   };
-  Object.defineProperty(renderer, CHARACTER_PATCH, { configurable: true, value: state });
+  Object.defineProperty(sceneUpgrade, SCENE_ANIMATION_PATCH, { configurable: true, value: state });
+  console.info('[Kano Life] crowd limb placement and passenger walking direction fix active.');
   return state.restore;
 }
 
@@ -398,8 +410,8 @@ export class KanoInteractionReliability {
     this.restoreMoveZones = installStoppedInteractionCompatibility(game);
     this.characterRenderer = null;
     this.restoreCharacterFallbacks = null;
-    this.characterSceneUpgrade = null;
-    this.restoreCrowdDirection = null;
+    this.sceneUpgradePatched = null;
+    this.restoreSceneUpgradeAnimation = null;
     this.installStyles();
     this.hint = this.createHint();
     this.diagnostics = this.debug ? this.createDiagnostics() : null;
@@ -447,23 +459,27 @@ export class KanoInteractionReliability {
 
   bindRendererFallbacks() {
     const renderer = this.getRenderer?.();
-    if (renderer !== this.characterRenderer) {
-      try { this.restoreCharacterFallbacks?.(); } catch { /* Previous renderer may be gone. */ }
-      this.characterRenderer = renderer || null;
-      this.restoreCharacterFallbacks = renderer ? installCharacterFallbacks(renderer) : null;
-    }
+    if (!renderer || renderer === this.characterRenderer) return;
+    try { this.restoreCharacterFallbacks?.(); } catch { /* Previous renderer may be gone. */ }
+    this.characterRenderer = renderer;
+    this.restoreCharacterFallbacks = installCharacterFallbacks(renderer);
+  }
 
-    const sceneUpgrade = this.getSceneUpgrade?.();
-    if (sceneUpgrade !== this.characterSceneUpgrade) {
-      try { this.restoreCrowdDirection?.(); } catch { /* Previous scene upgrade may be gone. */ }
-      this.characterSceneUpgrade = sceneUpgrade || null;
-      this.restoreCrowdDirection = sceneUpgrade ? installCrowdDirectionFix(sceneUpgrade) : null;
+  bindSceneUpgradeAnimationFix() {
+    const current = this.getSceneUpgrade?.();
+    if (current === this.sceneUpgradePatched) return;
+    try { this.restoreSceneUpgradeAnimation?.(); } catch { /* Old scene may already be disposed. */ }
+    this.restoreSceneUpgradeAnimation = null;
+    this.sceneUpgradePatched = current || null;
+    if (current) {
+      this.restoreSceneUpgradeAnimation = installSceneUpgradeAnimationFix(current);
     }
   }
 
   update(deltaSeconds = 0, state = this.game?.s || {}) {
     if (this.disposed) return;
     this.bindRendererFallbacks();
+    this.bindSceneUpgradeAnimationFix();
     this.elapsed += Math.min(Math.max(Number(deltaSeconds) || 0, 0), 0.05);
     this.updateHint(state);
     if (this.debug && this.diagnostics && this.elapsed - this.lastDiagnosticsAt >= 0.25) {
@@ -523,7 +539,6 @@ export class KanoInteractionReliability {
       } catch { seatStatus = 'seat position unavailable'; }
     } else if (player) seatStatus = 'WARNING: no recognized seated-driver rig';
     else seatStatus = 'no 3D player (2D renderer or not initialized)';
-
     const near = getInteractionAdvice(state, this.game.state);
     const nearbyZone = near?.zone ? `${near.zone.type} depth=${Number(near.zone.depth).toFixed(3)} lane=${near.zone.lane}` : 'none';
     const status = [
@@ -537,12 +552,12 @@ export class KanoInteractionReliability {
       `Named driver/wheel/seat nodes: ${namedNodes}`,
       `Visible passenger walkers: ${sceneUpgrade?.walkingPassengers?.length ?? 'n/a'}`,
       `Ambient crowd actors: ${sceneUpgrade?.walkers?.length ?? 'n/a'}`,
-      `Crowd facing correction: ${sceneUpgrade?.[CROWD_DIRECTION_PATCH]?.active ? 'active' : 'waiting / unavailable'}`,
       `Speed: ${Math.round(Number(state.speed) || 0)} km/h · gear: ${state.reverse ? 'REVERSE' : 'FORWARD'}`,
       `Nearby zone: ${nearbyZone}`,
       `Interaction guidance: ${near?.message || 'none'}`,
       'Roadside interaction timing: renderer-aligned',
       'Character fallback bridge: active when compatible GLBs are cached',
+      'Procedural crowd limb transforms: corrected when scene is active',
       'Note: seat check is a position heuristic, not a perfect visual verdict.',
     ].join('\n');
     if (this.diagnostics.textContent !== status) this.diagnostics.textContent = status;
@@ -556,9 +571,9 @@ export class KanoInteractionReliability {
     this.restoreMoveZones = null;
     try { this.restoreCharacterFallbacks?.(); } catch { /* Renderer may already be disposed. */ }
     this.restoreCharacterFallbacks = null;
-    try { this.restoreCrowdDirection?.(); } catch { /* Scene upgrade may already be disposed. */ }
-    this.restoreCrowdDirection = null;
-    this.characterSceneUpgrade = null;
+    try { this.restoreSceneUpgradeAnimation?.(); } catch { /* Scene may already be disposed. */ }
+    this.restoreSceneUpgradeAnimation = null;
+    this.sceneUpgradePatched = null;
     this.characterRenderer = null;
     this.hint?.remove();
     this.diagnostics?.remove();
