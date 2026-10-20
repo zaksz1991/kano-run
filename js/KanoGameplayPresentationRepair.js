@@ -27,9 +27,11 @@ let recordRequestInFlight = false;
 let recordRefreshTimer = null;
 const riderGroups = new Set();
 const potholeActors = new Set();
-const tunedWebGLRenderers = new WeakSet();
+const rendererQualityStates = new WeakMap();
 
-// Preserve high-density rendering on mobile without changing game simulation.
+// Adaptive rendering clarity: start sharp, then trade a small amount of pixel
+// density for steadier frame pacing on slower phones. This touches rendering
+// only; it does not alter simulation speed, physics, collision, or traffic.
 function findWebGLRenderer(owner) {
   const candidates = [
     owner?.renderer, owner?.webglRenderer, owner?.glRenderer,
@@ -43,40 +45,110 @@ function findWebGLRenderer(owner) {
 
 function tuneRendererForClarity(owner) {
   const gl = findWebGLRenderer(owner);
-  if (!gl || tunedWebGLRenderers.has(gl)) return;
-  try {
-    const touchDevice = (navigator.maxTouchPoints || 0) > 0
-      || window.matchMedia?.('(max-width: 760px)').matches;
-    const pixelRatioCap = touchDevice ? 2.0 : 2.25;
-    const pixelRatio = Math.max(1, Math.min(Number(window.devicePixelRatio) || 1, pixelRatioCap));
-    gl.setPixelRatio(pixelRatio);
+  if (!gl) return;
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  let state = rendererQualityStates.get(gl);
 
-    // Match browser display colour space. Only enable tone mapping when the
-    // renderer is using Three.js' un-toned default; preserve custom pipelines.
-    if ('outputColorSpace' in gl && THREE.SRGBColorSpace) {
-      gl.outputColorSpace = THREE.SRGBColorSpace;
-    }
-    if (gl.toneMapping === THREE.NoToneMapping && THREE.ACESFilmicToneMapping !== undefined) {
-      gl.toneMapping = THREE.ACESFilmicToneMapping;
-      gl.toneMappingExposure = Math.max(1, Number(gl.toneMappingExposure) || 1);
-    }
+  if (!state) {
+    try {
+      const touchDevice = (navigator.maxTouchPoints || 0) > 0
+        || window.matchMedia?.('(max-width: 760px)').matches;
+      const deviceRatio = Math.max(1, Number(window.devicePixelRatio) || 1);
+      const maxRatio = Math.min(deviceRatio, touchDevice ? 2.0 : 2.25);
+      const canvas = gl.domElement;
+      state = {
+        touchDevice,
+        maxRatio,
+        minRatio: 1.0,
+        ratio: maxRatio,
+        lastFrameAt: now,
+        slowSince: 0,
+        stableSince: 0,
+        lastChangeAt: now,
+        warningShown: false,
+      };
+      gl.setPixelRatio(state.ratio);
 
-    const canvas = gl.domElement;
-    if (canvas?.style) {
-      canvas.style.display = 'block';
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-      canvas.style.imageRendering = 'auto';
-      canvas.style.webkitTapHighlightColor = 'transparent';
+      // Match browser display colour space where supported. Do not replace an
+      // existing custom tone-mapping pipeline owned by the game renderer.
+      if ('outputColorSpace' in gl && THREE.SRGBColorSpace) {
+        gl.outputColorSpace = THREE.SRGBColorSpace;
+      }
+      if (gl.toneMapping === THREE.NoToneMapping && THREE.ACESFilmicToneMapping !== undefined) {
+        gl.toneMapping = THREE.ACESFilmicToneMapping;
+        gl.toneMappingExposure = Math.max(1, Number(gl.toneMappingExposure) || 1);
+      }
+      if (canvas?.style) {
+        canvas.style.display = 'block';
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        canvas.style.imageRendering = 'auto';
+        canvas.style.webkitTapHighlightColor = 'transparent';
+      }
+      rendererQualityStates.set(gl, state);
+      console.info(`[Kano Life] adaptive 3D clarity enabled · ${state.ratio.toFixed(2)}x initial pixel ratio`);
+      return;
+    } catch (error) {
+      if (!owner._kanoClarityWarningShown) {
+        owner._kanoClarityWarningShown = true;
+        console.warn('[Kano Life] 3D clarity tuning skipped; retaining native renderer settings.', error);
+      }
+      return;
     }
-    tunedWebGLRenderers.add(gl);
-    console.info(`[Kano Life] 3D clarity tuned · pixel ratio ${pixelRatio.toFixed(2)}x`);
-  } catch (error) {
-    // Keep the original renderer configuration if a Three.js build differs.
-    if (!owner._kanoClarityWarningShown) {
-      owner._kanoClarityWarningShown = true;
-      console.warn('[Kano Life] 3D clarity tuning skipped; retaining native renderer settings.', error);
+  }
+
+  // Ignore background-tab suspension and long pauses; they are not GPU
+  // performance samples and should not force the game to a blurry resolution.
+  if (document.hidden) {
+    state.lastFrameAt = now;
+    state.slowSince = 0;
+    state.stableSince = 0;
+    return;
+  }
+  const interval = now - state.lastFrameAt;
+  state.lastFrameAt = now;
+  if (!Number.isFinite(interval) || interval <= 0 || interval > 1000) {
+    state.slowSince = 0;
+    state.stableSince = 0;
+    return;
+  }
+
+  // Sustained frame intervals above 24 ms indicate visible hitching. Lower
+  // DPR gradually and impose a one-second cooldown to prevent oscillation.
+  if (interval > 24) {
+    state.slowSince ||= now;
+    state.stableSince = 0;
+    if (now - state.slowSince >= 1100 && now - state.lastChangeAt >= 900) {
+      const nextRatio = Math.max(state.minRatio, Math.round((state.ratio - 0.15) * 100) / 100);
+      if (nextRatio < state.ratio) {
+        try {
+          gl.setPixelRatio(nextRatio);
+          state.ratio = nextRatio;
+          state.lastChangeAt = now;
+          console.info(`[Kano Life] 3D resolution adapted to ${nextRatio.toFixed(2)}x for smoother mobile gameplay`);
+        } catch (_) {}
+      }
+      state.slowSince = now;
     }
+    return;
+  }
+
+  state.slowSince = 0;
+  // Restore detail only after several seconds of consistently smooth frames.
+  if (interval < 18.5 && state.ratio + 0.01 < state.maxRatio) {
+    state.stableSince ||= now;
+    if (now - state.stableSince >= 4500 && now - state.lastChangeAt >= 4000) {
+      const nextRatio = Math.min(state.maxRatio, Math.round((state.ratio + 0.10) * 100) / 100);
+      try {
+        gl.setPixelRatio(nextRatio);
+        state.ratio = nextRatio;
+        state.lastChangeAt = now;
+        console.info(`[Kano Life] 3D detail restored to ${nextRatio.toFixed(2)}x after stable frames`);
+      } catch (_) {}
+      state.stableSince = now;
+    }
+  } else {
+    state.stableSince = 0;
   }
 }
 
