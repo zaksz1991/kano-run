@@ -1,4 +1,5 @@
-import { save, persist } from './storage.js';
+import { ROUTES, DRIVERS, ACHIEVEMENTS } from './config.js';
+import { save, persist, tribeStanding, unlockAchievement } from './storage.js';
 
 const MOVE_ZONES_PATCH = Symbol.for('kano.life.stopped-roadside-interaction.v1');
 const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v2');
@@ -116,6 +117,24 @@ function ensureTribeChallenges() {
 
 function isFiniteNumber(value) {
   return Number.isFinite(Number(value));
+}
+
+function createRunId() {
+  try {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  } catch (_) { /* Use the local fallback below. */ }
+  return `kano-run-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function jsonClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function isRecentCheckpoint(checkpoint) {
+  if (!checkpoint || checkpoint.version !== 1 || !checkpoint.state || typeof checkpoint.state !== 'object') return false;
+  const age = Date.now() - Number(checkpoint.savedAt);
+  return Number.isFinite(age) && age >= -5 * 60 * 1000 && age <= 14 * 24 * 60 * 60 * 1000
+    && Number.isFinite(Number(checkpoint.state.score)) && Number(checkpoint.state.score) >= 0;
 }
 
 function pickCachedKey(models, keys) {
@@ -642,7 +661,15 @@ export class KanoInteractionReliability {
     this.lastDiagnosticsAt = 0;
     this.lastHintText = '';
     this.careerPersistElapsed = 0;
+    this.checkpointElapsed = 0;
     this.lastChallengeRefresh = 0;
+    this.currentRunId = '';
+    this.softGameOver = false;
+    this.resumeRequested = false;
+    this.restoreGameStart = null;
+    this.restoreGameFinish = null;
+    this.restoreGameContinue = null;
+    this.resumeRunButton = null;
     this.characterRenderer = null;
     this.restoreCharacterFallbacks = null;
     this.sceneUpgradePatched = null;
@@ -658,6 +685,8 @@ export class KanoInteractionReliability {
     this.installCareerLevelDisplay();
     this.installChallengeStartHooks();
     this.createChallengePanels();
+    this.createResumeRunControl();
+    this.refreshResumeRunControl();
     this.onPageHide = () => this.dispose();
     window.addEventListener('pagehide', this.onPageHide, { once: true });
   }
@@ -739,19 +768,275 @@ export class KanoInteractionReliability {
 
   installChallengeStartHooks() {
     const originalStart = this.game.start;
-    if (typeof originalStart !== 'function') return;
+    const originalFinish = this.game.finishOrContinue;
+    const originalContinue = this.game.continueRun;
     const owner = this;
-    const wrapper = function startWithChallengeProgressReset(...args) {
-      const result = originalStart.apply(this, args);
-      owner.beginChallengeRun();
-      owner.lastStats = owner.captureStats();
-      owner.lastGameState = this.state;
-      return result;
-    };
-    this.game.start = wrapper;
-    this.restoreGameStart = () => {
-      if (this.game.start === wrapper) this.game.start = originalStart;
-    };
+
+    if (typeof originalStart === 'function') {
+      const startWrapper = function startWithCheckpointSupport(...args) {
+        const checkpoint = owner.resumeRequested ? owner.readActiveRunCheckpoint() : null;
+        owner.resumeRequested = false;
+
+        if (checkpoint) {
+          // Restore route/driver/challenge selection before Game.start rebuilds
+          // its run state. The completed career totals remain untouched.
+          save.routeId = checkpoint.routeId;
+          save.driverId = checkpoint.driverId;
+          save.dialect = checkpoint.dialect;
+          if (Object.prototype.hasOwnProperty.call(checkpoint, 'activeTribeChallenge')) {
+            save.activeTribeChallenge = checkpoint.activeTribeChallenge;
+          }
+          if (checkpoint.tribeChallenges && typeof checkpoint.tribeChallenges === 'object') {
+            save.tribeChallenges = jsonClone(checkpoint.tribeChallenges);
+          }
+        } else {
+          // The ordinary Start button deliberately begins a new run. Clear the
+          // old checkpoint before resetting the run so it cannot reappear after
+          // a later refresh.
+          save.activeRunCheckpoint = null;
+          persist();
+          owner.softGameOver = false;
+          owner.currentRunId = createRunId();
+        }
+
+        const result = checkpoint
+          ? originalStart.apply(this, [checkpoint.mode, ...args.slice(1)])
+          : originalStart.apply(this, args);
+
+        if (checkpoint) {
+          const restored = jsonClone(checkpoint.state);
+          this.mode = checkpoint.mode;
+          this.route = ROUTES.find((route) => route.id === checkpoint.routeId) || this.route || ROUTES[0];
+          this.driver = DRIVERS.find((driver) => driver.id === checkpoint.driverId) || this.driver || DRIVERS[0];
+          restored.mode = checkpoint.mode;
+          restored.route = this.route.name;
+          restored.driver = this.driver.name;
+          restored.dialect = checkpoint.dialect;
+          restored.event = null;
+          restored.gas = false;
+          restored.brake = false;
+          restored.speed = 0;
+          restored.signedSpeed = 0;
+          restored.reverse = false;
+          restored.runEnded = Boolean(checkpoint.softOver);
+          restored.invuln = Math.max(1.5, Number(restored.invuln) || 0);
+          this.s = restored;
+          owner.currentRunId = checkpoint.runId || createRunId();
+          owner.softGameOver = Boolean(checkpoint.softOver);
+          owner.tribeChallenges = ensureTribeChallenges();
+
+          if (checkpoint.softOver) {
+            this.state = 'OVER';
+            this.audio?.engine?.(0);
+            this.ui?.hideEvent?.();
+            this.ui?.gameOver?.({
+              reason: checkpoint.reason || 'Recovered saved crash screen',
+              earned: 0,
+              run: this.s,
+              best: save.highScore || 0,
+              standing: tribeStanding(),
+              board: save.tribes?.[this.s.dialect] || [],
+              soft: true,
+            });
+          } else {
+            // If refresh interrupted an event, resume safely at a standstill
+            // rather than leaving the player behind a missing event modal.
+            this.state = 'PLAY';
+            this.s.runEnded = false;
+            this.ui?.hide?.('menu-screen');
+            this.ui?.hide?.('over-screen');
+            this.ui?.hideEvent?.();
+            this.ui?.startPlay?.();
+            this.ui?.update?.(this.s, this.route, this.driver);
+            this.ui?.toast?.('Saved run restored · score, distance and unbanked fares recovered.');
+          }
+
+          owner.lastStats = owner.captureStats();
+          owner.lastGameState = this.state;
+          owner.careerPersistElapsed = 0;
+          owner.checkpointElapsed = 0;
+          persist();
+        } else {
+          owner.beginChallengeRun();
+          owner.lastStats = owner.captureStats();
+          owner.lastGameState = this.state;
+        }
+
+        owner.refreshResumeRunControl();
+        return result;
+      };
+      this.game.start = startWrapper;
+      this.restoreGameStart = () => {
+        if (this.game.start === startWrapper) this.game.start = originalStart;
+      };
+    }
+
+    if (typeof originalFinish === 'function') {
+      const finishWrapper = function finishWithCheckpointCommit(reason, allowContinue) {
+        const state = this.s || {};
+        const offersContinue = Boolean(
+          allowContinue && (Number(state.lives) > 0 || Number(save.money) >= Number(state.paidContinueCost || Infinity)),
+        );
+        const result = originalFinish.apply(this, [reason, allowContinue]);
+
+        if (offersContinue) {
+          owner.softGameOver = true;
+          owner.checkpointActiveRun({ persistNow: true, force: true, reason });
+        } else {
+          // The game has now banked cash and submitted the completed score.
+          // If persistence fails, retain the previous checkpoint in memory;
+          // storage.js rolls back any failed banking transaction.
+          owner.softGameOver = false;
+          const previousCheckpoint = save.activeRunCheckpoint;
+          save.activeRunCheckpoint = null;
+          const cleared = persist();
+          if (!cleared && previousCheckpoint) {
+            save.activeRunCheckpoint = previousCheckpoint;
+            owner.currentRunId = previousCheckpoint.runId || owner.currentRunId;
+          } else {
+            owner.currentRunId = '';
+          }
+          owner.refreshResumeRunControl();
+        }
+        return result;
+      };
+      this.game.finishOrContinue = finishWrapper;
+      this.restoreGameFinish = () => {
+        if (this.game.finishOrContinue === finishWrapper) this.game.finishOrContinue = originalFinish;
+      };
+    }
+
+    if (typeof originalContinue === 'function') {
+      const continueWrapper = function continueWithCheckpointSync(...args) {
+        const result = originalContinue.apply(this, args);
+        if (this.state === 'PLAY' && !this.s?.runEnded) {
+          owner.softGameOver = false;
+          owner.lastStats = owner.captureStats();
+          owner.lastGameState = this.state;
+          owner.checkpointActiveRun({ persistNow: true, force: true });
+        }
+        return result;
+      };
+      this.game.continueRun = continueWrapper;
+      this.restoreGameContinue = () => {
+        if (this.game.continueRun === continueWrapper) this.game.continueRun = originalContinue;
+      };
+    }
+  }
+
+  createResumeRunControl() {
+    const startCard = document.querySelector('#start-screen .start-card');
+    if (!startCard) return;
+    const actions = startCard.querySelector('.start-actions');
+    if (!actions) return;
+    const existing = document.getElementById('kano-resume-run-button');
+    if (existing) {
+      this.resumeRunButton = existing;
+      return;
+    }
+    const button = document.createElement('button');
+    button.id = 'kano-resume-run-button';
+    button.type = 'button';
+    button.className = 'secondary-action';
+    button.hidden = true;
+    button.style.cssText = 'width:100%;min-height:42px;margin:7px 0;border:1px solid #25b69b;border-radius:10px;background:#0b3e40;color:#effff9;font:800 12px/1.25 system-ui,sans-serif;cursor:pointer;touch-action:manipulation;';
+    button.addEventListener('click', () => {
+      const checkpoint = this.readActiveRunCheckpoint();
+      if (!checkpoint) {
+        this.refreshResumeRunControl();
+        return;
+      }
+      this.resumeRequested = true;
+      this.game.start(checkpoint.mode);
+    });
+    startCard.insertBefore(button, actions);
+    this.resumeRunButton = button;
+  }
+
+  readActiveRunCheckpoint() {
+    const checkpoint = save.activeRunCheckpoint;
+    if (isRecentCheckpoint(checkpoint)) return checkpoint;
+    if (checkpoint) {
+      save.activeRunCheckpoint = null;
+      persist();
+    }
+    return null;
+  }
+
+  refreshResumeRunControl() {
+    const button = this.resumeRunButton || document.getElementById('kano-resume-run-button');
+    if (!button) return;
+    const checkpoint = this.readActiveRunCheckpoint();
+    if (!checkpoint) {
+      button.hidden = true;
+      return;
+    }
+    const score = Math.floor(Number(checkpoint.state.score) || 0).toLocaleString();
+    const fares = Math.floor(Number(checkpoint.state.fares) || 0).toLocaleString();
+    button.textContent = checkpoint.softOver
+      ? `RECOVER SAVED RUN · SCORE ${score} · ₦${fares} FARES · CRASH SCREEN`
+      : `RESUME SAVED RUN · SCORE ${score} · ₦${fares} FARES`;
+    button.hidden = false;
+  }
+
+  checkpointActiveRun({ persistNow = true, force = false, reason = '' } = {}) {
+    if (!this.game?.s) return false;
+    const gameState = this.game.state;
+    const softOver = gameState === 'OVER' && Boolean(this.softGameOver);
+    const activeState = ['PLAY', 'MENU', 'EVENT'].includes(gameState);
+    if (!activeState && !softOver) return false;
+
+    try {
+      const snapshot = jsonClone(this.game.s);
+      // Never restore a held pedal or moving vehicle after a refresh. A soft
+      // crash remains a crash screen, so a continue still consumes a life.
+      snapshot.gas = false;
+      snapshot.brake = false;
+      snapshot.speed = 0;
+      snapshot.signedSpeed = 0;
+      snapshot.reverse = false;
+      snapshot.event = null;
+      snapshot.runEnded = softOver;
+
+      const runId = this.currentRunId || save.activeRunCheckpoint?.runId || createRunId();
+      this.currentRunId = runId;
+      save.highScore = Math.max(0, Math.floor(Number(save.highScore) || 0), Math.floor(Number(snapshot.score) || 0));
+      save.activeRunCheckpoint = {
+        version: 1,
+        runId,
+        savedAt: Date.now(),
+        mode: this.game.mode || snapshot.mode || 'career',
+        routeId: this.game.route?.id || save.routeId,
+        driverId: this.game.driver?.id || save.driverId,
+        dialect: ['hausa', 'yoruba', 'igbo'].includes(snapshot.dialect) ? snapshot.dialect : save.dialect,
+        gameState: softOver ? 'OVER' : 'PLAY',
+        softOver,
+        reason: String(reason || '').slice(0, 180),
+        activeTribeChallenge: ['hausa', 'yoruba', 'igbo'].includes(save.activeTribeChallenge) ? save.activeTribeChallenge : null,
+        tribeChallenges: jsonClone(save.tribeChallenges || {}),
+        state: snapshot,
+      };
+      this.refreshResumeRunControl();
+      return persistNow ? persist() : true;
+    } catch (error) {
+      console.warn('[Kano Life] Active-run checkpoint could not be created.', error);
+      return false;
+    }
+  }
+
+  checkLiveAchievements() {
+    const state = this.game?.s;
+    if (!state || !['PLAY', 'OVER'].includes(this.game.state)) return;
+    const record = { ...state, goldTimes: Number(save.goldTimes) || 0, tribeSubmits: Number(save.tribeSubmits) || 0 };
+    for (const achievement of ACHIEVEMENTS) {
+      try {
+        if (achievement.test(record) && unlockAchievement(achievement.id)) {
+          this.game.ui?.toast?.(`Achievement unlocked: ${achievement.name} · saved`);
+        }
+      } catch (error) {
+        console.warn(`[Kano Life] Achievement check failed: ${achievement.id}`, error);
+      }
+    }
   }
 
   createChallengePanels() {
@@ -907,6 +1192,9 @@ export class KanoInteractionReliability {
     const activeOrJustEnded = ['PLAY', 'OVER'].includes(this.game.state);
     if (!activeOrJustEnded) return;
     if (this.game.state === 'PLAY' || this.game.state === 'OVER') {
+      // Update personal best during the run, not only after terminal banking.
+      save.highScore = Math.max(0, Math.floor(Number(save.highScore) || 0), Math.floor(Number(state?.score) || 0));
+      this.checkLiveAchievements();
       this.career = ensureCareerProgress();
       const xpGain = d.distance * 80 + d.drops * 30 + d.boards * 7 + d.matchedDrops * 15
         + d.nearMisses * 4 + d.checkpoints * 16 + d.refills * 9 + d.fares / 350;
@@ -925,7 +1213,7 @@ export class KanoInteractionReliability {
       }
     }
     if (this.game.state !== this.lastGameState) {
-      if (this.game.state === 'OVER') {
+      if (this.game.state === 'OVER' && !this.softGameOver) {
         this.career.completedRuns += 1;
         persist();
       }
@@ -1043,6 +1331,13 @@ export class KanoInteractionReliability {
     const dt = Math.min(Math.max(Number(deltaSeconds) || 0, 0), 0.05);
     this.elapsed += dt;
     this.updateProgression(dt, state);
+    this.checkpointElapsed += dt;
+    if (this.checkpointElapsed >= 4) {
+      this.checkpointElapsed = 0;
+      // Keep run score/fares/distance and the current road state durable
+      // without adding unbanked fares to the persistent wallet.
+      this.checkpointActiveRun({ persistNow: true });
+    }
     this.updateHint(state);
     if (this.debug && this.diagnostics && this.elapsed - this.lastDiagnosticsAt >= 0.25) {
       this.lastDiagnosticsAt = this.elapsed;
@@ -1130,6 +1425,8 @@ export class KanoInteractionReliability {
 
   dispose() {
     if (this.disposed) return;
+    // Snapshot an unfinished session before tearing down the integration layer.
+    this.checkpointActiveRun({ persistNow: true });
     this.disposed = true;
     window.removeEventListener('pagehide', this.onPageHide);
     this.restoreMoveZones?.();
@@ -1140,6 +1437,8 @@ export class KanoInteractionReliability {
     this.restoreSceneUpgradeAnimation = null;
     this.restoreCareerUi?.();
     this.restoreGameStart?.();
+    this.restoreGameFinish?.();
+    this.restoreGameContinue?.();
     this.sceneUpgradePatched = null;
     this.characterRenderer = null;
     this.hint?.remove();
@@ -1147,6 +1446,8 @@ export class KanoInteractionReliability {
     this.challengeStartPanel?.remove();
     this.challengeMenuPanel?.remove();
     this.careerCard?.remove();
+    this.resumeRunButton?.remove();
+    this.resumeRunButton = null;
     // The World & Life panel remains alive with its original owner; only undo
     // the temporary docking so disposal does not tear down another controller.
     const worldPanel = document.getElementById('kano-world-life-panel');

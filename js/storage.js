@@ -31,6 +31,8 @@ const freshSave = () => ({
   settings: { quality: 'auto', shake: true },
   // Audit trail for banked cash. Existing saves acquire this safely on load.
   banking: { totalEarned: 0, transactions: [] },
+  // Recoverable in-progress run. Current-run fares are NOT part of banked money.
+  activeRunCheckpoint: null,
 });
 
 function todayInWAT(date = new Date()) {
@@ -159,6 +161,54 @@ export function normaliseSave(parsed = {}) {
     ? [...new Set(input.achievements.filter((id) => typeof id === 'string'))].slice(0, 500)
     : [];
 
+  // Validate and safely retain a small JSON snapshot so a page refresh does
+  // not erase an unfinished run. Expired/corrupt checkpoints are ignored.
+  let activeRunCheckpoint = null;
+  const checkpointInput = input.activeRunCheckpoint;
+  if (checkpointInput && typeof checkpointInput === 'object' && !Array.isArray(checkpointInput)) {
+    try {
+      const savedAt = Number(checkpointInput.savedAt);
+      const stateInput = checkpointInput.state;
+      const age = Date.now() - savedAt;
+      const allowedModes = new Set(['career', 'timeAttack', 'fuel', 'matchDrop', 'potholes', 'freeRoam']);
+      if (
+        checkpointInput.version === 1 &&
+        typeof checkpointInput.runId === 'string' && checkpointInput.runId.length <= 120 &&
+        Number.isFinite(savedAt) && savedAt <= Date.now() + 5 * 60 * 1000 &&
+        age <= 14 * 24 * 60 * 60 * 1000 && age >= -5 * 60 * 1000 &&
+        stateInput && typeof stateInput === 'object' && !Array.isArray(stateInput) &&
+        Number.isFinite(Number(stateInput.score)) && Number(stateInput.score) >= 0 &&
+        allowedModes.has(checkpointInput.mode)
+      ) {
+        const state = JSON.parse(JSON.stringify(stateInput));
+        // Guard against malformed oversized storage payloads.
+        if (JSON.stringify(state).length <= 600000) {
+          const challengeState = checkpointInput.tribeChallenges && typeof checkpointInput.tribeChallenges === 'object'
+            && !Array.isArray(checkpointInput.tribeChallenges)
+            ? JSON.parse(JSON.stringify(checkpointInput.tribeChallenges)) : {};
+          activeRunCheckpoint = {
+            version: 1,
+            runId: checkpointInput.runId,
+            savedAt,
+            mode: checkpointInput.mode,
+            routeId: validRouteIds.has(checkpointInput.routeId) ? checkpointInput.routeId : selectedRoute,
+            driverId: validDriverIds.has(checkpointInput.driverId) ? checkpointInput.driverId : selectedDriver,
+            dialect: ['hausa', 'yoruba', 'igbo'].includes(checkpointInput.dialect) ? checkpointInput.dialect : selectedDialect,
+            gameState: ['PLAY', 'OVER'].includes(checkpointInput.gameState) ? checkpointInput.gameState : 'PLAY',
+            softOver: Boolean(checkpointInput.softOver),
+            reason: typeof checkpointInput.reason === 'string' ? checkpointInput.reason.slice(0, 180) : '',
+            activeTribeChallenge: ['hausa', 'yoruba', 'igbo'].includes(checkpointInput.activeTribeChallenge)
+              ? checkpointInput.activeTribeChallenge : null,
+            tribeChallenges: challengeState,
+            state,
+          };
+        }
+      }
+    } catch (error) {
+      console.warn('[Storage] Ignoring invalid active-run checkpoint.', error);
+    }
+  }
+
   const normalized = {
     ...defaults,
     ...input,
@@ -201,6 +251,7 @@ export function normaliseSave(parsed = {}) {
       shake: typeof settingsInput.shake === 'boolean' ? settingsInput.shake : defaults.settings.shake,
     },
     banking: normalizeBanking(input.banking, defaults.banking),
+    activeRunCheckpoint,
   };
   return normalized;
 }
