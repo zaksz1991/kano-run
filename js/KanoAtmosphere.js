@@ -278,6 +278,8 @@ export class KanoAtmosphere {
     this.disposed = false;
     this.elapsed = 0;
     this.particleAccumulator = 0;
+    this.panelRefreshAccumulator = 0;
+    this.routinePhase = null;
     this.routineTimers = [];
     this.routineGeneration = 0;
     this.routineIndex = 0;
@@ -744,6 +746,8 @@ export class KanoAtmosphere {
           </select>
         </label>
         <div class="kano-world-temp" data-world-temp>In-game climate</div>
+        <div class="kano-world-clock" data-world-clock>Game time · 06:48</div>
+        <small class="kano-world-routine-help">The routine follows the in-game clock. Pause driving before starting a scene sequence.</small>
         <label>Driver's home
           <select data-world-home>
             <option value="family">Family compound · no rent</option>
@@ -755,7 +759,7 @@ export class KanoAtmosphere {
           <button type="button" data-world-visit>Visit home</button>
           <button type="button" data-world-rent-pay>Pay one week's rent</button>
           <button type="button" data-world-road>Return to road</button>
-          <button type="button" data-world-routine>Replay morning routine</button>
+          <button type="button" data-world-routine>Play routine for game time</button>
         </div>
         <small class="kano-world-save">Saved in this browser · local game save</small>
       </div>`;
@@ -766,7 +770,9 @@ export class KanoAtmosphere {
     this.panel.querySelector('[data-world-season]').value = this.settings.season;
     this.panel.querySelector('[data-world-home]').value = this.settings.home;
     this.panel.querySelector('[data-world-time]').addEventListener('change', (event) => {
+      this.stopMorningRoutine();
       this.settings.timeOfDay = validTime.has(event.target.value) ? event.target.value : 'auto';
+      this.routinePhase = null;
       persistLifestyle(this.settings);
       this.installClockOverride(this.game?.s);
       this.applyProfile(this.game?.s || {});
@@ -805,6 +811,8 @@ export class KanoAtmosphere {
       #kano-world-life-panel label{display:grid;gap:4px;color:#cfdeeb;font-weight:600}
       #kano-world-life-panel select{width:100%;min-height:34px;border-radius:7px;border:1px solid #446176;background:#142b40;color:#fff;padding:5px 8px;font:600 12px system-ui;outline-offset:2px}
       #kano-world-life-panel .kano-world-temp,#kano-world-life-panel .kano-world-rent{color:#f6d49d;background:rgba(228,167,77,.10);border:1px solid rgba(228,167,77,.22);border-radius:7px;padding:7px 8px;font-size:11px}
+      #kano-world-life-panel .kano-world-clock{color:#8fe7cb;background:rgba(48,164,127,.10);border:1px solid rgba(48,164,127,.25);border-radius:7px;padding:7px 8px;font-size:11px;font-weight:800}
+      #kano-world-life-panel .kano-world-routine-help{color:#a9bbca;font-size:10px;font-weight:500;line-height:1.35}
       #kano-world-life-panel .kano-world-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
       #kano-world-life-panel button{min-height:34px;border:1px solid #2f6c81;border-radius:7px;background:#0c5368;color:#fff;padding:6px 7px;font:700 11px/1.2 system-ui;cursor:pointer}
       #kano-world-life-panel button:hover{background:#11708a}
@@ -817,14 +825,38 @@ export class KanoAtmosphere {
     document.head.appendChild(style);
   }
 
+  getGameClockMinutes(state = this.game?.s || {}) {
+    const raw = Number(state?.gameClockMinutes);
+    return Number.isFinite(raw) ? ((raw % 1440) + 1440) % 1440 : 8 * 60;
+  }
+
+  getActiveDayPart(state = this.game?.s || {}) {
+    const selected = this.settings?.timeOfDay || 'auto';
+    if (selected !== 'auto' && validTime.has(selected)) return selected;
+    return this.inferDayPart(this.getGameClockMinutes(state), state?.night);
+  }
+
+  formatGameClock(minutes = this.getGameClockMinutes()) {
+    const total = Math.floor(((Number(minutes) || 0) % 1440 + 1440) % 1440);
+    const hour = Math.floor(total / 60);
+    const minute = total % 60;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
   refreshPanel() {
     if (!this.panel) return;
     const timeNames = { auto: 'Auto day cycle', morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening / sunset', night: 'Night' };
     const season = SEASON_PROFILES[this.settings.season] || SEASON_PROFILES.hotDry;
-    const activePart = this.settings.timeOfDay === 'auto' ? this.inferDayPart(this.game?.s?.gameClockMinutes, this.game?.s?.night) : this.settings.timeOfDay;
+    const state = this.game?.s || {};
+    const activePart = this.getActiveDayPart(state);
+    const clock = this.formatGameClock(this.getGameClockMinutes(state));
     const temperature = TIME_PROFILES[activePart]?.temperature?.[this.settings.season] || 'variable';
     const temp = this.panel.querySelector('[data-world-temp]');
-    if (temp) temp.textContent = `${season.label} · ${timeNames[this.settings.timeOfDay] || 'Auto'} · simulated feel ${temperature}`;
+    if (temp) temp.textContent = `${season.label} · ${timeNames[this.settings.timeOfDay] || 'Auto day cycle'} · simulated feel ${temperature}`;
+    const clockLabel = this.panel.querySelector('[data-world-clock]');
+    if (clockLabel) clockLabel.textContent = `GAME TIME ${clock} · ${activePart.toUpperCase()}${this.settings.timeOfDay === 'auto' ? ' · CLOCK-SYNCED' : ' · MANUAL TIME'}`;
+    const routineButton = this.panel.querySelector('[data-world-routine]');
+    if (routineButton && !this.routineRunning) routineButton.textContent = `Play ${activePart} routine`;
     const rent = this.panel.querySelector('[data-world-rent]');
     const pay = this.panel.querySelector('[data-world-rent-pay]');
     if (rent) rent.textContent = this.settings.home === 'family'
@@ -927,31 +959,71 @@ export class KanoAtmosphere {
     this.routineRunning = false;
     this.routineWaitingForScene = null;
     this.routineSceneEntered = false;
+    this.routinePhase = null;
+    const button = this.panel?.querySelector('[data-world-routine]');
+    if (button) button.textContent = `Play ${this.getActiveDayPart()} routine`;
+  }
+
+  getRoutineBeatsForPhase(phase) {
+    const familyHome = this.settings.home === 'family';
+    const homeScene = familyHome ? 'household' : 'bedroom';
+    const homeLabel = familyHome ? 'family compound' : 'rented room';
+
+    const routines = {
+      morning: [
+        { scene: 'bedroom', message: 'Morning · wake up, wash and prepare for the day.', holdMs: 2600 },
+        ...(familyHome ? [{ scene: 'household', message: 'Family compound · greet the household and prepare to leave.', holdMs: 2600 }] : []),
+        { scene: 'breakfast', message: 'Breakfast stop · akara and pap before the driving shift.', holdMs: 2800 },
+        { scene: 'garage', message: 'Parking garage · collect and inspect the secured keke.', holdMs: 3000 },
+        { scene: 'road', message: 'Morning shift · begin taking roadside passengers.', holdMs: 1400 },
+      ],
+      afternoon: [
+        { scene: 'road', message: 'Afternoon work shift · continue collecting fares in Kano.', holdMs: 2100 },
+        { scene: 'street', message: 'Market-side stop · midday traffic and roadside traders.', holdMs: 2400 },
+        { scene: 'breakfast', message: 'Roadside food stall · take a short lunch and water break.', holdMs: 2600 },
+        { scene: 'road', message: 'Return to the route · afternoon passenger demand continues.', holdMs: 1500 },
+      ],
+      evening: [
+        { scene: 'road', message: 'Evening shift · commuter traffic rises as daylight fades.', holdMs: 2200 },
+        { scene: 'street', message: 'Evening market · vendors pack up and traffic slows.', holdMs: 2500 },
+        { scene: 'garage', message: 'End of shift · bring the keke in and secure it for the evening.', holdMs: 2800 },
+        { scene: homeScene, message: `Return to the ${homeLabel} · evening household time.`, holdMs: 2600 },
+      ],
+      night: [
+        { scene: 'road', message: 'Night trip · finish the last fare and travel carefully.', holdMs: 2300 },
+        { scene: 'garage', message: 'Night parking · secure the keke before going indoors.', holdMs: 2800 },
+        ...(familyHome ? [{ scene: 'household', message: 'Family compound · return quietly and check in with the household.', holdMs: 2500 }] : []),
+        { scene: 'bedroom', message: 'Rest time · settle in and recover energy for the next day.', holdMs: 3000 },
+      ],
+    };
+
+    return (routines[phase] || routines.morning).map((beat) => ({ ...beat }));
   }
 
   playMorningRoutine() {
     if (!this.renderer3d || this.disposed) return;
-    this.stopMorningRoutine();
-    this.settings.timeOfDay = 'morning';
-    const timeSelector = this.panel?.querySelector('[data-world-time]');
-    if (timeSelector) timeSelector.value = 'morning';
-    persistLifestyle(this.settings);
-    this.applyProfile(this.game?.s || {});
-    this.refreshPanel();
+    if (this.game?.state === 'PLAY') {
+      this.toast('Pause driving from the game menu first. The routine follows the paused in-game clock and will not interrupt an active drive.');
+      return;
+    }
 
-    // A beat advances only after Renderer3D confirms that its requested scene
-    // is active, then remains visible for a short presentation hold. If WebGL
-    // or the life scene is still loading, retry the same scene instead of
-    // advancing and overwriting the queued request.
-    this.routineBeats = [
-      { scene: 'bedroom', message: 'Morning · wake up and prepare for the day.', holdMs: 2600 },
-      { scene: 'household', message: 'Home · family begins the morning routine.', holdMs: 2600 },
-      { scene: 'breakfast', message: 'Roadside akara and pap breakfast.', holdMs: 2800 },
-      { scene: 'garage', message: 'Retrieve the secured keke from the parking garage.', holdMs: 3000 },
-      { scene: 'road', message: 'Kano road · your driving day begins.', holdMs: 1400 },
-    ];
+    this.stopMorningRoutine();
+    const state = this.game?.s || {};
+    const phase = this.getActiveDayPart(state);
+    const clock = this.formatGameClock(this.getGameClockMinutes(state));
+    this.routinePhase = phase;
+    this.routineBeats = this.getRoutineBeatsForPhase(phase);
     this.routineIndex = 0;
     this.routineRunning = true;
+    const routineButton = this.panel?.querySelector('[data-world-routine]');
+    if (routineButton) routineButton.textContent = `Playing ${phase} routine…`;
+    this.refreshPanel();
+    this.toast(`Starting ${phase} routine at ${clock}. Scene order follows the in-game time and selected residence.`);
+
+    // Crucially, this no longer forces the global clock/lighting to morning.
+    // Auto mode uses the live game clock; manual mode uses the selected phase.
+    // Each beat waits for the requested scene to become active before holding
+    // it on screen and progressing to the next beat.
     const generation = this.routineGeneration;
     this.advanceMorningRoutine(generation);
   }
@@ -965,7 +1037,10 @@ export class KanoAtmosphere {
       this.routineSceneEntered = false;
       this.routineRetryTimer = null;
       this.routineHoldTimer = null;
-      this.toast('Morning routine complete. Safe driving.');
+      const phase = this.routinePhase || this.getActiveDayPart();
+      this.routinePhase = null;
+      this.refreshPanel();
+      this.toast(`${phase[0].toUpperCase()}${phase.slice(1)} routine complete. Your game clock was not advanced by the scene presentation.`);
       return;
     }
 
@@ -1213,6 +1288,11 @@ export class KanoAtmosphere {
     const delta = clamp(Number(dt) || 0, 0, 0.05);
     this.elapsed += delta;
     this.installClockOverride(state);
+    this.panelRefreshAccumulator += delta;
+    if (this.panelRefreshAccumulator >= 1) {
+      this.panelRefreshAccumulator = 0;
+      this.refreshPanel();
+    }
     if (this.pendingScene && this.renderer3d?.ready) this.applyPendingScene();
     else if (pendingLifeScene && this.renderer3d?.ready) this.applyPendingScene();
     this.applyProfile(state);
