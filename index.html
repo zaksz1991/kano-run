@@ -13,7 +13,6 @@
     #drive-controls {
       grid-template-columns: repeat(6, minmax(0, 1fr));
     }
-
     #drive-controls .reverse {
       color: #ffd166;
       background: #332a18;
@@ -33,7 +32,6 @@
       outline: 2px solid #f5c542;
       outline-offset: 3px;
     }
-
     #gear-label {
       color: #9de6d7;
     }
@@ -42,7 +40,6 @@
       #drive-controls {
         gap: 3px;
       }
-
       #drive-controls .control {
         min-width: 0;
         padding-right: 3px;
@@ -58,7 +55,6 @@
       <canvas id="game-canvas" aria-label="Kano Life driving game"></canvas>
       <div class="sky-label">KANO STATE · NORTHERN NIGERIA</div>
       <div class="render-badge" id="render-badge">2D MODE · ROAD VISIBLE</div>
-
       <section class="hud" id="hud" aria-live="polite">
         <div class="hud-top">
           <div class="stat money">
@@ -88,7 +84,6 @@
             <div class="meter"><i id="condition-meter"></i></div>
           </div>
         </div>
-
         <div class="hud-bottom">
           <span id="driver-label">RUFFNECK</span>
           <span id="route-label">Sabon Gari → looking for fares</span>
@@ -101,7 +96,6 @@
           <span id="status-label">STATUS · OK</span>
           <span id="gear-label" aria-live="polite">FORWARD GEAR</span>
         </div>
-
         <div class="mission-pill" id="mission-label">Mission loading…</div>
         <aside class="passenger-list hidden" id="passenger-list" aria-live="polite" aria-label="Passengers aboard"></aside>
       </section>
@@ -113,28 +107,24 @@
       </div>
 
       <div class="toast" id="toast" role="status"></div>
-
       <section class="event-card hidden" id="event-card" role="dialog" aria-modal="true">
         <div class="eyebrow" id="event-kicker">KANO STREET EVENT</div>
         <h2 id="event-title">Sannu!</h2>
         <p id="event-copy"></p>
         <div class="event-actions" id="event-actions"></div>
       </section>
-
       <section class="screen" id="start-screen">
         <div class="start-card">
           <div class="brand-mark">KL<span>+</span></div>
           <p class="eyebrow">NORTHERN NIGERIA · STREET LIFE</p>
           <h1>KANO <em>LIFE</em></h1>
           <p class="subtitle">Drive. Load. Negotiate. Survive.</p>
-
           <div class="keke-art" aria-hidden="true">
             <span class="wheel w1"></span>
             <span class="wheel w2"></span>
             <span class="keke-roof"></span>
             <span class="keke-body">NAPEP</span>
           </div>
-
           <div class="start-fields">
             <label>ROUTE<select id="route-select"></select></label>
             <label>DRIVER<select id="driver-select"></select></label>
@@ -150,7 +140,6 @@
               </select>
             </label>
           </div>
-
           <div class="start-actions">
             <button class="primary" id="start-btn" type="button">START THE MORNING</button>
             <button class="secondary" id="help-btn" type="button">HOW TO PLAY</button>
@@ -160,14 +149,12 @@
             <span>BANKED FUNDS <b id="wallet-balance">₦1,200</b></span>
             <span id="daily-streak">Current streak: 0 day(s)</span>
           </div>
-
           <div class="start-extra">
             <button class="secondary" id="garage-btn" type="button">GARAGE · DRIVERS &amp; PAINT</button>
             <button class="secondary" id="daily-login-btn" type="button">CLAIM DAILY LOGIN</button>
           </div>
 
           <div class="credit">Game Developer: <b>Hassan Zakariya</b></div>
-
           <div class="promo">
             <a href="https://ruffneck-entertainment.vercel.app" target="_blank" rel="noopener noreferrer">RUFFNECK ENTERTAINMENT</a>
             <span>·</span>
@@ -175,7 +162,6 @@
           </div>
         </div>
       </section>
-
       <section class="screen hidden life-routine-screen" id="life-routine-screen" aria-labelledby="life-title">
         <div class="life-routine-card">
           <header class="life-routine-header">
@@ -188,7 +174,6 @@
               <span class="life-progress"><i id="life-progress-fill"></i></span>
             </div>
           </header>
-
           <div class="life-scene-art scene-bedroom" id="life-scene-art" aria-hidden="true">
             <div class="art-sun"></div>
             <div class="art-window"><i></i><i></i><i></i><i></i></div>
@@ -197,7 +182,6 @@
             <div class="art-nightstand"></div>
             <div class="art-scene-sign">HOME COMPOUND · KANO</div>
           </div>
-
           <div class="life-copy-wrap">
             <h2 id="life-title">Morning has come.</h2>
             <p id="life-copy">Wake up, wash, dress, and get ready for the day.</p>
@@ -210,13 +194,11 @@
           </div>
         </div>
       </section>
-
       <section class="screen hidden" id="menu-screen">
         <div class="panel">
           <button class="close-x" data-close="menu-screen" type="button" aria-label="Close menu">×</button>
           <p class="eyebrow">PAUSE / SETTINGS</p>
           <h2>Street menu</h2>
-
           <div class="menu-grid">
             <button data-mode="career" type="button">Career</button>
             <button data-mode="timeAttack" type="button">Time Attack</button>
@@ -225,7 +207,6 @@
             <button data-mode="potholes" type="button">Potholes</button>
             <button data-mode="freeRoam" type="button">Free roam</button>
           </div>
-
           <div class="setting-row">
             <label for="dialect-select">Street language</label>
             <select id="dialect-select">
@@ -263,7 +244,6 @@
               <option value="2d">Canvas 2D</option>
             </select>
           </div>
-
           <div class="daily-board">
             <div class="daily-board-heading">
               <strong>DAILY MISSIONS · WAT</strong>
@@ -271,7 +251,6 @@
             </div>
             <div id="daily-mission-list"></div>
           </div>
-
           <div class="menu-actions">
             <button id="radio-btn" type="button">CHANGE RADIO</button>
             <button id="rank-btn" type="button">NAIJA RANK</button>
@@ -281,7 +260,6 @@
           </div>
         </div>
       </section>
-
       <section class="screen hidden" id="garage-screen">
         <div class="panel garage-panel">
           <button class="close-x" data-close="garage-screen" type="button" aria-label="Close garage">×</button>
@@ -295,7 +273,6 @@
           <button class="primary full" data-close="garage-screen" type="button">BACK</button>
         </div>
       </section>
-
       <section class="screen hidden" id="over-screen">
         <div class="panel over-panel">
           <p class="eyebrow">RUN REPORT</p>
@@ -315,7 +292,6 @@
           </div>
         </div>
       </section>
-
       <section class="screen hidden" id="help-screen">
         <div class="panel">
           <button class="close-x" data-close="help-screen" type="button" aria-label="Close instructions">×</button>
@@ -333,7 +309,6 @@
           <button class="primary full" data-close="help-screen" type="button">GOT IT</button>
         </div>
       </section>
-
       <nav class="drive-controls" id="drive-controls" aria-label="Driving controls">
         <button type="button" class="control lane" data-action="left" aria-label="Steer left">←</button>
         <button type="button" class="control lane" data-action="right" aria-label="Steer right">→</button>
@@ -342,11 +317,11 @@
         <button type="button" class="control reverse" id="reverse-btn" data-action="reverse" aria-label="Toggle reverse gear" aria-pressed="false" title="Toggle reverse gear">REVERSE</button>
         <button type="button" class="control horn" data-action="horn" aria-label="Sound horn">HORN</button>
       </nav>
-
       <button class="menu-button" id="menu-btn" type="button" aria-label="Open game menu">☰</button>
     </div>
   </main>
 
+  <script type="module" src="/js/radio.js"></script>
   <script type="module" src="/js/main.js"></script>
 </body>
 </html>
