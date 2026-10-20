@@ -1,5 +1,5 @@
 --- a/js/main.js	2026-10-20 20:39:12.071212849 +0100
-+++ b/js/main.js	2026-10-20 20:39:12.092971965 +0100
++++ b/js/main.js	2026-10-20 20:44:12.498964004 +0100
 @@ -22,6 +22,8 @@
  import { KanoAtmosphere } from './KanoAtmosphere.js';
  import { KanoInteractionReliability } from './KanoInteractionReliability.js';
@@ -18,7 +18,7 @@
  
  let renderMode = '2D';
  
-@@ -814,6 +818,33 @@
+@@ -814,6 +818,36 @@
    ui.bind?.(game);
  
    // ----------------------------------------------------------
@@ -44,6 +44,9 @@
 +    });
 +
 +    window.kanoDayCycle = dayCycle;
++
++    // Lets game.js apply fare and steering effects. Both fall back to 1 when null.
++    game.dayCycle = dayCycle;
 +  } catch (error) {
 +    console.warn('[Kano Life] day cycle unavailable', error);
 +  }
@@ -52,7 +55,7 @@
    // WORKSHOP, REPAIRS, AND ROADSIDE RECOVERY
    // This DOM panel persists when switching between 2D and 3D.
    // ----------------------------------------------------------
-@@ -1096,6 +1127,16 @@
+@@ -1096,6 +1130,16 @@
  
      game?.tick(dt);
  
@@ -69,7 +72,7 @@
      interactionReliability?.update?.(
        dt,
        game?.s || {},
-@@ -1251,6 +1292,8 @@
+@@ -1251,6 +1295,8 @@
  
      try {
        liveUserCounter?.dispose?.();

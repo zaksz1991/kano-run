@@ -519,3 +519,36 @@ test('2D depth projection places a collision at the visible player-keke height',
   assert.ok(Math.abs(projectedY - 0.585) < 0.012, `impact rendered at ${(projectedY * 100).toFixed(1)}% screen height`);
   assert.ok(farT < 0.06, 'far traffic stays near the horizon');
 });
+
+test('day cycle: rush-hour multiplier raises the fare, and no day cycle leaves fares unchanged', () => {
+  const run = (dayCycle) => {
+    const { game } = createHarness();
+    game.start('career');
+    game.dayCycle = dayCycle;
+    game.s.passengers = [{ name: 'Amina', dest: 'Kumbotso', seats: 1, fare: 1000, class: 'worker' }];
+    game.s.speed = 0; game.s.signedSpeed = 0;
+    game.drop({ dest: 'Kumbotso' });
+    return game.s.fares;
+  };
+  const base = run(null);
+  assert.ok(base > 0);
+  assert.equal(run({ modifiers: () => ({ fareMultiplier: 1.2 }) }), Math.floor(Math.floor(1000 * 1.25) * 1.2));
+  assert.equal(run({ modifiers: () => ({}) }), base);
+});
+
+test('day cycle: heavy fatigue slows steering but a missing day cycle does not', () => {
+  const steerAfter = (dayCycle) => {
+    const { game } = createHarness();
+    game.start('career');
+    game.dayCycle = dayCycle;
+    game.s.speed = 20; game.s.signedSpeed = 20;
+    game.s.steer = 0; game.s.targetLane = 1;
+    game.tick(1 / 30);
+    return game.s.steer;
+  };
+  const normal = steerAfter(null);
+  const tired = steerAfter({ modifiers: () => ({ steeringResponse: 0.7 }) });
+  assert.ok(normal > 0);
+  assert.ok(tired < normal);
+  assert.ok(tired > 0);
+});

@@ -1,0 +1,44 @@
+--- a/js/game.js	2026-10-20 20:43:56.314452127 +0100
++++ b/js/game.js	2026-10-20 20:43:56.340479998 +0100
+@@ -800,11 +800,15 @@
+     const tyreHandling =
+       0.62 + 0.38 * (s.tyres / 100);
+ 
++    // Optional day-cycle effect: heavy fatigue slows steering (never below 70%).
++    const driverResponse =
++      this.dayCycle?.modifiers?.().steeringResponse ?? 1;
++
+     const steeringRate = (
+       s.environment === 'muddy'
+         ? 4.1
+         : 6.6
+-    ) * tyreHandling;
++    ) * tyreHandling * driverResponse;
+ 
+     s.steer +=
+       (s.targetLane - s.steer) *
+@@ -1863,6 +1867,14 @@
+       this.dailyAdd('matchedDrops', 1);
+     }
+ 
++    // Optional day-cycle effect: rush hours pay more, late nights pay less.
++    const dayFareMultiplier =
++      this.dayCycle?.modifiers?.().fareMultiplier ?? 1;
++
++    if (dayFareMultiplier !== 1) {
++      fare = Math.max(0, Math.floor(fare * dayFareMultiplier));
++    }
++
+     s.passengers.shift();
+ 
+     s.drops += 1;
+--- a/js/productionSystems.js	2026-10-20 20:43:56.314500178 +0100
++++ b/js/productionSystems.js	2026-10-20 20:43:56.340771455 +0100
+@@ -723,6 +723,7 @@
+     this.game.s.heat = Math.max(0, (this.game.s.heat ?? 0) - 8);
+     this.game.s.morale = Math.min(100, (this.game.s.morale ?? 75) + 6);
+     this.cooldown = 18;
++    this.game.dayCycle?.eat?.(6); // small hunger relief when the day cycle is active
+     this.game.ui?.toast?.('Pure water bought · ₦50 · vehicle condition +5 · KAROTA heat −8%.');
+     return true;
+   }
