@@ -728,6 +728,91 @@ function workshopHistoryMarkup() {
   }).join('');
 }
 
+function workshopHistorySummaryMarkup() {
+  const history = readWorkshopHistory();
+  const spend = history.reduce((sum, entry) => sum + Math.max(0, Math.floor(Number(entry.cost) || 0)), 0);
+  return `<div class="kano-workshop-history-summary" aria-label="Saved service history summary"><div><span>SAVED SERVICES</span><strong>${history.length}</strong></div><div><span>SAVED SPEND</span><strong>${naira(spend)}</strong></div></div>`;
+}
+
+function normalizedWorkshopExportRows() {
+  const serviceLabels = {
+    full: 'Full service',
+    body: 'Body repair',
+    engine: 'Engine service',
+    tyres: 'Tyre service',
+  };
+  return readWorkshopHistory().map((entry) => {
+    const date = new Date(Number(entry.time));
+    return {
+      date: Number.isNaN(date.getTime()) ? '' : date.toISOString(),
+      service: serviceLabels[entry.service] || 'Workshop service',
+      components: entry.parts.filter((key) => WORKSHOP_PARTS[key]).map((key) => WORKSHOP_PARTS[key].label).join('; '),
+      costNaira: Math.max(0, Math.floor(Number(entry.cost) || 0)),
+      walletAfterNaira: Math.max(0, Math.floor(Number(entry.walletAfter) || 0)),
+    };
+  });
+}
+
+function downloadWorkshopHistory(format) {
+  const rows = normalizedWorkshopExportRows();
+  if (!rows.length) {
+    setWorkshopMessage('No service records are available to export yet.');
+    return;
+  }
+
+  try {
+    const exportedAt = new Date().toISOString();
+    const dateStamp = exportedAt.slice(0, 10);
+    let blob;
+    let extension;
+    let mimeType;
+
+    if (format === 'csv') {
+      const csvCell = (value) => {
+        let safe = String(value ?? '');
+        // Prevent spreadsheet formula execution if a local record was edited.
+        if (/^[\t\r ]*[=+\-@]/.test(safe)) safe = `'${safe}`;
+        return `"${safe.replace(/"/g, '""')}"`;
+      };
+      const header = ['Service date (ISO 8601)', 'Service', 'Components', 'Cost (NGN)', 'Wallet after (NGN)'];
+      const lines = [header, ...rows.map((row) => [row.date, row.service, row.components, row.costNaira, row.walletAfterNaira])];
+      blob = new Blob(['\uFEFF', lines.map((line) => line.map(csvCell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      extension = 'csv';
+      mimeType = 'CSV';
+    } else if (format === 'json') {
+      const backup = {
+        application: 'Kano Life',
+        exportType: 'workshop-service-history',
+        formatVersion: 1,
+        exportedAt,
+        recordCount: rows.length,
+        note: 'This file contains only the saved local workshop history. It does not contain the game wallet or vehicle save.',
+        records: rows,
+      };
+      blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
+      extension = 'json';
+      mimeType = 'JSON backup';
+    } else {
+      setWorkshopMessage('Unsupported export format. Choose CSV or JSON.');
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kano-life-service-history-${dateStamp}.${extension}`;
+    link.style.display = 'none';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    setWorkshopMessage(`${mimeType} export prepared with ${rows.length} saved service record${rows.length === 1 ? '' : 's'}. The game wallet and vehicle save were not changed.`);
+  } catch (error) {
+    console.warn('[Kano Life] Workshop history export failed.', error);
+    setWorkshopMessage('Export failed in this browser. Your saved service history remains unchanged.');
+  }
+}
+
 function workshopHealth(state, partKey) {
   const config = WORKSHOP_PARTS[partKey];
   const raw = Number(state?.[config.stateKey]);
@@ -791,7 +876,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
-    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE</span></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">Receipts are saved in this browser on this device. Clearing browser storage removes them.</p></section>
+    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">Exports include the saved local receipts only. They do not include your wallet or game save. Clearing browser storage removes these records.</p></section>
     <dialog id="kano-workshop-confirm" class="kano-workshop-confirm" aria-labelledby="kano-workshop-confirm-title"><div class="kano-workshop-confirm-inner"><p class="kano-workshop-eyebrow">PAYMENT CONFIRMATION</p><h3 id="kano-workshop-confirm-title">Confirm workshop service</h3><p id="kano-workshop-confirm-summary">Review the repair and total before paying.</p><div id="kano-workshop-confirm-breakdown" class="kano-workshop-confirm-breakdown"></div><div class="kano-workshop-confirm-wallet"><span>WALLET AFTER SERVICE</span><strong id="kano-workshop-wallet-after">—</strong></div><div class="kano-workshop-confirm-actions"><button type="button" class="kano-workshop-cancel" data-kano-workshop-cancel>Cancel</button><button type="button" class="kano-workshop-confirm-pay" data-kano-workshop-confirm>CONFIRM &amp; PAY</button></div></div></dialog>`;
   const status = panel.querySelector('#kano-workshop-status');
   status.textContent = panel.dataset.message || 'Select a service to see its cost.';
@@ -971,6 +1056,14 @@ function installWorkshopUI() {
       .kano-workshop-history-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
       .kano-workshop-history-heading h4{margin:0;color:#f3f7fc;font-size:10px;letter-spacing:.06em}
       .kano-workshop-history-heading span{color:#8fa5bb;font-size:8px;font-weight:900}
+      .kano-workshop-history-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:8px 0}
+      .kano-workshop-history-summary>div{display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0;padding:8px;border:1px solid #ffffff15;border-radius:7px;background:#ffffff06}
+      .kano-workshop-history-summary span{color:#9fb4c8;font-size:8px;font-weight:900;letter-spacing:.04em}
+      .kano-workshop-history-summary strong{color:#ffe18b;font-size:11px;overflow-wrap:anywhere;text-align:right}
+      .kano-workshop-history-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0}
+      .kano-workshop-history-actions button{min-height:38px;padding:8px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:9px;font-weight:900;cursor:pointer;touch-action:manipulation}
+      .kano-workshop-history-actions button:disabled{opacity:.45;cursor:not-allowed}
+      .kano-workshop-history-actions button:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
       #kano-workshop-history-list{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
       .kano-workshop-history-item{padding:8px;border:1px solid #ffffff13;border-radius:7px;background:#ffffff05;min-width:0}
       .kano-workshop-history-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -1007,6 +1100,11 @@ function installWorkshopUI() {
   if (!panel.dataset.bound) {
     panel.dataset.bound = 'true';
     panel.addEventListener('click', (event) => {
+      const exportButton = event.target.closest('[data-kano-workshop-export]');
+      if (exportButton) {
+        if (!exportButton.disabled) downloadWorkshopHistory(exportButton.dataset.kanoWorkshopExport);
+        return;
+      }
       const cancelButton = event.target.closest('[data-kano-workshop-cancel]');
       if (cancelButton) {
         closeWorkshopConfirmation(panel.querySelector('#kano-workshop-confirm'));
