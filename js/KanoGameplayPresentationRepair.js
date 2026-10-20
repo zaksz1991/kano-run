@@ -677,6 +677,7 @@ const WORKSHOP_LABOUR_FEE = 100;
 const WORKSHOP_HISTORY_KEY = 'kano-life-workshop-history-v1';
 const WORKSHOP_SAVINGS_GOAL_KEY = 'kano-life-workshop-savings-goal-v1';
 const WORKSHOP_MONTHLY_BUDGET_KEY = 'kano-life-workshop-monthly-budget-v1';
+const WORKSHOP_ANNUAL_BUDGET_KEY = 'kano-life-workshop-annual-budget-v1';
 const WORKSHOP_SPENDING_LEDGER_KEY = 'kano-life-workshop-spending-ledger-v1';
 const WORKSHOP_SPENDING_LEDGER_RECOVERY_KEY = 'kano-life-workshop-spending-ledger-recovery-v1';
 const WORKSHOP_LEDGER_MONTHS_LIMIT = 12;
@@ -1181,9 +1182,176 @@ function mergeWorkshopSpendingLedgers(firstValue, secondValue) {
   return normalizeWorkshopSpendingLedger(merged) || emptyWorkshopSpendingLedger();
 }
 
+function emptyWorkshopAnnualBudgets() {
+  return { formatVersion: 1, targets: {} };
+}
+
+function normalizeWorkshopAnnualBudgets(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || value.formatVersion !== 1 || !value.targets || typeof value.targets !== 'object'
+    || Array.isArray(value.targets)) return null;
+  const targets = {};
+  for (const [year, raw] of Object.entries(value.targets)) {
+    if (!/^\d{4}$/.test(year) || Number(year) < 1900 || Number(year) > 9999
+      || !raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const targetNaira = Number(raw.targetNaira);
+    const updatedAtValue = Number(raw.updatedAt);
+    if (!Number.isFinite(targetNaira) || targetNaira < 1 || targetNaira > 1000000000) continue;
+    targets[year] = {
+      targetNaira: Math.floor(targetNaira),
+      updatedAt: Number.isFinite(updatedAtValue) && updatedAtValue >= 0 ? Math.floor(updatedAtValue) : 0,
+    };
+  }
+  const retainedYears = Object.keys(targets).sort((a, b) => Number(b) - Number(a)).slice(0, 100);
+  const retained = {};
+  for (const year of retainedYears) retained[year] = targets[year];
+  return { formatVersion: 1, targets: retained };
+}
+
+function readWorkshopAnnualBudgets() {
+  try {
+    return normalizeWorkshopAnnualBudgets(JSON.parse(localStorage.getItem(WORKSHOP_ANNUAL_BUDGET_KEY) || 'null'))
+      || emptyWorkshopAnnualBudgets();
+  } catch (_) {
+    return emptyWorkshopAnnualBudgets();
+  }
+}
+
+function saveWorkshopAnnualBudgets(value) {
+  try {
+    const normalized = normalizeWorkshopAnnualBudgets(value);
+    if (!normalized) return false;
+    localStorage.setItem(WORKSHOP_ANNUAL_BUDGET_KEY, JSON.stringify(normalized));
+    const verified = normalizeWorkshopAnnualBudgets(JSON.parse(localStorage.getItem(WORKSHOP_ANNUAL_BUDGET_KEY) || 'null'));
+    if (!verified || JSON.stringify(verified) !== JSON.stringify(normalized)) return false;
+    return true;
+  } catch (error) {
+    console.warn('[Kano Life] Annual workshop budget target save failed.', error);
+    return false;
+  }
+}
+
+function workshopAnnualBudgetsHaveTargets(value = readWorkshopAnnualBudgets()) {
+  const normalized = normalizeWorkshopAnnualBudgets(value);
+  return Boolean(normalized && Object.keys(normalized.targets).length);
+}
+
+function mergeWorkshopAnnualBudgets(currentValue, incomingValue) {
+  const current = normalizeWorkshopAnnualBudgets(currentValue) || emptyWorkshopAnnualBudgets();
+  const incoming = normalizeWorkshopAnnualBudgets(incomingValue) || emptyWorkshopAnnualBudgets();
+  return normalizeWorkshopAnnualBudgets({
+    formatVersion: 1,
+    targets: { ...current.targets, ...incoming.targets },
+  }) || emptyWorkshopAnnualBudgets();
+}
+
+function workshopAnnualBudgetData(requestedYear = '') {
+  const report = workshopAnnualReportData(requestedYear);
+  const budgets = readWorkshopAnnualBudgets();
+  const target = budgets.targets[report.selectedYear] || null;
+  const hasLedgerData = report.months.some((month) => month.hasLedgerMonth);
+  const remaining = target && hasLedgerData ? target.targetNaira - report.totalSpend : null;
+  const progress = target && hasLedgerData ? (report.totalSpend / target.targetNaira) * 100 : null;
+  const coverageComplete = report.months.length > 0 && report.months.every((month) => month.coverage === 'COMPLETE');
+  let status = 'NO TARGET';
+  if (target && !hasLedgerData) status = 'NO SPENDING DATA';
+  else if (target && remaining < 0) status = 'OVER TARGET';
+  else if (target && remaining === 0) status = 'TARGET REACHED';
+  else if (target) status = 'WITHIN TARGET';
+  return {
+    selectedYear: report.selectedYear,
+    report,
+    target,
+    hasLedgerData,
+    recordedSpend: hasLedgerData ? report.totalSpend : null,
+    remaining,
+    progress,
+    coverageComplete,
+    dataMonths: report.months.filter((month) => month.hasLedgerMonth).length,
+    periodMonths: report.months.length,
+    status,
+  };
+}
+
+function workshopAnnualBudgetMarkup(requestedYear = '') {
+  const data = workshopAnnualBudgetData(requestedYear);
+  const money = (value) => naira(value);
+  const targetValue = data.target ? String(data.target.targetNaira) : '';
+  const progress = data.progress === null ? 0 : Math.max(0, Math.min(100, data.progress));
+  const level = data.status === 'OVER TARGET' ? 'over'
+    : data.status === 'TARGET REACHED' ? 'reached'
+      : data.status === 'WITHIN TARGET' ? (data.progress >= 75 ? 'near' : 'good')
+        : 'empty';
+  let explanation = 'Set a target for this selected year. The target is a planning guide, not a restriction on workshop spending.';
+  if (data.target && !data.hasLedgerData) {
+    explanation = `Target saved for ${data.selectedYear}, but this period has no retained ledger months. Recorded spend is unknown, not ₦0.`;
+  } else if (data.target && data.status === 'OVER TARGET') {
+    explanation = `Recorded spend exceeds the target by ${money(Math.abs(data.remaining))}. Check the coverage indicator before treating this as a complete total.`;
+  } else if (data.target && data.status === 'TARGET REACHED') {
+    explanation = 'Recorded spend equals the annual target. New workshop spending can take the year above target.';
+  } else if (data.target && data.status === 'WITHIN TARGET') {
+    explanation = `${money(data.remaining)} remains against this target based on the spending currently recorded in the ledger.`;
+  }
+  const meter = data.target && data.hasLedgerData
+    ? `<div class="kano-workshop-annual-budget-meter" role="progressbar" aria-label="Recorded annual workshop spending against target" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><i style="width:${progress.toFixed(2)}%"></i></div>`
+    : '';
+  const remainingLabel = !data.target ? 'NOT SET'
+    : !data.hasLedgerData ? 'NO DATA'
+      : data.remaining < 0 ? `OVER BY ${money(Math.abs(data.remaining))}` : money(data.remaining);
+  const progressLabel = data.progress === null ? 'N/A' : `${data.progress.toFixed(1)}%`;
+  const coverageLabel = !data.hasLedgerData ? 'NO LEDGER DATA'
+    : data.coverageComplete ? `${data.dataMonths}/${data.periodMonths} MONTHS COMPLETE`
+      : `${data.dataMonths}/${data.periodMonths} MONTHS WITH DATA · SOME PARTIAL OR MISSING`;
+  return `<section class="kano-workshop-annual-budget" aria-labelledby="kano-workshop-annual-budget-title"><div class="kano-workshop-annual-budget-heading"><div><h5 id="kano-workshop-annual-budget-title">ANNUAL REPAIR BUDGET &amp; VARIANCE</h5><p>Budget target for ${data.selectedYear}</p></div><span data-level="${level}">${escapeWorkshopHTML(data.status)}</span></div><div class="kano-workshop-annual-budget-metrics"><div><span>ANNUAL TARGET</span><strong>${data.target ? money(data.target.targetNaira) : 'NOT SET'}</strong></div><div><span>RECORDED SPENDING</span><strong>${data.recordedSpend === null ? 'NO DATA' : money(data.recordedSpend)}</strong></div><div><span>REMAINING / OVERRUN</span><strong>${escapeWorkshopHTML(remainingLabel)}</strong></div><div><span>TARGET USED</span><strong>${escapeWorkshopHTML(progressLabel)}</strong></div></div>${meter}<p class="kano-workshop-annual-budget-message" role="status">${escapeWorkshopHTML(explanation)}</p><div class="kano-workshop-annual-budget-coverage" data-level="${data.coverageComplete ? 'complete' : data.hasLedgerData ? 'partial' : 'empty'}">LEDGER COVERAGE: ${escapeWorkshopHTML(coverageLabel)}. ${data.hasLedgerData && !data.coverageComplete ? 'Numbers may understate actual spend.' : ''}</div><form class="kano-workshop-annual-budget-form"><label for="kano-workshop-annual-budget-amount">ANNUAL TARGET (₦)<input id="kano-workshop-annual-budget-amount" data-kano-workshop-annual-budget-amount type="number" min="1" max="1000000000" step="1000" inputmode="numeric" value="${targetValue}" placeholder="Enter annual target" /></label><div class="kano-workshop-annual-budget-actions"><button type="button" data-kano-workshop-annual-budget-save>SAVE TARGET</button>${data.target ? '<button type="button" data-kano-workshop-annual-budget-clear>REMOVE TARGET</button>' : ''}</div></form><small class="kano-workshop-annual-budget-note">This uses recorded spending for the selected annual period. Missing months are unknown, not zero. The target does not reserve money or prevent repairs. Up to 100 year-specific targets can be retained on this device.</small></section>`;
+}
+
+function handleWorkshopAnnualBudgetAction(action) {
+  const panel = document.getElementById('kano-workshop-panel');
+  const game = activeGame || window.__KANO_LIFE_GAME__;
+  if (!panel) return;
+  const year = panel.querySelector('[data-kano-workshop-annual-year]')?.value || String(new Date().getFullYear());
+  if (!/^\d{4}$/.test(year) || Number(year) < 1900 || Number(year) > 9999) {
+    setWorkshopMessage('Annual budget action rejected because the report year is invalid. No setting was changed.');
+    return;
+  }
+  panel.dataset.annualReportYear = year;
+  if (action === 'clear') {
+    if (!window.confirm(`Remove the saved annual workshop target for ${year}? Spending history, monthly limits and gameplay data will remain unchanged.`)) return;
+    const budgets = readWorkshopAnnualBudgets();
+    delete budgets.targets[year];
+    if (!saveWorkshopAnnualBudgets(budgets)) {
+      setWorkshopMessage('Could not remove the annual target because browser storage could not verify the change.');
+      return;
+    }
+    panel.dataset.signature = '';
+    panel.dataset.message = `Annual workshop target for ${year} removed. Spending history and gameplay data were not changed.`;
+    renderWorkshopPanel(game?.s || window.__KANO_LIFE_GAME__?.s);
+    return;
+  }
+  if (action !== 'save') return;
+  const input = panel.querySelector('[data-kano-workshop-annual-budget-amount]');
+  const targetNaira = Math.floor(Number(input?.value));
+  if (!Number.isFinite(targetNaira) || targetNaira < 1 || targetNaira > 1000000000) {
+    setWorkshopMessage('Enter an annual target from ₦1 to ₦1,000,000,000. No setting was changed.');
+    input?.focus();
+    return;
+  }
+  const budgets = readWorkshopAnnualBudgets();
+  budgets.targets[year] = { targetNaira, updatedAt: Date.now() };
+  if (!saveWorkshopAnnualBudgets(budgets)) {
+    setWorkshopMessage('Could not save the annual target because browser storage could not verify the change. Existing targets were not intentionally changed.');
+    return;
+  }
+  panel.dataset.signature = '';
+  panel.dataset.message = `Annual workshop target saved for ${year} at ${naira(targetNaira)}. It does not reserve money or block repairs.`;
+  renderWorkshopPanel(game?.s || window.__KANO_LIFE_GAME__?.s);
+}
+
 function workshopAnnualReportYearOptions(ledger = ensureWorkshopSpendingLedger()) {
-  const currentYear = String(new Date().getFullYear());
-  const years = new Set([currentYear]);
+  const currentYearNumber = new Date().getFullYear();
+  const currentYear = String(currentYearNumber);
+  const years = new Set([currentYear, String(currentYearNumber + 1), String(currentYearNumber + 2), String(currentYearNumber + 3)]);
+  for (const year of Object.keys(readWorkshopAnnualBudgets().targets || {})) years.add(year);
   for (const key of Object.keys(ledger.months || {})) {
     const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(key);
     if (match) years.add(match[1]);
@@ -1336,6 +1504,7 @@ function workshopAnnualComparisonData(requestedYear = '') {
 function workshopAnnualReportBodyMarkup(requestedYear = '') {
   const data = workshopAnnualReportData(requestedYear);
   const comparison = workshopAnnualComparisonData(data.selectedYear);
+  const annualBudgetMarkup = workshopAnnualBudgetMarkup(data.selectedYear);
   const money = (value) => naira(value);
   const coverageLabel = `${data.completeMonths} complete · ${data.partialMonths} partial · ${data.noDataMonths} without data`;
   const monthRows = data.months.map((month) => {
@@ -1356,7 +1525,7 @@ function workshopAnnualReportBodyMarkup(requestedYear = '') {
     return `<div class="kano-workshop-yoy-quarter"><div class="kano-workshop-yoy-quarter-head"><strong>${quarter.name}</strong><span>${quarter.currentMonthsWithData}/${quarter.monthsCompared} current · ${quarter.previousMonthsWithData}/${quarter.monthsCompared} prior months with data</span></div><div class="kano-workshop-yoy-barline"><span>${comparison.selectedYear}</span><div class="kano-workshop-yoy-track"><i data-year="current" style="width:${currentWidth.toFixed(2)}%"></i></div><strong>${quarter.currentSpend === null ? 'NO DATA' : money(quarter.currentSpend)}</strong></div><div class="kano-workshop-yoy-barline"><span>${comparison.previousYear}</span><div class="kano-workshop-yoy-track"><i data-year="previous" style="width:${previousWidth.toFixed(2)}%"></i></div><strong>${quarter.previousSpend === null ? 'NO DATA' : money(quarter.previousSpend)}</strong></div></div>`;
   }).join('');
   const comparisonMarkup = `<section class="kano-workshop-yoy" aria-labelledby="kano-workshop-yoy-title"><div class="kano-workshop-yoy-heading"><div><h5 id="kano-workshop-yoy-title">YEAR-OVER-YEAR COMPARISON</h5><p>${escapeWorkshopHTML(comparison.comparablePeriodLabel)} ${comparison.selectedYear} vs ${comparison.previousYear}</p></div><span class="kano-workshop-yoy-badge" data-change="${changeClass}">${escapeWorkshopHTML(changeAmount)}</span></div><div class="kano-workshop-yoy-metrics"><div><span>${comparison.selectedYear} RECORDED SPEND</span><strong>${comparison.current.hasAnyData ? money(comparison.current.totalSpend) : 'NO DATA'}</strong><small>${comparison.current.trackedCount} tracked transactions · ${comparison.current.monthsWithData}/${comparison.monthCount} months with data</small></div><div><span>${comparison.previousYear} COMPARABLE SPEND</span><strong>${comparison.previous.hasAnyData ? money(comparison.previous.totalSpend) : 'NO DATA'}</strong><small>${comparison.previous.trackedCount} tracked transactions · ${comparison.previous.monthsWithData}/${comparison.monthCount} months with data</small></div><div><span>SPENDING CHANGE</span><strong>${escapeWorkshopHTML(changePercent)}</strong><small>${comparison.transactionChange === null ? 'Transaction comparison unavailable' : `${comparison.transactionChange > 0 ? '+' : ''}${comparison.transactionChange} tracked transaction difference`}</small></div></div><div class="kano-workshop-yoy-chart"><div class="kano-workshop-yoy-chart-title"><strong>QUARTERLY SPENDING</strong><span><i data-year="current"></i>${comparison.selectedYear}<i data-year="previous"></i>${comparison.previousYear}</span></div>${comparisonRows}</div><p class="kano-workshop-yoy-note">Both years use the same month range. Missing ledger months are unknown, not zero spending. ${comparison.hasIncompleteCoverage ? 'At least one compared month is partial or missing, so the difference may be incomplete.' : 'All compared months have complete coverage in both periods.'} Archived amounts are included in totals where recorded.</p></section>`;
-  return `<div class="kano-workshop-annual-period" role="status"><strong>${escapeWorkshopHTML(data.periodLabel)}</strong><span>${escapeWorkshopHTML(coverageLabel)}</span></div><div class="kano-workshop-annual-metrics"><div><span>TOTAL RECORDED</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived</small></div><div><span>TRACKED TRANSACTIONS</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised total</small></div><div><span>ARCHIVED SPEND</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div><span>AVERAGE TRACKED COST</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></div>${comparisonMarkup}<div class="kano-workshop-annual-highlights"><div><span>HIGHEST RECORDED MONTH</span><strong>${escapeWorkshopHTML(highest)}</strong></div><div class="kano-workshop-annual-quarter-list"><span>QUARTER TOTALS</span>${quarterRows}</div></div><div class="kano-workshop-ledger-table-wrap kano-workshop-annual-table-wrap"><table class="kano-workshop-ledger-table kano-workshop-annual-table"><thead><tr><th>MONTH</th><th>COVERAGE</th><th>TRANSACTIONS</th><th>TRACKED SPEND</th><th>ARCHIVED SPEND</th><th>TOTAL RECORDED</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th>${data.trackedCount}</th><th class="kano-workshop-annual-money">${money(data.trackedSpend)}</th><th class="kano-workshop-annual-money">${money(data.archivedNaira)}</th><th class="kano-workshop-annual-money">${money(data.totalSpend)}</th></tr></tfoot></table></div><p class="kano-workshop-annual-coverage-note">Months labelled NO DATA are unknown, not proof of zero spending. Annual totals include only months retained in this browser's spending ledger. Archived amounts are included but cannot be itemised. An incomplete period must not be treated as a guaranteed lifetime or accounting total.</p>`;
+  return `<div class="kano-workshop-annual-period" role="status"><strong>${escapeWorkshopHTML(data.periodLabel)}</strong><span>${escapeWorkshopHTML(coverageLabel)}</span></div><div class="kano-workshop-annual-metrics"><div><span>TOTAL RECORDED</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived</small></div><div><span>TRACKED TRANSACTIONS</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised total</small></div><div><span>ARCHIVED SPEND</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div><span>AVERAGE TRACKED COST</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></div>${annualBudgetMarkup}${comparisonMarkup}<div class="kano-workshop-annual-highlights"><div><span>HIGHEST RECORDED MONTH</span><strong>${escapeWorkshopHTML(highest)}</strong></div><div class="kano-workshop-annual-quarter-list"><span>QUARTER TOTALS</span>${quarterRows}</div></div><div class="kano-workshop-ledger-table-wrap kano-workshop-annual-table-wrap"><table class="kano-workshop-ledger-table kano-workshop-annual-table"><thead><tr><th>MONTH</th><th>COVERAGE</th><th>TRANSACTIONS</th><th>TRACKED SPEND</th><th>ARCHIVED SPEND</th><th>TOTAL RECORDED</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th>${data.trackedCount}</th><th class="kano-workshop-annual-money">${money(data.trackedSpend)}</th><th class="kano-workshop-annual-money">${money(data.archivedNaira)}</th><th class="kano-workshop-annual-money">${money(data.totalSpend)}</th></tr></tfoot></table></div><p class="kano-workshop-annual-coverage-note">Months labelled NO DATA are unknown, not proof of zero spending. Annual totals include only months retained in this browser's spending ledger. Archived amounts are included but cannot be itemised. An incomplete period must not be treated as a guaranteed lifetime or accounting total.</p>`;
 }
 
 function workshopAnnualReportMarkup(requestedYear = '') {
@@ -1377,6 +1546,7 @@ function downloadWorkshopAnnualReport(requestedYear = '') {
     'Report year', 'Period type', 'Period', 'Coverage', 'Tracked transaction count',
     'Tracked spend (NGN)', 'Archived transaction count', 'Archived spend (NGN)', 'Total recorded spend (NGN)',
     'Comparison baseline year', 'Prior-period total spend (NGN)', 'Selected-period total spend (NGN)', 'Spend change (NGN)', 'Spend change (%)',
+    'Annual budget target (NGN)', 'Recorded spend used for target (NGN)', 'Budget remaining / overrun (NGN)', 'Target used (%)', 'Target status and coverage',
   ];
   const rows = data.months.map((month) => [data.selectedYear, 'MONTH', month.key, month.coverage,
     month.trackedCount, month.trackedSpend, month.archivedCount, month.archivedNaira, month.totalSpend, '', '', '', '', '']);
@@ -1397,6 +1567,15 @@ function downloadWorkshopAnnualReport(requestedYear = '') {
     const percent = quarterComparable && quarter.previousSpend > 0 ? (quarterChange / quarter.previousSpend) * 100 : null;
     rows.push([data.selectedYear, 'QUARTER COMPARISON', quarter.name, `${quarter.monthsCompared} matched month(s); current coverage ${quarter.currentMonthsWithData}, prior coverage ${quarter.previousMonthsWithData}`, '', '', '', '', '', comparison.previousYear, quarter.previousSpend === null ? 'N/A' : quarter.previousSpend, quarter.currentSpend === null ? 'N/A' : quarter.currentSpend, quarterChange, percent === null ? 'N/A' : percent.toFixed(2)]);
   }
+  const annualBudget = workshopAnnualBudgetData(data.selectedYear);
+  const budgetCoverage = !annualBudget.hasLedgerData ? 'NO LEDGER DATA' : annualBudget.coverageComplete ? 'COMPLETE' : 'PARTIAL OR MISSING MONTHS';
+  rows.push([data.selectedYear, 'ANNUAL BUDGET TARGET', data.periodLabel, budgetCoverage, '', '', '', '', '', '', '', '', '', '',
+    annualBudget.target ? annualBudget.target.targetNaira : 'N/A',
+    annualBudget.recordedSpend === null ? 'N/A' : annualBudget.recordedSpend,
+    annualBudget.remaining === null ? 'N/A' : annualBudget.remaining,
+    annualBudget.progress === null ? 'N/A' : annualBudget.progress.toFixed(2),
+    `${annualBudget.status}; ${budgetCoverage}`]);
+  for (const row of rows) while (row.length < header.length) row.push('');
   const csv = '\uFEFF' + [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
   try {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -1420,6 +1599,7 @@ function downloadWorkshopAnnualReport(requestedYear = '') {
 function openWorkshopAnnualReportPrint(requestedYear = '') {
   const data = workshopAnnualReportData(requestedYear);
   const comparison = workshopAnnualComparisonData(data.selectedYear);
+  const annualBudget = workshopAnnualBudgetData(data.selectedYear);
   const money = (value) => naira(value);
   const htmlEscape = (value) => escapeWorkshopHTML(value);
   const monthRows = data.months.map((month) => `<tr><td>${htmlEscape(month.monthName)}</td><td>${htmlEscape(month.coverage)}</td><td class="num">${month.trackedCount}</td><td class="num">${money(month.trackedSpend)}</td><td class="num">${month.archivedCount} / ${money(month.archivedNaira)}</td><td class="num total">${money(month.totalSpend)}</td></tr>`).join('');
@@ -1435,6 +1615,7 @@ function openWorkshopAnnualReportPrint(requestedYear = '') {
   }).join('');
   const comparisonChange = comparison.spendChange === null ? comparison.baselineLabel : comparison.spendChange > 0 ? `+${money(comparison.spendChange)}` : comparison.spendChange < 0 ? `−${money(Math.abs(comparison.spendChange))}` : money(0);
   const comparisonPercent = comparison.spendChangePercent === null ? comparison.baselineLabel : `${comparison.spendChangePercent > 0 ? '+' : ''}${comparison.spendChangePercent.toFixed(1)}%`;
+  const annualBudgetSection = `<section class="comparison annual-budget"><h2>Annual Budget Target · ${htmlEscape(annualBudget.selectedYear)}</h2><div class="comparison-metrics"><div class="comparison-metric"><span>ANNUAL TARGET</span><strong>${annualBudget.target ? money(annualBudget.target.targetNaira) : 'NOT SET'}</strong></div><div class="comparison-metric"><span>RECORDED SPEND</span><strong>${annualBudget.recordedSpend === null ? 'NO DATA' : money(annualBudget.recordedSpend)}</strong></div><div class="comparison-metric"><span>REMAINING / OVERRUN</span><strong>${annualBudget.remaining === null ? 'N/A' : annualBudget.remaining < 0 ? `OVER BY ${money(Math.abs(annualBudget.remaining))}` : money(annualBudget.remaining)}</strong></div></div><p>Status: ${htmlEscape(annualBudget.status)} · Target used: ${annualBudget.progress === null ? 'N/A' : `${annualBudget.progress.toFixed(1)}%`} · Coverage: ${htmlEscape(!annualBudget.hasLedgerData ? 'NO DATA' : annualBudget.coverageComplete ? 'COMPLETE' : 'PARTIAL OR MISSING MONTHS')}.</p><p>Target remaining/overrun uses only recorded spending. Missing ledger months are unknown and may understate actual spend; target settings do not reserve funds or block repairs.</p></section>`;
   const coverageSummary = `${data.completeMonths} complete month(s), ${data.partialMonths} partial month(s), ${data.noDataMonths} month(s) without ledger data`;
   const highestMonth = data.highestSpendMonth ? `${data.highestSpendMonth.monthName}: ${money(data.highestSpendMonth.totalSpend)}` : 'No ledger months recorded';
   const preparedAt = new Date().toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
@@ -1448,7 +1629,7 @@ function openWorkshopAnnualReportPrint(requestedYear = '') {
     h2{margin:16px 0 7px;color:#10243a;font-size:13px}table{width:100%;border-collapse:collapse;table-layout:auto}th,td{border:1px solid #d5dee8;padding:6px 7px;vertical-align:top}th{background:#eaf0f6;color:#23364d;text-align:left;font-size:9px;text-transform:uppercase}tbody tr:nth-child(even){background:#f8fafc}.num{text-align:right;white-space:nowrap}.total{font-weight:bold;color:#10243a}.coverage{margin:9px 0;padding:9px;border-left:3px solid #d5a600;background:#fff9df;color:#53451d}.foot{margin-top:20px;padding-top:8px;border-top:1px solid #d5dee8;color:#637186;font-size:9px}
     @page{size:landscape;margin:12mm}@media print{body{padding:0;font-size:9px}.toolbar{display:none}.metrics{gap:5px}.metric{padding:7px}.metric strong{font-size:14px}.comparison{padding:7px}.comparison-metrics{gap:5px}.comparison-metric{padding:5px}.comparison-metric strong{font-size:11px}h2{margin-top:12px}th,td{padding:4px 5px;break-inside:avoid}header,.period,.metrics,.comparison,table{break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}.foot{margin-top:12px}}
     @media(max-width:650px){body{padding:12px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}header{flex-direction:column}.meta{text-align:left!important}.period{align-items:flex-start;flex-direction:column}.period span{text-align:left}}
-  </style></head><body><div class="toolbar"><button type="button" onclick="window.print()">PRINT / SAVE AS PDF</button><button type="button" onclick="window.close()">CLOSE</button></div><header><div><h1>KANO LIFE</h1><p>Workshop Spending Report · Yearly &amp; Quarterly Summary</p></div><div class="meta"><div><strong>Report year:</strong> ${htmlEscape(data.selectedYear)}</div><div><strong>Prepared:</strong> ${htmlEscape(preparedAt)}</div></div></header><div class="period"><strong>${htmlEscape(data.periodLabel)}</strong><span>${htmlEscape(coverageSummary)}</span></div><section class="metrics"><div class="metric"><span>Total recorded spend</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived amount</small></div><div class="metric"><span>Tracked transactions</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised spend</small></div><div class="metric"><span>Archived spend</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div class="metric"><span>Average tracked cost</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></section><section class="comparison"><h2>Year-over-Year Comparison · ${htmlEscape(comparison.comparablePeriodLabel)} ${htmlEscape(comparison.selectedYear)} vs ${htmlEscape(comparison.previousYear)}</h2><div class="comparison-metrics"><div class="comparison-metric"><span>SELECTED PERIOD</span><strong>${comparison.current.hasAnyData ? money(comparison.current.totalSpend) : 'NO DATA'}</strong></div><div class="comparison-metric"><span>PRIOR COMPARABLE PERIOD</span><strong>${comparison.previous.hasAnyData ? money(comparison.previous.totalSpend) : 'NO DATA'}</strong></div><div class="comparison-metric"><span>SPENDING CHANGE</span><strong>${htmlEscape(comparisonChange)} · ${htmlEscape(comparisonPercent)}</strong></div></div><table><thead><tr><th>Quarter</th><th>Matched months</th><th>${htmlEscape(comparison.previousYear)} spend</th><th>${htmlEscape(comparison.selectedYear)} spend</th><th>Change</th><th>Change %</th></tr></thead><tbody>${comparisonQuarterRows}</tbody></table><p>Both periods use the same months. Missing months are unknown, not zero spending. ${comparison.hasIncompleteCoverage ? 'At least one compared month is partial or missing; changes may be incomplete.' : 'Both periods have complete ledger coverage for all compared months.'} Archived amounts are included where retained.</p></section><div class="coverage"><strong>Coverage note:</strong> Months marked NO DATA are unknown, not proof of zero spending. Archived amounts are included but cannot be itemised from the retained ledger. This report is limited to the available local records and is not a guaranteed lifetime accounting statement.</div><h2>Quarter Summary</h2><table><thead><tr><th>Quarter</th><th>Months with data</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${quarterRows || '<tr><td colspan="6">No quarter records available.</td></tr>'}</tbody></table><h2>Monthly Summary</h2><table><thead><tr><th>Month</th><th>Coverage</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th class="num">${data.trackedCount}</th><th class="num">${money(data.trackedSpend)}</th><th class="num">${data.archivedCount} / ${money(data.archivedNaira)}</th><th class="num total">${money(data.totalSpend)}</th></tr></tfoot></table><h2>Highest Recorded-Spend Month</h2><p>${htmlEscape(highestMonth)}</p><div class="foot">Generated from the workshop spending ledger saved in this browser. Printing or saving this report does not modify wallet funds, vehicle condition, scores or gameplay progress.</div></body></html>`;
+  </style></head><body><div class="toolbar"><button type="button" onclick="window.print()">PRINT / SAVE AS PDF</button><button type="button" onclick="window.close()">CLOSE</button></div><header><div><h1>KANO LIFE</h1><p>Workshop Spending Report · Yearly &amp; Quarterly Summary</p></div><div class="meta"><div><strong>Report year:</strong> ${htmlEscape(data.selectedYear)}</div><div><strong>Prepared:</strong> ${htmlEscape(preparedAt)}</div></div></header><div class="period"><strong>${htmlEscape(data.periodLabel)}</strong><span>${htmlEscape(coverageSummary)}</span></div><section class="metrics"><div class="metric"><span>Total recorded spend</span><strong>${money(data.totalSpend)}</strong><small>Tracked plus archived amount</small></div><div class="metric"><span>Tracked transactions</span><strong>${data.trackedCount}</strong><small>${money(data.trackedSpend)} itemised spend</small></div><div class="metric"><span>Archived spend</span><strong>${money(data.archivedNaira)}</strong><small>${data.archivedCount} archived transactions</small></div><div class="metric"><span>Average tracked cost</span><strong>${money(data.averageTrackedCost)}</strong><small>Tracked transactions only</small></div></section>${annualBudgetSection}<section class="comparison"><h2>Year-over-Year Comparison · ${htmlEscape(comparison.comparablePeriodLabel)} ${htmlEscape(comparison.selectedYear)} vs ${htmlEscape(comparison.previousYear)}</h2><div class="comparison-metrics"><div class="comparison-metric"><span>SELECTED PERIOD</span><strong>${comparison.current.hasAnyData ? money(comparison.current.totalSpend) : 'NO DATA'}</strong></div><div class="comparison-metric"><span>PRIOR COMPARABLE PERIOD</span><strong>${comparison.previous.hasAnyData ? money(comparison.previous.totalSpend) : 'NO DATA'}</strong></div><div class="comparison-metric"><span>SPENDING CHANGE</span><strong>${htmlEscape(comparisonChange)} · ${htmlEscape(comparisonPercent)}</strong></div></div><table><thead><tr><th>Quarter</th><th>Matched months</th><th>${htmlEscape(comparison.previousYear)} spend</th><th>${htmlEscape(comparison.selectedYear)} spend</th><th>Change</th><th>Change %</th></tr></thead><tbody>${comparisonQuarterRows}</tbody></table><p>Both periods use the same months. Missing months are unknown, not zero spending. ${comparison.hasIncompleteCoverage ? 'At least one compared month is partial or missing; changes may be incomplete.' : 'Both periods have complete ledger coverage for all compared months.'} Archived amounts are included where retained.</p></section><div class="coverage"><strong>Coverage note:</strong> Months marked NO DATA are unknown, not proof of zero spending. Archived amounts are included but cannot be itemised from the retained ledger. This report is limited to the available local records and is not a guaranteed lifetime accounting statement.</div><h2>Quarter Summary</h2><table><thead><tr><th>Quarter</th><th>Months with data</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${quarterRows || '<tr><td colspan="6">No quarter records available.</td></tr>'}</tbody></table><h2>Monthly Summary</h2><table><thead><tr><th>Month</th><th>Coverage</th><th>Tracked transactions</th><th>Tracked spend</th><th>Archived count / spend</th><th>Total recorded</th></tr></thead><tbody>${monthRows}</tbody><tfoot><tr><th colspan="2">YEAR TOTAL</th><th class="num">${data.trackedCount}</th><th class="num">${money(data.trackedSpend)}</th><th class="num">${data.archivedCount} / ${money(data.archivedNaira)}</th><th class="num total">${money(data.totalSpend)}</th></tr></tfoot></table><h2>Highest Recorded-Spend Month</h2><p>${htmlEscape(highestMonth)}</p><div class="foot">Generated from the workshop spending ledger saved in this browser. Printing or saving this report does not modify wallet funds, vehicle condition, scores or gameplay progress.</div></body></html>`;
   let printWindow = null;
   try {
     // Must be called directly in the user's button-click gesture for popup blockers.
@@ -2009,9 +2190,10 @@ function downloadWorkshopPlanBackup() {
   const records = workshopPlanBackupRecords();
   const goal = readWorkshopSavingsGoal();
   const monthlyBudget = readWorkshopMonthlyBudget();
+  const annualBudgets = readWorkshopAnnualBudgets();
   const ledger = ensureWorkshopSpendingLedger();
-  if (!records.length && !goal && !monthlyBudget && !workshopSpendingLedgerHasEntries(ledger)) {
-    setWorkshopMessage('There is no saved service history, repair-fund target, monthly spending cap, or spending ledger to export yet.');
+  if (!records.length && !goal && !monthlyBudget && !workshopAnnualBudgetsHaveTargets(annualBudgets) && !workshopSpendingLedgerHasEntries(ledger)) {
+    setWorkshopMessage('There is no saved service history, repair-fund target, monthly or annual spending target, or spending ledger to export yet.');
     return;
   }
   try {
@@ -2019,7 +2201,7 @@ function downloadWorkshopPlanBackup() {
     const backup = {
       application: 'Kano Life',
       exportType: 'workshop-plan-backup',
-      formatVersion: 3,
+      formatVersion: 4,
       exportedAt,
       recordCount: records.length,
       savingsGoal: goal ? {
@@ -2031,8 +2213,9 @@ function downloadWorkshopPlanBackup() {
         monthlyLimitNaira: monthlyBudget.monthlyLimitNaira,
         updatedAt: monthlyBudget.updatedAt,
       } : null,
+      annualBudgets,
       spendingLedger: ledger,
-      note: 'Contains recent service receipts, the repair-fund target, monthly spending cap, and a separate 12-month spending ledger. The ledger records spending independently of the 12 visible receipts. Legacy or imported months may be marked partial. Does not contain game money, vehicle state, or gameplay progress.',
+      note: 'Contains recent service receipts, repair-fund target, monthly spending cap, year-specific annual workshop budget targets, and a separate 12-month spending ledger. The ledger records spending independently of the 12 visible receipts. Legacy or imported months may be marked partial. Does not contain game money, vehicle state, or gameplay progress.',
       records,
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
@@ -2046,7 +2229,7 @@ function downloadWorkshopPlanBackup() {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
     const monthCount = Object.keys(ledger.months).length;
-    setWorkshopMessage(`WORKSHOP PLAN BACKUP PREPARED · ${records.length} visible receipt${records.length === 1 ? '' : 's'} · ${monthCount} ledger month${monthCount === 1 ? '' : 's'} · ${goal ? 'repair-fund target' : 'no saved target'} · ${monthlyBudget ? 'monthly spending cap' : 'no monthly cap'} included. Game money and progress were not exported.`);
+    setWorkshopMessage(`WORKSHOP PLAN BACKUP PREPARED · ${records.length} visible receipt${records.length === 1 ? '' : 's'} · ${monthCount} ledger month${monthCount === 1 ? '' : 's'} · ${goal ? 'repair-fund target' : 'no saved target'} · ${monthlyBudget ? 'monthly cap' : 'no monthly cap'} · ${Object.keys(annualBudgets.targets).length} annual budget target${Object.keys(annualBudgets.targets).length === 1 ? '' : 's'} included. Game money and progress were not exported.`);
   } catch (error) {
     console.warn('[Kano Life] Full workshop-plan export failed.', error);
     setWorkshopMessage('Workshop plan export failed in this browser. Saved history, target, and gameplay data remain unchanged.');
@@ -2090,11 +2273,12 @@ async function importWorkshopPlanFile(file) {
     }
     if (!backup || typeof backup !== 'object' || Array.isArray(backup)
       || backup.application !== 'Kano Life' || backup.exportType !== 'workshop-plan-backup'
-      || ![1, 2, 3].includes(backup.formatVersion) || !Array.isArray(backup.records)
+      || ![1, 2, 3, 4].includes(backup.formatVersion) || !Array.isArray(backup.records)
       || backup.records.length > WORKSHOP_BACKUP_MAX_ROWS
       || !Object.prototype.hasOwnProperty.call(backup, 'savingsGoal')
       || (backup.formatVersion >= 2 && !Object.prototype.hasOwnProperty.call(backup, 'monthlyBudget'))
-      || (backup.formatVersion >= 3 && !Object.prototype.hasOwnProperty.call(backup, 'spendingLedger'))) {
+      || (backup.formatVersion >= 3 && !Object.prototype.hasOwnProperty.call(backup, 'spendingLedger'))
+      || (backup.formatVersion >= 4 && !Object.prototype.hasOwnProperty.call(backup, 'annualBudgets'))) {
       setWorkshopMessage('Plan backup rejected. Select a Kano Life Workshop Plan Backup. No saved data was changed.');
       return;
     }
@@ -2110,17 +2294,23 @@ async function importWorkshopPlanFile(file) {
     const ledgerIsInvalid = backup.formatVersion >= 3 && backup.spendingLedger !== null && !rawIncomingLedger;
     const incomingLedger = rawIncomingLedger || null;
     const hasIncomingLedger = workshopSpendingLedgerHasEntries(incomingLedger);
-    if (!validRecords.length && !incomingGoal && !incomingBudget && !hasIncomingLedger) {
-      setWorkshopMessage(`Backup contains no valid service records, repair-fund target, monthly spending cap or spending ledger. Existing data was not changed.${invalidCount ? ` ${invalidCount} invalid record${invalidCount === 1 ? ' was' : 's were'} found.` : ''}${goalIsInvalid ? ' The target record was invalid.' : ''}${budgetIsInvalid ? ' The monthly budget record was invalid.' : ''}${ledgerIsInvalid ? ' The spending ledger was invalid.' : ''}`);
+    const incomingAnnualBudgets = backup.formatVersion >= 4 && backup.annualBudgets !== null
+      ? normalizeWorkshopAnnualBudgets(backup.annualBudgets) : null;
+    const annualBudgetsIsInvalid = backup.formatVersion >= 4 && backup.annualBudgets !== null && !incomingAnnualBudgets;
+    const hasIncomingAnnualBudgets = workshopAnnualBudgetsHaveTargets(incomingAnnualBudgets);
+    if (!validRecords.length && !incomingGoal && !incomingBudget && !hasIncomingLedger && !hasIncomingAnnualBudgets) {
+      setWorkshopMessage(`Backup contains no valid service records, repair-fund target, monthly spending cap, annual budget targets or spending ledger. Existing data was not changed.${invalidCount ? ` ${invalidCount} invalid record${invalidCount === 1 ? ' was' : 's were'} found.` : ''}${goalIsInvalid ? ' The target record was invalid.' : ''}${budgetIsInvalid ? ' The monthly budget record was invalid.' : ''}${ledgerIsInvalid ? ' The spending ledger was invalid.' : ''}`);
       return;
     }
 
     ensureWorkshopSpendingLedger();
     const currentGoal = readWorkshopSavingsGoal();
     const currentBudget = readWorkshopMonthlyBudget();
+    const currentAnnualBudgets = readWorkshopAnnualBudgets();
     const willReplaceGoal = Boolean(incomingGoal);
     const willReplaceBudget = Boolean(incomingBudget);
     const willMergeLedger = Boolean(hasIncomingLedger);
+    const willMergeAnnualBudgets = Boolean(hasIncomingAnnualBudgets);
     const prompt = [
       `Import ${validRecords.length} valid service record${validRecords.length === 1 ? '' : 's'} from this workshop plan backup?`,
       '',
@@ -2134,6 +2324,9 @@ async function importWorkshopPlanFile(file) {
       willMergeLedger
         ? 'The spending ledger will be merged by transaction identity to preserve recorded monthly totals and avoid importing duplicate tracked transactions.'
         : 'The backup has no valid spending ledger. Imported receipts will be added to the local ledger, but their month coverage will be marked partial.',
+      willMergeAnnualBudgets
+        ? `Year-specific annual targets will be merged. Target years in the backup will replace matching years on this device; other saved target years will be preserved (${Object.keys(incomingAnnualBudgets.targets).length} target year(s) in backup).`
+        : 'The backup has no valid annual budget targets. Existing annual targets on this device will be preserved.',
       '',
       'Game wallet, vehicle condition, and gameplay progress will not be changed.',
     ].join('\n');
@@ -2146,12 +2339,17 @@ async function importWorkshopPlanFile(file) {
     const previousHistory = localStorage.getItem(WORKSHOP_HISTORY_KEY);
     const previousGoal = localStorage.getItem(WORKSHOP_SAVINGS_GOAL_KEY);
     const previousBudget = localStorage.getItem(WORKSHOP_MONTHLY_BUDGET_KEY);
+    const previousAnnualBudgets = localStorage.getItem(WORKSHOP_ANNUAL_BUDGET_KEY);
     const previousLedger = localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY);
     const historyToSave = JSON.stringify(merged);
     try {
       localStorage.setItem(WORKSHOP_HISTORY_KEY, historyToSave);
       if (incomingGoal) localStorage.setItem(WORKSHOP_SAVINGS_GOAL_KEY, JSON.stringify(incomingGoal));
       if (incomingBudget) localStorage.setItem(WORKSHOP_MONTHLY_BUDGET_KEY, JSON.stringify(incomingBudget));
+      if (hasIncomingAnnualBudgets) {
+        const mergedAnnualBudgets = mergeWorkshopAnnualBudgets(currentAnnualBudgets, incomingAnnualBudgets);
+        if (!saveWorkshopAnnualBudgets(mergedAnnualBudgets)) throw new Error('Annual budget targets could not be saved or verified.');
+      }
       let localLedger = readWorkshopSpendingLedger();
       if (incomingLedger) localLedger = mergeWorkshopSpendingLedgers(localLedger, incomingLedger);
       for (const record of validRecords) addWorkshopLedgerRecord(localLedger, record, incomingLedger ? 'backup-record' : 'import');
@@ -2172,6 +2370,14 @@ async function importWorkshopPlanFile(file) {
           throw new Error('The browser could not verify the imported monthly spending cap.');
         }
       }
+      if (hasIncomingAnnualBudgets) {
+        const verifyAnnualBudgets = readWorkshopAnnualBudgets();
+        for (const [year, target] of Object.entries(incomingAnnualBudgets.targets)) {
+          if (!verifyAnnualBudgets.targets[year] || verifyAnnualBudgets.targets[year].targetNaira !== target.targetNaira) {
+            throw new Error(`The browser could not verify the imported annual target for ${year}.`);
+          }
+        }
+      }
       const verifyLedger = normalizeWorkshopSpendingLedger(JSON.parse(localStorage.getItem(WORKSHOP_SPENDING_LEDGER_KEY) || 'null'));
       if (!verifyLedger || Object.keys(verifyLedger.months).length !== Object.keys(localLedger.months).length) {
         throw new Error('The browser could not verify the restored spending ledger.');
@@ -2186,6 +2392,8 @@ async function importWorkshopPlanFile(file) {
         else localStorage.setItem(WORKSHOP_SAVINGS_GOAL_KEY, previousGoal);
         if (previousBudget === null) localStorage.removeItem(WORKSHOP_MONTHLY_BUDGET_KEY);
         else localStorage.setItem(WORKSHOP_MONTHLY_BUDGET_KEY, previousBudget);
+        if (previousAnnualBudgets === null) localStorage.removeItem(WORKSHOP_ANNUAL_BUDGET_KEY);
+        else localStorage.setItem(WORKSHOP_ANNUAL_BUDGET_KEY, previousAnnualBudgets);
         if (previousLedger === null) localStorage.removeItem(WORKSHOP_SPENDING_LEDGER_KEY);
         else localStorage.setItem(WORKSHOP_SPENDING_LEDGER_KEY, previousLedger);
       } catch (rollbackError) {
@@ -2199,7 +2407,8 @@ async function importWorkshopPlanFile(file) {
     if (goalIsInvalid) notes.push('the invalid target was ignored');
     if (budgetIsInvalid) notes.push('the invalid monthly cap was ignored');
     if (ledgerIsInvalid) notes.push('the invalid spending ledger was ignored');
-    setWorkshopMessage(`WORKSHOP PLAN IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} saved${incomingGoal ? ` · target ${naira(incomingGoal.targetNaira)} restored` : ' · existing target preserved'}${incomingBudget ? ` · monthly cap ${naira(incomingBudget.monthlyLimitNaira)} restored` : ' · existing monthly cap preserved'}${hasIncomingLedger ? ' · spending ledger merged' : ' · ledger updated from valid receipts'}. ${notes.length ? notes.join('; ') + '. ' : ''}Wallet, vehicle condition and game progress unchanged.`);
+    if (annualBudgetsIsInvalid) notes.push('the invalid annual budget targets were ignored');
+    setWorkshopMessage(`WORKSHOP PLAN IMPORT COMPLETE · ${merged.length} most recent service record${merged.length === 1 ? '' : 's'} saved${incomingGoal ? ` · target ${naira(incomingGoal.targetNaira)} restored` : ' · existing target preserved'}${incomingBudget ? ` · monthly cap ${naira(incomingBudget.monthlyLimitNaira)} restored` : ' · existing monthly cap preserved'}${hasIncomingLedger ? ' · spending ledger merged' : ' · ledger updated from valid receipts'}${hasIncomingAnnualBudgets ? ` · ${Object.keys(incomingAnnualBudgets.targets).length} annual budget target${Object.keys(incomingAnnualBudgets.targets).length === 1 ? '' : 's'} merged` : ' · existing annual targets preserved'}. ${notes.length ? notes.join('; ') + '. ' : ''}Wallet, vehicle condition and game progress unchanged.`);
     renderWorkshopPanel(activeGame?.s || window.__KANO_LIFE_GAME__?.s);
   } catch (error) {
     console.warn('[Kano Life] Workshop plan import failed safely.', error);
@@ -2710,13 +2919,14 @@ function renderWorkshopPanel(state = activeGame?.s) {
     .join(';');
   const goalSignature = JSON.stringify(readWorkshopSavingsGoal() || null);
   const monthlyBudgetSignature = JSON.stringify(readWorkshopMonthlyBudget() || null);
+  const annualBudgetSignature = JSON.stringify(readWorkshopAnnualBudgets());
   const spendingLedger = ensureWorkshopSpendingLedger();
   const ledgerSignature = Object.entries(spendingLedger.months).map(([monthKey, month]) =>
     `${monthKey}:${workshopLedgerMonthTotal(month)}:${month.coverageComplete ? 1 : 0}:${month.transactions.length}:${month.archivedCount}`
   ).join(';');
   const ledgerAudit = workshopLedgerAuditData();
   const auditSignature = `${ledgerAudit.status}:${ledgerAudit.unmatchedReceiptCount}:${ledgerAudit.partialMonthCount}:${ledgerAudit.recoveryCopyAvailable ? 1 : 0}:${ledgerAudit.rawDuplicateIdentities}`;
-  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}|${monthlyBudgetSignature}|${ledgerSignature}|${auditSignature}`;
+  const signature = `${values.body}|${values.engine}|${values.tyres}|${wallet}|${historySignature}|${goalSignature}|${monthlyBudgetSignature}|${annualBudgetSignature}|${ledgerSignature}|${auditSignature}`;
   if (panel.dataset.signature === signature) return;
   panel.dataset.signature = signature;
 
@@ -2756,7 +2966,7 @@ function renderWorkshopPanel(state = activeGame?.s) {
     <div class="kano-workshop-service-list">${serviceMarkup}</div>
     <p class="kano-workshop-cost-note">Quote includes a ${naira(WORKSHOP_LABOUR_FEE)} labour fee when repairs are needed. A separate confirmation is required before money is deducted.</p>
     <p id="kano-workshop-status" class="kano-workshop-status" role="status" aria-live="polite"></p>
-    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button><button type="button" data-kano-workshop-import-trigger>IMPORT JSON BACKUP</button><button type="button" data-kano-workshop-plan-export ${readWorkshopHistory().length || readWorkshopSavingsGoal() || readWorkshopMonthlyBudget() || workshopSpendingLedgerHasEntries(ensureWorkshopSpendingLedger()) ? '' : 'disabled'}>EXPORT PLAN BACKUP</button><button type="button" data-kano-workshop-plan-import-trigger>IMPORT PLAN BACKUP</button><input type="file" accept=".json,application/json" data-kano-workshop-import-file hidden aria-label="Choose a Kano Life service history JSON backup"><input type="file" accept=".json,application/json" data-kano-workshop-plan-import-file hidden aria-label="Choose a Kano Life workshop plan JSON backup"></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">EXPORT JSON BACKUP contains service receipts only. EXPORT PLAN BACKUP includes recent receipts, the repair-fund target, monthly spending cap and separate monthly spending ledger for device transfer. Neither file contains the game wallet, vehicle save, or gameplay progress. Clearing browser storage removes these local records.</p></section>
+    <section class="kano-workshop-history" aria-labelledby="kano-workshop-history-title"><div class="kano-workshop-history-heading"><h4 id="kano-workshop-history-title">RECENT SERVICE RECORDS</h4><span>THIS DEVICE · MAX 12</span></div>${workshopHistorySummaryMarkup()}<div class="kano-workshop-history-actions"><button type="button" data-kano-workshop-export="csv" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT CSV</button><button type="button" data-kano-workshop-export="json" ${readWorkshopHistory().length ? '' : 'disabled'}>EXPORT JSON BACKUP</button><button type="button" data-kano-workshop-import-trigger>IMPORT JSON BACKUP</button><button type="button" data-kano-workshop-plan-export ${readWorkshopHistory().length || readWorkshopSavingsGoal() || readWorkshopMonthlyBudget() || workshopAnnualBudgetsHaveTargets(readWorkshopAnnualBudgets()) || workshopSpendingLedgerHasEntries(ensureWorkshopSpendingLedger()) ? '' : 'disabled'}>EXPORT PLAN BACKUP</button><button type="button" data-kano-workshop-plan-import-trigger>IMPORT PLAN BACKUP</button><input type="file" accept=".json,application/json" data-kano-workshop-import-file hidden aria-label="Choose a Kano Life service history JSON backup"><input type="file" accept=".json,application/json" data-kano-workshop-plan-import-file hidden aria-label="Choose a Kano Life workshop plan JSON backup"></div><ol id="kano-workshop-history-list">${workshopHistoryMarkup()}</ol><p class="kano-workshop-history-note">EXPORT JSON BACKUP contains service receipts only. EXPORT PLAN BACKUP includes recent receipts, the repair-fund target, monthly cap, year-specific annual targets and separate monthly spending ledger for device transfer. Neither file contains the game wallet, vehicle save, or gameplay progress. Clearing browser storage removes these local records.</p></section>
     <dialog id="kano-workshop-confirm" class="kano-workshop-confirm" aria-labelledby="kano-workshop-confirm-title"><div class="kano-workshop-confirm-inner"><p class="kano-workshop-eyebrow">PAYMENT CONFIRMATION</p><h3 id="kano-workshop-confirm-title">Confirm workshop service</h3><p id="kano-workshop-confirm-summary">Review the repair and total before paying.</p><div id="kano-workshop-confirm-breakdown" class="kano-workshop-confirm-breakdown"></div><div class="kano-workshop-confirm-wallet"><span>WALLET AFTER SERVICE</span><strong id="kano-workshop-wallet-after">—</strong></div><div class="kano-workshop-confirm-actions"><button type="button" class="kano-workshop-cancel" data-kano-workshop-cancel>Cancel</button><button type="button" class="kano-workshop-confirm-pay" data-kano-workshop-confirm>CONFIRM &amp; PAY</button></div></div></dialog>`;
   const status = panel.querySelector('#kano-workshop-status');
   status.textContent = panel.dataset.message || 'Select a service to see its cost.';
@@ -3157,6 +3367,15 @@ function installWorkshopUI() {
       .kano-workshop-annual-metrics>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:8px;border:1px solid #ffffff13;border-radius:7px;background:#ffffff04}
       .kano-workshop-annual-metrics span,.kano-workshop-annual-highlights>div>span{color:#9fb4c8;font-size:7px;font-weight:900;letter-spacing:.035em;line-height:1.35}
       .kano-workshop-annual-metrics strong{color:#f5d77d;font-size:12px;overflow-wrap:anywhere}.kano-workshop-annual-metrics small{color:#8198ad;font-size:8px;line-height:1.35}
+      .kano-workshop-annual-budget{margin:9px 0;padding:10px;border:1px solid #f5c54235;border-radius:8px;background:#f5c54207;min-width:0}
+      .kano-workshop-annual-budget-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.kano-workshop-annual-budget-heading h5{margin:0;color:#ffe18b;font-size:9px;letter-spacing:.05em}.kano-workshop-annual-budget-heading p{margin:4px 0 0;color:#8198ad;font-size:8px}
+      .kano-workshop-annual-budget-heading>span{padding:4px 6px;border:1px solid #ffffff20;border-radius:5px;color:#a9bbcd;font-size:7px;font-weight:900;text-align:right;white-space:normal}
+      .kano-workshop-annual-budget-heading>span[data-level="good"]{border-color:#4dd6ac55;color:#a5f3d4}.kano-workshop-annual-budget-heading>span[data-level="near"]{border-color:#ffcc7a55;color:#ffdc9a}.kano-workshop-annual-budget-heading>span[data-level="over"],.kano-workshop-annual-budget-heading>span[data-level="reached"]{border-color:#ff777755;color:#ffaaaa}
+      .kano-workshop-annual-budget-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0}.kano-workshop-annual-budget-metrics>div{display:grid;gap:4px;min-width:0;padding:7px;border:1px solid #ffffff12;border-radius:6px;background:#00000012}.kano-workshop-annual-budget-metrics span{color:#9fb4c8;font-size:7px;font-weight:900;line-height:1.35}.kano-workshop-annual-budget-metrics strong{color:#ffe18b;font-size:11px;line-height:1.3;overflow-wrap:anywhere}
+      .kano-workshop-annual-budget-meter{height:8px;margin:8px 0;overflow:hidden;border-radius:99px;background:#2e4050}.kano-workshop-annual-budget-meter i{display:block;height:100%;max-width:100%;border-radius:99px;background:linear-gradient(90deg,#00b4d8,#4dd6ac)}
+      .kano-workshop-annual-budget-message{margin:7px 0;color:#c4d3e2;font-size:8px;line-height:1.45}.kano-workshop-annual-budget-coverage{margin:6px 0;padding:7px;border:1px solid #00b4d844;border-radius:6px;background:#00b4d809;color:#a4eaf5;font-size:7px;font-weight:900;line-height:1.4;overflow-wrap:anywhere}.kano-workshop-annual-budget-coverage[data-level="partial"]{border-color:#ffcc7a55;background:#ffcc7a0a;color:#ffdc9a}
+      .kano-workshop-annual-budget-form{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;margin-top:8px}.kano-workshop-annual-budget-form label{display:grid;gap:5px;color:#9fb4c8;font-size:8px;font-weight:900}.kano-workshop-annual-budget-form input{width:100%;min-width:0;box-sizing:border-box;padding:9px;border:1px solid #ffffff25;border-radius:7px;background:#061426;color:#f1f8ff;font-size:12px}
+      .kano-workshop-annual-budget-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.kano-workshop-annual-budget-actions button{min-height:35px;min-width:0;padding:7px;border:1px solid #00b4d866;border-radius:7px;background:#10243a;color:#eaf5ff;font-size:8px;font-weight:900;cursor:pointer;touch-action:manipulation}.kano-workshop-annual-budget-actions button[data-kano-workshop-annual-budget-save]{border-color:#4dd6ac66;background:#0f403d;color:#c8fff0}.kano-workshop-annual-budget-actions button[data-kano-workshop-annual-budget-clear]{border-color:#ff777744;background:#381d29;color:#ffb7bd}.kano-workshop-annual-budget-actions button:focus-visible,.kano-workshop-annual-budget-form input:focus-visible{outline:2px solid #f5c542;outline-offset:2px}.kano-workshop-annual-budget-note{display:block;margin-top:7px;color:#8198ad;font-size:7px;line-height:1.4}
       .kano-workshop-yoy{margin:8px 0;padding:10px;border:1px solid #f5c54235;border-radius:8px;background:linear-gradient(145deg,#f5c5420b,#ffffff03)}
       .kano-workshop-yoy-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.kano-workshop-yoy-heading h5{margin:0;color:#f5d77d;font-size:10px;letter-spacing:.04em}.kano-workshop-yoy-heading p{margin:4px 0 0;color:#91a8bd;font-size:8px}
       .kano-workshop-yoy-badge{padding:5px 7px;border:1px solid #ffffff20;border-radius:6px;color:#eaf3fc;font-size:10px;font-weight:900;white-space:nowrap}.kano-workshop-yoy-badge[data-change="up"]{border-color:#fb718555;color:#fecaca}.kano-workshop-yoy-badge[data-change="down"]{border-color:#4dd6ac55;color:#a5f3d4}.kano-workshop-yoy-badge[data-change="flat"]{color:#d9e7f5}.kano-workshop-yoy-badge[data-change="unknown"]{color:#f5d77d;white-space:normal}
@@ -3175,7 +3394,7 @@ function installWorkshopUI() {
       .kano-workshop-annual-status[data-level="complete"]{border-color:#4dd6ac55;color:#a5f3d4}.kano-workshop-annual-status[data-level="partial"]{border-color:#f5c54255;color:#ffe18b}
       .kano-workshop-annual-coverage-note,.kano-workshop-annual-note{display:block;margin:8px 0 0;color:#8298ad;font-size:8px;line-height:1.45}
       .kano-workshop-annual-report button:focus-visible,.kano-workshop-annual-year-picker select:focus-visible{outline:2px solid #f5c542;outline-offset:2px}
-      @media(max-width:440px){.kano-workshop-annual-heading{flex-direction:column}.kano-workshop-annual-actions{width:100%;justify-content:stretch}.kano-workshop-annual-actions button{flex:1;white-space:normal}.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-yoy-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-yoy-heading{flex-direction:column}.kano-workshop-yoy-quarter-head{align-items:flex-start;flex-direction:column;gap:3px}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
+      @media(max-width:440px){.kano-workshop-annual-heading{flex-direction:column}.kano-workshop-annual-actions{width:100%;justify-content:stretch}.kano-workshop-annual-actions button{flex:1;white-space:normal}.kano-workshop-audit-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-audit-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-numbers{grid-template-columns:minmax(0,1fr)}.kano-workshop-monthly-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-yoy-metrics{grid-template-columns:minmax(0,1fr)}.kano-workshop-annual-budget-heading{flex-direction:column}.kano-workshop-annual-budget-heading>span{align-self:flex-start}.kano-workshop-annual-budget-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-yoy-heading{flex-direction:column}.kano-workshop-yoy-quarter-head{align-items:flex-start;flex-direction:column;gap:3px}.kano-workshop-cost-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-cost-metrics>div:last-child{grid-column:1/-1}.kano-workshop-goal-form{grid-template-columns:minmax(0,1fr)}.kano-workshop-goal-actions{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-grid{grid-template-columns:minmax(0,1fr)}.kano-workshop-trend-row{padding:8px}.kano-workshop-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-summary>div:last-child{grid-column:1/-1}.kano-workshop-history-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.kano-workshop-history-actions button[data-kano-workshop-import-trigger],.kano-workshop-history-actions button[data-kano-workshop-plan-import-trigger]{grid-column:1/-1}#kano-workshop-panel{padding:10px}.kano-workshop-header{gap:6px}.kano-workshop-header h3{font-size:15px}.kano-workshop-wallet{padding:6px}.kano-workshop-wallet strong{font-size:12px}.kano-workshop-parts{gap:4px}.kano-workshop-part{padding:7px 5px}.kano-workshop-part-label{font-size:9px}.kano-workshop-service-list{gap:5px}.kano-workshop-service{padding:8px 7px}.kano-workshop-service strong{font-size:9px}}
       @media(max-width:340px){.kano-workshop-service-list{grid-template-columns:minmax(0,1fr)}.kano-workshop-header{flex-direction:column}.kano-workshop-wallet{width:100%;box-sizing:border-box;text-align:left}}
     `;
     document.head.append(style);
@@ -3204,6 +3423,10 @@ function installWorkshopUI() {
       }
       const ledgerReconcileButton = event.target.closest('[data-kano-workshop-ledger-reconcile]');
       if (ledgerReconcileButton) { if (!ledgerReconcileButton.disabled) reconcileWorkshopRecentReceipts(); return; }
+      const annualBudgetSaveButton = event.target.closest('[data-kano-workshop-annual-budget-save]');
+      if (annualBudgetSaveButton) { handleWorkshopAnnualBudgetAction('save'); return; }
+      const annualBudgetClearButton = event.target.closest('[data-kano-workshop-annual-budget-clear]');
+      if (annualBudgetClearButton) { handleWorkshopAnnualBudgetAction('clear'); return; }
       const annualReportPrintButton = event.target.closest('[data-kano-workshop-annual-print]');
       if (annualReportPrintButton) {
         const year = panel.querySelector('[data-kano-workshop-annual-year]')?.value || '';
