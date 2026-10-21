@@ -1806,6 +1806,15 @@ export class Game {
       female,
       special,
       group: Boolean(zone.hub),
+
+      // Record the road conditions when this passenger boards.
+      // A safe trip is rewarded only if no new collision, pothole
+      // strike, or near-miss occurs before this passenger is dropped.
+      tripStart: {
+        collisions: s.collisions || 0,
+        potholeHits: s.potholeHits || 0,
+        nearMisses: s.nearMisses || 0,
+      },
     };
 
     if (
@@ -1907,6 +1916,12 @@ export class Game {
 
     let fare = passenger.fare;
 
+    const tripStart = passenger.tripStart || {};
+    const safeTrip =
+      (s.collisions || 0) <= (tripStart.collisions ?? (s.collisions || 0)) &&
+      (s.potholeHits || 0) <= (tripStart.potholeHits ?? (s.potholeHits || 0)) &&
+      (s.nearMisses || 0) <= (tripStart.nearMisses ?? (s.nearMisses || 0));
+
     if (matched) {
       s.streak += 1;
 
@@ -1939,6 +1954,16 @@ export class Game {
       s.matchedDrops += 1;
 
       this.dailyAdd('matchedDrops', 1);
+    }
+
+    // Reward considerate driving separately from destination matching.
+    // In match-drop mode the destination multiplier is applied first;
+    // this bonus then rewards an incident-free journey.
+    if (safeTrip) {
+      const safeTripBonus = Math.max(25, Math.floor(fare * 0.12));
+      fare += safeTripBonus;
+      s.score += safeTripBonus;
+      this.ui.toast(`Safe trip · passenger bonus +₦${safeTripBonus.toLocaleString()}`);
     }
 
     s.passengers.shift();
