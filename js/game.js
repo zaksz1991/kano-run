@@ -1917,6 +1917,7 @@ export class Game {
       passenger.dest === zone.dest;
 
     let fare = passenger.fare;
+    let destinationMasteryBonus = 0;
 
     const tripStart = passenger.tripStart || {};
     const safeTrip =
@@ -1966,6 +1967,17 @@ export class Game {
       s.matchedDrops += 1;
 
       this.dailyAdd('matchedDrops', 1);
+    }
+
+    // Reward learning destination patterns through consecutive correct drop-offs.
+    // Milestones trigger once per streak and reset naturally after a wrong stop.
+    if (matched && [3, 5, 8, 12].includes(s.streak)) {
+      const milestoneRates = { 3: 0.08, 5: 0.12, 8: 0.16, 12: 0.20 };
+      destinationMasteryBonus = Math.max(
+        60,
+        Math.floor(passenger.fare * milestoneRates[s.streak]),
+      );
+      fare += destinationMasteryBonus;
     }
 
     // Reward considerate driving and build a consecutive safe-trip chain.
@@ -2021,8 +2033,11 @@ export class Game {
       s.heat - 2,
     );
 
+    const masteryText = destinationMasteryBonus > 0
+      ? ` · route mastery +₦${destinationMasteryBonus.toLocaleString()} (${s.streak} correct stops)`
+      : '';
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}`,
     );
 
     this.missionAdd('drops', 1);
