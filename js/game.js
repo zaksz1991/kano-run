@@ -64,49 +64,63 @@ const POTHOLE_CONTACT_MAX = 0.012;
 // Road-object depth uses a consistent scale throughout the game.
 const ROAD_DEPTH_SCALE = 316.8;
 
-// Lightweight collision feedback overlay. It is created lazily and does not
-// intercept pointer/touch input or alter the game's simulation.
-let collisionFlashTimer = 0;
-function showCollisionFlash(type, severity = 0.4, side = 0) {
-  if (typeof document === 'undefined' || !document.body) return;
-  const now = Date.now();
-  // Prevent repeated contacts in adjacent frames from restarting the animation.
-  if (now < collisionFlashTimer) return;
-  collisionFlashTimer = now + 90;
+// ==========================================================
+// COLLISION VISUAL FEEDBACK
+// ==========================================================
 
-  let overlay = document.getElementById('kano-collision-feedback');
+function showCollisionFlash(type, severity = 0.4, side = 0) {
+  if (typeof document === 'undefined') return;
+
+  const id = 'kano-collision-flash';
+  let overlay = document.getElementById(id);
+
   if (!overlay) {
     overlay = document.createElement('div');
-    overlay.id = 'kano-collision-feedback';
+    overlay.id = id;
     overlay.setAttribute('aria-hidden', 'true');
-    overlay.style.cssText = [
-      'position:fixed', 'inset:0', 'z-index:9998', 'pointer-events:none',
-      'opacity:0', 'transition:opacity 80ms ease-out',
-      'background:transparent', 'box-shadow:none',
-    ].join(';');
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '9998',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 90ms ease-out',
+      background: 'transparent',
+      boxSizing: 'border-box',
+    });
     document.body.appendChild(overlay);
   }
 
-  const strength = clamp(Number(severity) || 0.4, 0.15, 1.1);
-  if (type === 'pothole') {
-    overlay.style.background = `rgba(255,178,54,${0.08 + strength * 0.13})`;
-    overlay.style.boxShadow = `inset 0 0 ${30 + strength * 65}px rgba(255,145,30,${0.18 + strength * 0.22})`;
+  const strength = Math.max(0.18, Math.min(1, Number(severity) || 0.4));
+  const pothole = type === 'pothole';
+
+  overlay.style.boxShadow = pothole
+    ? `inset 0 0 ${18 + 42 * strength}px ${4 + 12 * strength}px rgba(255, 190, 40, ${0.14 + 0.3 * strength})`
+    : `inset 0 0 ${28 + 68 * strength}px ${6 + 18 * strength}px rgba(255, 45, 35, ${0.16 + 0.38 * strength})`;
+
+  overlay.style.border = pothole
+    ? `3px solid rgba(255, 195, 55, ${0.2 + 0.45 * strength})`
+    : `4px solid rgba(255, 55, 45, ${0.22 + 0.52 * strength})`;
+
+  if (!pothole && side !== 0) {
+    const edge = side < 0 ? 'left' : 'right';
+    overlay.style.background = `linear-gradient(to ${edge}, rgba(255, 55, 45, ${0.1 + 0.2 * strength}), transparent 38%)`;
   } else {
-    const edge = side < -0.12 ? 'left' : side > 0.12 ? 'right' : 'both';
-    const alpha = 0.18 + strength * 0.24;
-    overlay.style.background = `rgba(190,35,25,${0.035 + strength * 0.055})`;
-    overlay.style.boxShadow = edge === 'left'
-      ? `inset 24vw 0 70px -38px rgba(255,45,25,${alpha})`
-      : edge === 'right'
-        ? `inset -24vw 0 70px -38px rgba(255,45,25,${alpha})`
-        : `inset 0 0 90px rgba(255,45,25,${alpha})`;
+    overlay.style.background = 'transparent';
   }
 
-  overlay.style.opacity = '1';
-  if (overlay._kanoFlashTimeout) clearTimeout(overlay._kanoFlashTimeout);
-  overlay._kanoFlashTimeout = setTimeout(() => {
+  overlay.style.opacity = String(0.72 + 0.25 * strength);
+
+  if (overlay._collisionTimer) clearTimeout(overlay._collisionTimer);
+
+  overlay._collisionTimer = setTimeout(() => {
     overlay.style.opacity = '0';
-  }, 75 + strength * 75);
+    overlay._collisionTimer = setTimeout(() => {
+      overlay.style.boxShadow = 'none';
+      overlay.style.border = '0';
+      overlay.style.background = 'transparent';
+    }, 180);
+  }, pothole ? 110 : 145);
 }
 
 export class Game {
@@ -160,7 +174,6 @@ export class Game {
       reverseSpeed: REVERSE_MAX_SPEED,
 
       fuel: this.mode === 'fuel' ? 42 : 100,
-      fuelWarningStage: 0,
       condition: 100,
       engine: 100,
       tyres: 100,
@@ -337,15 +350,11 @@ export class Game {
   // ==========================================================
 
   spawnInitial() {
-    // More visible roadside activity: pickup/drop-off points, fuel stops,
-    // and road hazards appear across the opening stretch.
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       this.spawnZone(index);
     }
 
-    // Slightly denser Kano street traffic while keeping mobile performance in mind.
-    // Staggered depth values keep the added vehicles spread along the road.
-    const trafficCount = this.mobile ? 7 : 10;
+    const trafficCount = this.mobile ? 5 : 8;
 
     for (let index = 0; index < trafficCount; index += 1) {
       this.spawnTraffic(index);
@@ -410,13 +419,9 @@ export class Game {
         : 1
       : 0;
 
-    // Keep hazards in view for longer so the player has time to react.
-    // Potholes are placed farther down the visible road than stop markers.
     const depth = Number.isInteger(initialIndex)
-      ? 0.58 + initialIndex * 0.17
-      : type === 'pothole'
-        ? randomBetween(1.28, 1.58)
-        : randomBetween(1.08, 1.34);
+      ? 0.52 + initialIndex * 0.15
+      : randomBetween(1.05, 1.30);
 
     const label = hub
       ? `GENERAL CHECKPOINT · KEKE STOP · ${dest}`
@@ -473,23 +478,26 @@ export class Game {
   }
 
   spawnTraffic(initialIndex = null) {
-    // Kano street traffic mix: roughly 40% keke, 30% motorcycles,
-    // and 30% cars. Desktop-only public/service vehicles appear as rare
-    // substitutions, so they do not overwhelm the everyday street mix.
-    const roll = Math.random();
-    let type;
+    const types = [
+      'keke',
+      'car',
+      'taxi',
+      'suv',
+      'motorcycle',
+      'keke',
+      'car',
+    ];
 
-    if (roll < 0.40) {
-      type = 'keke';
-    } else if (roll < 0.70) {
-      type = 'motorcycle';
-    } else {
-      type = choose(['car', 'taxi', 'suv']);
+    if (!this.mobile) {
+      types.push(
+        'truck',
+        'bus',
+        'police',
+        'karota',
+      );
     }
 
-    if (!this.mobile && Math.random() < 0.055) {
-      type = choose(['truck', 'bus', 'police', 'karota']);
-    }
+    const type = choose(types);
 
     const lane = Math.floor(
       randomBetween(0, 3),
@@ -781,14 +789,12 @@ export class Game {
       s.combo = 0;
     }
 
-    // Keke-friendly road speeds: time attack remains faster, but no
-    // mode allows the vehicle to accelerate like a racing car.
     const modeSpeed =
       this.mode === 'timeAttack'
-        ? 58
+        ? 150
         : this.mode === 'freeRoam'
-          ? 30
-          : 34;
+          ? 36
+          : 38;
 
     const maxSpeed =
       modeSpeed * (this.driver.speedMod || 1);
@@ -830,9 +836,9 @@ export class Game {
         ? 5.8
         : s.gas && s.fuel > 0
           ? this.mode === 'timeAttack'
-            ? 1.25
-            : 0.78
-          : 1.25;
+            ? 1.8
+            : 1.0
+          : 1.6;
 
       s.speed +=
         (desiredSpeed - s.speed) *
@@ -883,14 +889,14 @@ export class Game {
       if (s.environment === 'muddy') {
         s.speed = Math.min(
           s.speed,
-          30 * (this.driver.speedMod || 1),
+          36 * (this.driver.speedMod || 1),
         );
       }
 
       if (s.environment === 'rainPuddles') {
         s.speed = Math.min(
           s.speed,
-          32 * (this.driver.speedMod || 1),
+          38 * (this.driver.speedMod || 1),
         );
       }
 
@@ -900,7 +906,7 @@ export class Game {
       ) {
         s.speed = Math.min(
           s.speed,
-          24 * (this.driver.speedMod || 1),
+          28 * (this.driver.speedMod || 1),
         );
       }
     }
@@ -977,21 +983,6 @@ export class Game {
       s.fuel - dt * fuelRate,
     );
 
-    // Graduated fuel warnings: each threshold is announced once per tank cycle.
-    if (s.fuel <= 5 && s.fuelWarningStage < 3) {
-      this.ui.toast('FUEL CRITICAL · Find a filling station immediately');
-      s.fuelWarningStage = 3;
-      s.toastCooldown = Math.max(s.toastCooldown, 2.5);
-    } else if (s.fuel <= 10 && s.fuelWarningStage < 2) {
-      this.ui.toast('LOW FUEL · Reduce speed and head for a filling station');
-      s.fuelWarningStage = 2;
-      s.toastCooldown = Math.max(s.toastCooldown, 2.5);
-    } else if (s.fuel <= 25 && s.fuelWarningStage < 1) {
-      this.ui.toast('Fuel below 25% · Plan your next refill');
-      s.fuelWarningStage = 1;
-      s.toastCooldown = Math.max(s.toastCooldown, 2.5);
-    }
-
     if (s.fuel <= 0) {
       s.speed = Math.max(
         0,
@@ -1012,6 +1003,28 @@ export class Game {
         this.ui.toast(DIALECT[s.dialect].fuel);
         s.toastCooldown = 3.5;
       }
+    }
+
+    // ----------------------------------------------------------
+    // KEKE MAINTENANCE WARNINGS
+    // ----------------------------------------------------------
+
+    const weakPart =
+      s.tyres <= s.engine && s.tyres <= s.condition
+        ? ['tyres', s.tyres]
+        : s.engine <= s.condition
+          ? ['engine', s.engine]
+          : ['body condition', s.condition];
+
+    if (weakPart[1] <= 25 && s.toastCooldown <= 0) {
+      this.ui.toast(
+        weakPart[0] === 'tyres'
+          ? 'MECHANIC WARNING: Tyres are badly worn. Handle the keke carefully.'
+          : weakPart[0] === 'engine'
+            ? 'MECHANIC WARNING: Engine condition is critical. Find a repair stop.'
+            : 'MECHANIC WARNING: Keke condition is critical. Find a repair stop.',
+      );
+      s.toastCooldown = 5;
     }
 
     // ----------------------------------------------------------
@@ -1218,22 +1231,6 @@ export class Game {
       }
 
       // --------------------------------------------------------
-      // EARLY POTHOLE WARNING
-      // --------------------------------------------------------
-
-      if (
-        movingForward &&
-        zone.type === 'pothole' &&
-        aligned &&
-        inApproachRange &&
-        s.speed > 8 &&
-        !zone.warned
-      ) {
-        this.ui.toast('POTHOLE AHEAD · slow down or change lane');
-        zone.warned = true;
-      }
-
-      // --------------------------------------------------------
       // POTHOLE COLLISION
       //
       // A pothole remains visible as it approaches.
@@ -1316,7 +1313,7 @@ export class Game {
 
       if (
         zone.depth < -0.08 ||
-        zone.depth > 2.15
+        zone.depth > 1.9
       ) {
         s.zones.splice(index, 1);
 
@@ -1345,7 +1342,6 @@ export class Game {
       100,
       s.fuel + 42,
     );
-    s.fuelWarningStage = s.fuel <= 5 ? 3 : s.fuel <= 10 ? 2 : s.fuel <= 25 ? 1 : 0;
 
     s.refills += 1;
 
@@ -1656,11 +1652,7 @@ export class Game {
       clamp(relativeSpeed / 65, 0.2, 1),
     );
 
-    showCollisionFlash(
-      'traffic',
-      severity,
-      Number(vehicle.lane || 1) - (Number(s.steer || 0) + 1),
-    );
+    showCollisionFlash('traffic', severity, vehicle.lane - (s.steer + 1));
 
     s.steer = clamp(
       s.steer +
@@ -1796,16 +1788,6 @@ export class Game {
               'Two market traders',
               'Three students',
               'Malam Musa and his children',
-              'Four friends heading to town',
-              'Mother and two children',
-              'Kano market customers',
-              'College students',
-              'Two tailors with shopping bags',
-              'A family visiting relatives',
-              'Three phone-accessory traders',
-              'Two civil servants',
-              'A bride’s aunties',
-              'Qur’anic school pupils with their guardian',
             ])
             : choose([
               'Malam Musa',
@@ -1816,38 +1798,6 @@ export class Game {
               'Abubakar',
               'Student Ali',
               'Businessman Sani',
-              'Maryam',
-              'Ibrahim',
-              'Hauwa',
-              'Yusuf',
-              'Hadiza',
-              'Usman',
-              'Safiya',
-              'Murtala',
-              'Nafisa',
-              'Kabiru',
-              'Rabi',
-              'Suleiman',
-              'Zulaihat',
-              'Garba',
-              'Bilkisu',
-              'Auwal',
-              'Market trader Rahila',
-              'Tailor Aminu',
-              'Phone seller Nura',
-              'Teacher Binta',
-              'Nursing student Khadija',
-              'Mechanic Bashir',
-              'Shopkeeper Haruna',
-              'Civil servant Jamila',
-              'Farm produce seller Adamu',
-              'University student Nasir',
-              'Bakery worker Lami',
-              'Textile trader Rukayya',
-              'Computer operator Mustapha',
-              'Pharmacy assistant Samira',
-              'Welder Tijjani',
-              'Small business owner Larai',
             ]),
 
       dest: zone.dest,
@@ -1863,8 +1813,6 @@ export class Game {
       female,
       special,
       group: Boolean(zone.hub),
-      // Used to reward a passenger trip completed without a collision.
-      collisionsAtBoard: s.collisions,
     };
 
     if (
@@ -2000,15 +1948,6 @@ export class Game {
       this.dailyAdd('matchedDrops', 1);
     }
 
-    // Clean-trip bonus: reward safe driving only when the passenger reaches
-    // the correct destination and no collision occurred during their ride.
-    const collisionsAtBoard = Number.isFinite(passenger.collisionsAtBoard)
-      ? passenger.collisionsAtBoard
-      : s.collisions;
-    const cleanTrip = matched && s.collisions === collisionsAtBoard;
-    const cleanTripBonus = cleanTrip ? Math.max(1, Math.floor(fare * 0.12)) : 0;
-    fare += cleanTripBonus;
-
     s.passengers.shift();
 
     s.drops += 1;
@@ -2035,9 +1974,7 @@ export class Game {
     );
 
     this.ui.toast(
-      cleanTripBonus > 0
-        ? `${passenger.name} dropped safely · +₦${fare.toLocaleString()} (includes ₦${cleanTripBonus.toLocaleString()} safe-trip bonus)`
-        : `${passenger.name} dropped · +₦${fare.toLocaleString()}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}`,
     );
 
     this.missionAdd('drops', 1);
@@ -2570,24 +2507,10 @@ export class Game {
           'An karɓa · fare reduced',
         );
       } else if (action === 'hold') {
-        // Holding a fair price can improve the fare without turning every
-        // negotiation into a guaranteed win. A successful hold adds a modest
-        // amount to the passenger's eventual drop-off payment.
-        const passenger = s.passengers[0];
-
-        if (passenger) {
-          const negotiationBonus = this.driver.flags?.careful ? 1.18 : 1.12;
-          passenger.fare = Math.floor(
-            passenger.fare * negotiationBonus,
-          );
-        }
-
-        s.heat += this.driver.flags?.careful ? 1 : 3;
+        s.heat += 3;
 
         this.ui.toast(
-          passenger
-            ? `Passenger accepted your fare · +${this.driver.flags?.careful ? '18%' : '12%'} negotiated value`
-            : 'Passenger agreed to your fare',
+          'Passenger agreed to your fare',
         );
       } else {
         s.heat +=
@@ -2861,7 +2784,6 @@ export class Game {
             100,
             s.fuel + 28,
           );
-          s.fuelWarningStage = s.fuel <= 5 ? 3 : s.fuel <= 10 ? 2 : s.fuel <= 25 ? 1 : 0;
 
           this.ui.toast(
             'Fuel topped up · filling station queue cleared',
