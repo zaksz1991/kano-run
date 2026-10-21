@@ -64,6 +64,51 @@ const POTHOLE_CONTACT_MAX = 0.012;
 // Road-object depth uses a consistent scale throughout the game.
 const ROAD_DEPTH_SCALE = 316.8;
 
+// Lightweight collision feedback overlay. It is created lazily and does not
+// intercept pointer/touch input or alter the game's simulation.
+let collisionFlashTimer = 0;
+function showCollisionFlash(type, severity = 0.4, side = 0) {
+  if (typeof document === 'undefined' || !document.body) return;
+  const now = Date.now();
+  // Prevent repeated contacts in adjacent frames from restarting the animation.
+  if (now < collisionFlashTimer) return;
+  collisionFlashTimer = now + 90;
+
+  let overlay = document.getElementById('kano-collision-feedback');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'kano-collision-feedback';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:9998', 'pointer-events:none',
+      'opacity:0', 'transition:opacity 80ms ease-out',
+      'background:transparent', 'box-shadow:none',
+    ].join(';');
+    document.body.appendChild(overlay);
+  }
+
+  const strength = clamp(Number(severity) || 0.4, 0.15, 1.1);
+  if (type === 'pothole') {
+    overlay.style.background = `rgba(255,178,54,${0.08 + strength * 0.13})`;
+    overlay.style.boxShadow = `inset 0 0 ${30 + strength * 65}px rgba(255,145,30,${0.18 + strength * 0.22})`;
+  } else {
+    const edge = side < -0.12 ? 'left' : side > 0.12 ? 'right' : 'both';
+    const alpha = 0.18 + strength * 0.24;
+    overlay.style.background = `rgba(190,35,25,${0.035 + strength * 0.055})`;
+    overlay.style.boxShadow = edge === 'left'
+      ? `inset 24vw 0 70px -38px rgba(255,45,25,${alpha})`
+      : edge === 'right'
+        ? `inset -24vw 0 70px -38px rgba(255,45,25,${alpha})`
+        : `inset 0 0 90px rgba(255,45,25,${alpha})`;
+  }
+
+  overlay.style.opacity = '1';
+  if (overlay._kanoFlashTimeout) clearTimeout(overlay._kanoFlashTimeout);
+  overlay._kanoFlashTimeout = setTimeout(() => {
+    overlay.style.opacity = '0';
+  }, 75 + strength * 75);
+}
+
 export class Game {
   constructor(ui, audio, { mobile = false } = {}) {
     this.ui = ui;
@@ -730,12 +775,14 @@ export class Game {
       s.combo = 0;
     }
 
+    // Keke-friendly road speeds: time attack remains faster, but no
+    // mode allows the vehicle to accelerate like a racing car.
     const modeSpeed =
       this.mode === 'timeAttack'
-        ? 150
+        ? 58
         : this.mode === 'freeRoam'
-          ? 36
-          : 38;
+          ? 30
+          : 34;
 
     const maxSpeed =
       modeSpeed * (this.driver.speedMod || 1);
@@ -777,9 +824,9 @@ export class Game {
         ? 5.8
         : s.gas && s.fuel > 0
           ? this.mode === 'timeAttack'
-            ? 1.8
-            : 1.0
-          : 1.6;
+            ? 1.25
+            : 0.78
+          : 1.25;
 
       s.speed +=
         (desiredSpeed - s.speed) *
@@ -830,14 +877,14 @@ export class Game {
       if (s.environment === 'muddy') {
         s.speed = Math.min(
           s.speed,
-          36 * (this.driver.speedMod || 1),
+          30 * (this.driver.speedMod || 1),
         );
       }
 
       if (s.environment === 'rainPuddles') {
         s.speed = Math.min(
           s.speed,
-          38 * (this.driver.speedMod || 1),
+          32 * (this.driver.speedMod || 1),
         );
       }
 
@@ -847,7 +894,7 @@ export class Game {
       ) {
         s.speed = Math.min(
           s.speed,
-          28 * (this.driver.speedMod || 1),
+          24 * (this.driver.speedMod || 1),
         );
       }
     }
@@ -1330,6 +1377,8 @@ export class Game {
       0.24 * severity,
     );
 
+    showCollisionFlash('pothole', severity);
+
     s.steer = clamp(
       s.steer +
         (Math.random() < 0.5 ? -0.055 : 0.055),
@@ -1567,6 +1616,12 @@ export class Game {
     s.crashShake = Math.max(
       s.crashShake,
       clamp(relativeSpeed / 65, 0.2, 1),
+    );
+
+    showCollisionFlash(
+      'traffic',
+      severity,
+      Number(vehicle.lane || 1) - (Number(s.steer || 0) + 1),
     );
 
     s.steer = clamp(
