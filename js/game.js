@@ -2557,10 +2557,24 @@ export class Game {
           'An karɓa · fare reduced',
         );
       } else if (action === 'hold') {
-        s.heat += 3;
+        // Holding a fair price can improve the fare without turning every
+        // negotiation into a guaranteed win. A successful hold adds a modest
+        // amount to the passenger's eventual drop-off payment.
+        const passenger = s.passengers[0];
+
+        if (passenger) {
+          const negotiationBonus = this.driver.flags?.careful ? 1.18 : 1.12;
+          passenger.fare = Math.floor(
+            passenger.fare * negotiationBonus,
+          );
+        }
+
+        s.heat += this.driver.flags?.careful ? 1 : 3;
 
         this.ui.toast(
-          'Passenger agreed to your fare',
+          passenger
+            ? `Passenger accepted your fare · +${this.driver.flags?.careful ? '18%' : '12%'} negotiated value`
+            : 'Passenger agreed to your fare',
         );
       } else {
         s.heat +=
