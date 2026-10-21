@@ -193,6 +193,7 @@ export class Game {
       combo: 0,
       streak: 0,
       safeTripStreak: 0,
+      passengerTrust: 50,
       horns: 0,
       richDramas: 0,
 
@@ -1923,6 +1924,16 @@ export class Game {
       (s.potholeHits || 0) <= (tripStart.potholeHits ?? (s.potholeHits || 0)) &&
       (s.nearMisses || 0) <= (tripStart.nearMisses ?? (s.nearMisses || 0));
 
+    // Passenger trust grows with careful trips and falls after rough journeys.
+    // The fare adjustment is deliberately modest and bounded.
+    s.passengerTrust = clamp(
+      (Number.isFinite(s.passengerTrust) ? s.passengerTrust : 50) + (safeTrip ? 4 : -6),
+      0,
+      100,
+    );
+    const trustFareRate = 0.9 + (s.passengerTrust / 100) * 0.3;
+    fare = Math.floor(fare * trustFareRate);
+
     if (matched) {
       s.streak += 1;
 
@@ -1970,10 +1981,17 @@ export class Game {
       const chainText = s.safeTripStreak > 1
         ? ` · safe streak ${s.safeTripStreak} (+₦${chainBonus.toLocaleString()} chain)`
         : '';
-      this.ui.toast(`Safe trip · passenger bonus +₦${safeTripBonus.toLocaleString()}${chainText}`);
+      const trustTier = s.passengerTrust >= 80
+        ? 'trusted driver'
+        : s.passengerTrust >= 60
+          ? 'good reputation'
+          : 'building trust';
+      this.ui.toast(`Safe trip · +₦${safeTripBonus.toLocaleString()} · trust ${s.passengerTrust}/100 (${trustTier})${chainText}`);
     } else {
       if ((s.safeTripStreak || 0) >= 2) {
-        this.ui.toast(`Safe-trip streak ended at ${s.safeTripStreak} · drive carefully to build it again`);
+        this.ui.toast(`Safe-trip streak ended at ${s.safeTripStreak} · passenger trust ${s.passengerTrust}/100`);
+      } else {
+        this.ui.toast(`Rough trip · passenger trust ${s.passengerTrust}/100 · drive more carefully`);
       }
       s.safeTripStreak = 0;
     }
