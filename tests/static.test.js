@@ -28,8 +28,16 @@ test('all UI element lookups have matching HTML IDs', () => {
   const ui = read('js/ui.js');
   const htmlIds = new Set([...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]));
   const uiIds = new Set([...ui.matchAll(/this\.el\(["']([^"']+)["']\)/g)].map((match) => match[1]));
+  const runtimePresentation = read('js/KanoGameplayPresentationRepair.js');
+  const runtimeCreatedIds = new Set(
+    [...runtimePresentation.matchAll(/\b([A-Za-z_$][\w$]*)\.id\s*=\s*['"]([^'"]+)['"]/g)]
+      .map((match) => match[2]),
+  );
   const optional = new Set(['reverse-label']);
-  assert.deepEqual([...uiIds].filter((id) => !htmlIds.has(id) && !optional.has(id)), []);
+  assert.deepEqual(
+    [...uiIds].filter((id) => !htmlIds.has(id) && !runtimeCreatedIds.has(id) && !optional.has(id)),
+    [],
+  );
 });
 
 test('2D fallback always replaces the active canvas before creating its context', () => {
@@ -73,12 +81,14 @@ test('3D player applies saved paint and has procedural fallbacks for missing GLB
   assert.match(renderer, /this\.makeKeke\(\)/);
 });
 
-test('CI validates syntax, regression tests and production build without requiring a lockfile cache', () => {
+test('CI uses the supported Node runtime and runs checks, the full suite, build and built-output verification', () => {
   const ci = read('.github/workflows/ci.yml');
+  assert.match(ci, /node-version:\s*22/);
+  assert.match(ci, /npm ci/);
   assert.match(ci, /npm run check/);
   assert.match(ci, /npm test/);
   assert.match(ci, /npm run build/);
-  assert.doesNotMatch(ci, /cache:\s*npm/);
+  assert.match(ci, /npm run release:verify:dist/);
 });
 
 

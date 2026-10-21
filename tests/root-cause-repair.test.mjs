@@ -15,11 +15,18 @@ test('startup loads root-cause patch before the existing GLB pipeline', () => {
   assert.ok(repairAt >= 0 && visualAt > repairAt);
 });
 
-test('keke fitting works with per-model measured bounds, not guessed filenames', () => {
-  assert.match(source, /function fitKekeTemplate\(template\)/);
-  assert.match(source, /before\.width > before\.depth \* 1\.16/);
-  assert.match(source, /boundsBefore/);
-  assert.match(source, /boundsAfter/);
+test('keke calibration uses measured bounds and exact-path saved settings without guessing orientation', () => {
+  const start = source.indexOf('function fitKekeTemplate(template)');
+  const end = source.indexOf('if (typeof window !==', start);
+  assert.ok(start >= 0 && end > start, 'fitting routine is present and bounded');
+  const fitting = source.slice(start, end);
+  assert.match(fitting, /getModelBounds\(template\)/);
+  assert.match(fitting, /getKekeCalibrationForPath\(modelPath\)/);
+  assert.match(fitting, /boundsBefore:/);
+  assert.match(fitting, /boundsAfter:/);
+  assert.match(fitting, /automaticAxisRotation: false/);
+  assert.match(fitting, /orientationPolicy: 'preserve-ModelManager-normalization; apply only exact-path calibration'/);
+  assert.doesNotMatch(fitting, /before\.width\s*>\s*before\.depth/);
 });
 
 test('mobile shadow optimization excludes the player keke', () => {

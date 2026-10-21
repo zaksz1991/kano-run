@@ -28,11 +28,12 @@ test('lighting uses a stable profile baseline rather than cumulative multipliers
   assert.match(source, /item\.intensity \* profile\.directional/);
 });
 
-test('upgrade registers before root-cause and GLB loader modules', () => {
-  const perfIndex = html.indexOf('/js/KanoWorldPerformanceInstancingUpgrade.js');
+test('active HTML bootstraps register cultural and root-cause hooks before model-visual hooks', () => {
+  const culturalIndex = html.indexOf('/js/KanoCulturalStreetEventsUpgrade.js');
   const rootIndex = html.indexOf('/js/KanoLifeRootCauseRepair.js');
   const modelIndex = html.indexOf('/js/KanoModelAssetVisualUpgrade.js');
-  assert.ok(perfIndex >= 0 && rootIndex > perfIndex && modelIndex > rootIndex);
+  assert.ok(culturalIndex >= 0 && rootIndex > culturalIndex && modelIndex > rootIndex);
+  assert.match(html, /KanoModelAssetVisualUpgrade\.js/);
 });
 
 test('existing key game HUD and start-screen IDs are preserved', () => {

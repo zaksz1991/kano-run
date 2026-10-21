@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { scanGlbCatalog, createGlbCatalogSyncPlugin, patchModelManagerVariants, patchRenderer3dModelActivation } from '../scripts/glb-catalog-sync.mjs';
+import { scanGlbCatalog, createGlbCatalogSyncPlugin } from '../scripts/glb-catalog-sync.mjs';
 
 function writeTinyGlb(filePath, names = []) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -114,9 +113,10 @@ test('Vite transform replaces the stale CATALOG without modifying other modules'
   assert.ok(transformed.code.includes('Adaidaita-Renamed.glb'));
   assert.ok(!transformed.code.includes('old-name.glb'));
   assert.ok(transformed.code.includes('// MODEL DIMENSIONS'));
-  assert.ok(transformed.code.includes('warmVariantPools(uniqueKeys)'));
-  assert.ok(transformed.code.includes('variantPools: Object.fromEntries'));
-  assert.ok(transformed.code.includes('KANO GLB VARIANT ACTIVATION PATCH'));
+  assert.ok(transformed.code.includes('async preload(keys)'));
+  assert.ok(transformed.code.includes('getInstance(key)'));
+  assert.ok(transformed.code.includes('getStatus()'));
+  assert.ok(transformed.code.includes('dispose()'));
   assert.equal(await plugin.transform(source, path.join(root, 'js', 'game.js')), null);
 });
 
@@ -138,8 +138,7 @@ test('manual override maps generic renamed world models to explicitly chosen cat
   assert.deepEqual(report.catalog.busStop, []);
   const frontage = report.files.find((entry) => entry.path === 'world/buildings-suburban/frontage-renamed.glb');
   assert.ok(frontage.categories.includes('marketStall'));
-  assert.equal(report.overrideAudit.status, 'applied');
-  assert.ok(report.overrideAudit.appliedCategories.includes('marketStall'));
+  assert.equal(report.overrideWarnings.length, 0, 'valid explicit mappings should not emit override warnings');
 });
 
 test('invalid all-missing override preserves automatic category and reports exact filename mismatch', async (t) => {
@@ -154,8 +153,8 @@ test('invalid all-missing override preserves automatic category and reports exac
   }));
   const report = await scanGlbCatalog(modelRoot, overridesFile);
   assert.deepEqual(report.catalog.building, ['world/buildings-suburban/frontage-renamed.glb']);
-  assert.ok(report.overrideAudit.errors.some((line) => line.includes('Filename case does not match')));
-  assert.equal(report.overrideAudit.status, 'needs_attention');
+  assert.ok(report.overrideWarnings.some((line) => line.includes('case-sensitive')));
+  assert.ok(report.overrideWarnings.some((line) => line.includes('automatic safe candidates were retained')));
 });
 
 test('valid entries win when a category mixes found and missing paths', async (t) => {
@@ -174,8 +173,8 @@ test('valid entries win when a category mixes found and missing paths', async (t
   const report = await scanGlbCatalog(modelRoot, overridesFile);
   assert.deepEqual(report.catalog.building, ['world/buildings-suburban/frontage-renamed.glb']);
   assert.ok(!report.catalog.dirtmound.includes('environment/ground/surface-revised.glb'));
-  assert.ok(report.overrideAudit.missingPaths.includes('world/missing-other-frontage.glb'));
-  assert.equal(report.overrideAudit.status, 'applied_with_warnings');
+  assert.ok(report.overrideWarnings.some((line) => line.includes('world/missing-other-frontage.glb') && line.includes('case-sensitive')));
+  assert.ok(!report.overrideWarnings.some((line) => line.includes('Rejected unsafe mapping')));
 });
 
 test('Vite transform uses manually overridden catalog paths and ignores other modules', async (t) => {
@@ -195,125 +194,15 @@ test('Vite transform uses manually overridden catalog paths and ignores other mo
   assert.ok(transformed.code.includes('frontage-renamed.glb'));
   assert.ok(transformed.code.includes('marketStall'));
   assert.ok(!transformed.code.includes('old-name.glb'));
+  assert.ok(transformed.code.includes('async preload(keys)'));
+  assert.ok(transformed.code.includes('getInstance(key)'));
   assert.equal(await plugin.transform(source, path.join(root, 'js', 'game.js')), null);
 });
 
 
-test('variant transformer is idempotent and refuses unsupported ModelManager layouts', () => {
-  const first = patchModelManagerVariants(variantTestModelManagerSource());
-  const second = patchModelManagerVariants(first);
-  assert.equal(second, first);
-  assert.ok(first.includes('async warmVariantPools(keys)'));
-  assert.ok(first.includes('kanoVariantPolicyFor'));
-  assert.ok(first.includes('this.variantCache.clear()'));
-  const syntaxPath = path.join(os.tmpdir(), `kano-variant-transform-${process.pid}.mjs`);
-  fs.writeFileSync(syntaxPath, first);
-  try { execFileSync(process.execPath, ['--check', syntaxPath]); } finally { fs.rmSync(syntaxPath, { force: true }); }
-  assert.throws(() => patchModelManagerVariants('export class ModelManager {}'), /constructor markers were not found/);
-});
-
-
-function rendererFixture() {
-  return `import * as THREE from 'three';
-export class Renderer3D {
-  constructor(canvas, models, { mobile = false } = {}) {
-    this.canvas = canvas;
-    this.models = models;
-    this.mobile = mobile;
-    this.ready = false;
-    this.buildWorld();
-    this.player = this.makeKeke();
-    this.buildGarageScene();
-    this.buildLifeDioramas();
-
-    this.ready = true;
-  }
-
-  buildWorld() {
-    const buildingCount = this.mobile ? 10 : 24;
-    for (let index = 0; index < buildingCount; index += 1) {
-      const side = index % 2 ? 1 : -1;
-      const x = side * (9 + (index % 3) * 2.8);
-      const height = 2.2 + (index % 4) * 0.7;
-      this.buildingSlots.push({ x, height, side, industrial: index % 6 === 3, replaced: false });
-    }
-  }
-
-  buildSidewalkLife() {
-    if (!this.mobile) {
-      for (let index = 0; index < 6; index += 1) {
-        for (const side of [-1, 1]) {
-          const pole = new THREE.Group();
-          pole.position.set(side * 7.6, 0, -24 - index * 34);
-          pole.userData.proceduralStreetLight = true;
-          this.world.add(pole);
-          this.streetLights.push(pole);
-        }
-      }
-    }
-  }
-
-  buildRoadsideProps() {
-    const count = this.mobile ? 5 : 10;
-  }
-
-
-  upgradeWorldAssets() {
-    if (!this.models) return;
-    const activeBuildingSlots = this.mobile
-      ? this.buildingSlots.slice(0, 2)
-      : this.buildingSlots;
-    for (const slot of activeBuildingSlots) {
-      if (slot.replaced) continue;
-      const key = slot.industrial ? 'industrialBuilding' : 'building';
-      if (!this.models.cache.has(key)) continue;
-      const model = this.models.getInstance(key);
-      if (!model) continue;
-      const normalizedHeight =
-        model.userData.targetHeight ||
-        (slot.industrial ? 5.2 : 4.5);
-      model.scale.multiplyScalar(
-        slot.height / normalizedHeight,
-      );
-      model.position.set(slot.x, 0, slot.z);
-      this.world.remove(slot.actor);
-      this.world.add(model);
-      slot.actor = model;
-      slot.replaced = true;
-    }
-  }
-}
-`;
-}
-
-test('renderer activation upgrades all mobile building slots, frontage placement, size, props, and streetlights', () => {
-  const source = rendererFixture();
-  const patched = patchRenderer3dModelActivation(source);
-  assert.ok(patched.includes('const activeBuildingSlots = this.buildingSlots;'));
-  assert.ok(patched.includes('this.mobile ? 7.8 + (index % 3) * 1.9 : 9 + (index % 3) * 2.8'));
-  assert.ok(patched.includes('model.userData.sceneDisplayHeight = displayHeight;'));
-  assert.ok(patched.includes('const count = this.mobile ? 6 : 10;'));
-  assert.ok(patched.includes('index < (this.mobile ? 3 : 6)'));
-  assert.ok(patched.includes('getGlbSceneUsageReport()'));
-  assert.ok(patched.includes('kanoDownloadGlbSceneUsageReport'));
-  assert.ok(patched.includes('KANO GLB SCENE ACTIVATION AND AUDIT PATCH'));
-});
-
-test('renderer transformation is idempotent and generated source remains valid JavaScript', () => {
-  const patched = patchRenderer3dModelActivation(rendererFixture());
-  assert.equal(patchRenderer3dModelActivation(patched), patched);
-  const syntaxPath = path.join(os.tmpdir(), `kano-renderer-transform-${process.pid}.mjs`);
-  fs.writeFileSync(syntaxPath, patched);
-  try {
-    execFileSync(process.execPath, ['--check', syntaxPath]);
-  } finally {
-    fs.rmSync(syntaxPath, { force: true });
-  }
-});
-
-test('Vite plugin transforms renderer even independently of the GLB catalog', async () => {
+test('GLB catalog transform is isolated to ModelManager and leaves renderer source untouched', async () => {
   const plugin = createGlbCatalogSyncPlugin();
-  const transformed = await plugin.transform(rendererFixture(), '/repo/js/renderer3d.js');
-  assert.ok(transformed?.code.includes('KANO GLB SCENE ACTIVATION AND AUDIT PATCH'));
-  assert.ok(transformed?.code.includes('this.buildingSlots;'));
+  const rendererSource = 'export class Renderer3D { constructor() { this.ready = true; } }';
+  assert.equal(await plugin.transform(rendererSource, '/repo/js/renderer3d.js'), null);
 });
+

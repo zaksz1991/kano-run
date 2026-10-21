@@ -1,34 +1,26 @@
 import { execFileSync } from 'node:child_process';
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXCLUDED = new Set(['node_modules', 'dist', '.git', '.vercel']);
+const EXCLUDED = new Set(['node_modules', 'dist', '.git', '.vercel', '.next']);
 const SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);
 const files = [];
 
 function walk(directory) {
-  for (const entry of readdirSync(directory)) {
-    if (EXCLUDED.has(entry)) continue;
-    const absolute = path.join(directory, entry);
-    const stat = statSync(absolute);
-    if (stat.isDirectory()) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory() && EXCLUDED.has(entry.name)) continue;
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
       walk(absolute);
-    } else if (SOURCE_EXTENSIONS.has(path.extname(entry))) {
+    } else if (entry.isFile() && SOURCE_EXTENSIONS.has(path.extname(entry.name))) {
       files.push(absolute);
     }
   }
 }
 
-for (const directory of ['js', 'api', 'scripts', 'tests']) {
-  const absolute = path.join(ROOT, directory);
-  try {
-    if (statSync(absolute).isDirectory()) walk(absolute);
-  } catch {
-    // Optional folders are allowed.
-  }
-}
+walk(ROOT);
 
 if (files.length === 0) {
   console.error('[Kano Release Check] No JavaScript source files were found.');

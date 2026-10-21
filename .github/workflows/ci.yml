@@ -16,19 +16,21 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@v4
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+          node-version: 22.16.0
+      - name: Install locked dependencies
+        run: npm ci
       - name: Check JavaScript syntax
         run: npm run check
-      - name: Run gameplay and integration tests
+      - name: Run all unit and integration tests
         run: npm test
       - name: Build production site
         run: npm run build
+      - name: Verify built deployment output
+        run: npm run release:verify:dist

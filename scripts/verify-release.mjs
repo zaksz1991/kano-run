@@ -41,7 +41,32 @@ function countMatches(text, expression) {
   return [...text.matchAll(expression)].length;
 }
 
-function checkHtmlDocument(html, htmlPath) {
+function resolveLocalModuleSpecifier(specifier, importer) {
+  const pathname = String(specifier || '').split(/[?#]/, 1)[0];
+  if (!/\.(?:m?js|cjs)$/i.test(pathname)) return null;
+  if (pathname.startsWith('/')) return path.resolve(ROOT, pathname.slice(1));
+  if (pathname.startsWith('.')) return path.resolve(path.dirname(importer), pathname);
+  return null;
+}
+
+function moduleReachesMain(filePath, visited = new Set()) {
+  const mainPath = path.resolve(ROOT, 'js', 'main.js');
+  const absolute = path.resolve(filePath);
+  if (absolute === mainPath) return true;
+  if (visited.has(absolute) || !existsSync(absolute) || !/\.(?:m?js|cjs)$/i.test(absolute)) return false;
+  visited.add(absolute);
+
+  let source;
+  try { source = readFileSync(absolute, 'utf8'); } catch { return false; }
+  const importPattern = /\b(?:from\s*|import\s*\(\s*|import\s*)["']([^"']+)["']/g;
+  for (const match of source.matchAll(importPattern)) {
+    const target = resolveLocalModuleSpecifier(match[1], absolute);
+    if (target && moduleReachesMain(target, visited)) return true;
+  }
+  return false;
+}
+
+function checkHtmlDocument(html, htmlPath, { gameEntry = false } = {}) {
   if (!html) return;
   const label = path.relative(ROOT, htmlPath);
   const normalized = html.replace(/^\uFEFF/, '').trimStart();
@@ -76,11 +101,26 @@ function checkHtmlDocument(html, htmlPath) {
   }
 
   const scriptEntryMatches = [...html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)];
-  const mainEntry = scriptEntryMatches.some((match) => /(?:^|\/)js\/main\.js(?:[?#].*)?$/i.test(match[1]));
-  if (!mainEntry) {
-    fail(`${label} must load /js/main.js (or ./js/main.js) as a script entry.`);
+  if (!scriptEntryMatches.length) {
+    fail(`${label} has no external JavaScript script entry.`);
+  } else if (CHECK_DIST) {
+    // The built entry is hashed and bundled by Vite; verify that HTML points
+    // to an entry asset rather than requiring the source filename to survive.
+    pass(`${label} has a bundled JavaScript script entry`);
+  } else if (gameEntry) {
+    const reachesMain = scriptEntryMatches.some((match) => {
+      const url = match[1].trim();
+      if (/^(?:https?:|data:|blob:|#|\/\/)/i.test(url)) return false;
+      const clean = url.split(/[?#]/, 1)[0];
+      const localPath = clean.startsWith('/')
+        ? path.resolve(ROOT, clean.slice(1))
+        : path.resolve(path.dirname(htmlPath), clean);
+      return moduleReachesMain(localPath);
+    });
+    if (reachesMain) pass(`${label} bootstraps a module chain that reaches js/main.js`);
+    else fail(`${label} must load a local bootstrap module that reaches js/main.js through static or dynamic imports.`);
   } else {
-    pass(`${label} loads the JavaScript game entry point`);
+    pass(`${label} has a script entry for its standalone page`);
   }
 
   if (countMatches(html, /<!doctype\s+html/gi) !== 1) {
@@ -194,6 +234,8 @@ if (!CHECK_DIST) {
       else fail('package.json is missing Vite.');
       if (pkg.scripts?.build) pass('a production build script is defined');
       else fail('package.json is missing scripts.build.');
+      if (existsSync(path.join(ROOT, 'package-lock.json'))) pass('package-lock.json is present for reproducible npm ci installs');
+      else fail('package-lock.json is missing; generate and commit it before using npm ci.');
     } catch (error) {
       fail(`package.json is invalid JSON: ${error.message}`);
     }
@@ -206,7 +248,11 @@ if (!CHECK_DIST) {
 
 const indexPath = path.join(TARGET_ROOT, 'index.html');
 const html = readRequired(indexPath, CHECK_DIST ? 'dist/index.html' : 'index.html');
-checkHtmlDocument(html, indexPath);
+checkHtmlDocument(html, indexPath, { gameEntry: true });
+
+const reviewPath = path.join(TARGET_ROOT, 'glb-model-review.html');
+const reviewHtml = readRequired(reviewPath, CHECK_DIST ? 'dist/glb-model-review.html' : 'glb-model-review.html');
+checkHtmlDocument(reviewHtml, reviewPath);
 checkLocalImports();
 
 console.log(`\n[Kano Release Check] ${checks} check(s) passed; ${warnings.length} warning(s); ${failures.length} failure(s).`);
@@ -219,4 +265,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('Release structure looks valid. Run npm run build to verify Vite can bundle the application.');
+console.log(CHECK_DIST ? 'Built HTML structure looks valid; browser execution and network loading remain separate checks.' : 'Source structure looks valid. Run npm run build and then npm run release:verify:dist.');

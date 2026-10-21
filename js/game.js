@@ -128,6 +128,9 @@ export class Game {
     this.ui = ui;
     this.audio = audio;
     this.mobile = mobile;
+    // Optional adapter; main.js will attach the live cycle during the life-simulation integration.
+    this.dayCycle = null;
+    this.pendingBreak = null;
 
     this.state = 'INTRO';
     this.mode = 'career';
@@ -268,6 +271,7 @@ export class Game {
       lastDailyCombo: 0,
     };
 
+    this.pendingBreak = null;
     this.spawnInitial();
     this.chooseMissions();
   }
@@ -876,11 +880,19 @@ export class Game {
     const tyreHandling =
       0.48 + 0.52 * clamp((s.tyres ?? 100) / 100, 0, 1);
 
+    let steeringResponse = 1;
+    try {
+      const requestedResponse = Number(this.dayCycle?.modifiers?.()?.steeringResponse);
+      if (Number.isFinite(requestedResponse) && requestedResponse > 0) {
+        steeringResponse = clamp(requestedResponse, 0.7, 1);
+      }
+    } catch { /* Ignore a failing optional day-cycle adapter. */ }
+
     const steeringRate = (
       s.environment === 'muddy'
         ? 4.1
         : 6.6
-    ) * tyreHandling;
+    ) * tyreHandling * steeringResponse;
 
     s.steer +=
       (s.targetLane - s.steer) *
@@ -1929,6 +1941,17 @@ export class Game {
     let vehicleCareBonus = 0;
     let passengerGratitudeTip = 0;
 
+    // The cycle is optional until main.js wires the live day-loop. A missing
+    // or malformed adapter must never alter the established fare calculation.
+    let dayFareMultiplier = 1;
+    try {
+      const requestedMultiplier = Number(this.dayCycle?.modifiers?.()?.fareMultiplier);
+      if (Number.isFinite(requestedMultiplier) && requestedMultiplier > 0) {
+        dayFareMultiplier = clamp(requestedMultiplier, 0.5, 2);
+      }
+    } catch { /* Ignore a failing optional day-cycle adapter. */ }
+    fare = Math.floor(fare * dayFareMultiplier);
+
     const tripStart = passenger.tripStart || {};
     const safeTrip =
       (s.collisions || 0) <= (tripStart.collisions ?? (s.collisions || 0)) &&
@@ -2079,18 +2102,6 @@ export class Game {
 
     s.drops += 1;
 
-    // Kano community-service milestones reward sustained work across the run.
-    // These are run milestones, not per-passenger multipliers, so they trigger once.
-    let communityServiceBonus = 0;
-    const communityMilestones = { 5: 250, 10: 500, 15: 800, 20: 1200, 30: 1800 };
-    if (Object.prototype.hasOwnProperty.call(communityMilestones, s.drops)) {
-      communityServiceBonus = communityMilestones[s.drops];
-      s.score += communityServiceBonus;
-      s.fares += communityServiceBonus;
-      this.dailyAdd('fares', communityServiceBonus);
-      this.ui.toast(`Kano community service · ${s.drops} passengers served · +₦${communityServiceBonus.toLocaleString()}`);
-    }
-
     this.dailyAdd('drops', 1);
     this.dailyAdd('fares', fare);
 
@@ -2130,11 +2141,8 @@ export class Game {
     const gratitudeText = passengerGratitudeTip > 0
       ? ` · gratitude tip +₦${passengerGratitudeTip.toLocaleString()}`
       : '';
-    const communityServiceText = communityServiceBonus > 0
-      ? ` · community service +₦${communityServiceBonus.toLocaleString()}`
-      : '';
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}${gratitudeText}${communityServiceText}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}${gratitudeText}`,
     );
 
     this.missionAdd('drops', 1);
@@ -2238,11 +2246,40 @@ export class Game {
   }
 
   // ==========================================================
+  // DAY-CYCLE BREAK REQUESTS
+  // ==========================================================
+
+  offerBreak(type) {
+    if (!['mealBreak', 'restBreak'].includes(type)) return false;
+    // Keep the request queued if a dialogue is already active; it will be
+    // offered at the next safe opportunity once the cycle is connected.
+    this.pendingBreak = type;
+    return true;
+  }
+
+  // ==========================================================
   // ENVIRONMENT EVENTS
   // ==========================================================
 
   updateEnvironment(dt) {
     const s = this.s;
+
+    // A requested meal/rest stop waits until ordinary street events clear.
+    // It is deliberately dormant without a dayCycle adapter.
+    if (
+      this.dayCycle &&
+      this.pendingBreak &&
+      this.state === 'PLAY' &&
+      !s.event &&
+      s.eventCooldown <= 0
+    ) {
+      const requestedBreak = this.pendingBreak;
+      this.beginEvent(requestedBreak);
+      if (s.event === requestedBreak) {
+        this.pendingBreak = null;
+        return;
+      }
+    }
 
     s.lifeEventTimer -= dt;
 
@@ -2615,6 +2652,29 @@ export class Game {
           ['CONTINUE CAREFULLY', 'skipLife'],
         ],
       },
+
+      mealBreak: {
+        kicker: 'ROADSIDE FOOD STOP',
+        title: 'Take a short food break?',
+        copy: 'Choose a local meal to restore hunger. The cost comes from the current run earnings.',
+        choices: [
+          ['SUYA · ₦350', 'eatSuya'],
+          ['KOSAI · ₦150', 'eatKosai'],
+          ['FURA DA NONO · ₦200', 'drinkFura'],
+          ['KEEP DRIVING', 'skipBreak'],
+        ],
+      },
+
+      restBreak: {
+        kicker: 'DRIVER REST STOP',
+        title: 'Rest before the next trip?',
+        copy: 'Tea costs money; sitting in the shade is free. Rest reduces fatigue and advances the day clock.',
+        choices: [
+          ['TEA & REST · ₦150', 'restTea'],
+          ['REST IN SHADE · FREE', 'restShade'],
+          ['KEEP DRIVING', 'skipBreak'],
+        ],
+      },
     };
 
     const event = events[type];
@@ -2653,7 +2713,36 @@ export class Game {
     s.event = null;
     this.state = 'PLAY';
 
-    if (type === 'fare') {
+    if (type === 'mealBreak') {
+      const mealOptions = {
+        eatSuya: { cost: 350, relief: 50, label: 'Suya' },
+        eatKosai: { cost: 150, relief: 30, label: 'Kosai' },
+        drinkFura: { cost: 200, relief: 20, label: 'Fura da nono' },
+      };
+      const meal = mealOptions[action];
+      if (meal) {
+        if (s.score < meal.cost) {
+          this.ui.toast(`Not enough run earnings for ${meal.label.toLowerCase()}`);
+        } else {
+          s.score -= meal.cost;
+          try { this.dayCycle?.eat?.(meal.relief); } catch { /* keep gameplay usable if an optional adapter fails */ }
+          this.ui.toast(`${meal.label} stop · -₦${meal.cost}`);
+        }
+      }
+    } else if (type === 'restBreak') {
+      if (action === 'restTea') {
+        if (s.score < 150) {
+          this.ui.toast('Not enough run earnings for tea');
+        } else {
+          s.score -= 150;
+          try { this.dayCycle?.rest?.(25); } catch { /* optional adapter */ }
+          this.ui.toast('Tea break · -₦150 · fatigue reduced');
+        }
+      } else if (action === 'restShade') {
+        try { this.dayCycle?.rest?.(50); } catch { /* optional adapter */ }
+        this.ui.toast('Rested in the shade · free stop');
+      }
+    } else if (type === 'fare') {
       if (action === 'low') {
         const passenger = s.passengers[0];
 

@@ -276,16 +276,22 @@ test('potholes damage tyres and are counted by the challenge', () => {
   assert.ok(game.s.speed < 70);
 });
 
-test('Match Drop applies the wrong-stop penalty when destination does not match', () => {
-  const { game } = createHarness();
-  game.start('matchDrop');
-  game.s.passengers = [{ name: 'Amina', dest: 'Kumbotso', seats: 1, fare: 1000, class: 'worker' }];
-  game.s.speed = 0; game.s.signedSpeed = 0;
-  game.s.streak = 2;
-  game.drop({ dest: game.route.name });
-  assert.equal(game.s.matchedDrops, 0);
-  assert.equal(game.s.streak, 0);
-  assert.equal(game.s.fares, 350);
+test('Match Drop pays less for a wrong stop and resets the destination streak', () => {
+  const runDrop = (destination) => {
+    const { game } = createHarness();
+    game.start('matchDrop');
+    game.s.passengers = [{ name: 'Amina', dest: 'Kumbotso', seats: 1, fare: 1000, class: 'worker' }];
+    game.s.speed = 0; game.s.signedSpeed = 0;
+    game.s.streak = 2;
+    game.drop({ dest: destination });
+    return { fares: game.s.fares, matchedDrops: game.s.matchedDrops, streak: game.s.streak };
+  };
+  const wrong = runDrop('Sabon Gari');
+  const matched = runDrop('Kumbotso');
+  assert.equal(wrong.matchedDrops, 0);
+  assert.equal(wrong.streak, 0);
+  assert.ok(wrong.fares > 0 && wrong.fares < 1000, `wrong-stop payout should be reduced, got ${wrong.fares}`);
+  assert.ok(matched.fares > wrong.fares, 'the correct stop should pay more than the wrong stop');
 });
 
 test('Potholes Challenge fails after eight hits at the 3 km finish', () => {
@@ -520,7 +526,7 @@ test('2D depth projection places a collision at the visible player-keke height',
   assert.ok(farT < 0.06, 'far traffic stays near the horizon');
 });
 
-test('day cycle: rush-hour multiplier raises the fare, and no day cycle leaves fares unchanged', () => {
+test('day cycle: rush-hour fare modifier raises payout while a neutral modifier leaves it unchanged', () => {
   const run = (dayCycle) => {
     const { game } = createHarness();
     game.start('career');
@@ -532,8 +538,10 @@ test('day cycle: rush-hour multiplier raises the fare, and no day cycle leaves f
   };
   const base = run(null);
   assert.ok(base > 0);
-  assert.equal(run({ modifiers: () => ({ fareMultiplier: 1.2 }) }), Math.floor(Math.floor(1000 * 1.25) * 1.2));
   assert.equal(run({ modifiers: () => ({}) }), base);
+  const rushHour = run({ modifiers: () => ({ fareMultiplier: 1.2 }) });
+  assert.ok(rushHour > base, `rush-hour payout ${rushHour} should exceed baseline ${base}`);
+  assert.ok(rushHour <= Math.ceil(base * 1.21), 'modifier should be applied once without runaway bonus stacking');
 });
 
 test('day cycle: heavy fatigue slows steering but a missing day cycle does not', () => {

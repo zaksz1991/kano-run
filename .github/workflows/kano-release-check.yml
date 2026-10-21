@@ -16,15 +16,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-
+          node-version: 22.16.0
       - name: Install locked dependencies
         run: npm ci
-
-      - name: Run release gate
+      - name: Verify source project
         run: npm run release:verify
+      - name: Run test suite
+        run: npm test
+      - name: Build production site
+        run: npm run build
+      - name: Verify built deployment output
+        run: npm run release:verify:dist
