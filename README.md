@@ -1,23 +1,31 @@
-# Kano Keke Life — Vite Build Dependency Restoration
+# Kano Keke Life — Player Vehicle & Build Safety Upgrade
 
-## Root cause
+This package fixes two concrete problems found in the current repository source:
 
-The current repository `package.json` was reduced to a minimal test-only manifest. It contains no `dependencies`, no Vite package, no Three.js package, and no `build` script. Vercel then removes cached packages during installation and runs its configured `vite build` command, but the `vite` executable no longer exists. This matches the reported `sh: line 1: vite: command not found` error.
+1. The checked-in `package.json` contains only a test script. Vercel runs `vite build`, but Vite is absent from declared dependencies. This replacement restores the Vite and Three.js dependencies and the `dev`, `build`, `preview`, and `test` scripts.
+2. `scripts/glb-catalog-sync.mjs` discovers keke candidates from any model path containing “keke”. That can classify a human asset such as `characters/pedestrians/keke female.glb` as a player-vehicle candidate. A Vite post-transform guard restricts player-keke candidates to GLBs under `vehicles/` and excludes human-labelled paths.
 
-## Apply this repair
+## Files in this ZIP
 
-Replace only the repository-root `package.json` with the complete `package.json` in this ZIP.
+- `package.json` — complete repository-root replacement.
+- `vite.config.js` — complete replacement retaining the current model-review HTML input and catalogue plugin, with one additional safety plugin.
+- `scripts/keke-catalog-safety.mjs` — new post-transform filter and audit-report correction.
+- `tests/keke-catalog-safety.test.mjs` — regression tests.
 
-This restores:
-- `vite` as a regular dependency (not a devDependency), so production-mode dependency pruning will not remove the build tool.
-- `three` as a regular dependency for the game's Three.js imports.
-- the expected `dev`, `build`, `preview`, and test scripts.
-- the Node 24.x engine requirement used by the previously valid manifest.
+## Installation
 
-Keep `vite.config.js`, the GLB catalogue scanner, manual model mappings, HTML files, renderer, game modules, and all GLB assets unchanged.
+1. Replace the root `package.json` with the included complete file.
+2. Replace the root `vite.config.js` with the included complete file.
+3. Add `scripts/keke-catalog-safety.mjs` at that exact path.
+4. Add `tests/keke-catalog-safety.test.mjs` at that exact path.
+5. Keep `scripts/glb-catalog-sync.mjs`, `scripts/glb-catalog-overrides.json`, `js/ModelManager.js`, `js/renderer3d.js`, and all existing GLB assets unchanged.
+
+The package uses Vite 8 and Three.js versions that exist in the npm registry at the time of preparation. Vite 8.3 requires Node.js 20.19+ or 22.12+; Vercel builds in this project should use Node.js 22.12+ or 24.x.
+
+## Safety behaviour
+
+If at least one safe vehicle model is found, only vehicle-path candidates remain in `CATALOG.keke`. If no safe vehicle GLB remains, the catalog is empty for that category and the game should retain its existing procedural keke fallback. This intentionally prefers a known fallback vehicle over displaying a human model as the vehicle.
 
 ## Validation
 
-The JSON manifest parses successfully. The dependency placement ensures Vite is in `dependencies`, not `devDependencies`, which directly addresses builds where npm prunes development dependencies. The ZIP includes only this manifest and these instructions.
-
-A fresh Vercel build has not been run from this environment. The next deployment log must confirm npm installs Vite and then runs `vite build` successfully.
+Run the included Node.js tests with the project test script after installation. JavaScript syntax and unit tests were checked during package preparation. A Vercel build and in-browser model rendering have not been run from this environment.
