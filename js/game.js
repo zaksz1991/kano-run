@@ -2079,6 +2079,18 @@ export class Game {
 
     s.drops += 1;
 
+    // Kano community-service milestones reward sustained work across the run.
+    // These are run milestones, not per-passenger multipliers, so they trigger once.
+    let communityServiceBonus = 0;
+    const communityMilestones = { 5: 250, 10: 500, 15: 800, 20: 1200, 30: 1800 };
+    if (Object.prototype.hasOwnProperty.call(communityMilestones, s.drops)) {
+      communityServiceBonus = communityMilestones[s.drops];
+      s.score += communityServiceBonus;
+      s.fares += communityServiceBonus;
+      this.dailyAdd('fares', communityServiceBonus);
+      this.ui.toast(`Kano community service · ${s.drops} passengers served · +₦${communityServiceBonus.toLocaleString()}`);
+    }
+
     this.dailyAdd('drops', 1);
     this.dailyAdd('fares', fare);
 
@@ -2118,8 +2130,11 @@ export class Game {
     const gratitudeText = passengerGratitudeTip > 0
       ? ` · gratitude tip +₦${passengerGratitudeTip.toLocaleString()}`
       : '';
+    const communityServiceText = communityServiceBonus > 0
+      ? ` · community service +₦${communityServiceBonus.toLocaleString()}`
+      : '';
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}${gratitudeText}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}${gratitudeText}${communityServiceText}`,
     );
 
     this.missionAdd('drops', 1);
