@@ -160,6 +160,7 @@ export class Game {
       reverseSpeed: REVERSE_MAX_SPEED,
 
       fuel: this.mode === 'fuel' ? 42 : 100,
+      fuelWarningStage: 0,
       condition: 100,
       engine: 100,
       tyres: 100,
@@ -336,11 +337,15 @@ export class Game {
   // ==========================================================
 
   spawnInitial() {
-    for (let index = 0; index < 5; index += 1) {
+    // More visible roadside activity: pickup/drop-off points, fuel stops,
+    // and road hazards appear across the opening stretch.
+    for (let index = 0; index < 6; index += 1) {
       this.spawnZone(index);
     }
 
-    const trafficCount = this.mobile ? 5 : 8;
+    // Slightly denser Kano street traffic while keeping mobile performance in mind.
+    // Staggered depth values keep the added vehicles spread along the road.
+    const trafficCount = this.mobile ? 7 : 10;
 
     for (let index = 0; index < trafficCount; index += 1) {
       this.spawnTraffic(index);
@@ -972,6 +977,21 @@ export class Game {
       s.fuel - dt * fuelRate,
     );
 
+    // Graduated fuel warnings: each threshold is announced once per tank cycle.
+    if (s.fuel <= 5 && s.fuelWarningStage < 3) {
+      this.ui.toast('FUEL CRITICAL · Find a filling station immediately');
+      s.fuelWarningStage = 3;
+      s.toastCooldown = Math.max(s.toastCooldown, 2.5);
+    } else if (s.fuel <= 10 && s.fuelWarningStage < 2) {
+      this.ui.toast('LOW FUEL · Reduce speed and head for a filling station');
+      s.fuelWarningStage = 2;
+      s.toastCooldown = Math.max(s.toastCooldown, 2.5);
+    } else if (s.fuel <= 25 && s.fuelWarningStage < 1) {
+      this.ui.toast('Fuel below 25% · Plan your next refill');
+      s.fuelWarningStage = 1;
+      s.toastCooldown = Math.max(s.toastCooldown, 2.5);
+    }
+
     if (s.fuel <= 0) {
       s.speed = Math.max(
         0,
@@ -1325,6 +1345,7 @@ export class Game {
       100,
       s.fuel + 42,
     );
+    s.fuelWarningStage = s.fuel <= 5 ? 3 : s.fuel <= 10 ? 2 : s.fuel <= 25 ? 1 : 0;
 
     s.refills += 1;
 
@@ -2771,6 +2792,7 @@ export class Game {
             100,
             s.fuel + 28,
           );
+          s.fuelWarningStage = s.fuel <= 5 ? 3 : s.fuel <= 10 ? 2 : s.fuel <= 25 ? 1 : 0;
 
           this.ui.toast(
             'Fuel topped up · filling station queue cleared',
