@@ -17,6 +17,7 @@ const LIFESTYLE_DEFAULTS = {
   season: 'hotDry',
   home: 'family',
   insects: true,
+  gameClockMinutes: 8 * 60,
   rentWeeksPaid: 0,
   rentLedger: [],
 };
@@ -67,6 +68,9 @@ function getLifestyle() {
     season,
     home,
     insects: typeof input.insects === 'boolean' ? input.insects : true,
+    gameClockMinutes: Number.isFinite(Number(input.gameClockMinutes))
+      ? ((Number(input.gameClockMinutes) % 1440) + 1440) % 1440
+      : 8 * 60,
     rentWeeksPaid,
     rentLedger,
   };
@@ -893,7 +897,12 @@ export class KanoAtmosphere {
     bridge = {
       owner: this,
       autoNight: Boolean(state.night),
-      autoMinutes: Number.isFinite(state.gameClockMinutes) ? state.gameClockMinutes : 408,
+      autoMinutes: Number.isFinite(state.gameClockMinutes)
+        ? state.gameClockMinutes
+        : Number.isFinite(Number(this.settings?.gameClockMinutes))
+          ? Number(this.settings.gameClockMinutes)
+          : 408,
+      lastPersistSlot: Math.floor((Number(this.settings?.gameClockMinutes) || 480) / 30),
     };
     try {
       Object.defineProperty(state, '__kanoClockBridge', {
@@ -1290,6 +1299,21 @@ export class KanoAtmosphere {
     const delta = clamp(Number(dt) || 0, 0, 0.05);
     this.elapsed += delta;
     this.installClockOverride(state);
+
+    // Auto mode advances continuously: one full in-game day lasts 12 real minutes.
+    // Save the clock every 30 in-game minutes, not every rendered frame.
+    const clockBridge = state.__kanoClockBridge;
+    if (clockBridge && this.settings.timeOfDay === 'auto') {
+      clockBridge.autoMinutes = (clockBridge.autoMinutes + delta * 2) % 1440;
+      const clockSlot = Math.floor(clockBridge.autoMinutes / 30);
+      if (clockSlot !== clockBridge.lastPersistSlot) {
+        this.settings.gameClockMinutes = clockBridge.autoMinutes;
+        save.lifestyle = this.settings;
+        persistLifestyle(this.settings);
+        clockBridge.lastPersistSlot = clockSlot;
+      }
+    }
+
     this.panelRefreshAccumulator += delta;
     if (this.panelRefreshAccumulator >= 1) {
       this.panelRefreshAccumulator = 0;
