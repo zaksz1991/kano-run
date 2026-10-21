@@ -365,9 +365,33 @@ async function measureResourceTiming(page) {
   });
 }
 
+async function clickMorningAction(page, name, timeout = 20_000) {
+  // Buttons are siblings inside #life-actions, not nested inside one another.
+  const button = page.locator('#life-actions').getByRole('button', { name, exact: true });
+  try {
+    await button.waitFor({ state: 'visible', timeout });
+    await button.click();
+  } catch (error) {
+    const diagnostics = await page.evaluate(() => ({
+      routineVisible: (() => {
+        const el = document.querySelector('#life-routine-screen');
+        return Boolean(el && !el.classList.contains('hidden') && getComputedStyle(el).display !== 'none');
+      })(),
+      currentStep: document.querySelector('#life-step-label')?.textContent?.trim() || null,
+      currentTitle: document.querySelector('#life-title')?.textContent?.trim() || null,
+      availableActions: Array.from(document.querySelectorAll('#life-actions button')).map((el) => ({
+        text: el.textContent?.trim() || '',
+        disabled: Boolean(el.disabled),
+      })),
+      renderMode: window.__KANO_RENDER_MODE__ || null,
+      pageReady: document.readyState,
+    })).catch(() => null);
+    throw new Error(`Morning routine action "${name}" failed. Diagnostics: ${JSON.stringify(diagnostics)}. ${error.message}`);
+  }
+}
+
 async function advanceMorningRoutine(page) {
   await page.locator('#start-btn').click({ timeout: 30_000 });
-  const actions = page.locator('#life-actions button');
   const steps = [
     'WAKE UP · WASH AND DRESS',
     'HEAD OUT NOW',
@@ -380,9 +404,7 @@ async function advanceMorningRoutine(page) {
   ];
 
   for (const name of steps) {
-    const button = actions.getByRole('button', { name, exact: true });
-    await button.waitFor({ state: 'visible', timeout: 20_000 });
-    await button.click();
+    await clickMorningAction(page, name);
   }
 
   await page.waitForFunction(() => {
@@ -432,7 +454,6 @@ async function advanceMorningRoutineAfterRestart(page) {
     return;
   }
 
-  const actions = page.locator('#life-actions button');
   const steps = [
     'WAKE UP · WASH AND DRESS',
     'HEAD OUT NOW',
@@ -444,9 +465,7 @@ async function advanceMorningRoutineAfterRestart(page) {
     'INSPECT KEKE · UNLOCK · START SHIFT',
   ];
   for (const name of steps) {
-    const button = actions.getByRole('button', { name, exact: true });
-    await button.waitFor({ state: 'visible', timeout: 20_000 });
-    await button.click();
+    await clickMorningAction(page, name);
   }
 }
 
@@ -577,7 +596,7 @@ async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, 
       height: canvas.height,
       cssWidth: Number(canvas.getBoundingClientRect().width.toFixed(1)),
       cssHeight: Number(canvas.getBoundingClientRect().height.toFixed(1)),
-      context2D: Boolean(canvas.getContext('2d')),
+      renderModeReportedByGame: window.__KANO_RENDER_MODE__ || null,
     })).catch(() => null);
     result.viewportLayout = await page.evaluate(() => ({
       innerWidth: window.innerWidth,
@@ -628,6 +647,13 @@ async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, 
     result.consoleErrorCount = result.runtimeErrors.length;
     result.pageErrorCount = result.pageErrors.length;
     result.httpErrorCount = result.httpErrors.length;
+    result.auditClean = Boolean(
+      result.completed
+      && result.consoleErrorCount === 0
+      && result.pageErrorCount === 0
+      && result.unexpectedFailedRequestCount === 0
+      && result.httpErrorCount === 0
+    );
     result.modelRequestCount = result.modelRequests.length;
     result.blockedModelRequestCount = result.intentionalModelBlocks.length;
     await cdp.detach().catch(() => {});
@@ -735,7 +761,7 @@ function markdownTable(headers, rows) {
 function generateMarkdown(report) {
   const scenarioRows = report.scenarios.map((item) => [
     item.scenario,
-    item.completed ? 'completed' : 'INCOMPLETE',
+    item.completed ? (item.auditClean ? 'CLEAN' : 'completed with errors') : 'INCOMPLETE',
     item.actualRenderMode || '—',
     item.frameTime?.medianFrameMs ?? '—',
     item.frameTime?.p95FrameMs ?? '—',
@@ -809,7 +835,7 @@ async function main() {
         for (const withModels of [true, false]) {
           const result = await runDrivingScenario(browser, baseURL, viewport, mode, withModels, assetInventory);
           report.scenarios.push(result);
-          console.log(`[Browser Audit] ${result.completed ? 'DONE' : 'INCOMPLETE'} ${result.scenario}: ` +
+          console.log(`[Browser Audit] ${result.completed ? (result.auditClean ? 'CLEAN' : 'DONE_WITH_ERRORS') : 'INCOMPLETE'} ${result.scenario}: ` +
             `mode=${result.actualRenderMode || 'unknown'}, frames=${result.frameTime?.samples ?? 0}, ` +
             `console=${result.consoleErrorCount ?? 0}, page=${result.pageErrorCount ?? 0}, ` +
             `failedRequests=${result.unexpectedFailedRequestCount ?? 0}`);
@@ -856,7 +882,7 @@ async function main() {
   await fs.writeFile(path.join(OUTPUT_DIR, 'summary.md'), generateMarkdown(report));
 
   console.log('\n[Browser Audit] Finished.');
-  console.log(`[Browser Audit] Scenarios: ${report.completedScenarioCount}/${report.scenarioCount}`);
+  console.log(`[Browser Audit] Scenarios: ${report.completedScenarioCount}/${report.scenarioCount} completed; ${report.scenarios.filter((item) => item.auditClean).length} clean`);
   console.log(`[Browser Audit] Throttled first-load profiles: ${report.completedThrottleCount}/${report.throttledFirstLoads.length}`);
   console.log(`[Browser Audit] Report: ${report.jsonPath}`);
   console.log(`[Browser Audit] Summary: ${report.summaryPath}`);
