@@ -1,81 +1,46 @@
 TAP version 13
-# Subtest: startup loads root-cause patch before the existing GLB pipeline
-ok 1 - startup loads root-cause patch before the existing GLB pipeline
+# Subtest: keke fitting no longer guesses yaw from width/depth
+ok 1 - keke fitting no longer guesses yaw from width/depth
   ---
-  duration_ms: 0.962973
+  duration_ms: 1.049955
   type: 'test'
   ...
-# Subtest: keke fitting works with per-model measured bounds, not guessed filenames
-ok 2 - keke fitting works with per-model measured bounds, not guessed filenames
+# Subtest: manual calibration is keyed by exact model path and bounded
+ok 2 - manual calibration is keyed by exact model path and bounded
   ---
-  duration_ms: 0.282566
+  duration_ms: 0.165479
   type: 'test'
   ...
-# Subtest: mobile shadow optimization excludes the player keke
-ok 3 - mobile shadow optimization excludes the player keke
+# Subtest: calibration applies to the imported root, not just a body child
+ok 3 - calibration applies to the imported root, not just a body child
   ---
-  duration_ms: 0.177548
+  duration_ms: 0.098559
   type: 'test'
   ...
-# Subtest: animated-root discovery cache keeps the original update path
-ok 4 - animated-root discovery cache keeps the original update path
+# Subtest: audit exposes exact-path calibration only in opt-in audit mode
+ok 4 - audit exposes exact-path calibration only in opt-in audit mode
   ---
-  duration_ms: 0.247283
+  duration_ms: 0.194534
   type: 'test'
   ...
-# Subtest: passenger and life actor models use existing ModelManager categories
-ok 5 - passenger and life actor models use existing ModelManager categories
+# Subtest: goat scene scan is cached while animation mixers still update
+ok 5 - goat scene scan is cached while animation mixers still update
   ---
-  duration_ms: 0.320613
+  duration_ms: 0.131589
   type: 'test'
   ...
-# Subtest: water seller keeps the existing class logic and upgrades only its visible actor
-ok 6 - water seller keeps the existing class logic and upgrades only its visible actor
+# Subtest: existing passenger, hawker, goat and collision hooks remain in the module
+ok 6 - existing passenger, hawker, goat and collision hooks remain in the module
   ---
-  duration_ms: 0.145099
+  duration_ms: 0.158349
   type: 'test'
   ...
-# Subtest: onboard game passengers are represented by real seated GLB instances when available
-ok 7 - onboard game passengers are represented by real seated GLB instances when available
-  ---
-  duration_ms: 0.234274
-  type: 'test'
-  ...
-# Subtest: goat replacement requires a discovered real asset and reports failure
-ok 8 - goat replacement requires a discovered real asset and reports failure
-  ---
-  duration_ms: 0.108544
-  type: 'test'
-  ...
-# Subtest: vehicle wear excludes visible passenger and seller materials
-ok 9 - vehicle wear excludes visible passenger and seller materials
-  ---
-  duration_ms: 0.261584
-  type: 'test'
-  ...
-# Subtest: collision wrappers call original methods and queue visual-only impacts
-ok 10 - collision wrappers call original methods and queue visual-only impacts
-  ---
-  duration_ms: 0.47662
-  type: 'test'
-  ...
-# Subtest: conditional audit panel and JSON download are available
-ok 11 - conditional audit panel and JSON download are available
-  ---
-  duration_ms: 0.456469
-  type: 'test'
-  ...
-1..11
-# tests 11
+1..6
+# tests 6
 # suites 0
-# pass 11
+# pass 6
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 78.976733
-Additional checks:
-- ES module syntax: passed (`node --check`).
-- HTML duplicate-ID check: passed (82 IDs, no duplicates).
-- Startup order check: passed (root-cause repair loads before GLB visual upgrade).
-- Live Vercel browser/build/device test: not run.
+# duration_ms 59.276697

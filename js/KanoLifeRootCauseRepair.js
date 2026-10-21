@@ -37,7 +37,7 @@ const rootAudit = {
   goat: { status: 'waiting-for-crossing-event' },
   recentImpacts: [],
   damageVisual: { bodyMaterialsTinted: 0, lastCondition: null },
-  performance: { animatedRootCacheHits: 0, animatedRootScans: 0, mobileShadowPassesSkipped: 0 },
+  performance: { animatedRootCacheHits: 0, animatedRootScans: 0, mobileShadowPassesSkipped: 0, goatSceneScans: 0, goatSceneScanCacheHits: 0 },
   notes: [],
 };
 if (typeof window !== 'undefined') {
@@ -105,47 +105,88 @@ function getModelBounds(root) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Keke model fit: detect the common X-longitudinal asset mismatch, align its
-// length with the game's Z road axis, then re-centre and ground it. Every
-// candidate is processed individually when ModelManager loads it.
+// 1. Keke model calibration.
+// ModelManager already normalises each GLB, grounds it, centres its source,
+// and applies the project's established vehicle-facing convention. A bounding-
+// box width/depth guess here used to rotate only the first child; that could
+// separate the body from a driver rig stored beside it. Preserve the complete
+// imported root unless an explicit path-specific correction has been saved.
 // ---------------------------------------------------------------------------
+const KEKE_CALIBRATION_STORAGE_KEY = 'kano-life-keke-model-calibration-v1';
+function readKekeCalibrationStore() {
+  try {
+    const parsed = JSON.parse(globalThis.localStorage?.getItem(KEKE_CALIBRATION_STORAGE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' && parsed.models && typeof parsed.models === 'object'
+      ? parsed
+      : { version: 1, models: {} };
+  } catch {
+    return { version: 1, models: {} };
+  }
+}
+function cleanKekeCalibration(input = {}) {
+  const number = (value, fallback, min, max) => {
+    const parsed = value === '' || value == null ? NaN : Number(value);
+    return Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
+  };
+  return {
+    yawDeg: number(input.yawDeg, 0, -180, 180),
+    offsetX: number(input.offsetX, 0, -2, 2),
+    offsetY: number(input.offsetY, 0, -1, 1),
+    offsetZ: number(input.offsetZ, 0, -2, 2),
+    scale: number(input.scale, 1, 0.5, 1.5),
+  };
+}
+function getKekeCalibrationForPath(path) {
+  if (!path) return null;
+  const store = readKekeCalibrationStore();
+  const raw = store.models[path];
+  return raw && typeof raw === 'object' ? cleanKekeCalibration(raw) : null;
+}
+function saveKekeCalibrationForPath(path, input) {
+  if (!path || typeof path !== 'string') throw new TypeError('A loaded GLB model path is required.');
+  const store = readKekeCalibrationStore();
+  store.version = 1;
+  store.models[path] = cleanKekeCalibration(input);
+  globalThis.localStorage?.setItem(KEKE_CALIBRATION_STORAGE_KEY, JSON.stringify(store));
+  return store.models[path];
+}
+function removeKekeCalibrationForPath(path) {
+  const store = readKekeCalibrationStore();
+  delete store.models[path];
+  globalThis.localStorage?.setItem(KEKE_CALIBRATION_STORAGE_KEY, JSON.stringify(store));
+}
 function fitKekeTemplate(template) {
   if (!template?.isObject3D || template.userData?.kanoRootCauseKekeFit) return template;
-  const source = template.children?.find((child) => child.isObject3D && child.visible !== false) || template;
-  const before = getModelBounds(source);
-  if (!before || before.height < 0.1) {
-    rootAudit.kekeFits.push({ path: getModelPath(template), status: 'bounds-unavailable' });
-    return template;
+  // Use bounds on the entire template so the attached driver rig remains part
+  // of the same transform. Do not shift or rotate internal children here.
+  const before = getModelBounds(template);
+  const modelPath = String(template.userData?.modelPath || getModelPath(template) || '');
+  const calibration = getKekeCalibrationForPath(modelPath);
+  if (calibration) {
+    template.rotation.y = THREE.MathUtils.degToRad(calibration.yawDeg);
+    template.position.set(calibration.offsetX, calibration.offsetY, calibration.offsetZ);
+    template.scale.setScalar(calibration.scale);
+    template.updateMatrixWorld(true);
   }
-  const axisRotation = before.width > before.depth * 1.16 ? Math.PI / 2 : 0;
-  if (axisRotation) {
-    source.rotation.y += axisRotation;
-    for (const sibling of template.children || []) {
-      if (sibling === source) continue;
-      if (/driver|seat.?rig/i.test(`${sibling.name || ''} ${sibling.userData?.role || ''}`)) {
-        sibling.rotation.y += axisRotation;
-      }
-    }
-  }
-  source.updateMatrixWorld(true);
-  const afterRotation = new THREE.Box3().setFromObject(source);
-  if (!afterRotation.isEmpty()) {
-    const center = afterRotation.getCenter(new THREE.Vector3());
-    source.position.x -= center.x;
-    source.position.z -= center.z;
-    source.position.y -= afterRotation.min.y;
-  }
-  template.updateMatrixWorld(true);
   const after = getModelBounds(template);
   template.userData.kanoRootCauseKekeFit = {
-    axisRotationRadians: axisRotation,
-    sourcePath: getModelPath(template),
-    boundsBefore: { width: before.width, height: before.height, depth: before.depth },
-    boundsAfter: after ? { width: after.width, height: after.height, depth: after.depth } : null,
+    modelPath,
+    calibrationApplied: Boolean(calibration),
+    calibration: calibration || { yawDeg: 0, offsetX: 0, offsetY: 0, offsetZ: 0, scale: 1 },
+    automaticAxisRotation: false,
+    internalChildTransformChanged: false,
+    orientationPolicy: 'preserve-ModelManager-normalization; apply only exact-path calibration',
+    boundsBefore: before ? { width: before.width, height: before.height, depth: before.depth, center: before.center } : null,
+    boundsAfter: after ? { width: after.width, height: after.height, depth: after.depth, center: after.center } : null,
   };
-  rootAudit.kekeFits.push({ modelPath: getModelPath(template), ...template.userData.kanoRootCauseKekeFit });
+  rootAudit.kekeFits.push({ ...template.userData.kanoRootCauseKekeFit });
   if (rootAudit.kekeFits.length > 40) rootAudit.kekeFits.splice(0, rootAudit.kekeFits.length - 40);
   return template;
+}
+if (typeof window !== 'undefined') {
+  window.kanoGetKekeModelCalibrations = () => readKekeCalibrationStore();
+  window.kanoSaveKekeModelCalibration = (path, settings) => saveKekeCalibrationForPath(path, settings);
+  window.kanoResetKekeModelCalibration = (path) => removeKekeCalibrationForPath(path);
 }
 if (ModelManager?.prototype) {
   rootAudit.patches.modelManagerLoad = markPatched(ModelManager.prototype, 'load', (original) => async function (key, ...args) {
@@ -662,13 +703,26 @@ function installGoatModel(actor) {
   rootAudit.goat.installedActors = (rootAudit.goat.installedActors || 0) + 1;
   return true;
 }
+const goatActorScanCache = new WeakMap();
 function goatActorsFor(renderer) {
+  if (!renderer || typeof renderer !== 'object') return [];
+  const root = renderer.world || renderer.scene;
+  const now = nowMs();
+  const scanInterval = isMobile() ? 300 : 180;
+  const cached = goatActorScanCache.get(renderer);
+  if (cached && cached.root === root && now - cached.scannedAt < scanInterval) {
+    rootAudit.performance.goatSceneScanCacheHits += 1;
+    return cached.actors;
+  }
   const candidates = [];
-  const root = renderer?.world || renderer?.scene;
   root?.traverse?.((object) => {
     if (object.userData?.kanoEvent?.type !== 'goatCrossing') return;
-    for (const actor of object.userData.kanoEvent.actors || []) if (actor?.isObject3D) candidates.push(actor);
+    for (const actor of object.userData.kanoEvent.actors || []) {
+      if (actor?.isObject3D && !candidates.includes(actor)) candidates.push(actor);
+    }
   });
+  goatActorScanCache.set(renderer, { root, scannedAt: now, actors: candidates });
+  rootAudit.performance.goatSceneScans += 1;
   return candidates;
 }
 function updateRealGoats(renderer, dt) {
@@ -957,10 +1011,77 @@ function installAuditPanelIfRequested() {
   hide.style.cssText = 'border:1px solid #6e8295;border-radius:6px;padding:8px 10px;background:#172b3b;color:#fff;font-weight:700;';
   hide.addEventListener('click', () => { clearInterval(timer); panel.remove(); });
   actions.append(download, hide);
-  panel.append(heading, status, actions);
+
+  const calibration = document.createElement('section');
+  calibration.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid #315065;';
+  const calibrationTitle = document.createElement('div');
+  calibrationTitle.textContent = 'KEKE FIT · EXACT MODEL PATH';
+  calibrationTitle.style.cssText = 'font:700 12px/1.4 system-ui,sans-serif;color:#fbbf24;margin-bottom:6px;';
+  const calibrationPath = document.createElement('code');
+  calibrationPath.style.cssText = 'display:block;overflow-wrap:anywhere;color:#b9d9eb;margin-bottom:8px;font-size:10px;';
+  const currentPlayerPath = () => String(buildAuditReport().player?.modelPath || '');
+  const currentSettings = () => getKekeCalibrationForPath(currentPlayerPath()) || { yawDeg: 0, offsetX: 0, offsetY: 0, offsetZ: 0, scale: 1 };
+  const fields = document.createElement('div');
+  fields.style.cssText = 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:8px;';
+  const controls = {};
+  const makeNumberField = (key, label, min, max, step) => {
+    const wrap = document.createElement('label');
+    wrap.style.cssText = 'display:flex;flex-direction:column;gap:3px;color:#b9d9eb;font:10px/1.2 system-ui,sans-serif;';
+    const caption = document.createElement('span'); caption.textContent = label;
+    const input = document.createElement('input'); input.type = 'number'; input.min = String(min); input.max = String(max); input.step = String(step);
+    input.style.cssText = 'min-width:0;width:100%;box-sizing:border-box;border:1px solid #456276;border-radius:5px;background:#102637;color:#fff;padding:6px;font:12px ui-monospace,monospace;';
+    wrap.append(caption, input); fields.append(wrap); controls[key] = input;
+  };
+  makeNumberField('yawDeg', 'YAW °', -180, 180, 5);
+  makeNumberField('offsetX', 'OFFSET X', -2, 2, 0.05);
+  makeNumberField('offsetY', 'OFFSET Y', -1, 1, 0.05);
+  makeNumberField('offsetZ', 'OFFSET Z', -2, 2, 0.05);
+  makeNumberField('scale', 'ROOT SCALE', 0.5, 1.5, 0.05);
+  let lastCalibrationFieldPath = null;
+  const fillCalibrationFields = (force = false) => {
+    const path = currentPlayerPath();
+    calibrationPath.textContent = path || 'Waiting for player GLB…';
+    if (!force && path === lastCalibrationFieldPath) return;
+    lastCalibrationFieldPath = path;
+    const values = currentSettings();
+    for (const [key, input] of Object.entries(controls)) input.value = String(values[key]);
+  };
+  const calibrationActions = document.createElement('div');
+  calibrationActions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+  const styleCalibrationButton = (button, primary = false) => {
+    button.type = 'button';
+    button.style.cssText = `border:${primary ? '0' : '1px solid #6e8295'};border-radius:6px;padding:7px 9px;background:${primary ? '#00b4d8' : '#172b3b'};color:${primary ? '#04111e' : '#fff'};font-weight:800;font-size:10px;`;
+  };
+  const saveCalibration = document.createElement('button');
+  saveCalibration.textContent = 'SAVE CALIBRATION & RELOAD'; styleCalibrationButton(saveCalibration, true);
+  saveCalibration.addEventListener('click', () => {
+    const path = currentPlayerPath();
+    if (!path) { status.textContent = 'Cannot save: active player GLB path is not known yet.'; return; }
+    try {
+      saveKekeCalibrationForPath(path, Object.fromEntries(Object.entries(controls).map(([key, input]) => [key, input.value])));
+      window.location.reload();
+    } catch (error) {
+      status.textContent = `Calibration not saved: ${String(error?.message || error)}`;
+    }
+  });
+  const resetCalibration = document.createElement('button');
+  resetCalibration.textContent = 'RESET THIS MODEL'; styleCalibrationButton(resetCalibration, false);
+  resetCalibration.addEventListener('click', () => {
+    const path = currentPlayerPath();
+    if (!path) return;
+    try { removeKekeCalibrationForPath(path); window.location.reload(); }
+    catch (error) { status.textContent = `Calibration reset failed: ${String(error?.message || error)}`; }
+  });
+  calibrationActions.append(saveCalibration, resetCalibration);
+  const calibrationNote = document.createElement('p');
+  calibrationNote.textContent = 'The loader’s automatic width/depth rotation is disabled. These exact-path adjustments affect the complete keke root, including its attached driver, and are stored only in this browser.';
+  calibrationNote.style.cssText = 'color:#a6c0d1;font:10px/1.4 system-ui,sans-serif;margin:7px 0 0;';
+  calibration.append(calibrationTitle, calibrationPath, fields, calibrationActions, calibrationNote);
+  panel.append(heading, status, actions, calibration);
   document.body.appendChild(panel);
   const refresh = () => {
     const report = buildAuditReport();
+    fillCalibrationFields();
     status.textContent = [
       `Renderer: ${report.renderMode}`,
       `Mobile: ${report.mobile}`,
@@ -975,6 +1096,7 @@ function installAuditPanelIfRequested() {
       `Tinted vehicle materials: ${report.damageVisual.bodyMaterialsTinted}`,
       `Impact events: ${report.recentImpacts.length}`,
       `Animation-root scans/cache hits: ${report.performance.animatedRootScans}/${report.performance.animatedRootCacheHits}`,
+      `Goat scene scans/cache hits: ${report.performance.goatSceneScans}/${report.performance.goatSceneScanCacheHits}`,
       `Notes: ${report.notes.slice(-3).join(' | ') || 'none'}`,
       '',
       'Use DOWNLOAD JSON to save the full report. A missing goat GLB is reported rather than fabricated.'
