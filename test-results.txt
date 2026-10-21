@@ -1,70 +1,81 @@
 TAP version 13
-# Subtest: scan uses the exact current renamed GLB paths
-ok 1 - scan uses the exact current renamed GLB paths
+# Subtest: startup loads root-cause patch before the existing GLB pipeline
+ok 1 - startup loads root-cause patch before the existing GLB pipeline
   ---
-  duration_ms: 26.763016
+  duration_ms: 0.962973
   type: 'test'
   ...
-# Subtest: Vite transform replaces the stale CATALOG without modifying other modules
-ok 2 - Vite transform replaces the stale CATALOG without modifying other modules
+# Subtest: keke fitting works with per-model measured bounds, not guessed filenames
+ok 2 - keke fitting works with per-model measured bounds, not guessed filenames
   ---
-  duration_ms: 8.282433
+  duration_ms: 0.282566
   type: 'test'
   ...
-# Subtest: manual override maps generic renamed world models to explicitly chosen categories
-ok 3 - manual override maps generic renamed world models to explicitly chosen categories
+# Subtest: mobile shadow optimization excludes the player keke
+ok 3 - mobile shadow optimization excludes the player keke
   ---
-  duration_ms: 2.717042
+  duration_ms: 0.177548
   type: 'test'
   ...
-# Subtest: invalid all-missing override preserves automatic category and reports exact filename mismatch
-ok 4 - invalid all-missing override preserves automatic category and reports exact filename mismatch
+# Subtest: animated-root discovery cache keeps the original update path
+ok 4 - animated-root discovery cache keeps the original update path
   ---
-  duration_ms: 2.328571
+  duration_ms: 0.247283
   type: 'test'
   ...
-# Subtest: valid entries win when a category mixes found and missing paths
-ok 5 - valid entries win when a category mixes found and missing paths
+# Subtest: passenger and life actor models use existing ModelManager categories
+ok 5 - passenger and life actor models use existing ModelManager categories
   ---
-  duration_ms: 3.732242
+  duration_ms: 0.320613
   type: 'test'
   ...
-# Subtest: Vite transform uses manually overridden catalog paths and ignores other modules
-ok 6 - Vite transform uses manually overridden catalog paths and ignores other modules
+# Subtest: water seller keeps the existing class logic and upgrades only its visible actor
+ok 6 - water seller keeps the existing class logic and upgrades only its visible actor
   ---
-  duration_ms: 4.53536
+  duration_ms: 0.145099
   type: 'test'
   ...
-# Subtest: variant transformer is idempotent and refuses unsupported ModelManager layouts
-ok 7 - variant transformer is idempotent and refuses unsupported ModelManager layouts
+# Subtest: onboard game passengers are represented by real seated GLB instances when available
+ok 7 - onboard game passengers are represented by real seated GLB instances when available
   ---
-  duration_ms: 37.931051
+  duration_ms: 0.234274
   type: 'test'
   ...
-# Subtest: renderer activation upgrades all mobile building slots, frontage placement, size, props, and streetlights
-ok 8 - renderer activation upgrades all mobile building slots, frontage placement, size, props, and streetlights
+# Subtest: goat replacement requires a discovered real asset and reports failure
+ok 8 - goat replacement requires a discovered real asset and reports failure
   ---
-  duration_ms: 0.822195
+  duration_ms: 0.108544
   type: 'test'
   ...
-# Subtest: renderer transformation is idempotent and generated source remains valid JavaScript
-ok 9 - renderer transformation is idempotent and generated source remains valid JavaScript
+# Subtest: vehicle wear excludes visible passenger and seller materials
+ok 9 - vehicle wear excludes visible passenger and seller materials
   ---
-  duration_ms: 43.026836
+  duration_ms: 0.261584
   type: 'test'
   ...
-# Subtest: Vite plugin transforms renderer even independently of the GLB catalog
-ok 10 - Vite plugin transforms renderer even independently of the GLB catalog
+# Subtest: collision wrappers call original methods and queue visual-only impacts
+ok 10 - collision wrappers call original methods and queue visual-only impacts
   ---
-  duration_ms: 0.407887
+  duration_ms: 0.47662
   type: 'test'
   ...
-1..10
-# tests 10
+# Subtest: conditional audit panel and JSON download are available
+ok 11 - conditional audit panel and JSON download are available
+  ---
+  duration_ms: 0.456469
+  type: 'test'
+  ...
+1..11
+# tests 11
 # suites 0
-# pass 10
+# pass 11
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 238.03134
+# duration_ms 78.976733
+Additional checks:
+- ES module syntax: passed (`node --check`).
+- HTML duplicate-ID check: passed (82 IDs, no duplicates).
+- Startup order check: passed (root-cause repair loads before GLB visual upgrade).
+- Live Vercel browser/build/device test: not run.
