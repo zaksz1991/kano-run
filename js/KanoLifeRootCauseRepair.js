@@ -35,7 +35,7 @@ const rootAudit = {
   lifeModelsAttached: 0,
   waterVendor: { status: 'waiting-for-vendor' },
   goat: { status: 'waiting-for-crossing-event' },
-  embeddedAnimations: { requestedAssets: 0, clipAssetsLoaded: 0, cliplessAssets: 0, loadFailures: 0, activeActors: 0, budgetSkips: 0, clipsByPath: {} },
+  embeddedAnimations: { requestedAssets: 0, clipAssetsLoaded: 0, cliplessAssets: 0, loadFailures: 0, activeActors: 0, budgetSkips: 0, modeTransitions: 0, crossfades: 0, budgetWaitlist: 0, clipsByPath: {} },
   recentImpacts: [],
   damageVisual: { bodyMaterialsTinted: 0, lastCondition: null },
   performance: { animatedRootCacheHits: 0, animatedRootScans: 0, mobileShadowPassesSkipped: 0, goatSceneScans: 0, goatSceneScanCacheHits: 0 },
@@ -302,6 +302,7 @@ function poseActor(actor, time, mode = 'walk') {
 // ---------------------------------------------------------------------------
 const embeddedClipPromises = new Map();
 const embeddedAnimationMixers = new Map();
+const embeddedAnimationBudgetWaitlist = new Set();
 const embeddedCliplessPaths = new Set();
 const MAX_EMBEDDED_MIXERS_MOBILE = 12;
 const MAX_EMBEDDED_MIXERS_DESKTOP = 28;
@@ -371,87 +372,202 @@ function chooseEmbeddedClip(clips, mode) {
   return null;
 }
 
-function detachEmbeddedAnimation(actor) {
+function detachEmbeddedAnimation(actor, { clearDesiredMode = false } = {}) {
+  embeddedAnimationBudgetWaitlist.delete(actor);
+  if (actor?.userData) delete actor.userData.kanoEmbeddedAnimationBudgetDeferred;
   const entry = embeddedAnimationMixers.get(actor);
-  if (!entry) return;
-  safeCall(() => entry.mixer.stopAllAction());
-  safeCall(() => entry.mixer.uncacheRoot(actor));
-  embeddedAnimationMixers.delete(actor);
+  if (entry) {
+    safeCall(() => entry.mixer.stopAllAction());
+    safeCall(() => entry.mixer.uncacheRoot(actor));
+    embeddedAnimationMixers.delete(actor);
+  }
   if (actor?.userData) {
     actor.userData.kanoEmbeddedAnimationActive = false;
     delete actor.userData.kanoEmbeddedAnimationMode;
+    delete actor.userData.kanoEmbeddedAnimationPendingMode;
+    if (clearDesiredMode) delete actor.userData.kanoEmbeddedAnimationDesiredMode;
   }
   rootAudit.embeddedAnimations.activeActors = embeddedAnimationMixers.size;
 }
 
-function requestEmbeddedAnimation(actor, mode = 'idle') {
-  if (!actor?.isObject3D || actor.userData?.kanoEmbeddedAnimationAttempted) return;
-  const path = getModelPath(actor);
-  if (!path) {
-    actor.userData.kanoEmbeddedAnimationAttempted = true;
-    return;
-  }
-  const existing = embeddedAnimationMixers.get(actor);
-  if (existing && existing.mode === mode) return;
-  if (embeddedAnimationMixers.size >= (isMobile() ? MAX_EMBEDDED_MIXERS_MOBILE : MAX_EMBEDDED_MIXERS_DESKTOP)) {
-    actor.userData.kanoEmbeddedAnimationAttempted = true;
-    rootAudit.embeddedAnimations.budgetSkips += 1;
-    return;
-  }
-  actor.userData.kanoEmbeddedAnimationAttempted = true;
-  embeddedClipsForPath(path).then((clips) => {
-    if (!actor.parent || !actor.userData) return;
-    const selected = chooseEmbeddedClip(clips, mode);
-    if (!selected) {
-      if (!embeddedCliplessPaths.has(path) && clips.length > 1 && rootAudit.notes.length < 40) {
-        rootAudit.notes.push(`No embedded clip matched the ${mode} state for ${path}; procedural pose retained.`);
-      }
-      actor.userData.kanoEmbeddedAnimationActive = false;
-      return;
+function makePlayableClip(sourceClip) {
+  if (!sourceClip?.clone) return null;
+  const clip = sourceClip.clone();
+  // Remove root-motion position tracks that would drag a scene actor away from
+  // its gameplay position. Limb, torso and head animation stays intact.
+  clip.tracks = clip.tracks.filter((track) => !/(hips|pelvis|armature|(^|[^a-z])root)[^/]*\.position$/i.test(track.name));
+  safeCall(() => clip.resetDuration());
+  return clip.tracks.length ? clip : null;
+}
+
+function activateEmbeddedAnimation(actor, path, clips, mode, requestToken) {
+  if (!actor?.parent || !actor.userData || actor.userData.kanoEmbeddedAnimationRequestToken !== requestToken) return false;
+  const selected = chooseEmbeddedClip(clips, mode);
+  const current = embeddedAnimationMixers.get(actor);
+  if (!selected) {
+    if (current) detachEmbeddedAnimation(actor);
+    actor.userData.kanoEmbeddedAnimationActive = false;
+    actor.userData.kanoEmbeddedAnimationResolvedMode = mode;
+    if (!embeddedCliplessPaths.has(path) && clips.length > 1 && rootAudit.notes.length < 40) {
+      rootAudit.notes.push(`No embedded clip matched the ${mode} state for ${path}; procedural pose retained.`);
     }
-    if (embeddedAnimationMixers.size >= (isMobile() ? MAX_EMBEDDED_MIXERS_MOBILE : MAX_EMBEDDED_MIXERS_DESKTOP)) {
+    return false;
+  }
+
+  const clipName = selected.name || '(unnamed clip)';
+  if (current && current.path === path && current.clipName === clipName) {
+    if (current.mode !== mode) rootAudit.embeddedAnimations.modeTransitions += 1;
+    current.mode = mode;
+    actor.userData.kanoEmbeddedAnimationMode = mode;
+    actor.userData.kanoEmbeddedAnimationResolvedMode = mode;
+    actor.userData.kanoEmbeddedAnimationActive = true;
+    delete actor.userData.kanoEmbeddedAnimationPendingMode;
+    return true;
+  }
+
+  if (current && current.path !== path) detachEmbeddedAnimation(actor);
+  let entry = embeddedAnimationMixers.get(actor);
+  if (!entry) {
+    const limit = isMobile() ? MAX_EMBEDDED_MIXERS_MOBILE : MAX_EMBEDDED_MIXERS_DESKTOP;
+    if (embeddedAnimationMixers.size >= limit) {
+      actor.userData.kanoEmbeddedAnimationActive = false;
+      actor.userData.kanoEmbeddedAnimationBudgetDeferred = true;
+      delete actor.userData.kanoEmbeddedAnimationResolvedMode;
+      delete actor.userData.kanoEmbeddedAnimationPendingMode;
+      embeddedAnimationBudgetWaitlist.add(actor);
       rootAudit.embeddedAnimations.budgetSkips += 1;
-      return;
-    }
-    const clip = selected.clone();
-    // Remove root-motion position tracks that would drag a scene actor away
-    // from its gameplay position. Limb, torso and head animation stays intact.
-    clip.tracks = clip.tracks.filter((track) => !/(hips|pelvis|armature|(^|[^a-z])root)[^/]*\.position$/i.test(track.name));
-    safeCall(() => clip.resetDuration());
-    if (!clip.tracks.length) {
-      actor.userData.kanoEmbeddedAnimationActive = false;
-      return;
+      rootAudit.embeddedAnimations.budgetWaitlist = embeddedAnimationBudgetWaitlist.size;
+      return false;
     }
     const mixer = new THREE.AnimationMixer(actor);
-    const action = mixer.clipAction(clip);
-    action.enabled = true;
-    action.setLoop(THREE.LoopRepeat, Infinity);
-    action.clampWhenFinished = false;
-    action.play();
-    embeddedAnimationMixers.set(actor, { mixer, action, mode, path, clipName: selected.name || '(unnamed clip)' });
-    actor.userData.kanoEmbeddedAnimationActive = true;
-    actor.userData.kanoEmbeddedAnimationMode = mode;
-    rootAudit.embeddedAnimations.activeActors = embeddedAnimationMixers.size;
+    entry = { mixer, action: null, outgoingAction: null, outgoingUntil: 0, mode: '', path, clipName: '', actions: new Map() };
+    embeddedAnimationMixers.set(actor, entry);
+  }
+
+  const actionKey = `${clipName}|${Number(selected.duration || 0).toFixed(4)}`;
+  let nextAction = entry.actions.get(actionKey);
+  if (!nextAction) {
+    const clip = makePlayableClip(selected);
+    if (!clip) {
+      actor.userData.kanoEmbeddedAnimationActive = false;
+      actor.userData.kanoEmbeddedAnimationResolvedMode = mode;
+      delete actor.userData.kanoEmbeddedAnimationPendingMode;
+      return false;
+    }
+    nextAction = entry.mixer.clipAction(clip);
+    nextAction.enabled = true;
+    nextAction.setLoop(THREE.LoopRepeat, Infinity);
+    nextAction.clampWhenFinished = false;
+    entry.actions.set(actionKey, nextAction);
+  }
+
+  const previousAction = entry.action;
+  if (previousAction && previousAction !== nextAction) {
+    if (entry.outgoingAction && entry.outgoingAction !== previousAction) safeCall(() => entry.outgoingAction.stop());
+    nextAction.reset();
+    nextAction.enabled = true;
+    nextAction.setEffectiveWeight(1);
+    nextAction.play();
+    nextAction.crossFadeFrom(previousAction, 0.22, false);
+    entry.outgoingAction = previousAction;
+    entry.outgoingUntil = nowMs() + 240;
+    rootAudit.embeddedAnimations.crossfades += 1;
+    rootAudit.embeddedAnimations.modeTransitions += 1;
+  } else {
+    nextAction.reset();
+    nextAction.enabled = true;
+    nextAction.setEffectiveWeight(1);
+    nextAction.play();
+  }
+
+  embeddedAnimationBudgetWaitlist.delete(actor);
+  delete actor.userData.kanoEmbeddedAnimationBudgetDeferred;
+  entry.action = nextAction;
+  entry.path = path;
+  entry.mode = mode;
+  entry.clipName = clipName;
+  actor.userData.kanoEmbeddedAnimationActive = true;
+  actor.userData.kanoEmbeddedAnimationMode = mode;
+  actor.userData.kanoEmbeddedAnimationResolvedMode = mode;
+  delete actor.userData.kanoEmbeddedAnimationPendingMode;
+  rootAudit.embeddedAnimations.activeActors = embeddedAnimationMixers.size;
+  return true;
+}
+
+function requestEmbeddedAnimation(actor, mode = 'idle') {
+  if (!actor?.isObject3D || !actor.userData) return;
+  const targetMode = String(mode || 'idle');
+  const path = getModelPath(actor);
+  const current = embeddedAnimationMixers.get(actor);
+  if (current && current.mode === targetMode && current.path === path) return;
+  if (actor.userData.kanoEmbeddedAnimationDesiredMode === targetMode &&
+      (actor.userData.kanoEmbeddedAnimationPendingMode === targetMode || actor.userData.kanoEmbeddedAnimationResolvedMode === targetMode)) return;
+
+  actor.userData.kanoEmbeddedAnimationDesiredMode = targetMode;
+  actor.userData.kanoEmbeddedAnimationAttempted = true;
+  if (!path) {
+    if (current) detachEmbeddedAnimation(actor);
+    actor.userData.kanoEmbeddedAnimationActive = false;
+    actor.userData.kanoEmbeddedAnimationResolvedMode = targetMode;
+    return;
+  }
+  const limit = isMobile() ? MAX_EMBEDDED_MIXERS_MOBILE : MAX_EMBEDDED_MIXERS_DESKTOP;
+  if (!current && embeddedAnimationMixers.size >= limit) {
+    actor.userData.kanoEmbeddedAnimationBudgetDeferred = true;
+    delete actor.userData.kanoEmbeddedAnimationResolvedMode;
+    embeddedAnimationBudgetWaitlist.add(actor);
+    rootAudit.embeddedAnimations.budgetSkips += 1;
+    rootAudit.embeddedAnimations.budgetWaitlist = embeddedAnimationBudgetWaitlist.size;
+    return;
+  }
+
+  const requestToken = (actor.userData.kanoEmbeddedAnimationRequestToken || 0) + 1;
+  actor.userData.kanoEmbeddedAnimationRequestToken = requestToken;
+  actor.userData.kanoEmbeddedAnimationPendingMode = targetMode;
+  embeddedClipsForPath(path).then((clips) => {
+    activateEmbeddedAnimation(actor, path, clips, targetMode, requestToken);
+  }).catch((error) => {
+    actor.userData.kanoEmbeddedAnimationActive = false;
+    actor.userData.kanoEmbeddedAnimationResolvedMode = targetMode;
+    delete actor.userData.kanoEmbeddedAnimationPendingMode;
+    if (rootAudit.notes.length < 40) rootAudit.notes.push(`Animation state ${targetMode} failed for ${path}: ${String(error?.message || error)}`);
   });
 }
 
 function updateEmbeddedAnimations(renderer, dt) {
-  for (const [actor, entry] of [...embeddedAnimationMixers.entries()]) {
+  // Iterating the Map directly avoids allocating a new entries array each frame.
+  for (const [actor, entry] of embeddedAnimationMixers) {
     if (!actor?.parent) {
       detachEmbeddedAnimation(actor);
       continue;
     }
     let top = actor;
     while (top.parent) top = top.parent;
-    if (renderer?.scene && top !== renderer.scene) {
-      // A scene-owned animation may temporarily be detached during a state
-      // transition; pause it, but only dispose once the actor is truly orphaned.
-      if (!actor.parent) detachEmbeddedAnimation(actor);
-      continue;
-    }
+    if (renderer?.scene && top !== renderer.scene) continue;
     if (actor.visible) safeCall(() => entry.mixer.update(clamp(dt, 0, 0.05)));
+    if (entry.outgoingAction && nowMs() >= entry.outgoingUntil) {
+      const old = entry.outgoingAction;
+      entry.outgoingAction = null;
+      entry.outgoingUntil = 0;
+      if (old !== entry.action) safeCall(() => old.stop());
+    }
+  }
+  const limit = isMobile() ? MAX_EMBEDDED_MIXERS_MOBILE : MAX_EMBEDDED_MIXERS_DESKTOP;
+  if (embeddedAnimationMixers.size < limit && embeddedAnimationBudgetWaitlist.size) {
+    for (const actor of embeddedAnimationBudgetWaitlist) {
+      if (!actor?.parent || !actor.userData) {
+        embeddedAnimationBudgetWaitlist.delete(actor);
+        continue;
+      }
+      const mode = String(actor.userData.kanoEmbeddedAnimationDesiredMode || 'idle');
+      embeddedAnimationBudgetWaitlist.delete(actor);
+      delete actor.userData.kanoEmbeddedAnimationBudgetDeferred;
+      requestEmbeddedAnimation(actor, mode);
+      if (embeddedAnimationMixers.size >= limit) break;
+    }
   }
   rootAudit.embeddedAnimations.activeActors = embeddedAnimationMixers.size;
+  rootAudit.embeddedAnimations.budgetWaitlist = embeddedAnimationBudgetWaitlist.size;
 }
 
 function hidePrimitiveLifeBody(rig) {
@@ -565,7 +681,11 @@ if (KanoSceneUpgrade?.prototype) {
       if (actor && !actor.userData?.kanoEmbeddedAnimationActive) poseActor(actor, Number(item.elapsed) || 0, 'walk');
     }
     for (const rig of this.lifeRigs || []) {
-      if (rig.kanoImportedActor && !rig.kanoImportedActor.userData?.mixer && !rig.kanoImportedActor.userData?.kanoEmbeddedAnimationActive) poseActor(rig.kanoImportedActor, (this.elapsed || 0) + (rig.phase || 0), rig.action || 'idle');
+      const actor = rig.kanoImportedActor;
+      if (!actor) continue;
+      const actionMode = String(rig.action || 'idle');
+      if (actor.userData?.kanoEmbeddedAnimationDesiredMode !== actionMode) requestEmbeddedAnimation(actor, actionMode);
+      if (!actor.userData?.kanoEmbeddedAnimationActive) poseActor(actor, (this.elapsed || 0) + (rig.phase || 0), actionMode);
     }
     return result;
   });
@@ -655,22 +775,40 @@ function syncSeatedPassengerModels(renderer, game) {
       if (!actor) continue;
       actor.name = `KanoLifeSeatedPassenger${index + 1}:${selectedKey}`;
       actor.scale.multiplyScalar(0.64);
-      actor.position.set(base.position.x + (index - (desired - 1) / 2) * spacing, base.position.y, base.position.z);
+      const seatedTargetScale = actor.scale.clone();
+      const seatTargetY = base.position.y;
+      actor.scale.copy(seatedTargetScale).multiplyScalar(1.14);
+      actor.position.set(base.position.x + (index - (desired - 1) / 2) * spacing, seatTargetY + 0.085, base.position.z);
+      actor.userData.kanoSeatEntryTransition = {
+        startedAt: nowMs(), durationMs: 360,
+        startScale: actor.scale.clone(), targetScale: seatedTargetScale,
+        targetY: seatTargetY,
+      };
       actor.traverse((node) => {
         if (node.isMesh) { node.castShadow = false; node.receiveShadow = false; }
         if (node.isSkinnedMesh) node.frustumCulled = false;
       });
-      actor.userData.kanoRootCauseSeatBaseY = actor.position.y;
+      actor.userData.kanoRootCauseSeatBaseY = seatTargetY;
       actor.userData.kanoRootCauseSeatPose = prepareBonePose(actor);
       group.add(actor);
       requestEmbeddedAnimation(actor, 'seated');
       rootAudit.seatedPassengerModels += 1;
     }
   }
-  const time = nowMs() / 1000;
+  const now = nowMs();
+  const time = now / 1000;
   for (let index = 0; index < (group?.children?.length || 0); index += 1) {
     const actor = group.children[index];
-    actor.position.y = actor.userData.kanoRootCauseSeatBaseY + Math.sin(time * 1.6 + index * 1.2) * 0.006;
+    const entryTransition = actor.userData?.kanoSeatEntryTransition;
+    if (entryTransition) {
+      const linear = clamp((now - entryTransition.startedAt) / entryTransition.durationMs, 0, 1);
+      const eased = linear * linear * (3 - 2 * linear);
+      actor.scale.copy(entryTransition.startScale).lerp(entryTransition.targetScale, eased);
+      actor.position.y = entryTransition.targetY + (1 - eased) * 0.085;
+      if (linear >= 1) delete actor.userData.kanoSeatEntryTransition;
+    } else {
+      actor.position.y = actor.userData.kanoRootCauseSeatBaseY + Math.sin(time * 1.6 + index * 1.2) * 0.006;
+    }
     if (!actor.userData?.kanoEmbeddedAnimationActive && actor.userData.kanoRootCauseSeatPose?.head?.length) {
       for (const bone of actor.userData.kanoRootCauseSeatPose.head) bone.node.rotation.z = bone.rest.z + Math.sin(time * 0.9 + index) * 0.025;
     }
@@ -1258,6 +1396,8 @@ function installAuditPanelIfRequested() {
       `Seated passenger GLBs: ${report.seatedPassengerModels}`,
       `Life actors attached: ${report.lifeModelsAttached}`,
       `Embedded clips: active ${report.embeddedAnimations.activeActors}, loaded assets ${report.embeddedAnimations.clipAssetsLoaded}, clipless ${report.embeddedAnimations.cliplessAssets}, failures ${report.embeddedAnimations.loadFailures}`,
+      `Animation transitions/crossfades: ${report.embeddedAnimations.modeTransitions || 0}/${report.embeddedAnimations.crossfades || 0}`,
+      `Animation budget: ${report.embeddedAnimations.activeActors} active, ${report.embeddedAnimations.budgetWaitlist || 0} waiting`, 
       `Water seller: ${report.waterVendor.status}`,
       `Goat: ${report.goat.status}${report.goat.modelPath ? ` (${report.goat.modelPath})` : ''}`,
       `Tinted vehicle materials: ${report.damageVisual.bodyMaterialsTinted}`,

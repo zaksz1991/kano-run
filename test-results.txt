@@ -1,7 +1,8 @@
-PASS: syntax
-PASS: cached per-path embedded animation metadata
-PASS: passenger, seated passenger, life-scene and vendor activation hooks
-PASS: mixer update loop and mobile/desktop budgets
-PASS: procedural pose retained when no embedded clip is usable
-PASS: temporary GLTF resources disposed
-PASS: previous keke calibration and goat scan repair retained
+PASS: JavaScript syntax
+PASS: life-scene activity changes request the matching embedded clip
+PASS: embedded state transitions crossfade between compatible clips
+PASS: clip actions are cached per actor to avoid repeated creation
+PASS: mixer-budget deferrals retry when animation capacity frees
+PASS: mixer update avoids allocating a full entries array each frame
+PASS: seated passenger entry eases into the seat without persistent vertical offset
+PASS: previous keke calibration, goat discovery, vendor, passenger and damage repairs remain in the file

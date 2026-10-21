@@ -1,30 +1,29 @@
-# Kano Keke Life — Embedded GLB Character Animation Upgrade
+# Kano Keke Life — Character Animation State Machine Upgrade
 
-This is the next incremental replacement for `js/KanoLifeRootCauseRepair.js`. It preserves the exact-path keke calibration controls and cached goat discovery from the previous repair, while adding on-demand activation of animation clips embedded in the existing passenger, pedestrian, life-scene and water-seller GLB assets. No new models are included.
+This is an incremental replacement for `js/KanoLifeRootCauseRepair.js`. It retains the previous keke calibration, character GLB attachment, goat discovery, damage feedback, embedded animation metadata cache and diagnostic panel. It adds real state changes for embedded animations instead of locking imported life-scene characters to only the first animation requested.
 
-## Changes
+## What changes
 
-- Reads embedded clips from an exact existing GLB path only when a real character clone has been attached.
-- Caches the clip list per exact model path so many instances do not trigger repeated clip probes.
-- Selects a clip using the current activity (walk, seated/idle, sweep, draw water, wake, food/water selling, cleaning). If a model has no clips or the clip names cannot be matched, the existing procedural pose remains active rather than freezing the actor.
-- Removes common root/hips position tracks from the animation copy to reduce accidental scene-position drift while retaining limb and torso animation.
-- Limits the number of simultaneously active added mixers to 12 on mobile and 28 on desktop. Static world objects do not trigger animation metadata loads.
-- Disposes the temporary probe scene's geometries, materials and textures after extracting animation clips.
-- Stops mixers for actors that become orphaned.
-- Adds embedded-animation status to the existing `?rootCauseAudit=1` / `?assetAudit=1` panel.
+- **Activity changes now trigger animation requests.** When a morning-life rig changes `rig.action` (for example, idle to sweep or draw water), the imported character requests a clip matched to the new activity.
+- **Cross-fades between compatible embedded clips.** When the same GLB contains suitable clips for both states, the transition blends over 220 ms rather than instantly replacing one pose with another.
+- **Per-actor clip-action cache.** Reuses actions for clips already created on the same actor and stops the outgoing action after the brief cross-fade window.
+- **Animation budget waiting list.** Actors deferred by the mobile/desktop mixer cap can retry when other animated actors are removed; they are no longer permanently skipped for that state.
+- **Lower per-frame allocation.** The mixer update loop iterates the map directly rather than allocating a fresh spread-array every frame.
+- **Passenger seat entry transition.** New seated passenger GLBs settle into the seat over 360 ms, including a small vertical movement and scale easing, instead of popping instantly to the final pose. The final seat height is retained correctly after the transition.
+- **More diagnostics.** The existing root-cause audit reports activity-mode transitions, cross-fade count and animation actors waiting for a mixer slot.
 
 ## Installation
 
-Replace only the complete file at:
+Replace only this file with the complete file from the ZIP:
 
 `js/KanoLifeRootCauseRepair.js`
 
-Keep `index.html`, `js/ModelManager.js`, `js/renderer3d.js`, `js/KanoSceneUpgrade.js`, all existing GLB assets, catalogue scanner and manual mapping files unchanged. This relies on the repair module already being loaded by the current game build, as in the preceding root-cause upgrade.
+Keep the existing `index.html`, `js/ModelManager.js`, `js/renderer3d.js`, `js/KanoSceneUpgrade.js`, `js/KanoAnimationTrafficUpgrade.js`, `js/productionSystems.js`, all GLB assets, catalogue scanner and manual mapping file unchanged. This assumes the root-cause repair module is already registered in `index.html` as in the previous upgrade.
 
-## Validate
+## How to inspect
 
-Open the game with `?rootCauseAudit=1`. The panel reports embedded-clip requests, loaded clip assets, clipless assets, failures and active actors. `DOWNLOAD JSON` exports exact model paths and clip names. If an asset has no suitable embedded clip, it falls back to the existing procedural pose; this package does not invent missing clips or add models.
+Open Kano Life with `?rootCauseAudit=1` appended to the URL. The diagnostics panel reports animation transitions, cross-fades, active mixers, deferred mixer count, selected model paths, goat status and damage feedback. Use **DOWNLOAD JSON** to export the audit.
 
-## Validation limits
+## Limits
 
-The package includes syntax and static regression checks. Live gameplay, individual GLB animation quality, browser loading cost and device frame rates cannot be verified without testing your deployed build on the target device. The on-demand clip probe performs one additional GLTF parse per used character path; mixer limits and resource disposal are included to control cost.
+This package uses animation clips embedded in your existing GLBs. If a model has no appropriate clip, the code continues using the existing procedural fallback. A cross-fade is applied only when the selected clip differs from the currently active clip. This does not create new animation clips, add new GLB models, implement true vehicle rigid-body physics, or guarantee that a clip's content is semantically correct. Live browser gameplay and device frame rate have not been tested in this environment.
