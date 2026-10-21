@@ -405,9 +405,13 @@ export class Game {
         : 1
       : 0;
 
+    // Keep hazards in view for longer so the player has time to react.
+    // Potholes are placed farther down the visible road than stop markers.
     const depth = Number.isInteger(initialIndex)
-      ? 0.52 + initialIndex * 0.15
-      : randomBetween(1.05, 1.30);
+      ? 0.58 + initialIndex * 0.17
+      : type === 'pothole'
+        ? randomBetween(1.28, 1.58)
+        : randomBetween(1.08, 1.34);
 
     const label = hub
       ? `GENERAL CHECKPOINT · KEKE STOP · ${dest}`
@@ -1194,6 +1198,22 @@ export class Game {
       }
 
       // --------------------------------------------------------
+      // EARLY POTHOLE WARNING
+      // --------------------------------------------------------
+
+      if (
+        movingForward &&
+        zone.type === 'pothole' &&
+        aligned &&
+        inApproachRange &&
+        s.speed > 8 &&
+        !zone.warned
+      ) {
+        this.ui.toast('POTHOLE AHEAD · slow down or change lane');
+        zone.warned = true;
+      }
+
+      // --------------------------------------------------------
       // POTHOLE COLLISION
       //
       // A pothole remains visible as it approaches.
@@ -1276,7 +1296,7 @@ export class Game {
 
       if (
         zone.depth < -0.08 ||
-        zone.depth > 1.9
+        zone.depth > 2.15
       ) {
         s.zones.splice(index, 1);
 
