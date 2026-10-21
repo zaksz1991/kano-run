@@ -1816,6 +1816,8 @@ export class Game {
         collisions: s.collisions || 0,
         potholeHits: s.potholeHits || 0,
         nearMisses: s.nearMisses || 0,
+        fuel: Number.isFinite(s.fuel) ? s.fuel : 100,
+        distance: Number.isFinite(s.distance) ? s.distance : 0,
       },
     };
 
@@ -1918,12 +1920,21 @@ export class Game {
 
     let fare = passenger.fare;
     let destinationMasteryBonus = 0;
+    let fuelEconomyBonus = 0;
+    let trustedDriverBonus = 0;
 
     const tripStart = passenger.tripStart || {};
     const safeTrip =
       (s.collisions || 0) <= (tripStart.collisions ?? (s.collisions || 0)) &&
       (s.potholeHits || 0) <= (tripStart.potholeHits ?? (s.potholeHits || 0)) &&
       (s.nearMisses || 0) <= (tripStart.nearMisses ?? (s.nearMisses || 0));
+
+    // Reward fuel-conscious journeys without requiring a special game mode.
+    const fuelAtBoarding = Number.isFinite(tripStart.fuel) ? tripStart.fuel : s.fuel;
+    const fuelUsed = Math.max(0, fuelAtBoarding - s.fuel);
+    const tripDistance = Math.max(0, s.distance - (tripStart.distance ?? s.distance));
+    const economicalFuelLimit = 1.25 + tripDistance * 8.5;
+    const fuelEfficientTrip = tripDistance >= 0.025 && fuelUsed <= economicalFuelLimit;
 
     // Passenger trust grows with careful trips and falls after rough journeys.
     // The fare adjustment is deliberately modest and bounded.
@@ -1978,6 +1989,24 @@ export class Game {
         Math.floor(passenger.fare * milestoneRates[s.streak]),
       );
       fare += destinationMasteryBonus;
+    }
+
+    // A fuel-efficient trip earns a modest fare bonus, separate from the
+    // safe-driving reward so players can benefit from both systems.
+    if (fuelEfficientTrip) {
+      fuelEconomyBonus = Math.min(500, Math.max(30, Math.floor(fare * 0.08)));
+      fare += fuelEconomyBonus;
+      s.score += fuelEconomyBonus;
+      this.ui.toast(`Fuel-smart trip · +₦${fuelEconomyBonus.toLocaleString()} · saved ${fuelUsed.toFixed(1)} fuel`);
+    }
+
+    // Highly trusted drivers earn a loyalty payment for completing a safe
+    // passenger trip. The cap keeps this reward useful without inflating fares.
+    if (safeTrip && s.passengerTrust >= 80) {
+      trustedDriverBonus = Math.min(600, Math.max(50, Math.floor(fare * 0.06)));
+      fare += trustedDriverBonus;
+      s.score += trustedDriverBonus;
+      this.ui.toast(`Trusted-driver loyalty · +₦${trustedDriverBonus.toLocaleString()} · passengers trust your keke`);
     }
 
     // Reward considerate driving and build a consecutive safe-trip chain.
@@ -2036,8 +2065,14 @@ export class Game {
     const masteryText = destinationMasteryBonus > 0
       ? ` · route mastery +₦${destinationMasteryBonus.toLocaleString()} (${s.streak} correct stops)`
       : '';
+    const fuelEconomyText = fuelEconomyBonus > 0
+      ? ` · fuel-smart +₦${fuelEconomyBonus.toLocaleString()}`
+      : '';
+    const trustedDriverText = trustedDriverBonus > 0
+      ? ` · loyalty +₦${trustedDriverBonus.toLocaleString()}`
+      : '';
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}`,
     );
 
     this.missionAdd('drops', 1);
