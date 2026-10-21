@@ -159,8 +159,10 @@ test('beginShift: a bigger breakfast leaves the driver less hungry, skipping it 
   const big = hungerAfter({ breakfast: true, breakfastCost: 450 });
   const small = hungerAfter({ breakfast: true, breakfastCost: 250 });
   const none = hungerAfter({ breakfast: false });
-  assert.ok(big < small && small < none);
+  const unknown = hungerAfter({}); // morning routine not played
+  assert.ok(big < small && small < unknown && unknown < none);
   assert.equal(big, 0);
+  assert.equal(unknown, 20);
   assert.equal(none, 35);
 });
 

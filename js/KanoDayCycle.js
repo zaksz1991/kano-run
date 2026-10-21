@@ -151,15 +151,18 @@ export class KanoDayCycle {
   /**
    * Start of a driving shift (after the morning routine). Each shift is a new day of the career:
    * the clock resets to the start of the shift, fatigue resets after a night's sleep, and hunger
-   * depends on breakfast. `breakfastCost` of 0 / `breakfast` false means breakfast was skipped.
+   * depends on breakfast: true = ate (bigger meal, less hunger), false = skipped it on purpose,
+   * null/undefined = the morning routine was not played, so start neutral.
    */
-  beginShift({ breakfast = false, breakfastCost = 0 } = {}) {
+  beginShift({ breakfast = null, breakfastCost = 0 } = {}) {
     const s = this.state;
     if (s.started) s.day += 1;
     s.started = true;
     s.minuteOfDay = SHIFT_START_MINUTE;
     s.fatigue = 5;
-    s.hunger = breakfast ? clamp(30 - (Number(breakfastCost) || 0) / 15, 0, 30) : 35;
+    s.hunger = breakfast === true
+      ? clamp(30 - (Number(breakfastCost) || 0) / 15, 0, 30)
+      : breakfast === false ? 35 : 20;
     this.level = { hunger: 0, fatigue: 0 };
     this.lastPeriod = periodAt(s.minuteOfDay).id;
     this.#emit('shift_started', { day: s.day, hunger: Math.round(s.hunger) });

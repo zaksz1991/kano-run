@@ -1,8 +1,8 @@
---- a/index.html	2026-10-21 00:35:28.680980173 +0100
-+++ b/index.html	2026-10-21 00:35:28.710012139 +0100
+--- a/index.html	2026-10-21 00:51:24.641532755 +0100
++++ b/index.html	2026-10-21 00:51:24.698243172 +0100
 @@ -7,6 +7,11 @@
    <meta name="description" content="Drive an Adaidaita Sahu through Kano. Pick passengers, earn fares and survive the streets." />
-   <title>KANO KeKe LIFE — Adaidaita Sahu</title>
+   <title>KANO LIFE — Adaidaita Sahu</title>
    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 +  <link rel="manifest" href="/manifest.webmanifest" />
 +  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
@@ -10,10 +10,10 @@
 +  <meta name="apple-mobile-web-app-capable" content="yes" />
 +  <meta name="apple-mobile-web-app-title" content="Kano Life" />
    <link rel="stylesheet" href="/css/styles.css" />
-   <style>
-     /* Reverse-gear state, accessible focus, and compact mobile controls. */
---- a/js/main.js	2026-10-21 00:35:28.684284102 +0100
-+++ b/js/main.js	2026-10-21 00:35:38.755724263 +0100
+ </head>
+ <body>
+--- a/js/main.js	2026-10-21 00:51:24.645687623 +0100
++++ b/js/main.js	2026-10-21 00:51:24.698509970 +0100
 @@ -1,3 +1,4 @@
 +import { registerServiceWorker } from './registerServiceWorker.js';
  import { Game } from './game.js';
@@ -28,8 +28,8 @@
  let renderer = null;
  let productionBridge = null;
  let sceneUpgrade = null;
---- a/vercel.json	2026-10-21 00:35:28.681011355 +0100
-+++ b/vercel.json	2026-10-21 00:35:28.710471221 +0100
+--- a/vercel.json	2026-10-21 00:51:24.641645227 +0100
++++ b/vercel.json	2026-10-21 00:51:24.698727114 +0100
 @@ -2,7 +2,75 @@
    "cleanUrls": true,
    "trailingSlash": false,

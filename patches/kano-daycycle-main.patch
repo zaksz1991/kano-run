@@ -1,5 +1,5 @@
 --- a/js/main.js	2026-10-20 20:39:12.071212849 +0100
-+++ b/js/main.js	2026-10-21 00:23:48.678138865 +0100
++++ b/js/main.js	2026-10-21 09:49:52.946932162 +0100
 @@ -22,6 +22,8 @@
  import { KanoAtmosphere } from './KanoAtmosphere.js';
  import { KanoInteractionReliability } from './KanoInteractionReliability.js';
@@ -87,7 +87,7 @@
 +        shiftPending = false;
 +
 +        dayCycle.beginShift({
-+          breakfast: Boolean(game.s?.breakfastEaten),
++          breakfast: game.s?.breakfastEaten ?? null,
 +          breakfastCost: game.s?.breakfastCost || 0,
 +        });
 +      }

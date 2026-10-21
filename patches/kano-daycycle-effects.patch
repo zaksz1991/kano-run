@@ -1,5 +1,5 @@
 --- a/js/game.js	2026-10-20 20:43:56.314452127 +0100
-+++ c/js/game.js	2026-10-20 20:49:58.680281136 +0100
++++ c/js/game.js	2026-10-21 09:49:52.944422033 +0100
 @@ -87,6 +87,8 @@
    // ==========================================================
  
@@ -9,7 +9,17 @@
      const capacity = Math.max(
        3,
        5 + (this.driver.capacityMod || 0),
-@@ -800,11 +802,15 @@
+@@ -96,7 +98,8 @@
+       score: 0,
+       fares: 0,
+ 
+-      breakfastEaten: false,
++      // null = the morning routine was not played; true/false = ate or skipped breakfast there.
++      breakfastEaten: null,
+       breakfastCost: 0,
+ 
+       morale: 75,
+@@ -800,11 +803,15 @@
      const tyreHandling =
        0.62 + 0.38 * (s.tyres / 100);
  
@@ -26,7 +36,7 @@
  
      s.steer +=
        (s.targetLane - s.steer) *
-@@ -1863,6 +1869,14 @@
+@@ -1863,6 +1870,14 @@
        this.dailyAdd('matchedDrops', 1);
      }
  
@@ -41,7 +51,7 @@
      s.passengers.shift();
  
      s.drops += 1;
-@@ -1996,9 +2010,30 @@
+@@ -1996,9 +2011,30 @@
    // ENVIRONMENT EVENTS
    // ==========================================================
  
@@ -72,7 +82,7 @@
      s.lifeEventTimer -= dt;
  
      if (
-@@ -2350,6 +2385,28 @@
+@@ -2350,6 +2386,28 @@
          ],
        },
  
@@ -101,7 +111,7 @@
        waterSeller: {
          kicker: 'ROADSIDE KIOSK',
          title: 'Pure water and phone top-up.',
-@@ -2742,6 +2799,38 @@
+@@ -2742,6 +2800,38 @@
            );
          }
        }

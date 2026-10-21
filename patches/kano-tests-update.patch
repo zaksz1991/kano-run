@@ -1,0 +1,32 @@
+--- a/tests/game.test.js	2026-10-21 09:49:02.335830618 +0100
++++ b/tests/game.test.js	2026-10-21 09:49:02.358661682 +0100
+@@ -6,6 +6,17 @@
+ import { purchaseDriver, purchasePaint, selectDriver, selectPaint } from '../js/progression.js';
+ import { projectRoadDepth } from '../js/renderer2d.js';
+ 
++// Node has no localStorage. storage.js now refuses to report a save it could not make
++// (so rewards are never paid without being stored), which needs a working storage here.
++if (!globalThis.localStorage) {
++  const memory = new Map();
++  globalThis.localStorage = {
++    getItem: (key) => (memory.has(key) ? memory.get(key) : null),
++    setItem: (key, value) => { memory.set(key, String(value)); },
++    removeItem: (key) => { memory.delete(key); },
++  };
++}
++
+ // Some gameplay events use window.setTimeout in browsers. Node-based tests use
+ // the same timer API so the gameplay module can be exercised without a DOM.
+ globalThis.window = globalThis;
+--- a/tests/static.test.js	2026-10-21 09:49:02.335874599 +0100
++++ b/tests/static.test.js	2026-10-21 09:49:02.358847193 +0100
+@@ -28,7 +28,8 @@
+   const ui = read('js/ui.js');
+   const htmlIds = new Set([...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]));
+   const uiIds = new Set([...ui.matchAll(/this\.el\(["']([^"']+)["']\)/g)].map((match) => match[1]));
+-  const optional = new Set(['reverse-label']);
++  // Built at runtime by KanoGameplayPresentationRepair.js, so they are not in the static HTML.
++  const optional = new Set(['reverse-label', 'reverse-btn', 'gear-label']);
+   assert.deepEqual([...uiIds].filter((id) => !htmlIds.has(id) && !optional.has(id)), []);
+ });
+ 
