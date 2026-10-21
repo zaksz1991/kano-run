@@ -150,8 +150,8 @@
       <button class="menu-button" id="menu-btn" aria-label="Open game menu">☰</button>
     </div>
   </main>
-  <!-- Bootstrap the GLB quality pass before the existing game hooks and main.js. -->
-  <!-- Register root-cause repairs before the existing GLB/presentation patches and main.js. -->
+  <!-- World performance hooks must run before existing renderer and GLB patches. -->
+  <script type="module" src="/js/KanoWorldPerformanceInstancingUpgrade.js"></script>
   <script type="module" src="/js/KanoLifeRootCauseRepair.js"></script>
   <script type="module" src="/js/KanoModelAssetVisualUpgrade.js"></script>
 </body>

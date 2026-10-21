@@ -1,31 +1,34 @@
-# Kano Keke Life — Player Vehicle & Build Safety Upgrade
+# Kano Keke Life — World Performance, Instancing & Brightness Upgrade
 
-This package fixes two concrete problems found in the current repository source:
+## Purpose
 
-1. The checked-in `package.json` contains only a test script. Vercel runs `vite build`, but Vite is absent from declared dependencies. This replacement restores the Vite and Three.js dependencies and the `dev`, `build`, `preview`, and `test` scripts.
-2. `scripts/glb-catalog-sync.mjs` discovers keke candidates from any model path containing “keke”. That can classify a human asset such as `characters/pedestrians/keke female.glb` as a player-vehicle candidate. A Vite post-transform guard restricts player-keke candidates to GLBs under `vehicles/` and excludes human-labelled paths.
+This upgrade targets concrete renderer costs visible in the current source:
 
-## Files in this ZIP
+- The world creates many separate lane-marking meshes and updates each one every frame.
+- Desktop procedural buildings create one separate mesh/material for each window.
+- Day/night atmosphere exposure and lighting were conservative, matching the dark/flat look in the supplied screenshot.
 
-- `package.json` — complete repository-root replacement.
-- `vite.config.js` — complete replacement retaining the current model-review HTML input and catalogue plugin, with one additional safety plugin.
-- `scripts/keke-catalog-safety.mjs` — new post-transform filter and audit-report correction.
-- `tests/keke-catalog-safety.test.mjs` — regression tests.
+The upgrade batches repeating road markings into one `THREE.InstancedMesh`, batches windows per procedural building, and applies a modest stable lift to existing daylight lighting. It does not replace or rename any GLB assets and does not modify fares, vehicle damage, collisions, traffic rules, or progression.
+
+## Files
+
+- `index.html` — complete replacement that loads the performance hooks before existing root-cause and GLB presentation modules.
+- `js/KanoWorldPerformanceInstancingUpgrade.js` — new runtime patch.
+- `tests/kano-world-performance-upgrade.test.mjs` — Node regression checks.
 
 ## Installation
 
-1. Replace the root `package.json` with the included complete file.
-2. Replace the root `vite.config.js` with the included complete file.
-3. Add `scripts/keke-catalog-safety.mjs` at that exact path.
-4. Add `tests/keke-catalog-safety.test.mjs` at that exact path.
-5. Keep `scripts/glb-catalog-sync.mjs`, `scripts/glb-catalog-overrides.json`, `js/ModelManager.js`, `js/renderer3d.js`, and all existing GLB assets unchanged.
+1. Replace the repository-root `index.html` with the included complete file.
+2. Add `js/KanoWorldPerformanceInstancingUpgrade.js` at that exact path.
+3. Add `tests/kano-world-performance-upgrade.test.mjs` at that exact path.
+4. Keep `package.json`, `vite.config.js`, all other game files, model mappings and GLB assets unchanged.
 
-The package uses Vite 8 and Three.js versions that exist in the npm registry at the time of preparation. Vite 8.3 requires Node.js 20.19+ or 22.12+; Vercel builds in this project should use Node.js 22.12+ or 24.x.
+## Diagnostics
 
-## Safety behaviour
+Open the game with `?worldPerfAudit=1&debugPerf=1` added to the address. The world audit reports lane-marking batches, desktop window batches, lighting profile, WebGL draw calls and triangle count. Use **EXPORT JSON** to save the report.
 
-If at least one safe vehicle model is found, only vehicle-path candidates remain in `CATALOG.keke`. If no safe vehicle GLB remains, the catalog is empty for that category and the game should retain its existing procedural keke fallback. This intentionally prefers a known fallback vehicle over displaying a human model as the vehicle.
+The normal game URL is not forced into 3D mode. The existing fallback remains available if WebGL is unavailable or the game encounters a serious runtime issue.
 
 ## Validation
 
-Run the included Node.js tests with the project test script after installation. JavaScript syntax and unit tests were checked during package preparation. A Vercel build and in-browser model rendering have not been run from this environment.
+The included tests check module syntax assumptions, instancing integration, stable lighting calculations, load ordering, and preservation of important page IDs. Actual device frame rates and visual appearance must still be checked in the browser; source-level tests cannot guarantee a specific FPS gain on every device.
