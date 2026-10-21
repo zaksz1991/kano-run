@@ -192,6 +192,7 @@ export class Game {
 
       combo: 0,
       streak: 0,
+      safeTripStreak: 0,
       horns: 0,
       richDramas: 0,
 
@@ -1956,14 +1957,25 @@ export class Game {
       this.dailyAdd('matchedDrops', 1);
     }
 
-    // Reward considerate driving separately from destination matching.
-    // In match-drop mode the destination multiplier is applied first;
-    // this bonus then rewards an incident-free journey.
+    // Reward considerate driving and build a consecutive safe-trip chain.
+    // The chain bonus is capped so it remains useful without overpowering fares.
     if (safeTrip) {
-      const safeTripBonus = Math.max(25, Math.floor(fare * 0.12));
+      s.safeTripStreak = Math.min(10, (s.safeTripStreak || 0) + 1);
+      const baseSafeBonus = Math.max(25, Math.floor(fare * 0.12));
+      const chainRate = Math.min(0.10, Math.max(0, s.safeTripStreak - 1) * 0.02);
+      const chainBonus = Math.floor(fare * chainRate);
+      const safeTripBonus = baseSafeBonus + chainBonus;
       fare += safeTripBonus;
       s.score += safeTripBonus;
-      this.ui.toast(`Safe trip · passenger bonus +₦${safeTripBonus.toLocaleString()}`);
+      const chainText = s.safeTripStreak > 1
+        ? ` · safe streak ${s.safeTripStreak} (+₦${chainBonus.toLocaleString()} chain)`
+        : '';
+      this.ui.toast(`Safe trip · passenger bonus +₦${safeTripBonus.toLocaleString()}${chainText}`);
+    } else {
+      if ((s.safeTripStreak || 0) >= 2) {
+        this.ui.toast(`Safe-trip streak ended at ${s.safeTripStreak} · drive carefully to build it again`);
+      }
+      s.safeTripStreak = 0;
     }
 
     s.passengers.shift();
