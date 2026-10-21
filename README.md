@@ -1,36 +1,23 @@
-# Kano Keke Life — Screenshot Root-Cause Repair
+# Kano Keke Life — Vite Build Dependency Restoration
 
-This package repairs two confirmed blockers seen in the current repository and the provided gameplay screenshot.
+## Root cause
 
-## Confirmed causes
+The current repository `package.json` was reduced to a minimal test-only manifest. It contains no `dependencies`, no Vite package, no Three.js package, and no `build` script. Vercel then removes cached packages during installation and runs its configured `vite build` command, but the `vite` executable no longer exists. This matches the reported `sh: line 1: vite: command not found` error.
 
-1. **The model catalogue could classify a woman as the player's keke.** The old scanner matched the word `keke` across every GLB path. Because `characters/pedestrians/keke female.glb` exists in the current catalogue, that pedestrian path could enter the `keke` candidate list. The model manager selects the first successfully loaded candidate, so a character could replace the vehicle. The replacement scanner only accepts a player keke from the `vehicles/` tree and explicitly excludes human/character terms.
-2. **The Vercel build is missing Vite.** The current `package.json` only declares the test script and does not declare `vite` or `three`. That matches the logged `vite: command not found` failure. The replacement package declares both runtime/build dependencies and restores `dev`, `build`, `preview`, and test scripts.
-3. **The earlier manual mapping file was not consumed by the scanner.** The replacement scanner reads `scripts/glb-catalog-overrides.json`, validates paths against discovered files, and prevents a character asset from being assigned as the player keke.
-4. **The old `uniqueSorted` assumed all items were strings.** The replacement supports both paths and GLB records, fixing `a.localeCompare is not a function` when records are passed.
+## Apply this repair
 
-## Files in this ZIP
+Replace only the repository-root `package.json` with the complete `package.json` in this ZIP.
 
-- `package.json` — complete replacement. Vite is a normal dependency so `npm run build` can find it in the Vercel build environment.
-- `scripts/glb-catalog-sync.mjs` — complete replacement for automatic GLB catalogue discovery, safe category assignment, manual overrides, and audit generation.
-- `tests/glb-catalog-sync-regression.test.mjs` — regression tests for category separation, manual mapping, renamed files, and sort safety.
+This restores:
+- `vite` as a regular dependency (not a devDependency), so production-mode dependency pruning will not remove the build tool.
+- `three` as a regular dependency for the game's Three.js imports.
+- the expected `dev`, `build`, `preview`, and test scripts.
+- the Node 24.x engine requirement used by the previously valid manifest.
 
-## Installation in GitHub's browser editor
+Keep `vite.config.js`, the GLB catalogue scanner, manual model mappings, HTML files, renderer, game modules, and all GLB assets unchanged.
 
-1. Replace the repository-root `package.json` with the included complete file.
-2. Replace `scripts/glb-catalog-sync.mjs` with the included complete file.
-3. Add `tests/glb-catalog-sync-regression.test.mjs` at the same path. Keep your other tests.
-4. **Keep your current `scripts/glb-catalog-overrides.json`**. It is read by the new scanner; it is not overwritten by this ZIP.
-5. Keep `vite.config.js`, `js/ModelManager.js`, `index.html`, game code, and all GLB files unchanged for this repair.
+## Validation
 
-## Verify after build
+The JSON manifest parses successfully. The dependency placement ensures Vite is in `dependencies`, not `devDependencies`, which directly addresses builds where npm prunes development dependencies. The ZIP includes only this manifest and these instructions.
 
-The generated report is published at:
-
-`/assets/models/model-catalog-audit.generated.json`
-
-Inspect `catalog.keke` to confirm it contains paths under `vehicles/`, not `characters/`. Inspect `unsafeKekeMatches` to see excluded non-vehicle files whose names mention keke. `overrideWarnings` reports missing/case-mismatched manual mappings.
-
-## Scope and limitations
-
-This package repairs the immediate wrong-model assignment and missing build dependency. It does not by itself add new animation clips, implement a goat-spawn event, decorate wedding vehicles, or redesign the street art. Those features should be applied only after the active model catalogue and production build are reliable; otherwise updates may be invisible or a human model may be selected as a vehicle again.
+A fresh Vercel build has not been run from this environment. The next deployment log must confirm npm installs Vite and then runs `vite build` successfully.
