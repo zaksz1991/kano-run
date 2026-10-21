@@ -1,46 +1,7 @@
-TAP version 13
-# Subtest: keke fitting no longer guesses yaw from width/depth
-ok 1 - keke fitting no longer guesses yaw from width/depth
-  ---
-  duration_ms: 1.049955
-  type: 'test'
-  ...
-# Subtest: manual calibration is keyed by exact model path and bounded
-ok 2 - manual calibration is keyed by exact model path and bounded
-  ---
-  duration_ms: 0.165479
-  type: 'test'
-  ...
-# Subtest: calibration applies to the imported root, not just a body child
-ok 3 - calibration applies to the imported root, not just a body child
-  ---
-  duration_ms: 0.098559
-  type: 'test'
-  ...
-# Subtest: audit exposes exact-path calibration only in opt-in audit mode
-ok 4 - audit exposes exact-path calibration only in opt-in audit mode
-  ---
-  duration_ms: 0.194534
-  type: 'test'
-  ...
-# Subtest: goat scene scan is cached while animation mixers still update
-ok 5 - goat scene scan is cached while animation mixers still update
-  ---
-  duration_ms: 0.131589
-  type: 'test'
-  ...
-# Subtest: existing passenger, hawker, goat and collision hooks remain in the module
-ok 6 - existing passenger, hawker, goat and collision hooks remain in the module
-  ---
-  duration_ms: 0.158349
-  type: 'test'
-  ...
-1..6
-# tests 6
-# suites 0
-# pass 6
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 59.276697
+PASS: syntax
+PASS: cached per-path embedded animation metadata
+PASS: passenger, seated passenger, life-scene and vendor activation hooks
+PASS: mixer update loop and mobile/desktop budgets
+PASS: procedural pose retained when no embedded clip is usable
+PASS: temporary GLTF resources disposed
+PASS: previous keke calibration and goat scan repair retained

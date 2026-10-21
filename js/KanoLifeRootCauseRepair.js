@@ -35,6 +35,7 @@ const rootAudit = {
   lifeModelsAttached: 0,
   waterVendor: { status: 'waiting-for-vendor' },
   goat: { status: 'waiting-for-crossing-event' },
+  embeddedAnimations: { requestedAssets: 0, clipAssetsLoaded: 0, cliplessAssets: 0, loadFailures: 0, activeActors: 0, budgetSkips: 0, clipsByPath: {} },
   recentImpacts: [],
   damageVisual: { bodyMaterialsTinted: 0, lastCondition: null },
   performance: { animatedRootCacheHits: 0, animatedRootScans: 0, mobileShadowPassesSkipped: 0, goatSceneScans: 0, goatSceneScanCacheHits: 0 },
@@ -292,6 +293,167 @@ function poseActor(actor, time, mode = 'walk') {
   actor.position.y = actor.userData.kanoRootCauseBaseY + Math.abs(gait) * (mode === 'walk' ? 0.025 : 0.008);
   if (!pose.all.length) actor.rotation.y = Math.sin(time * 2.4) * 0.025;
 }
+// ---------------------------------------------------------------------------
+// 2B. Activate animation clips already embedded in the character GLBs.
+// ModelManager caches the normalized scene but its public load result does not
+// retain gltf.animations. Read clip metadata once per exact model path, release
+// the temporary probe scene immediately, and reuse the clips for every clone.
+// This is on-demand: static buildings/vehicles do not trigger extra GLB loads.
+// ---------------------------------------------------------------------------
+const embeddedClipPromises = new Map();
+const embeddedAnimationMixers = new Map();
+const embeddedCliplessPaths = new Set();
+const MAX_EMBEDDED_MIXERS_MOBILE = 12;
+const MAX_EMBEDDED_MIXERS_DESKTOP = 28;
+
+function disposeAnimationProbeScene(root) {
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+  root?.traverse?.((node) => {
+    if (node.geometry) geometries.add(node.geometry);
+    for (const material of meshMaterials(node)) {
+      materials.add(material);
+      for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+    }
+  });
+  for (const texture of textures) safeCall(() => texture.dispose());
+  for (const material of materials) safeCall(() => material.dispose());
+  for (const geometry of geometries) safeCall(() => geometry.dispose());
+}
+
+function embeddedClipsForPath(path) {
+  if (!path) return Promise.resolve([]);
+  if (embeddedClipPromises.has(path)) return embeddedClipPromises.get(path);
+  rootAudit.embeddedAnimations.requestedAssets += 1;
+  const promise = new GLTFLoader().loadAsync(encodedAssetUrl(path)).then((gltf) => {
+    const clips = Array.isArray(gltf.animations) ? gltf.animations.map((clip) => clip.clone()) : [];
+    disposeAnimationProbeScene(gltf.scene);
+    if (clips.length) {
+      rootAudit.embeddedAnimations.clipAssetsLoaded += 1;
+      rootAudit.embeddedAnimations.clipsByPath[path] = clips.map((clip) => clip.name || '(unnamed clip)');
+    } else {
+      rootAudit.embeddedAnimations.cliplessAssets += 1;
+      embeddedCliplessPaths.add(path);
+      rootAudit.embeddedAnimations.clipsByPath[path] = [];
+    }
+    return clips;
+  }).catch((error) => {
+    rootAudit.embeddedAnimations.loadFailures += 1;
+    rootAudit.embeddedAnimations.clipsByPath[path] = { error: String(error?.message || error) };
+    if (rootAudit.notes.length < 40) rootAudit.notes.push(`Embedded animation metadata unavailable for ${path}: ${String(error?.message || error)}`);
+    return [];
+  });
+  embeddedClipPromises.set(path, promise);
+  return promise;
+}
+
+function preferredClipPattern(mode) {
+  const value = String(mode || 'idle').toLowerCase().replace(/[^a-z]/g, '');
+  if (/walk|boarding|pedestrian|locomotion/.test(value)) return /walk|walking|run|running|jog|locomotion|stride/i;
+  if (/seated|sit|passengerseat/.test(value)) return /sit|seated|idle|stand|breath|look/i;
+  if (/sweep/.test(value)) return /sweep|broom|clean|work|idle/i;
+  if (/drawwater|water/.test(value)) return /draw|carry|lift|water|work|idle/i;
+  if (/sellfood|sellwater|hawker|vendor|food/.test(value)) return /sell|wave|talk|gesture|serve|work|idle|stand/i;
+  if (/wake|bedroom/.test(value)) return /wake|stretch|sit|stand|idle|breath/i;
+  if (/clean|wipe/.test(value)) return /clean|wipe|work|idle/i;
+  return /idle|stand|breath|look|talk/i;
+}
+
+function chooseEmbeddedClip(clips, mode) {
+  if (!Array.isArray(clips) || !clips.length) return null;
+  const pattern = preferredClipPattern(mode);
+  const named = clips.find((clip) => pattern.test(String(clip.name || '')));
+  if (named) return named;
+  // A single embedded clip is better than a frozen pose. With several clips
+  // and no meaningful names, prefer procedural motion rather than guessing.
+  if (clips.length === 1) return clips[0];
+  return null;
+}
+
+function detachEmbeddedAnimation(actor) {
+  const entry = embeddedAnimationMixers.get(actor);
+  if (!entry) return;
+  safeCall(() => entry.mixer.stopAllAction());
+  safeCall(() => entry.mixer.uncacheRoot(actor));
+  embeddedAnimationMixers.delete(actor);
+  if (actor?.userData) {
+    actor.userData.kanoEmbeddedAnimationActive = false;
+    delete actor.userData.kanoEmbeddedAnimationMode;
+  }
+  rootAudit.embeddedAnimations.activeActors = embeddedAnimationMixers.size;
+}
+
+function requestEmbeddedAnimation(actor, mode = 'idle') {
+  if (!actor?.isObject3D || actor.userData?.kanoEmbeddedAnimationAttempted) return;
+  const path = getModelPath(actor);
+  if (!path) {
+    actor.userData.kanoEmbeddedAnimationAttempted = true;
+    return;
+  }
+  const existing = embeddedAnimationMixers.get(actor);
+  if (existing && existing.mode === mode) return;
+  if (embeddedAnimationMixers.size >= (isMobile() ? MAX_EMBEDDED_MIXERS_MOBILE : MAX_EMBEDDED_MIXERS_DESKTOP)) {
+    actor.userData.kanoEmbeddedAnimationAttempted = true;
+    rootAudit.embeddedAnimations.budgetSkips += 1;
+    return;
+  }
+  actor.userData.kanoEmbeddedAnimationAttempted = true;
+  embeddedClipsForPath(path).then((clips) => {
+    if (!actor.parent || !actor.userData) return;
+    const selected = chooseEmbeddedClip(clips, mode);
+    if (!selected) {
+      if (!embeddedCliplessPaths.has(path) && clips.length > 1 && rootAudit.notes.length < 40) {
+        rootAudit.notes.push(`No embedded clip matched the ${mode} state for ${path}; procedural pose retained.`);
+      }
+      actor.userData.kanoEmbeddedAnimationActive = false;
+      return;
+    }
+    if (embeddedAnimationMixers.size >= (isMobile() ? MAX_EMBEDDED_MIXERS_MOBILE : MAX_EMBEDDED_MIXERS_DESKTOP)) {
+      rootAudit.embeddedAnimations.budgetSkips += 1;
+      return;
+    }
+    const clip = selected.clone();
+    // Remove root-motion position tracks that would drag a scene actor away
+    // from its gameplay position. Limb, torso and head animation stays intact.
+    clip.tracks = clip.tracks.filter((track) => !/(hips|pelvis|armature|(^|[^a-z])root)[^/]*\.position$/i.test(track.name));
+    safeCall(() => clip.resetDuration());
+    if (!clip.tracks.length) {
+      actor.userData.kanoEmbeddedAnimationActive = false;
+      return;
+    }
+    const mixer = new THREE.AnimationMixer(actor);
+    const action = mixer.clipAction(clip);
+    action.enabled = true;
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    action.clampWhenFinished = false;
+    action.play();
+    embeddedAnimationMixers.set(actor, { mixer, action, mode, path, clipName: selected.name || '(unnamed clip)' });
+    actor.userData.kanoEmbeddedAnimationActive = true;
+    actor.userData.kanoEmbeddedAnimationMode = mode;
+    rootAudit.embeddedAnimations.activeActors = embeddedAnimationMixers.size;
+  });
+}
+
+function updateEmbeddedAnimations(renderer, dt) {
+  for (const [actor, entry] of [...embeddedAnimationMixers.entries()]) {
+    if (!actor?.parent) {
+      detachEmbeddedAnimation(actor);
+      continue;
+    }
+    let top = actor;
+    while (top.parent) top = top.parent;
+    if (renderer?.scene && top !== renderer.scene) {
+      // A scene-owned animation may temporarily be detached during a state
+      // transition; pause it, but only dispose once the actor is truly orphaned.
+      if (!actor.parent) detachEmbeddedAnimation(actor);
+      continue;
+    }
+    if (actor.visible) safeCall(() => entry.mixer.update(clamp(dt, 0, 0.05)));
+  }
+  rootAudit.embeddedAnimations.activeActors = embeddedAnimationMixers.size;
+}
+
 function hidePrimitiveLifeBody(rig) {
   for (const node of [rig?.torso, rig?.head, rig?.cap]) if (node) node.visible = false;
   const prop = rig?.prop;
@@ -343,6 +505,7 @@ function attemptCharacterAttach(owner, rig, character, role = 'pedestrian') {
     rig.root.add(actor);
     rig.kanoImportedActor = actor;
     rig.kanoImportedModelKey = key;
+    requestEmbeddedAnimation(actor, role === 'life' ? (rig.action || 'idle') : 'walk');
     if (role === 'life') hidePrimitiveLifeBody(rig); else hideWalkPlaceholder(rig);
     rootAudit[role === 'life' ? 'lifeModelsAttached' : 'passengerModelsAttached'] += 1;
     return true;
@@ -399,10 +562,10 @@ if (KanoSceneUpgrade?.prototype) {
     }
     for (const item of this.walkingPassengers || []) {
       const actor = item.rig?.kanoImportedActor;
-      if (actor) poseActor(actor, Number(item.elapsed) || 0, 'walk');
+      if (actor && !actor.userData?.kanoEmbeddedAnimationActive) poseActor(actor, Number(item.elapsed) || 0, 'walk');
     }
     for (const rig of this.lifeRigs || []) {
-      if (rig.kanoImportedActor && !rig.kanoImportedActor.userData?.mixer) poseActor(rig.kanoImportedActor, (this.elapsed || 0) + (rig.phase || 0), rig.action || 'idle');
+      if (rig.kanoImportedActor && !rig.kanoImportedActor.userData?.mixer && !rig.kanoImportedActor.userData?.kanoEmbeddedAnimationActive) poseActor(rig.kanoImportedActor, (this.elapsed || 0) + (rig.phase || 0), rig.action || 'idle');
     }
     return result;
   });
@@ -500,6 +663,7 @@ function syncSeatedPassengerModels(renderer, game) {
       actor.userData.kanoRootCauseSeatBaseY = actor.position.y;
       actor.userData.kanoRootCauseSeatPose = prepareBonePose(actor);
       group.add(actor);
+      requestEmbeddedAnimation(actor, 'seated');
       rootAudit.seatedPassengerModels += 1;
     }
   }
@@ -507,7 +671,7 @@ function syncSeatedPassengerModels(renderer, game) {
   for (let index = 0; index < (group?.children?.length || 0); index += 1) {
     const actor = group.children[index];
     actor.position.y = actor.userData.kanoRootCauseSeatBaseY + Math.sin(time * 1.6 + index * 1.2) * 0.006;
-    if (actor.userData.kanoRootCauseSeatPose?.head?.length) {
+    if (!actor.userData?.kanoEmbeddedAnimationActive && actor.userData.kanoRootCauseSeatPose?.head?.length) {
       for (const bone of actor.userData.kanoRootCauseSeatPose.head) bone.node.rotation.z = bone.rest.z + Math.sin(time * 0.9 + index) * 0.025;
     }
   }
@@ -548,6 +712,7 @@ function installHawkerModel(hawker) {
   actor.userData.kanoRootCausePose = prepareBonePose(actor);
   actor.userData.kanoRootCauseBaseY = actor.position.y;
   root.add(actor);
+  requestEmbeddedAnimation(actor, 'sellWater');
   hawker.__kanoImportedVendorActor = actor;
   hawker.__kanoRealVendorInstalled = true;
   rootAudit.waterVendor = { status: 'existing-character-glb-attached', modelKey: key, modelPath: getModelPath(actor), animatedBones: actor.userData.kanoRootCausePose.all.length };
@@ -597,7 +762,7 @@ if (PureWaterHawker?.prototype) {
     const actor = this.__kanoImportedVendorActor;
     if (actor) {
       this.__kanoSellerAnimTime = (this.__kanoSellerAnimTime || 0) + clamp(dt, 0, 0.1);
-      poseActor(actor, this.__kanoSellerAnimTime, 'sellWater');
+      if (!actor.userData?.kanoEmbeddedAnimationActive) poseActor(actor, this.__kanoSellerAnimTime, 'sellWater');
     } else if (rootAudit.waterVendor.status === 'waiting-for-vendor') {
       rootAudit.waterVendor = { status: 'hawker-created; attempting to activate an existing character GLB' };
     }
@@ -911,6 +1076,7 @@ if (Renderer3D?.prototype) {
       while (queue.length) spawnImpactBurst(this, queue.shift());
     }
     safeCall(() => updateRealGoats(this, dt));
+    safeCall(() => updateEmbeddedAnimations(this, dt));
     safeCall(() => updateImpactEffects(this, dt));
     return original.apply(this, args);
   });
@@ -1091,6 +1257,7 @@ function installAuditPanelIfRequested() {
       `Passenger GLBs attached: ${report.passengerModelsAttached}`,
       `Seated passenger GLBs: ${report.seatedPassengerModels}`,
       `Life actors attached: ${report.lifeModelsAttached}`,
+      `Embedded clips: active ${report.embeddedAnimations.activeActors}, loaded assets ${report.embeddedAnimations.clipAssetsLoaded}, clipless ${report.embeddedAnimations.cliplessAssets}, failures ${report.embeddedAnimations.loadFailures}`,
       `Water seller: ${report.waterVendor.status}`,
       `Goat: ${report.goat.status}${report.goat.modelPath ? ` (${report.goat.modelPath})` : ''}`,
       `Tinted vehicle materials: ${report.damageVisual.bodyMaterialsTinted}`,
