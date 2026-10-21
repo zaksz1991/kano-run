@@ -1863,6 +1863,8 @@ export class Game {
       female,
       special,
       group: Boolean(zone.hub),
+      // Used to reward a passenger trip completed without a collision.
+      collisionsAtBoard: s.collisions,
     };
 
     if (
@@ -1998,6 +2000,15 @@ export class Game {
       this.dailyAdd('matchedDrops', 1);
     }
 
+    // Clean-trip bonus: reward safe driving only when the passenger reaches
+    // the correct destination and no collision occurred during their ride.
+    const collisionsAtBoard = Number.isFinite(passenger.collisionsAtBoard)
+      ? passenger.collisionsAtBoard
+      : s.collisions;
+    const cleanTrip = matched && s.collisions === collisionsAtBoard;
+    const cleanTripBonus = cleanTrip ? Math.max(1, Math.floor(fare * 0.12)) : 0;
+    fare += cleanTripBonus;
+
     s.passengers.shift();
 
     s.drops += 1;
@@ -2024,7 +2035,9 @@ export class Game {
     );
 
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}`,
+      cleanTripBonus > 0
+        ? `${passenger.name} dropped safely · +₦${fare.toLocaleString()} (includes ₦${cleanTripBonus.toLocaleString()} safe-trip bonus)`
+        : `${passenger.name} dropped · +₦${fare.toLocaleString()}`,
     );
 
     this.missionAdd('drops', 1);
