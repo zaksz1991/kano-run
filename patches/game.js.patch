@@ -3,109 +3,37 @@
 @@
  import {
    save,
+   persist,
+   bankRun,
 @@
+   addDailyMissionProgress,
  } from './storage.js';
-+
-+import { KanoWorkshopRecoveryDirector } from './KanoWorkshopRecoveryDirector.js';
++import { showCollisionFeedback } from './collision-feedback.js';
 @@
-   constructor(ui, audio, { mobile = false } = {}) {
-     this.ui = ui;
-     this.audio = audio;
-     this.mobile = mobile;
-+
-+    // Workshop catalogue and opening hours. Persistent vehicle health is
-+    // owned by KanoVehicleLifecycleDirector from the preceding patch.
-+    this.workshopRecovery = new KanoWorkshopRecoveryDirector();
+   hitPothole() {
+     const s = this.s;
 @@
-     this.ui.bind(this);
-   }
-+
-+  // Open a real, wallet-backed repair transaction. Call from the W hotkey
-+  // while paused or driving slowly; payment is deducted only after consent.
-+  openWorkshopService() {
-+    if (!this.vehicleLifecycle || !this.playerVehicleId) {
-+      this.ui.toast('Vehicle service is unavailable in this build.');
-+      return { ok: false, reason: 'lifecycle_unavailable' };
-+    }
-+
-+    const workshops = this.workshopRecovery.listWorkshops({ openOnly: true });
-+    if (!workshops.length) {
-+      this.ui.toast('No mechanic is open right now.');
-+      return { ok: false, reason: 'no_open_workshops' };
-+    }
-+
-+    const menu = workshops.map((workshop, index) =>
-+      `${index + 1}. ${workshop.name} (${workshop.district})`
-+    ).join('\n');
-+    const answer = window.prompt(`KANO LIFE · CHOOSE A MECHANIC\n${menu}\nEnter workshop number:` , '1');
-+    if (answer === null) return { ok: false, reason: 'cancelled' };
-+    const selectedIndex = Number.parseInt(answer, 10) - 1;
-+    const workshop = workshops[selectedIndex];
-+    if (!workshop) {
-+      this.ui.toast('Invalid mechanic selection.');
-+      return { ok: false, reason: 'invalid_workshop' };
-+    }
-+
-+    let quote;
-+    try {
-+      quote = this.vehicleLifecycle.calculateRepair(this.playerVehicleId, {
-+        workshop: true,
-+        includeService: true,
-+      });
-+    } catch (error) {
-+      console.warn('[Kano Life] workshop quote failed:', error);
-+      this.ui.toast('Unable to prepare a repair quote.');
-+      return { ok: false, reason: 'quote_failed' };
-+    }
-+
-+    if (!quote.items.length || quote.total <= 0) {
-+      this.ui.toast('Your keke is in good condition; no workshop service is needed.');
-+      return { ok: true, noRepairNeeded: true, quote };
-+    }
-+
-+    const itemLines = quote.items.map(item =>
-+      `• ${item.part.replaceAll('_', ' ')}: ₦${Number(item.cost).toLocaleString()}`
-+    ).join('\n');
-+    const total = Math.floor(quote.total);
-+    const approved = window.confirm(
-+      `${workshop.name}\n\n${itemLines}\n\nTotal: ₦${total.toLocaleString()}\nWallet: ₦${Math.floor(save.money || 0).toLocaleString()}\n\nPay and repair the keke?`
-+    );
-+    if (!approved) return { ok: false, reason: 'declined', quote };
-+    if ((Number(save.money) || 0) < total) {
-+      this.ui.toast(`Not enough money. You need ₦${(total - (Number(save.money) || 0)).toLocaleString()} more.`);
-+      return { ok: false, reason: 'insufficient_funds', quote };
-+    }
-+
-+    // The local save is the game's existing wallet. Persist the deduction
-+    // before applying repair, then use the lifecycle's payment-confirmed API.
-+    save.money = Math.max(0, Math.floor((Number(save.money) || 0) - total));
-+    persist();
-+    try {
-+      const repair = this.vehicleLifecycle.repair({
-+        vehicleId: this.playerVehicleId,
-+        parts: quote.items.map(item => item.part).filter(part => part !== 'routine_service'),
-+        workshop: true,
-+        includeService: quote.items.some(item => item.part === 'routine_service'),
-+        paymentConfirmed: true,
-+      });
-+      const vehicle = repair.vehicle;
-+      this.s.condition = vehicle.parts.body.health;
-+      this.s.engine = vehicle.parts.engine.health;
-+      this.s.tyres = vehicle.parts.tyres.health;
-+      this.s.speed = 0;
-+      this.s.signedSpeed = 0;
-+      this.s.gas = false;
-+      this.s.brake = false;
-+      this.ui.update(this.s, this.route, this.driver);
-+      this.ui.toast(`Repair paid · ${workshop.name} · ₦${total.toLocaleString()} · wallet ₦${save.money.toLocaleString()}`);
-+      return { ok: true, workshop, quote, repair, walletBalance: save.money };
-+    } catch (error) {
-+      // Refund if repair application fails after the wallet deduction.
-+      save.money = Math.max(0, Math.floor((Number(save.money) || 0) + total));
-+      persist();
-+      console.error('[Kano Life] workshop repair failed; payment refunded:', error);
-+      this.ui.toast('Repair failed; your money has been refunded.');
-+      return { ok: false, reason: 'repair_failed', message: String(error?.message || error) };
-+    }
-+  }
-*** End Patch
+     s.crashShake = Math.max(
+       s.crashShake || 0,
+-      0.24 * severity,
++      0.38 * severity,
+     );
++    showCollisionFeedback({
++      severity: 0.25 + severity * 0.45,
++      kind: 'pothole',
++      side: s.steer < 0 ? -1 : 1,
++    });
+@@
+   hit(vehicle) {
+     const s = this.s;
+@@
+     s.crashShake = Math.max(
+       s.crashShake,
+-      clamp(relativeSpeed / 65, 0.2, 1),
++      clamp(relativeSpeed / 52, 0.28, 1),
+     );
++    showCollisionFeedback({
++      severity: clamp(relativeSpeed / 48, 0.22, 1),
++      kind: heavy ? 'heavy' : 'traffic',
++      side: vehicle.lane < (s.steer + 1) ? -1 : 1,
++    });
