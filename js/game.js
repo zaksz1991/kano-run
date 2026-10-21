@@ -1818,6 +1818,9 @@ export class Game {
         nearMisses: s.nearMisses || 0,
         fuel: Number.isFinite(s.fuel) ? s.fuel : 100,
         distance: Number.isFinite(s.distance) ? s.distance : 0,
+        tyres: Number.isFinite(s.tyres) ? s.tyres : 100,
+        engine: Number.isFinite(s.engine) ? s.engine : 100,
+        condition: Number.isFinite(s.condition) ? s.condition : 100,
       },
     };
 
@@ -1923,6 +1926,7 @@ export class Game {
     let fuelEconomyBonus = 0;
     let trustedDriverBonus = 0;
     let marketServiceBonus = 0;
+    let vehicleCareBonus = 0;
 
     const tripStart = passenger.tripStart || {};
     const safeTrip =
@@ -1936,6 +1940,19 @@ export class Game {
     const tripDistance = Math.max(0, s.distance - (tripStart.distance ?? s.distance));
     const economicalFuelLimit = 1.25 + tripDistance * 8.5;
     const fuelEfficientTrip = tripDistance >= 0.025 && fuelUsed <= economicalFuelLimit;
+
+    // Reward drivers who finish a passenger trip without abusing the keke.
+    const vehicleWearDuringTrip =
+      Math.max(0, (tripStart.tyres ?? s.tyres) - s.tyres) +
+      Math.max(0, (tripStart.engine ?? s.engine) - s.engine) +
+      Math.max(0, (tripStart.condition ?? s.condition) - s.condition);
+    const vehicleCarefulTrip = safeTrip && vehicleWearDuringTrip <= 2 && s.tyres >= 55 && s.engine >= 55;
+    if (vehicleCarefulTrip) {
+      vehicleCareBonus = Math.min(350, Math.max(35, Math.floor(fare * 0.05)));
+      fare += vehicleCareBonus;
+      s.score += vehicleCareBonus;
+      this.ui.toast(`Keke care bonus · +₦${vehicleCareBonus.toLocaleString()} · protected your vehicle`);
+    }
 
     // Passenger trust grows with careful trips and falls after rough journeys.
     // The fare adjustment is deliberately modest and bounded.
@@ -2084,8 +2101,11 @@ export class Game {
     const marketServiceText = marketServiceBonus > 0
       ? ` · market service +₦${marketServiceBonus.toLocaleString()}`
       : '';
+    const vehicleCareText = vehicleCareBonus > 0
+      ? ` · keke care +₦${vehicleCareBonus.toLocaleString()}`
+      : '';
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}`,
     );
 
     this.missionAdd('drops', 1);
