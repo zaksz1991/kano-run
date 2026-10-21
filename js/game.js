@@ -1922,6 +1922,7 @@ export class Game {
     let destinationMasteryBonus = 0;
     let fuelEconomyBonus = 0;
     let trustedDriverBonus = 0;
+    let marketServiceBonus = 0;
 
     const tripStart = passenger.tripStart || {};
     const safeTrip =
@@ -2000,6 +2001,15 @@ export class Game {
       this.ui.toast(`Fuel-smart trip · +₦${fuelEconomyBonus.toLocaleString()} · saved ${fuelUsed.toFixed(1)} fuel`);
     }
 
+    // Market-hub passengers reward reliable service: only a correctly matched,
+    // incident-free trip earns this extra Kano market-service payment.
+    if (passenger.group && matched && safeTrip) {
+      marketServiceBonus = Math.min(450, Math.max(40, Math.floor(fare * 0.07)));
+      fare += marketServiceBonus;
+      s.score += marketServiceBonus;
+      this.ui.toast(`Market service bonus · +₦${marketServiceBonus.toLocaleString()} · safe delivery to the hub`);
+    }
+
     // Highly trusted drivers earn a loyalty payment for completing a safe
     // passenger trip. The cap keeps this reward useful without inflating fares.
     if (safeTrip && s.passengerTrust >= 80) {
@@ -2071,8 +2081,11 @@ export class Game {
     const trustedDriverText = trustedDriverBonus > 0
       ? ` · loyalty +₦${trustedDriverBonus.toLocaleString()}`
       : '';
+    const marketServiceText = marketServiceBonus > 0
+      ? ` · market service +₦${marketServiceBonus.toLocaleString()}`
+      : '';
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}`,
     );
 
     this.missionAdd('drops', 1);
