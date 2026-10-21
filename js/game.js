@@ -796,11 +796,25 @@ export class Game {
           ? 36
           : 38;
 
+    // Mechanical wear now has a practical effect on road performance.
+    // A damaged engine reduces top speed; poor overall condition adds a
+    // smaller penalty without making the keke unusable too early.
+    const engineHealth = clamp((s.engine ?? 100) / 100, 0, 1);
+    const vehicleCondition = clamp((s.condition ?? 100) / 100, 0, 1);
+    const mechanicalPower =
+      0.58 + 0.42 * engineHealth;
+    const conditionPower =
+      0.82 + 0.18 * vehicleCondition;
+
     const maxSpeed =
-      modeSpeed * (this.driver.speedMod || 1);
+      modeSpeed *
+      (this.driver.speedMod || 1) *
+      mechanicalPower *
+      conditionPower;
 
     const reverseMax = Math.min(
-      s.reverseSpeed || REVERSE_MAX_SPEED,
+      (s.reverseSpeed || REVERSE_MAX_SPEED) *
+        (0.75 + 0.25 * engineHealth),
       REVERSE_MAX_SPEED,
     );
 
@@ -840,9 +854,10 @@ export class Game {
             : 1.0
           : 1.6;
 
+      const engineResponse = 0.62 + 0.38 * engineHealth;
       s.speed +=
         (desiredSpeed - s.speed) *
-        Math.min(1, acceleration * dt);
+        Math.min(1, acceleration * engineResponse * dt);
 
       if (s.brake) {
         s.speed = Math.max(
@@ -857,7 +872,7 @@ export class Game {
     // ----------------------------------------------------------
 
     const tyreHandling =
-      0.62 + 0.38 * (s.tyres / 100);
+      0.48 + 0.52 * clamp((s.tyres ?? 100) / 100, 0, 1);
 
     const steeringRate = (
       s.environment === 'muddy'
@@ -1003,28 +1018,6 @@ export class Game {
         this.ui.toast(DIALECT[s.dialect].fuel);
         s.toastCooldown = 3.5;
       }
-    }
-
-    // ----------------------------------------------------------
-    // KEKE MAINTENANCE WARNINGS
-    // ----------------------------------------------------------
-
-    const weakPart =
-      s.tyres <= s.engine && s.tyres <= s.condition
-        ? ['tyres', s.tyres]
-        : s.engine <= s.condition
-          ? ['engine', s.engine]
-          : ['body condition', s.condition];
-
-    if (weakPart[1] <= 25 && s.toastCooldown <= 0) {
-      this.ui.toast(
-        weakPart[0] === 'tyres'
-          ? 'MECHANIC WARNING: Tyres are badly worn. Handle the keke carefully.'
-          : weakPart[0] === 'engine'
-            ? 'MECHANIC WARNING: Engine condition is critical. Find a repair stop.'
-            : 'MECHANIC WARNING: Keke condition is critical. Find a repair stop.',
-      );
-      s.toastCooldown = 5;
     }
 
     // ----------------------------------------------------------
