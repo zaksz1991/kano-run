@@ -464,26 +464,23 @@ export class Game {
   }
 
   spawnTraffic(initialIndex = null) {
-    const types = [
-      'keke',
-      'car',
-      'taxi',
-      'suv',
-      'motorcycle',
-      'keke',
-      'car',
-    ];
+    // Kano street traffic mix: roughly 40% keke, 30% motorcycles,
+    // and 30% cars. Desktop-only public/service vehicles appear as rare
+    // substitutions, so they do not overwhelm the everyday street mix.
+    const roll = Math.random();
+    let type;
 
-    if (!this.mobile) {
-      types.push(
-        'truck',
-        'bus',
-        'police',
-        'karota',
-      );
+    if (roll < 0.40) {
+      type = 'keke';
+    } else if (roll < 0.70) {
+      type = 'motorcycle';
+    } else {
+      type = choose(['car', 'taxi', 'suv']);
     }
 
-    const type = choose(types);
+    if (!this.mobile && Math.random() < 0.055) {
+      type = choose(['truck', 'bus', 'police', 'karota']);
+    }
 
     const lane = Math.floor(
       randomBetween(0, 3),
