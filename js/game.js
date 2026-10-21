@@ -1927,7 +1927,7 @@ export class Game {
     let trustedDriverBonus = 0;
     let marketServiceBonus = 0;
     let vehicleCareBonus = 0;
-    let passengerTipBonus = 0;
+    let passengerGratitudeTip = 0;
 
     const tripStart = passenger.tripStart || {};
     const safeTrip =
@@ -2037,13 +2037,14 @@ export class Game {
       this.ui.toast(`Trusted-driver loyalty · +₦${trustedDriverBonus.toLocaleString()} · passengers trust your keke`);
     }
 
-    // A small, occasional Kano-style passenger tip rewards dependable service.
-    // Tips require a correct, incident-free drop-off and scale gently with trust.
-    if (matched && safeTrip && Math.random() < (0.08 + (s.passengerTrust / 100) * 0.16)) {
-      passengerTipBonus = Math.min(300, Math.max(25, Math.floor(fare * 0.05)));
-      fare += passengerTipBonus;
-      s.score += passengerTipBonus;
-      this.ui.toast(`Passenger appreciation · +₦${passengerTipBonus.toLocaleString()} tip`);
+    // A passenger may leave a small gratitude tip when the destination is
+    // correct, the trip is incident-free, and trust has been earned. This is
+    // intentionally deterministic and modest, avoiding surprise wallet costs.
+    if (matched && safeTrip && s.passengerTrust >= 65) {
+      passengerGratitudeTip = Math.min(200, Math.max(20, Math.floor(passenger.fare * 0.04)));
+      fare += passengerGratitudeTip;
+      s.score += passengerGratitudeTip;
+      this.ui.toast(`Passenger gratitude tip · +₦${passengerGratitudeTip.toLocaleString()} · respectful, safe service`);
     }
 
     // Reward considerate driving and build a consecutive safe-trip chain.
@@ -2114,11 +2115,11 @@ export class Game {
     const vehicleCareText = vehicleCareBonus > 0
       ? ` · keke care +₦${vehicleCareBonus.toLocaleString()}`
       : '';
-    const passengerTipText = passengerTipBonus > 0
-      ? ` · passenger tip +₦${passengerTipBonus.toLocaleString()}`
+    const gratitudeText = passengerGratitudeTip > 0
+      ? ` · gratitude tip +₦${passengerGratitudeTip.toLocaleString()}`
       : '';
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}${passengerTipText}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}${gratitudeText}`,
     );
 
     this.missionAdd('drops', 1);
