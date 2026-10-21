@@ -1,28 +1,24 @@
-# Kano Keke Life — Cultural Street Events Upgrade
+# Kano Keke Life — Render Mode & Frame Budget Audit
 
-## Included
+This is a diagnostic-only upgrade. It does not change the renderer, force WebGL, or modify gameplay. It is intended to capture evidence for the next performance/fallback repair instead of guessing.
 
-- `js/KanoCulturalStreetEventsUpgrade.js` — a compatibility layer that decorates the game's existing wedding-convoy SUV actors, raises the chance of seeing the existing `Bikin Aure` event, adds two roadside characters using already-loaded character GLBs with bowl props, and discovers/animates a real goat GLB only if the generated asset inventory contains one.
-- `index.html` — complete replacement based on the current repository HTML, registering the new module before the existing root-cause/model-visual/startup chain.
-- `tests/kano-cultural-street-events.test.mjs` — static regression tests for the integration and safeguards.
+## Files
+- `js/KanoRenderModeFrameBudgetAudit.js` — opt-in browser overlay and JSON export.
+- `tests/render-audit-smoke.test.mjs` — basic regression checks.
 
-## Installation
+## Add it without replacing existing game files
+1. Add `js/KanoRenderModeFrameBudgetAudit.js` to the repository at that exact path.
+2. In the existing `index.html`, add this script tag after the existing game scripts (before `</body>`):
+   `<script src="/js/KanoRenderModeFrameBudgetAudit.js"></script>`
+3. Do not replace `index.html` wholesale for this diagnostic. Preserve all existing scripts and markup.
+4. Open the game with `?renderAudit=1` added to the URL.
+5. Play for 20–30 seconds, then select **EXPORT JSON**. Also capture the browser console if the game switches to 2D.
 
-1. Replace the repository-root `index.html` with the complete `index.html` in this ZIP.
-2. Add `js/KanoCulturalStreetEventsUpgrade.js` at the exact path shown.
-3. Add `tests/kano-cultural-street-events.test.mjs` at the exact path shown.
-4. Keep `package.json`, `vite.config.js`, `scripts/glb-catalog-overrides.json`, `js/ModelManager.js`, `js/renderer3d.js`, `js/KanoSceneUpgrade.js`, and all GLB assets unchanged.
+## What it reports
+- Approximate sampled FPS, smoothed frame time, and worst observed frame.
+- Number of canvas elements and which expose WebGL or 2D contexts.
+- WebGL context-lost/restored events.
+- Renderer hints if the app exposes `window.renderer` or `window.gameRenderer`.
 
-The current `Game.updateEnvironment()` already owns the game's environmental events and creates three SUV traffic records for weddings. This upgrade decorates those real traffic actors and makes a wedding outcome more likely when the existing environment timer expires. It does not replace the simulation or introduce duplicate driving/collision systems.
-
-Roadside characters are cloned from existing loaded `passengerMan`, `pedestrian`, or `passenger` models and receive small bowl props. It avoids female-name candidates where the model path is identifiable. This is a child-scale reuse of an existing character model, not a guarantee of a dedicated child asset.
-
-The goat system reads `/assets/models/model-catalog-audit.generated.json`, selects a matching existing goat GLB, and plays a suitable embedded clip when the GLB contains one. If no real goat asset is found, the audit reports that fact and does not create a primitive goat placeholder.
-
-## Diagnostics
-
-Run `window.kanoCulturalStreetEventsAudit()` in the browser console to see wedding counts, the source paths used for roadside characters, goat discovery/loading status, crossing counts, and any model-load failures.
-
-## Validation
-
-The bundled Node tests verify hook registration and key code paths. They are static regression tests; they do not prove visual correctness in a live browser. Live gameplay and actual GLB inventory availability must still be checked in the running game.
+## Important limits
+Canvas context inspection is observational and cannot conclusively identify the game's active renderer. Some browsers do not expose renderer objects globally. This tool intentionally does not call `getContext()` to force a new context on existing canvases; it inspects available contexts and reports uncertainty. The output is evidence, not a fix by itself.
