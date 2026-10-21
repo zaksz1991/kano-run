@@ -1927,6 +1927,7 @@ export class Game {
     let trustedDriverBonus = 0;
     let marketServiceBonus = 0;
     let vehicleCareBonus = 0;
+    let passengerTipBonus = 0;
 
     const tripStart = passenger.tripStart || {};
     const safeTrip =
@@ -2036,6 +2037,15 @@ export class Game {
       this.ui.toast(`Trusted-driver loyalty · +₦${trustedDriverBonus.toLocaleString()} · passengers trust your keke`);
     }
 
+    // A small, occasional Kano-style passenger tip rewards dependable service.
+    // Tips require a correct, incident-free drop-off and scale gently with trust.
+    if (matched && safeTrip && Math.random() < (0.08 + (s.passengerTrust / 100) * 0.16)) {
+      passengerTipBonus = Math.min(300, Math.max(25, Math.floor(fare * 0.05)));
+      fare += passengerTipBonus;
+      s.score += passengerTipBonus;
+      this.ui.toast(`Passenger appreciation · +₦${passengerTipBonus.toLocaleString()} tip`);
+    }
+
     // Reward considerate driving and build a consecutive safe-trip chain.
     // The chain bonus is capped so it remains useful without overpowering fares.
     if (safeTrip) {
@@ -2104,8 +2114,11 @@ export class Game {
     const vehicleCareText = vehicleCareBonus > 0
       ? ` · keke care +₦${vehicleCareBonus.toLocaleString()}`
       : '';
+    const passengerTipText = passengerTipBonus > 0
+      ? ` · passenger tip +₦${passengerTipBonus.toLocaleString()}`
+      : '';
     this.ui.toast(
-      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}`,
+      `${passenger.name} dropped · +₦${fare.toLocaleString()}${masteryText}${fuelEconomyText}${trustedDriverText}${marketServiceText}${vehicleCareText}${passengerTipText}`,
     );
 
     this.missionAdd('drops', 1);
