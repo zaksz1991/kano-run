@@ -1,34 +1,28 @@
-# Kano Keke Life — World Performance, Instancing & Brightness Upgrade
+# Kano Keke Life — Cultural Street Events Upgrade
 
-## Purpose
+## Included
 
-This upgrade targets concrete renderer costs visible in the current source:
-
-- The world creates many separate lane-marking meshes and updates each one every frame.
-- Desktop procedural buildings create one separate mesh/material for each window.
-- Day/night atmosphere exposure and lighting were conservative, matching the dark/flat look in the supplied screenshot.
-
-The upgrade batches repeating road markings into one `THREE.InstancedMesh`, batches windows per procedural building, and applies a modest stable lift to existing daylight lighting. It does not replace or rename any GLB assets and does not modify fares, vehicle damage, collisions, traffic rules, or progression.
-
-## Files
-
-- `index.html` — complete replacement that loads the performance hooks before existing root-cause and GLB presentation modules.
-- `js/KanoWorldPerformanceInstancingUpgrade.js` — new runtime patch.
-- `tests/kano-world-performance-upgrade.test.mjs` — Node regression checks.
+- `js/KanoCulturalStreetEventsUpgrade.js` — a compatibility layer that decorates the game's existing wedding-convoy SUV actors, raises the chance of seeing the existing `Bikin Aure` event, adds two roadside characters using already-loaded character GLBs with bowl props, and discovers/animates a real goat GLB only if the generated asset inventory contains one.
+- `index.html` — complete replacement based on the current repository HTML, registering the new module before the existing root-cause/model-visual/startup chain.
+- `tests/kano-cultural-street-events.test.mjs` — static regression tests for the integration and safeguards.
 
 ## Installation
 
-1. Replace the repository-root `index.html` with the included complete file.
-2. Add `js/KanoWorldPerformanceInstancingUpgrade.js` at that exact path.
-3. Add `tests/kano-world-performance-upgrade.test.mjs` at that exact path.
-4. Keep `package.json`, `vite.config.js`, all other game files, model mappings and GLB assets unchanged.
+1. Replace the repository-root `index.html` with the complete `index.html` in this ZIP.
+2. Add `js/KanoCulturalStreetEventsUpgrade.js` at the exact path shown.
+3. Add `tests/kano-cultural-street-events.test.mjs` at the exact path shown.
+4. Keep `package.json`, `vite.config.js`, `scripts/glb-catalog-overrides.json`, `js/ModelManager.js`, `js/renderer3d.js`, `js/KanoSceneUpgrade.js`, and all GLB assets unchanged.
+
+The current `Game.updateEnvironment()` already owns the game's environmental events and creates three SUV traffic records for weddings. This upgrade decorates those real traffic actors and makes a wedding outcome more likely when the existing environment timer expires. It does not replace the simulation or introduce duplicate driving/collision systems.
+
+Roadside characters are cloned from existing loaded `passengerMan`, `pedestrian`, or `passenger` models and receive small bowl props. It avoids female-name candidates where the model path is identifiable. This is a child-scale reuse of an existing character model, not a guarantee of a dedicated child asset.
+
+The goat system reads `/assets/models/model-catalog-audit.generated.json`, selects a matching existing goat GLB, and plays a suitable embedded clip when the GLB contains one. If no real goat asset is found, the audit reports that fact and does not create a primitive goat placeholder.
 
 ## Diagnostics
 
-Open the game with `?worldPerfAudit=1&debugPerf=1` added to the address. The world audit reports lane-marking batches, desktop window batches, lighting profile, WebGL draw calls and triangle count. Use **EXPORT JSON** to save the report.
-
-The normal game URL is not forced into 3D mode. The existing fallback remains available if WebGL is unavailable or the game encounters a serious runtime issue.
+Run `window.kanoCulturalStreetEventsAudit()` in the browser console to see wedding counts, the source paths used for roadside characters, goat discovery/loading status, crossing counts, and any model-load failures.
 
 ## Validation
 
-The included tests check module syntax assumptions, instancing integration, stable lighting calculations, load ordering, and preservation of important page IDs. Actual device frame rates and visual appearance must still be checked in the browser; source-level tests cannot guarantee a specific FPS gain on every device.
+The bundled Node tests verify hook registration and key code paths. They are static regression tests; they do not prove visual correctness in a live browser. Live gameplay and actual GLB inventory availability must still be checked in the running game.
