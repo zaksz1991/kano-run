@@ -57,10 +57,10 @@ const modelPoolMobile = (() => {
 
 const EXISTING_GLB_POOL_LIMITS = {
   // World architecture: the biggest visual payoff. Keep the mobile pool small.
-  building: { mobile: 4, desktop: 8 },
-  industrialBuilding: { mobile: 3, desktop: 5 },
-  flyover: { mobile: 2, desktop: 2 },
-  roadlight: { mobile: 2, desktop: 4 },
+  building: { mobile: 2, desktop: 8 },
+  industrialBuilding: { mobile: 2, desktop: 5 },
+  flyover: { mobile: 1, desktop: 2 },
+  roadlight: { mobile: 1, desktop: 4 },
   trafficLight: { mobile: 2, desktop: 2 },
   stopSign: { mobile: 2, desktop: 2 },
   cone: { mobile: 2, desktop: 3 },
@@ -5006,9 +5006,11 @@ if (!Renderer3D.prototype[KANO_GLB_VISIBLE_WORLD_PATCH]) {
     const manager = this.models;
     if (!manager?.cache || !Array.isArray(this.buildingSlots)) return result;
 
-    // Mobile uses 10 real GLB facade instances instead of only two. Desktop
-    // can use every configured building slot. The pool still shares geometry.
-    const maximum = this.mobile ? Math.min(14, this.buildingSlots.length) : this.buildingSlots.length;
+    // Keep detailed imported facade models near the road, while leaving the
+    // remaining mobile slots as lightweight procedural buildings. The base
+    // renderer installs the first two; this pass can fill only two more.
+    // Desktop keeps its existing full-detail building-slot behaviour.
+    const maximum = this.mobile ? Math.min(4, this.buildingSlots.length) : this.buildingSlots.length;
     let added = 0;
     for (let index = 0; index < maximum; index += 1) {
       const slot = this.buildingSlots[index];

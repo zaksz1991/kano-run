@@ -764,8 +764,10 @@ async function start3D() {
   // Load remaining assets in batches on mobile.
   if (mobile) {
     const mobileAssetBatches = [
-      // These were previously parsed concurrently during startup. Keep the
-      // same models available, but defer each one until the game is at rest.
+      // Keep imported traffic and character variety available, but do not
+      // preload GLBs the mobile renderer intentionally keeps procedural.
+      // This avoids decoding pools of unused flyover, streetlight and prop
+      // models while retaining the road-side shapes and gameplay fallbacks.
       [
         'car',
         'taxi',
@@ -775,7 +777,6 @@ async function start3D() {
         'passenger',
       ],
       [
-        'flyover',
         'building',
         'passengerWoman',
         'passengerMan',
@@ -794,16 +795,8 @@ async function start3D() {
       ],
       [
         'industrialBuilding',
-        'roadlight',
         'cone',
         'dirtmound',
-      ],
-      [
-        'bench',
-        'busStop',
-        'trafficLight',
-        'stopSign',
-        'marketStall',
       ],
     ];
 
