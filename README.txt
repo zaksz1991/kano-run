@@ -1,29 +1,22 @@
-KANO LIFE — MOBILE BACKGROUND TRAFFIC MESH-BUDGET FIX
+KANO LIFE — MOBILE TRAFFIC INSTANCING FIX
 
-Replace only this complete file in the existing project:
-  kano-run/js/renderer3d.js
+Purpose
+- Reduce mobile fallback traffic draw calls by batching vehicles of the same type into one THREE.InstancedMesh.
+- Keep the player's keke and selected imported GLB traffic as ordinary scene objects.
+- Keep traffic simulation, lane/depth state, model budget and vehicle collision ownership unchanged.
+- Render only the same nearby mobile traffic that was previously eligible for display; distant vehicles remain simulated.
 
-Optional focused regression test included:
-  kano-run/tests/KanoMobileFallbackTrafficBatching.test.mjs
+Files
+- kano-run/js/renderer3d.js: complete replacement, incorporating the previous renderer3d.js optimization steps plus mobile fallback traffic instancing.
+- kano-run/tests/KanoMobileTrafficInstancing.test.mjs: focused static regression checks (optional; no test run is required for installation).
 
-WHAT CHANGES
-- Mobile fallback cars, motorcycles, SUVs, taxis, buses, trucks, KAROTA and
-  ambulance traffic are rendered as one vertex-coloured mesh per vehicle.
-- The merged geometry is created once per vehicle type and reused by later
-  fallback vehicles. It is released when Renderer3D is disposed.
-- This affects background traffic visuals only. Game traffic positions,
-  speed, steering, collisions, missions, player keke and the desktop procedural
-  traffic models are not changed by this optimization.
-- Imported GLB vehicles remain available within the existing mobile model
-  budget; vehicles that use them are not replaced by the simplified mesh.
-- This replacement includes the previously delivered mobile kerb batching,
-  mobile back-face culling and simplified background-keke mesh work contained
-  in the current renderer3d.js baseline used for this update.
+Install
+1. Extract this ZIP.
+2. Copy the complete kano-run/js/renderer3d.js into the matching path in the existing project.
+3. Keep all other project files, model assets, textures, and audio unchanged.
 
-NOTES
-- No model, texture, audio, or other source assets are deleted or moved.
-- This is a draw-call reduction, not a guarantee of a particular phone frame
-  rate. Actual performance still depends on the device and scene.
-- Only the focused static regression checks and JavaScript syntax checks were
-  run for this package. The full project test suite and production build were
-  not run here.
+Validation performed here
+- Node syntax check passed for the complete replacement.
+- Focused static regression checks passed in an isolated temporary folder.
+- ZIP integrity passed.
+- No full app build, complete suite, or physical-phone benchmark was run. Instancing should reduce draw submissions for mobile fallback traffic, but actual frame-rate impact must be measured on the target phone.

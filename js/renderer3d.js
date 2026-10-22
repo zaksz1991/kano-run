@@ -117,6 +117,10 @@ export class Renderer3D {
     this.curbObject = new THREE.Object3D();
     this._mobileGlbTrafficIds = new Set();
     this._mobileTrafficVehicleGeometry = new Map();
+    // One dynamic instanced draw per fallback vehicle type on phones.
+    this._mobileTrafficBatches = new Map();
+    this._mobileFallbackTrafficByType = new Map();
+    this._mobileTrafficInstanceTransform = new THREE.Object3D();
     this.pedestrians = [];
     this.streetLights = [];
     this.roadProps = [];
@@ -2882,6 +2886,56 @@ export class Renderer3D {
     return actor;
   }
 
+  /**
+   * Return one InstancedMesh for a mobile fallback traffic type.
+   * Geometry is shared with the existing lightweight procedural vehicle
+   * builder; each visible vehicle is represented by one instance matrix rather
+   * than a separate Three.js Object3D and draw call.
+   */
+  getMobileTrafficBatch(type, requiredCount = 1) {
+    const existing = this._mobileTrafficBatches.get(type);
+    if (existing && existing.capacity >= requiredCount) return existing;
+
+    let geometry = existing?.mesh.geometry;
+    let material = existing?.mesh.material;
+
+    if (existing) {
+      existing.mesh.parent?.remove(existing.mesh);
+      existing.mesh.dispose?.();
+    } else {
+      // Calling the established builders creates or retrieves the canonical
+      // cached geometry and its compatible vertex-colour material.
+      const sample = type === 'keke'
+        ? this.makeTrafficKeke()
+        : this.makeMobileLiteTrafficVehicle(type);
+      geometry = sample.geometry;
+      material = sample.material;
+    }
+
+    const capacity = Math.max(
+      16,
+      requiredCount,
+      existing ? existing.capacity * 2 : 0,
+    );
+    const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+    mesh.name = `KANO_MOBILE_TRAFFIC_BATCH_${String(type).toUpperCase()}`;
+    mesh.count = 0;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    // This batch is populated only with nearby traffic. Disable aggregate
+    // frustum culling because per-instance matrices change every driving tick.
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.userData.sharedGeometry = true;
+    mesh.userData.mobileTrafficBatch = true;
+    mesh.userData.vehicleType = type;
+    this.world.add(mesh);
+
+    const batch = { mesh, capacity };
+    this._mobileTrafficBatches.set(type, batch);
+    return batch;
+  }
+
   makeTrafficActor(vehicle, { allowGLB = true } = {}) {
     const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
     const model = allowGLB ? this.models?.getInstance(key) : null;
@@ -3556,8 +3610,11 @@ export class Renderer3D {
     const traffic = Array.isArray(state.traffic) ? state.traffic : [];
     const activeIds = new Set(traffic.map((vehicle) => vehicle.id));
 
-    // Keep a stable, capped pool of detailed traffic GLBs on mobile. Reusing
-    // the same selected actors avoids cloning/disposal churn as vehicles move.
+    // Reuse the same small arrays while driving to avoid one collection per
+    // vehicle on every frame. Non-instanced GLB actors remain keyed by ID.
+    const fallbackByType = this._mobileFallbackTrafficByType;
+    for (const list of fallbackByType.values()) list.length = 0;
+
     let mobileGlbIds = null;
     if (this.mobile) {
       for (const id of this._mobileGlbTrafficIds) {
@@ -3580,12 +3637,53 @@ export class Renderer3D {
     }
 
     for (const vehicle of traffic) {
+      const type = VEHICLE_MODEL_KEY[vehicle.type] ? vehicle.type : 'car';
       const allowGLB = !this.mobile || mobileGlbIds.has(vehicle.id);
-      let actor = this.trafficActors.get(vehicle.id);
+      const depth = Math.abs(Number(vehicle.depth) || 0);
+      const visible = !this.mobile || depth <= 1.35;
 
+      // On phones, every unmodelled procedural traffic vehicle goes into a
+      // type-specific InstancedMesh. Its simulated vehicle remains in game.js;
+      // only the renderer's visual representation is batched.
+      if (this.mobile && !allowGLB) {
+        if (visible) {
+          let list = fallbackByType.get(type);
+          if (!list) {
+            list = [];
+            fallbackByType.set(type, list);
+          }
+          list.push(vehicle);
+        }
+
+        const obsolete = this.trafficActors.get(vehicle.id);
+        if (obsolete?.userData?.fallback) {
+          this.world.remove(obsolete);
+          disposeSceneTree(obsolete);
+          this.trafficActors.delete(vehicle.id);
+        }
+        continue;
+      }
+
+      let actor = this.trafficActors.get(vehicle.id);
       if (!actor) {
         actor = this.makeTrafficActor(vehicle, { allowGLB });
         actor.userData.vehicleType = vehicle.type;
+
+        // A selected GLB can be in the model cache before an instance is
+        // available. In that case keep rendering through the fallback batch.
+        if (this.mobile && actor.userData.fallback) {
+          if (visible) {
+            let list = fallbackByType.get(type);
+            if (!list) {
+              list = [];
+              fallbackByType.set(type, list);
+            }
+            list.push(vehicle);
+          }
+          disposeSceneTree(actor);
+          continue;
+        }
+
         this.world.add(actor);
         this.trafficActors.set(vehicle.id, actor);
       }
@@ -3603,19 +3701,60 @@ export class Renderer3D {
           this.world.add(model);
           this.trafficActors.set(vehicle.id, model);
           actor = model;
+        } else if (this.mobile) {
+          this.world.remove(actor);
+          disposeSceneTree(actor);
+          this.trafficActors.delete(vehicle.id);
+          if (visible) {
+            let list = fallbackByType.get(type);
+            if (!list) {
+              list = [];
+              fallbackByType.set(type, list);
+            }
+            list.push(vehicle);
+          }
+          continue;
         }
       }
 
-      // Distant traffic past the camera/fog budget stays simulated but is not
-      // drawn. Gameplay/collision data is untouched.
-      const depth = Math.abs(Number(vehicle.depth) || 0);
-      actor.visible = !this.mobile || depth <= 1.35;
+      actor.visible = visible;
       actor.position.set(
         (vehicle.lane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
         0,
         -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
       );
       actor.rotation.y = vehicle.direction === -1 ? Math.PI : 0;
+    }
+
+    if (this.mobile) {
+      // One instanced draw per fallback type. Batches remain allocated for
+      // reuse, but their count drops to zero when that type leaves the view.
+      const typeKeys = new Set([...this._mobileTrafficBatches.keys(), ...fallbackByType.keys()]);
+      for (const type of typeKeys) {
+        const vehicles = fallbackByType.get(type) || [];
+        const existing = this._mobileTrafficBatches.get(type);
+        if (!vehicles.length) {
+          if (existing) existing.mesh.count = 0;
+          continue;
+        }
+
+        const batch = this.getMobileTrafficBatch(type, vehicles.length);
+        batch.mesh.count = vehicles.length;
+        const transform = this._mobileTrafficInstanceTransform;
+        for (let index = 0; index < vehicles.length; index += 1) {
+          const vehicle = vehicles[index];
+          transform.position.set(
+            (vehicle.lane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
+            0,
+            -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
+          );
+          transform.rotation.set(0, vehicle.direction === -1 ? Math.PI : 0, 0);
+          transform.scale.set(1, 1, 1);
+          transform.updateMatrix();
+          batch.mesh.setMatrixAt(index, transform.matrix);
+        }
+        batch.mesh.instanceMatrix.needsUpdate = true;
+      }
     }
 
     for (const [id, actor] of this.trafficActors) {
@@ -4045,6 +4184,8 @@ export class Renderer3D {
       geometry?.dispose?.();
     }
     this._mobileTrafficKekeGeometry = null;
+    this._mobileTrafficBatches?.clear?.();
+    this._mobileFallbackTrafficByType?.clear?.();
 
     for (const geometry of this._mobileTrafficVehicleGeometry?.values?.() || []) {
       geometry?.dispose?.();
