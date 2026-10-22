@@ -811,6 +811,21 @@ async function start3D() {
           return;
         }
 
+        // GLB parsing/texture uploads can monopolize a phone's main thread.
+        // Let the player drive without background batch parsing; resume in a
+        // menu/garage/end-run screen where a brief load hitch is less harmful.
+        while (game?.state === 'PLAY') {
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+          if (
+            pageClosing ||
+            generation !== rendererGeneration ||
+            renderer !== webglRenderer ||
+            renderMode !== '3D'
+          ) {
+            return;
+          }
+        }
+
         try {
           await models.preload(keys);
         } catch (error) {

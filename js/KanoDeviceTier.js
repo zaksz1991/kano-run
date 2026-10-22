@@ -29,3 +29,14 @@ export function getMobileRenderBudget(tier) {
   if (tier === 'mid') return { max: 0.78, start: 0.6, min: 0.36 };
   return { max: 0.66, start: 0.5, min: 0.32 };
 }
+
+
+/** Maximum number of simultaneous imported traffic GLBs during mobile road play.
+ * Nearby traffic remains detailed; the remaining vehicles use light procedural
+ * models. The player's own keke and gameplay collision simulation are unaffected.
+ */
+export function getMobileTrafficModelBudget(tier) {
+  if (tier === 'high') return 3;
+  if (tier === 'mid') return 2;
+  return 1;
+}

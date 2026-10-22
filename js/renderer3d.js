@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getMobileTier, getMobileRenderBudget } from './KanoDeviceTier.js';
+import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -109,6 +109,10 @@ export class Renderer3D {
     this.trafficActors = new Map();
     this.zoneActors = new Map();
     this.laneDashes = [];
+    this.laneDashInstanced = null;
+    this.laneDashRecords = [];
+    this.laneDashObject = new THREE.Object3D();
+    this._mobileGlbTrafficIds = new Set();
     this.pedestrians = [];
     this.streetLights = [];
     this.roadProps = [];
@@ -226,20 +230,35 @@ export class Renderer3D {
       this.world.add(edge);
     }
 
+    // Lane dashes are repeated geometry with one material. Batch all 58
+    // markings into a single draw call instead of updating/rendering 58 meshes.
+    const laneDashGeometry = new THREE.PlaneGeometry(0.095, 3.4);
+    const laneDashMaterial = this.material(0xe8e0c8);
+    const laneDashRecords = [];
     for (const x of [-1.8, 1.8]) {
       for (let z = -4; z > -245; z -= 8.5) {
-        const dash = new THREE.Mesh(
-          new THREE.PlaneGeometry(0.095, 3.4),
-          this.material(0xe8e0c8),
-        );
-
-        dash.rotation.x = -Math.PI / 2;
-        dash.position.set(x, 0.028, z);
-
-        this.world.add(dash);
-        this.laneDashes.push(dash);
+        laneDashRecords.push({ x, z });
       }
     }
+    const laneDashMesh = new THREE.InstancedMesh(
+      laneDashGeometry, laneDashMaterial, laneDashRecords.length,
+    );
+    laneDashMesh.name = 'KANO_INSTANCED_LANE_MARKINGS';
+    laneDashMesh.userData.kanoLaneDashInstancing = true;
+    laneDashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (let index = 0; index < laneDashRecords.length; index += 1) {
+      const record = laneDashRecords[index];
+      this.laneDashObject.position.set(record.x, 0.028, record.z);
+      this.laneDashObject.rotation.set(-Math.PI / 2, 0, 0);
+      this.laneDashObject.scale.set(1, 1, 1);
+      this.laneDashObject.updateMatrix();
+      laneDashMesh.setMatrixAt(index, this.laneDashObject.matrix);
+    }
+    laneDashMesh.instanceMatrix.needsUpdate = true;
+    this.world.add(laneDashMesh);
+    this.laneDashInstanced = laneDashMesh;
+    this.laneDashRecords = laneDashRecords;
+    laneDashGeometry.computeBoundingSphere();
 
     const buildingCount = this.mobile ? 10 : 24;
     const buildingSpacing = this.mobile ? 14 : 9;
@@ -1855,7 +1874,7 @@ export class Renderer3D {
       slot.replaced = true;
     }
 
-    if (this.models.cache.has('flyover')) {
+    if (!this.mobile && this.models.cache.has('flyover')) {
       for (let index = 0; index < this.flyovers.length; index += 1) {
         const fallback = this.flyovers[index];
 
@@ -1944,6 +1963,7 @@ export class Renderer3D {
     }
 
     for (const slot of this.roadProps) {
+      if (this.mobile && !['marketStall', 'busStop'].includes(slot.key)) continue;
       if (slot.replaced || !this.models.cache.has(slot.key)) continue;
 
       const model = this.models.getInstance(slot.key);
@@ -2480,9 +2500,9 @@ export class Renderer3D {
     this.camera.updateProjectionMatrix();
   }
 
-  makeTrafficActor(vehicle) {
+  makeTrafficActor(vehicle, { allowGLB = true } = {}) {
     const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
-    const model = this.models?.getInstance(key);
+    const model = allowGLB ? this.models?.getInstance(key) : null;
 
     if (model) {
       model.userData.fallback = false;
@@ -3145,54 +3165,73 @@ export class Renderer3D {
   }
 
   syncTraffic(state) {
-    const activeIds = new Set();
+    const traffic = Array.isArray(state.traffic) ? state.traffic : [];
+    const activeIds = new Set(traffic.map((vehicle) => vehicle.id));
 
-    for (const vehicle of state.traffic || []) {
-      activeIds.add(vehicle.id);
+    // Keep a stable, capped pool of detailed traffic GLBs on mobile. Reusing
+    // the same selected actors avoids cloning/disposal churn as vehicles move.
+    let mobileGlbIds = null;
+    if (this.mobile) {
+      for (const id of this._mobileGlbTrafficIds) {
+        if (!activeIds.has(id)) this._mobileGlbTrafficIds.delete(id);
+      }
+      const budget = getMobileTrafficModelBudget(this.mobileTier);
+      let freeSlots = Math.max(0, budget - this._mobileGlbTrafficIds.size);
+      if (freeSlots > 0 && this.models?.cache?.size) {
+        const candidates = traffic
+          .filter((vehicle) => !this._mobileGlbTrafficIds.has(vehicle.id))
+          .filter((vehicle) => this.models.cache.has(VEHICLE_MODEL_KEY[vehicle.type] || 'car'))
+          .sort((a, b) => Math.abs(Number(a.depth) || 0) - Math.abs(Number(b.depth) || 0));
+        for (const vehicle of candidates) {
+          if (freeSlots <= 0) break;
+          this._mobileGlbTrafficIds.add(vehicle.id);
+          freeSlots -= 1;
+        }
+      }
+      mobileGlbIds = this._mobileGlbTrafficIds;
+    }
 
+    for (const vehicle of traffic) {
+      const allowGLB = !this.mobile || mobileGlbIds.has(vehicle.id);
       let actor = this.trafficActors.get(vehicle.id);
 
       if (!actor) {
-        actor = this.makeTrafficActor(vehicle);
+        actor = this.makeTrafficActor(vehicle, { allowGLB });
         actor.userData.vehicleType = vehicle.type;
-
         this.world.add(actor);
         this.trafficActors.set(vehicle.id, actor);
       }
 
       const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
-
-      if (actor.userData.fallback) {
+      if (allowGLB && actor.userData.fallback) {
         const model = this.models?.getInstance(key);
-
         if (model) {
           model.userData.fallback = false;
           model.userData.vehicleType = vehicle.type;
-
           model.position.copy(actor.position);
           model.rotation.copy(actor.rotation);
-
           this.world.remove(actor);
           disposeSceneTree(actor);
           this.world.add(model);
-
           this.trafficActors.set(vehicle.id, model);
           actor = model;
         }
       }
 
+      // Distant traffic past the camera/fog budget stays simulated but is not
+      // drawn. Gameplay/collision data is untouched.
+      const depth = Math.abs(Number(vehicle.depth) || 0);
+      actor.visible = !this.mobile || depth <= 2.65;
       actor.position.set(
         (vehicle.lane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
         0,
         -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
       );
-
       actor.rotation.y = vehicle.direction === -1 ? Math.PI : 0;
     }
 
     for (const [id, actor] of this.trafficActors) {
       if (activeIds.has(id)) continue;
-
       this.world.remove(actor);
       disposeSceneTree(actor);
       this.trafficActors.delete(id);
@@ -3511,13 +3550,24 @@ export class Renderer3D {
     // LANE MARKINGS
     // --------------------------------------------------------
 
-    for (const dash of this.laneDashes) {
-      dash.position.z += scroll;
-
-      if (dash.position.z > 8) {
-        dash.position.z -= 250;
-      } else if (dash.position.z < -250) {
-        dash.position.z += 250;
+    if (this.laneDashInstanced) {
+      for (let index = 0; index < this.laneDashRecords.length; index += 1) {
+        const record = this.laneDashRecords[index];
+        record.z += scroll;
+        if (record.z > 8) record.z -= 250;
+        else if (record.z < -250) record.z += 250;
+        this.laneDashObject.position.set(record.x, 0.028, record.z);
+        this.laneDashObject.rotation.set(-Math.PI / 2, 0, 0);
+        this.laneDashObject.scale.set(1, 1, 1);
+        this.laneDashObject.updateMatrix();
+        this.laneDashInstanced.setMatrixAt(index, this.laneDashObject.matrix);
+      }
+      this.laneDashInstanced.instanceMatrix.needsUpdate = true;
+    } else {
+      for (const dash of this.laneDashes) {
+        dash.position.z += scroll;
+        if (dash.position.z > 8) dash.position.z -= 250;
+        else if (dash.position.z < -250) dash.position.z += 250;
       }
     }
 
