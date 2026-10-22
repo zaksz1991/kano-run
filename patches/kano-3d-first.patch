@@ -1,0 +1,18 @@
+diff --git a/js/main.js b/js/main.js
+index 1409fa3..6c6ac47 100644
+--- a/js/main.js
++++ b/js/main.js
+@@ -103,8 +103,12 @@ let fallbackStarted = false;
+ let runtimeFailureCount = 0;
+ let rendererGeneration = 0;
+ 
++// 3D-first: the automatic low-FPS drop to Canvas 2D is off unless the
++// player explicitly chose 2D (Settings) or the URL forces ?force2d.
++// WebGL-unavailable, context-lost and runtime-error fallbacks still apply.
+ let keep3D = Boolean(
+-  force3d || save?.settings?.quality === '3d',
++  force3d ||
++  (!force2d && save?.settings?.quality !== '2d'),
+ );
+ 
+ let pageClosing = false;

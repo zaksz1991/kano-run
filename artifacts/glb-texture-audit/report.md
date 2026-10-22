@@ -1,11 +1,11 @@
 # GLB External Texture Reference Audit
 
-- Generated: 2026-10-22T00:54:31.830Z
+- Generated: 2026-10-22T01:13:33.478Z
 - GLBs scanned: 98
 - Valid GLBs: 98
 - GLBs mentioning colormap: 39
 - External image references: 39
-- Missing/out-of-root external image references: 39
+- Missing/out-of-root external image references: 0
 
 ## GLBs mentioning colormap
 
@@ -90,45 +90,7 @@
 
 ## Missing or out-of-root external image references
 
-- `public/assets/models/vehicles/special/ambulance.glb` → `Textures/colormap.png` (resolved: `public/assets/models/vehicles/special/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-a.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-b.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-c.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-d.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-e.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-f.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-g.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-h.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-i.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-j.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-k.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-l.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-m.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-n.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-o.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-p.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-q.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-r.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-s.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-industrial/building-t.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-industrial/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-d.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-e.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-f.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-g.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-h.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-i.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-j.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-k.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-l.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-m.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-n.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-o.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-p.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-q.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-r.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-s.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-t.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
-- `public/assets/models/world/buildings-suburban/building-type-u.glb` → `Textures/colormap.png` (resolved: `public/assets/models/world/buildings-suburban/Textures/colormap.png`; outside models root: false)
+None found.
 
 ## Invalid GLB files
 
