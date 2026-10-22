@@ -171,14 +171,16 @@ export class Renderer3D {
   }
 
   material(color, roughness = 1) {
-    // Nearly all procedural mobile scenery uses closed solids or upward-facing
-    // ground planes. Rendering both sides of those surfaces wastes fill-rate.
-    // Keep desktop appearance unchanged; use front-face culling on mobile.
-    return new THREE.MeshStandardMaterial({
-      color,
-      roughness,
-      side: this.mobile ? THREE.FrontSide : THREE.DoubleSide,
-    });
+    // Procedural fallback scenery dominates the mobile scene and does not need
+    // physically based roughness/metalness lighting. Lambert shading uses a
+    // cheaper shader while retaining directional lighting, colour and texture
+    // support. This changes only this renderer's procedural materials on phones;
+    // imported GLB materials and all desktop materials keep their authored path.
+    const side = this.mobile ? THREE.FrontSide : THREE.DoubleSide;
+    if (this.mobile) {
+      return new THREE.MeshLambertMaterial({ color, side });
+    }
+    return new THREE.MeshStandardMaterial({ color, roughness, side });
   }
 
   loadOptionalTexture(url, material, repeat = [1, 1]) {
