@@ -1,6 +1,6 @@
 # GLB External Texture Reference Audit
 
-- Generated: 2026-10-22T01:13:33.478Z
+- Generated: 2026-10-22T02:00:46.432Z
 - GLBs scanned: 98
 - Valid GLBs: 98
 - GLBs mentioning colormap: 39
