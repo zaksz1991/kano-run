@@ -107,6 +107,11 @@ export class Renderer3D {
     this.scene.add(this.world);
 
     this.trafficActors = new Map();
+    // Reuse hot-path collections: traffic sync runs on every active driving
+    // frame, so rebuilding these sets/arrays creates avoidable garbage.
+    this._activeTrafficIds = new Set();
+    this._mobileTrafficCandidateScratch = [];
+    this._mobileTrafficTypeScratch = new Set();
     this.zoneActors = new Map();
     this.laneDashes = [];
     this.laneDashInstanced = null;
@@ -3608,7 +3613,9 @@ export class Renderer3D {
 
   syncTraffic(state) {
     const traffic = Array.isArray(state.traffic) ? state.traffic : [];
-    const activeIds = new Set(traffic.map((vehicle) => vehicle.id));
+    const activeIds = this._activeTrafficIds;
+    activeIds.clear();
+    for (const vehicle of traffic) activeIds.add(vehicle.id);
 
     // Reuse the same small arrays while driving to avoid one collection per
     // vehicle on every frame. Non-instanced GLB actors remain keyed by ID.
@@ -3623,10 +3630,19 @@ export class Renderer3D {
       const budget = getMobileTrafficModelBudget(this.mobileTier);
       let freeSlots = Math.max(0, budget - this._mobileGlbTrafficIds.size);
       if (freeSlots > 0 && this.models?.cache?.size) {
-        const candidates = traffic
-          .filter((vehicle) => !this._mobileGlbTrafficIds.has(vehicle.id))
-          .filter((vehicle) => this.models.cache.has(VEHICLE_MODEL_KEY[vehicle.type] || 'car'))
-          .sort((a, b) => Math.abs(Number(a.depth) || 0) - Math.abs(Number(b.depth) || 0));
+        // Avoid filter/filter/sort chains that allocate two temporary arrays
+        // on each driving frame while the model budget has free slots.
+        const candidates = this._mobileTrafficCandidateScratch;
+        candidates.length = 0;
+        for (const vehicle of traffic) {
+          if (this._mobileGlbTrafficIds.has(vehicle.id)) continue;
+          const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
+          if (!this.models.cache.has(key)) continue;
+          candidates.push(vehicle);
+        }
+        candidates.sort((a, b) =>
+          Math.abs(Number(a.depth) || 0) - Math.abs(Number(b.depth) || 0),
+        );
         for (const vehicle of candidates) {
           if (freeSlots <= 0) break;
           this._mobileGlbTrafficIds.add(vehicle.id);
@@ -3729,7 +3745,10 @@ export class Renderer3D {
     if (this.mobile) {
       // One instanced draw per fallback type. Batches remain allocated for
       // reuse, but their count drops to zero when that type leaves the view.
-      const typeKeys = new Set([...this._mobileTrafficBatches.keys(), ...fallbackByType.keys()]);
+      const typeKeys = this._mobileTrafficTypeScratch;
+      typeKeys.clear();
+      for (const type of this._mobileTrafficBatches.keys()) typeKeys.add(type);
+      for (const type of fallbackByType.keys()) typeKeys.add(type);
       for (const type of typeKeys) {
         const vehicles = fallbackByType.get(type) || [];
         const existing = this._mobileTrafficBatches.get(type);
