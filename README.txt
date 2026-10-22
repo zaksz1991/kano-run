@@ -1,18 +1,17 @@
-KANO LIFE — HUD LAYOUT AND DRIVER CAMERA FIX
+KANO LIFE — 3D MODE ASSERTION FIX
 
-This archive contains complete replacement files, not snippets.
-Extract at the root of your existing kano-run project folder and allow the files
-inside kano-run/ to merge with the matching project folders. Keep all other files
-and assets unchanged.
+This ZIP contains complete replacement files:
+- tests/static.test.js
+- tests/Kano3DStaysOn.test.mjs
+- package.json
 
-Included changes:
-- Day-cycle HUD dynamically positions on the right below intersecting HUD/minimap elements and cleans up resize listeners.
-- Phone HUD hides the decorative Kano label and secondary chips to reduce top-screen crowding.
-- Driver camera is raised and pulled back to clear the keke bodywork.
-- Regression tests cover the reported layout and camera issues.
+What changed:
+1. The saved-quality regression test now checks userSelected2D = quality === '2d', the current setting handler's explicit 2D choice, and the initial selection logic. It verifies that saved 2D is read before the initial WebGL start and that ?force3d overrides a saved 2D preference.
+2. The context-loss and frame-error tests now check the current 3D rebuild implementation instead of obsolete identifiers/branches.
+3. package.json restores the browser:audit script and declares Playwright 1.64.1. Existing check/test/build/release/assets/audio scripts are preserved.
 
-Validation performed against the supplied code-only snapshot:
-- Complete available Node test suite: 157 passed, 0 failed.
-- JavaScript syntax check: passed for project JavaScript files.
+Install:
+Extract into the repository root and replace the listed files. Do not replace public assets.
+Then run `npm install` so package-lock.json matches package.json, followed by `npm test`, `npm run check`, and `npm run browser:audit`.
 
-No browser visual check was performed in this environment. Re-run `npm test`, `npm run check`, and `npm run build` in your current repository, then inspect the layout and driver camera in the actual browser.
+No GLB, texture, audio, save or other user data is included or modified.

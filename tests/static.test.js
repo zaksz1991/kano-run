@@ -54,7 +54,11 @@ test('saved 2D preference is resolved before WebGL startup and force3d overrides
   const initialSelection = boot.slice(boot.indexOf("if (force2d || (saved2D && !force3d))"));
   assert.ok(initialSelection.indexOf("if (force2d || (saved2D && !force3d))") < initialSelection.indexOf('start3D().catch'));
   assert.match(boot, /kano:quality-change/);
-  assert.match(boot, /keep3D = quality === '3d'/);
+  // Settings use an explicit 2D preference; Auto/3D should keep WebGL active.
+  assert.match(boot, /userSelected2D = quality === '2d'/);
+  assert.match(boot, /if \(force2d \|\| force3d \|\| pageClosing\)/);
+  assert.match(boot, /userSelected2D = !force3d && !force2d && saved2D/);
+  assert.match(boot, /else \{userSelected2D = false; start3D\(\)\.catch/);
 });
 
 test('GLB loader uses public assets path, guards absurd bounds, grounds models', () => {
