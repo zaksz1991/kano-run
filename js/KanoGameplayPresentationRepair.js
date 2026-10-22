@@ -30,7 +30,7 @@ let recordRequestInFlight = false;
 let recordRefreshTimer = null;
 const riderGroups = new Set();
 const potholeActors = new Set();
-const rendererQualityStates = new WeakMap();
+const rendererPresentationConfigured = new WeakSet();
 
 // ============================================================
 // EXISTING GLB MODEL POOL ACTIVATION
@@ -702,9 +702,10 @@ if (typeof window !== 'undefined') {
   };
 }
 
-// Adaptive rendering clarity: start sharp, then trade a small amount of pixel
-// density for steadier frame pacing on slower phones. This touches rendering
-// only; it does not alter simulation speed, physics, collision, or traffic.
+// Renderer presentation setup only. Pixel ratio is deliberately NOT managed here:
+// KanoAdaptiveQuality is the single runtime owner of adaptive resolution. A
+// second controller in this draw hook used to overwrite its settings on every
+// frame, causing competing quality limits and unpredictable blur/performance.
 function findWebGLRenderer(owner) {
   const candidates = [
     owner?.renderer, owner?.webglRenderer, owner?.glRenderer,
@@ -716,113 +717,34 @@ function findWebGLRenderer(owner) {
     && candidate.domElement) || null;
 }
 
-function tuneRendererForClarity(owner) {
+function configureRendererPresentation(owner) {
   const gl = findWebGLRenderer(owner);
-  if (!gl) return;
-  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  let state = rendererQualityStates.get(gl);
-
-  if (!state) {
-    try {
-      const touchDevice = (navigator.maxTouchPoints || 0) > 0
-        || window.matchMedia?.('(max-width: 760px)').matches;
-      const deviceRatio = Math.max(1, Number(window.devicePixelRatio) || 1);
-      const maxRatio = Math.min(deviceRatio, touchDevice ? 2.0 : 2.25);
-      const canvas = gl.domElement;
-      state = {
-        touchDevice,
-        maxRatio,
-        minRatio: 1.0,
-        ratio: maxRatio,
-        lastFrameAt: now,
-        slowSince: 0,
-        stableSince: 0,
-        lastChangeAt: now,
-        warningShown: false,
-      };
-      gl.setPixelRatio(state.ratio);
-
-      // Match browser display colour space where supported. Do not replace an
-      // existing custom tone-mapping pipeline owned by the game renderer.
-      if ('outputColorSpace' in gl && THREE.SRGBColorSpace) {
-        gl.outputColorSpace = THREE.SRGBColorSpace;
-      }
-      if (gl.toneMapping === THREE.NoToneMapping && THREE.ACESFilmicToneMapping !== undefined) {
-        gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = Math.max(1, Number(gl.toneMappingExposure) || 1);
-      }
-      if (canvas?.style) {
-        canvas.style.display = 'block';
-        canvas.style.width = '100%';
-        canvas.style.height = '100%';
-        canvas.style.imageRendering = 'auto';
-        canvas.style.webkitTapHighlightColor = 'transparent';
-      }
-      rendererQualityStates.set(gl, state);
-      console.info(`[Kano Life] adaptive 3D clarity enabled · ${state.ratio.toFixed(2)}x initial pixel ratio`);
-      console.info('[Kano Life] responsive player keke suspension and chassis motion registered.');
-      return;
-    } catch (error) {
-      if (!owner._kanoClarityWarningShown) {
-        owner._kanoClarityWarningShown = true;
-        console.warn('[Kano Life] 3D clarity tuning skipped; retaining native renderer settings.', error);
-      }
-      return;
+  if (!gl || rendererPresentationConfigured.has(gl)) return;
+  try {
+    // Match browser display colour space where supported. Do not replace an
+    // existing custom tone-mapping pipeline owned by the game renderer.
+    if ('outputColorSpace' in gl && THREE.SRGBColorSpace) {
+      gl.outputColorSpace = THREE.SRGBColorSpace;
     }
-  }
-
-  // Ignore background-tab suspension and long pauses; they are not GPU
-  // performance samples and should not force the game to a blurry resolution.
-  if (document.hidden) {
-    state.lastFrameAt = now;
-    state.slowSince = 0;
-    state.stableSince = 0;
-    return;
-  }
-  const interval = now - state.lastFrameAt;
-  state.lastFrameAt = now;
-  if (!Number.isFinite(interval) || interval <= 0 || interval > 1000) {
-    state.slowSince = 0;
-    state.stableSince = 0;
-    return;
-  }
-
-  // Sustained frame intervals above 24 ms indicate visible hitching. Lower
-  // DPR gradually and impose a one-second cooldown to prevent oscillation.
-  if (interval > 24) {
-    state.slowSince ||= now;
-    state.stableSince = 0;
-    if (now - state.slowSince >= 1100 && now - state.lastChangeAt >= 900) {
-      const nextRatio = Math.max(state.minRatio, Math.round((state.ratio - 0.15) * 100) / 100);
-      if (nextRatio < state.ratio) {
-        try {
-          gl.setPixelRatio(nextRatio);
-          state.ratio = nextRatio;
-          state.lastChangeAt = now;
-          console.info(`[Kano Life] 3D resolution adapted to ${nextRatio.toFixed(2)}x for smoother mobile gameplay`);
-        } catch (_) {}
-      }
-      state.slowSince = now;
+    if (gl.toneMapping === THREE.NoToneMapping && THREE.ACESFilmicToneMapping !== undefined) {
+      gl.toneMapping = THREE.ACESFilmicToneMapping;
+      gl.toneMappingExposure = Math.max(1, Number(gl.toneMappingExposure) || 1);
     }
-    return;
-  }
-
-  state.slowSince = 0;
-  // Restore detail only after several seconds of consistently smooth frames.
-  if (interval < 18.5 && state.ratio + 0.01 < state.maxRatio) {
-    state.stableSince ||= now;
-    if (now - state.stableSince >= 4500 && now - state.lastChangeAt >= 4000) {
-      const nextRatio = Math.min(state.maxRatio, Math.round((state.ratio + 0.10) * 100) / 100);
-      try {
-        gl.setPixelRatio(nextRatio);
-        state.ratio = nextRatio;
-        state.lastChangeAt = now;
-        console.info(`[Kano Life] 3D detail restored to ${nextRatio.toFixed(2)}x after stable frames`);
-      } catch (_) {}
-      state.stableSince = now;
+    const canvas = gl.domElement;
+    if (canvas?.style) {
+      canvas.style.display = 'block';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.imageRendering = 'auto';
+      canvas.style.webkitTapHighlightColor = 'transparent';
     }
-  } else {
-    state.stableSince = 0;
+    rendererPresentationConfigured.add(gl);
+    console.info('[Kano Life] renderer presentation configured; adaptive resolution is owned by KanoAdaptiveQuality.');
+  } catch (error) {
+    if (!owner._kanoClarityWarningShown) {
+      owner._kanoClarityWarningShown = true;
+      console.warn('[Kano Life] renderer presentation setup skipped; retaining native renderer settings.', error);
+    }
   }
 }
 
@@ -4810,7 +4732,7 @@ if (typeof originalAnimateFallbackDriver === 'function') {
 if (typeof originalRendererDraw === 'function') {
   Renderer3D.prototype.draw = function patchedPresentationDraw(state, dt, ...args) {
     activeRenderer = this;
-    tuneRendererForClarity(this);
+    configureRendererPresentation(this);
     this._kanoRepairDelta = clamp(dt, 0, 0.05);
     this._kanoRepairTime = (Number(this._kanoRepairTime) || 0) + this._kanoRepairDelta;
     const game = activeGame || window.__KANO_LIFE_GAME__;
