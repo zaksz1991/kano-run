@@ -1,0 +1,21 @@
+KANO LIFE - complete replacement files (made against your GitHub main, commit 2be3af3)
+
+Copy these 6 files over the same files in your kano-run folder (say "Replace"):
+  index.html
+  vercel.json
+  js/main.js
+  js/game.js
+  js/KanoAtmosphere.js
+  js/renderer3d.js
+
+What changed
+  1. 3D stays on unless the player picks 2D in Settings (js/main.js)
+  2. Day cycle is now connected: clock, prayer times, hunger, tiredness,
+     meal and rest breaks, rush-hour fares (js/main.js, js/game.js)
+  3. Ground textures load from /assets/models/environment/ground/ (renderer3d.js, KanoAtmosphere.js)
+  4. App install + offline support turned on (index.html, vercel.json, js/main.js)
+
+Your repo already has KanoDayCycle.js, KanoDayHud.js, registerServiceWorker.js,
+public/sw.js, manifest and icons - no other files are needed.
+All 167 tests pass on these files. I could not run "vite build" here.
+After copying: npm test, then commit and push.

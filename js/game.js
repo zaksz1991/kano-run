@@ -158,7 +158,7 @@ export class Game {
       score: 0,
       fares: 0,
 
-      breakfastEaten: false,
+      breakfastEaten: null,
       breakfastCost: 0,
 
       morale: 75,

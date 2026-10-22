@@ -90,6 +90,8 @@ function persistLifestyle(lifestyle) {
 const TEXTURE_FALLBACKS = new Map([
   ['/assets/environment/ground/asphalt.jpg', 'asphalt'],
   ['/assets/environment/ground/market-stall.jpg', 'marketStall'],
+  ['/assets/models/environment/ground/asphalt.jpg', 'asphalt'],
+  ['/assets/models/environment/ground/market-stall.jpg', 'marketStall'],
 ]);
 const TEXTURE_CACHE = new Map();
 const TEXTURE_PATCH_FLAG = '__kanoLifeWorldTextureRecoveryV2';
