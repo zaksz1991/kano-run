@@ -2935,6 +2935,98 @@ export class Renderer3D {
   // REPLACE THE PLAYER KEKE
   // ==========================================================
 
+  /**
+   * Preserve the visible seated driver when an otherwise valid imported
+   * keke does not contain a driver rig. ModelManager normally adds its own
+   * named rig; this path is a last-resort safeguard for directly supplied
+   * GLBs or older model-manager builds. The cloned geometry/materials are
+   * independent because the outgoing procedural vehicle is disposed below.
+   */
+  attachFallbackDriverToKeke(object, old, visualCheck) {
+    if (!object?.isObject3D || !old?.isObject3D) return false;
+
+    const currentParts = object.userData?.driverAnimationParts;
+    if (currentParts?.driverPivot) return false;
+
+    const namedPivot = object.getObjectByName?.('KANO_KEKE_DRIVER_PIVOT');
+    if (namedPivot?.isObject3D) {
+      const arms = (namedPivot.children || [])
+        .filter((child) => child?.isGroup &&
+          (child.children || []).some((part) => part?.isGroup))
+        .map((shoulder) => ({
+          shoulder,
+          forearm: shoulder.children.find((part) => part?.isGroup) || null,
+        }));
+      object.userData.driverAnimationParts = {
+        driverPivot: namedPivot,
+        arms,
+        wheels: [],
+      };
+      return true;
+    }
+
+    const sourcePivot = old.userData?.driverAnimationParts?.driverPivot;
+    if (!sourcePivot?.isObject3D) return false;
+
+    const driverPivot = sourcePivot.clone(true);
+    const geometryClones = new Map();
+    const materialClones = new Map();
+
+    driverPivot.traverse((node) => {
+      if (node.geometry) {
+        if (!geometryClones.has(node.geometry)) {
+          geometryClones.set(node.geometry, node.geometry.clone());
+        }
+        node.geometry = geometryClones.get(node.geometry);
+      }
+
+      if (node.material) {
+        const cloneMaterial = (material) => {
+          if (!material) return material;
+          if (!materialClones.has(material)) {
+            materialClones.set(material, material.clone());
+          }
+          return materialClones.get(material);
+        };
+        node.material = Array.isArray(node.material)
+          ? node.material.map(cloneMaterial)
+          : cloneMaterial(node.material);
+      }
+    });
+
+    const height = Number(visualCheck?.bounds?.height);
+    const depth = Number(visualCheck?.bounds?.depth);
+    const safeHeight = Number.isFinite(height) ? height : 1.85;
+    const safeDepth = Number.isFinite(depth) ? depth : 1.5;
+
+    driverPivot.name = 'KANO_KEKE_DRIVER_PIVOT';
+    driverPivot.position.set(
+      0,
+      THREE.MathUtils.clamp(safeHeight * 0.64, 0.96, 1.22),
+      -Math.min(0.12, safeDepth * 0.04),
+    );
+    driverPivot.userData.fallbackSeatedDriver = true;
+    object.add(driverPivot);
+
+    const arms = (driverPivot.children || [])
+      .filter((child) => child?.isGroup &&
+        (child.children || []).some((part) => part?.isGroup))
+      .map((shoulder) => ({
+        shoulder,
+        forearm: shoulder.children.find((part) => part?.isGroup) || null,
+      }));
+
+    object.userData.driverAnimationParts = {
+      driverPivot,
+      arms,
+      // GLB vehicle wheels are not the procedural fallback wheels.
+      wheels: [],
+    };
+    object.userData.kanoFallbackDriverAttached = true;
+
+    return true;
+  }
+
   // Refuse to replace the visible procedural keke with a GLB that only
   // contains a driver/prop, invisible meshes, or collapsed/implausible bounds.
   // The incoming instance is left untouched on failure; its geometry may be
@@ -3091,10 +3183,10 @@ export class Renderer3D {
       this.lifeScene === 'road' ||
       this.lifeScene === 'garage';
 
-    // The model manager should attach animation references to the
-    // imported keke when it contains a procedural seated driver.
-    // Keep the fallback driver if the imported model has no driver rig.
-    if (!object.userData.driverAnimationParts) {
+    // ModelManager normally supplies a seated driver. Support older or
+    // directly injected GLBs as well: if the accepted vehicle has no rig,
+    // clone the outgoing fallback driver's rig before disposing that vehicle.
+    if (!object.userData.driverAnimationParts?.driverPivot) {
       const rig = object.getObjectByName?.(
         'KANO_KEKE_DRIVER_PIVOT',
       );
@@ -3106,6 +3198,10 @@ export class Renderer3D {
           wheels: [],
         };
       }
+    }
+
+    if (!object.userData.driverAnimationParts?.driverPivot) {
+      this.attachFallbackDriverToKeke(object, old, visualCheck);
     }
 
     if (old?.parent) {

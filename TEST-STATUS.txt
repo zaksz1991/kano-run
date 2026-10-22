@@ -1,19 +1,20 @@
-KANO LIFE / KANO RUN — STEP 33 VALIDATION
+KANO LIFE / KANO RUN — STEP 34 VALIDATION
 
-Automated tests: 32 passed, 0 failed
+Focused automated test suite: 37 passed, 0 failed.
 - Keke visual integrity guard: 7 tests
-- Existing Step 28 renderer merge coverage: 10 tests
-- Existing Step 29 lazy scene build coverage: 5 tests
-- Existing mobile pedestrian merge coverage: 5 tests
-- Existing mobile sidewalk spacing coverage: 5 tests
+- Lazy scene build: 5 tests
+- Mobile pedestrian mesh merge: 5 tests
+- Seated driver fallback preservation: 5 tests
+- Step 28 renderer merge coverage: 10 tests
+- Step 29 sidewalk spacing: 5 tests
 
-JavaScript syntax: passed for renderer3d.js, KanoDeviceTier.js and KanoInstancedRoadScroll.js.
-ZIP integrity: verified after packaging.
+JavaScript syntax checks: passed for renderer3d.js, KanoDeviceTier.js, and KanoInstancedRoadScroll.js.
+ZIP integrity: checked after packaging.
 
-Not verified in this environment:
+Not verified:
 - Vite production build
-- Actual GLB asset bounds in a browser
-- Browser screenshot comparison
-- Real-phone frame rate
+- Actual Three.js GLB rendering in a browser
+- Visual comparison on the live site
+- Physical-phone frame rate
 
-Note: test assertions primarily verify source structure and update ordering. They do not instantiate Three.js assets or prove that a particular asset will be accepted. The real game still needs to be opened to confirm the player keke remains visible and seated correctly.
+These automated tests primarily check source structure and operation ordering. They do not prove that the procedural fallback driver will perfectly align with every individual GLB cabin.

@@ -1,22 +1,25 @@
-KANO LIFE / KANO RUN — STEP 33
-PLAYER KEKE VISUAL INTEGRITY GUARD
+KANO LIFE / KANO RUN — STEP 34
+SEATED DRIVER FALLBACK PRESERVATION
 
 PURPOSE
-The supplied phone screenshot shows the driver/pedestrian geometry visible in the roadway while the player's keke body is missing. The renderer previously accepted any successfully loaded 'keke' GLB and disposed of the visible procedural fallback without checking whether the new asset contained a visible vehicle-sized model.
+Step 33 prevents an invisible/collapsed keke GLB from displacing the visible fallback vehicle. Step 34 closes a related gap: when a candidate vehicle passes validation but has no recognized seated-driver rig, the renderer previously logged a warning and still removed the procedural keke that contained the visible fallback driver.
 
-THIS UPDATE
-- Replaces js/renderer3d.js with a complete file based on the Step 29 renderer, preserving mobile-resolution targets, instanced roadside dividers/neem trees, denser mobile sidewalk rows, achaba rider silhouettes, texture paths, traffic fallback models, cached dioramas, and distance culling.
-- Adds a pre-promotion integrity check for visible renderable mesh geometry, finite dimensions, and a plausible horizontal vehicle footprint.
-- Rejects empty, invisible, collapsed, singular-transform, and person-sized candidates before the current player is detached or disposed.
-- Leaves the currently active vehicle and its seated fallback driver in place when a candidate fails validation. The rejected instance is not disposed because its geometry may be shared with ModelManager's cache.
-- Attaches diagnostic details to object.userData.kanoKekeVisualValidation and logs why the candidate was rejected or accepted.
-- Adds regression tests covering the guard and previous mobile renderer features.
+CHANGES
+- Keeps Step 33's visible-mesh, transform and vehicle-bound validation.
+- Detects a named driver pivot on the accepted model before applying a fallback.
+- If there is no usable driver pivot, clones the old procedural driver's pivot into the accepted keke before the old vehicle is removed.
+- Deep-clones the fallback driver's geometries and materials so disposal of the old procedural keke cannot dispose the new driver's render resources.
+- Sets up driverPivot/arm references for the existing driver animation path.
+- Places the fallback driver using clamped ratios of the accepted vehicle's measured height/depth.
+- Does not create a second driver when the incoming model already has a recognized driver rig.
+- Carries forward Step 33's mobile renderer, roadside instancing, texture corrections, crowd spacing, device-tier helpers and pedestrian draw-call merge.
 
 INSTALLATION
-1. Extract this ZIP into the existing Kano Run project folder (the folder with index.html and package.json).
-2. Replace js/renderer3d.js with the complete replacement file.
-3. The ZIP includes js/KanoDeviceTier.js and js/KanoInstancedRoadScroll.js because renderer3d.js imports them; these helper files are carried forward unchanged from Step 29.
-4. Copy the included tests/*.test.mjs into the existing tests folder. Do not replace package.json, index.html, main.js, game.js, CSS, assets, the Step 30 traffic mix, the Step 31 day cycle, or the Step 32 startup/test fixes.
+1. Extract this ZIP into the existing Kano Run project root (the folder with index.html and package.json).
+2. Replace js/renderer3d.js with the included complete file.
+3. The included js/KanoDeviceTier.js and js/KanoInstancedRoadScroll.js are the complete helper dependencies that accompany the renderer; they are carried forward unchanged from Step 33.
+4. Copy the included tests/*.test.mjs into the existing tests folder.
+5. Keep main.js, game.js, ModelManager.js, index.html, CSS, model assets, traffic mix, day-cycle files, and all unrelated features unchanged.
 
 VALIDATION LIMITS
-Static regression tests validate guard order and preserve key renderer features. They do not load an actual GLB or prove visual correctness. The production app and real phone were not rendered in this environment. If an existing GLB contains only a tiny visible submesh for its vehicle body, it may be retained on the fallback until the underlying asset is corrected.
+The included focused source-level suite passes. JavaScript syntax checks pass. Three.js/browser rendering, real imported GLB placement, production build, and physical-phone performance were not run in this environment. The fallback driver's position is dimension-aware but remains a generic procedural seating placement; an asset-specific cabin offset may still be needed for individual GLBs.
