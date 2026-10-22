@@ -45,6 +45,8 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 // Mobile scenes can add/remove actors at runtime. Rebuild the animated-root
 // inventory at 8 Hz instead of traversing every character hierarchy each frame.
 const MOBILE_ANIMATION_ROOT_DISCOVERY_INTERVAL = 0.12;
+// Recheck camera distance periodically; distant decorative rigs can animate at a lower cadence.
+const MOBILE_ANIMATION_DISTANCE_CHECK_INTERVAL = 0.12;
 const rand = (min, max) => min + Math.random() * (max - min);
 const choose = (items) => items[Math.floor(Math.random() * items.length)];
 
@@ -409,6 +411,7 @@ export class KanoGLBAnimationManager {
     this.lastActiveRoots = new Set();
     this.cachedActiveRoots = null;
     this.lastRootDiscoveryElapsed = -Infinity;
+    this._mobileAnimationWorldPosition = new THREE.Vector3();
     this.originalGetInstance = models.getInstance;
     this.getInstanceWrapper = null;
     this.originalUpgradePedestrians = null;
@@ -741,7 +744,16 @@ export class KanoGLBAnimationManager {
         action.clampWhenFinished = false;
         action.setLoop(THREE.LoopRepeat, Infinity);
         action.play();
-        this.mixers.set(root, { mixer, action, clip, role });
+        this.mixers.set(root, {
+          mixer,
+          action,
+          clip,
+          role,
+          pendingElapsed: 0,
+          lastMixerUpdateElapsed: -Infinity,
+          nextDistanceCheckAt: -Infinity,
+          mobileUpdateInterval: 0,
+        });
         root.userData.kanoAnimationState = 'playing';
       } catch (error) {
         root.userData.kanoAnimationState = 'failed';
@@ -750,6 +762,41 @@ export class KanoGLBAnimationManager {
         }
       }
     });
+  }
+
+  mobileAnimationInterval(root, entry) {
+    if (!this.mobile) return 0;
+
+    if (this.elapsed < entry.nextDistanceCheckAt) {
+      return entry.mobileUpdateInterval;
+    }
+
+    entry.nextDistanceCheckAt = this.elapsed + MOBILE_ANIMATION_DISTANCE_CHECK_INTERVAL;
+
+    const cameraPosition = this.renderer.camera?.position;
+    if (!cameraPosition || typeof root?.getWorldPosition !== 'function') {
+      entry.mobileUpdateInterval = 1 / 30;
+      return entry.mobileUpdateInterval;
+    }
+
+    // Reuse one vector and sample distance at 8 Hz, rather than adding camera
+    // matrix work or allocations to every render frame. Close characters retain
+    // full-rate animation; farther decorative rigs use lower update cadences.
+    const position = root.getWorldPosition(this._mobileAnimationWorldPosition);
+    const dx = position.x - cameraPosition.x;
+    const dy = position.y - cameraPosition.y;
+    const dz = position.z - cameraPosition.z;
+    const distanceSquared = dx * dx + dy * dy + dz * dz;
+
+    entry.mobileUpdateInterval = distanceSquared < 256
+      ? 0
+      : distanceSquared < 1024
+        ? 1 / 30
+        : distanceSquared < 2704
+          ? 1 / 20
+          : 1 / 12;
+
+    return entry.mobileUpdateInterval;
   }
 
   update(deltaSeconds) {
@@ -779,7 +826,9 @@ export class KanoGLBAnimationManager {
       activeRoots = this.cachedActiveRoots;
     }
 
-    this.lastActiveRoots = new Set(activeRoots.keys());
+    // Reuse the membership set instead of allocating a new Set every frame.
+    this.lastActiveRoots.clear();
+    for (const root of activeRoots.keys()) this.lastActiveRoots.add(root);
 
     for (const [root, role] of activeRoots) {
       this.attach(root, role);
@@ -806,7 +855,30 @@ export class KanoGLBAnimationManager {
         parent = parent.parent;
       }
 
-      if (visible) entry.mixer.update(dt);
+      if (!visible) {
+        // Do not accumulate time while hidden; when the rig reappears it can
+        // resume smoothly without a large catch-up animation step.
+        entry.pendingElapsed = 0;
+        continue;
+      }
+
+      if (!this.mobile) {
+        entry.mixer.update(dt);
+        continue;
+      }
+
+      const animationInterval = this.mobileAnimationInterval(root, entry);
+      entry.pendingElapsed = Math.min(0.25, entry.pendingElapsed + dt);
+      if (
+        animationInterval <= 0 ||
+        this.elapsed - entry.lastMixerUpdateElapsed >= animationInterval
+      ) {
+        // Pass accumulated time to the mixer so lower-rate background animation
+        // does not run in slow motion.
+        entry.mixer.update(entry.pendingElapsed);
+        entry.pendingElapsed = 0;
+        entry.lastMixerUpdateElapsed = this.elapsed;
+      }
     }
 
     // Subtle idle motion for valid GLB characters whose source asset has no
@@ -829,6 +901,17 @@ export class KanoGLBAnimationManager {
       if (!visible) continue;
 
       const fallback = root.userData.kanoFallbackAnimation;
+      if (this.mobile) {
+        const animationInterval = this.mobileAnimationInterval(root, fallback);
+        if (
+          animationInterval > 0 &&
+          this.elapsed - (fallback.lastUpdateElapsed ?? -Infinity) < animationInterval
+        ) {
+          continue;
+        }
+        fallback.lastUpdateElapsed = this.elapsed;
+      }
+
       const phase = this.elapsed * 3.2 + fallback.phase;
       root.position.y = fallback.baseY + Math.abs(Math.sin(phase)) * 0.012;
       root.rotation.z = fallback.baseZ + Math.sin(phase * 0.5) * 0.012;
