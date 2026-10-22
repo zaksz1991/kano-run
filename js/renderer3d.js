@@ -175,8 +175,10 @@ export class Renderer3D {
     this.player.position.set(0, 0, 2);
     this.scene.add(this.player);
 
-    this.buildGarageScene();
-    this.buildLifeDioramas();
+    // Garage and life-scene geometry is created only when that scene is first
+    // entered. The normal driving scene should not pay their startup CPU/memory
+    // cost, and the scenes remain cached after first use for quick revisits.
+    this._nextLifeSceneAssetUpgradeAt = 0;
 
     this.ready = true;
   }
@@ -843,8 +845,14 @@ export class Renderer3D {
     return guard;
   }
 
+  ensureGarageScene() {
+    if (this.garageGroup) return this.garageGroup;
+    this.buildGarageScene();
+    return this.garageGroup;
+  }
+
   setLifeScene(sceneName) {
-    if (!this.ready || !this.player || !this.garageGroup) return;
+    if (!this.ready || !this.player) return;
 
     const valid = new Set([
       'road',
@@ -859,6 +867,12 @@ export class Renderer3D {
 
     const nextScene = valid.has(sceneName) ? sceneName : 'road';
 
+    if (nextScene === 'garage') {
+      this.ensureGarageScene();
+    } else if (nextScene !== 'road') {
+      this.buildLifeDioramas(nextScene);
+    }
+
     this.lifeScene = nextScene;
 
     if (nextScene === 'road') {
@@ -871,7 +885,7 @@ export class Renderer3D {
       this.player.position.set(0, 0, 2);
       this.player.rotation.set(0, this.driveFacingY, 0);
 
-      this.garageGroup.visible = false;
+      if (this.garageGroup) this.garageGroup.visible = false;
 
       if (this.lifeDioramaRoot) {
         this.lifeDioramaRoot.visible = false;
@@ -918,7 +932,7 @@ export class Renderer3D {
     this.player.visible = false;
 
     this.world.visible = false;
-    this.garageGroup.visible = false;
+    if (this.garageGroup) this.garageGroup.visible = false;
 
     if (this.lifeDioramaRoot) {
       this.lifeDioramaRoot.visible = true;
@@ -1029,12 +1043,21 @@ export class Renderer3D {
     return slot;
   }
 
-  buildLifeDioramas() {
-    const root = new THREE.Group();
+  buildLifeDioramas(sceneName) {
+    const validScenes = [
+      'bedroom', 'household', 'street', 'breakfast', 'walk', 'school',
+    ];
+    if (!validScenes.includes(sceneName)) return null;
 
-    root.visible = false;
-    this.scene.add(root);
-    this.lifeDioramaRoot = root;
+    const existing = this.lifeSceneGroups.get(sceneName);
+    if (existing) return existing;
+
+    if (!this.lifeDioramaRoot) {
+      const root = new THREE.Group();
+      root.visible = false;
+      this.scene.add(root);
+      this.lifeDioramaRoot = root;
+    }
 
     const floorFor = (group, color, size = [22, 22]) => {
       const floor = new THREE.Mesh(
@@ -1084,31 +1107,21 @@ export class Renderer3D {
       return mesh;
     };
 
-    for (const name of [
-      'bedroom',
-      'household',
-      'street',
-      'breakfast',
-      'walk',
-      'school',
-    ]) {
-      const group = new THREE.Group();
+    const group = new THREE.Group();
+    group.visible = false;
+    this.lifeDioramaRoot.add(group);
+    this.lifeSceneGroups.set(sceneName, group);
 
-      group.visible = false;
-      root.add(group);
-      this.lifeSceneGroups.set(name, group);
+    floorFor(
+      group,
+      ['bedroom', 'household'].includes(sceneName)
+        ? 0x9d7e5e
+        : 0xb7a17b,
+      [24, 24],
+    );
 
-      floorFor(
-        group,
-        ['bedroom', 'household'].includes(name)
-          ? 0x9d7e5e
-          : 0xb7a17b,
-        [24, 24],
-      );
-    }
-
-    {
-      const g = this.lifeSceneGroups.get('bedroom');
+    if (sceneName === 'bedroom') {
+      const g = group;
 
       box(g, [18, 4.8, 0.28], [0, 2.35, -7.4], 0xd1b68a);
       box(g, [0.28, 4.8, 13.8], [-8.9, 2.35, -0.3], 0xc8aa7f);
@@ -1130,8 +1143,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('household');
+    if (sceneName === 'household') {
+      const g = group;
 
       localWall(g, -4.7, -6.0, 0xb99c71);
       localWall(g, 3.5, -6.3, 0xd2b98b);
@@ -1180,8 +1193,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('street');
+    if (sceneName === 'street') {
+      const g = group;
 
       box(g, [24, 0.12, 7.5], [0, 0, -1.6], 0x555957);
       box(g, [24, 0.08, 8.5], [0, -0.04, 6.5], 0xb3a07e);
@@ -1229,8 +1242,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('breakfast');
+    if (sceneName === 'breakfast') {
+      const g = group;
 
       localWall(g, -6.8, -6.2, 0xc6a57a);
 
@@ -1293,8 +1306,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('walk');
+    if (sceneName === 'walk') {
+      const g = group;
 
       box(g, [10.5, 0.08, 22], [-5.6, 0, -0.3], 0xc5b18d);
       box(g, [8.2, 0.12, 22], [5.2, -0.01, -0.3], 0x535957);
@@ -1332,8 +1345,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('school');
+    if (sceneName === 'school') {
+      const g = group;
 
       box(g, [19, 3.6, 0.34], [0, 1.8, -7.6], 0xc7b18a);
       box(g, [4.3, 2.5, 0.18], [-0.3, 1.3, -7.34], 0x765536);
@@ -1369,12 +1382,22 @@ export class Renderer3D {
         { scale: 0.78, fallback: 'vehicle' },
       );
     }
+
+    return group;
   }
 
   upgradeLifeSceneAssets() {
     if (!this.models || !this.lifeAssetSlots.length) return;
 
+    // Only the currently displayed diorama can affect the screen. Once scene
+    // assets have been visited, skip scanning all previously built scenes on
+    // every frame. Phones also throttle model-promotion checks to 3.3 Hz.
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    if (this.mobile && now < this._nextLifeSceneAssetUpgradeAt) return;
+    if (this.mobile) this._nextLifeSceneAssetUpgradeAt = now + 300;
+
     for (const slot of this.lifeAssetSlots) {
+      if (slot.sceneName !== this.lifeScene) continue;
       if (slot.replaced || !this.models.cache.has(slot.key)) continue;
 
       const model = this.models.getInstance(slot.key);
@@ -3983,6 +4006,7 @@ export class Renderer3D {
     );
 
     if (this.lifeScene === 'garage') {
+      this.ensureGarageScene();
       this.upgradeGarageAssets();
       this.upgradeGarageVehicles();
       this.applyPlayerPaint(state.paint);
@@ -3996,9 +4020,15 @@ export class Renderer3D {
     }
 
     if (this.lifeScene !== 'road') {
+      if (
+        this.lifeScene !== 'garage' &&
+        !this.lifeSceneGroups.has(this.lifeScene)
+      ) {
+        this.buildLifeDioramas(this.lifeScene);
+      }
       this.upgradeLifeSceneAssets();
 
-      this.lifeDioramaRoot.visible = true;
+      if (this.lifeDioramaRoot) this.lifeDioramaRoot.visible = true;
 
       for (const [name, group] of this.lifeSceneGroups) {
         group.visible = name === this.lifeScene;
@@ -4012,9 +4042,9 @@ export class Renderer3D {
       return;
     }
 
-    this.lifeDioramaRoot.visible = false;
+    if (this.lifeDioramaRoot) this.lifeDioramaRoot.visible = false;
     this.world.visible = true;
-    this.garageGroup.visible = false;
+    if (this.garageGroup) this.garageGroup.visible = false;
 
     this.syncZones(state);
     this.syncTraffic(state);

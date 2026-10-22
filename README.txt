@@ -1,23 +1,26 @@
-KANO LIFE — STEP 17: MOBILE DISTANCE-CULLING CPU BUDGET
+KANO LIFE — STEP 18: LAZY HIDDEN-SCENE CONSTRUCTION
 
-Included files (complete files, existing paths preserved):
-- kano-run/js/renderer3d.js
-- kano-run/tests/KanoMobileDistanceCullingCadence.test.mjs
-- kano-run/tests/KanoMobileFogHorizonCulling.test.mjs
-- kano-run/tests/KanoMobileRemainingStandardShaders.test.mjs
+REPLACES
+- kano-run/js/renderer3d.js (complete replacement, based on the Step 17 cumulative renderer snapshot)
 
-WHAT CHANGED
-The mobile fog-distance visibility pass now runs at most once every 100 ms instead of scanning all scenery collections on every game render frame. It also avoids allocating a new closure each pass and avoids redundant Object3D.visible writes.
+ADDS
+- kano-run/tests/KanoLazySceneBuild.test.mjs (focused regression test)
 
-WHAT DID NOT CHANGE
-- The normal render loop and game simulation cadence
-- Keke handling, collisions, traffic logic, missions and zones
-- Model, texture and audio assets
-- Mobile render resolution and current mobile shader choices
-- Desktop distance culling (this pass remains mobile-only)
+WHAT CHANGES
+- The garage is not constructed during initial road-renderer startup; it is built the first time the garage is entered.
+- Life-scene dioramas are built one at a time, only when that specific scene is first entered. The other five scenes are not allocated yet.
+- Built scenes remain cached so revisiting a scene does not rebuild its objects.
+- Mobile life-scene model promotion checks only the active scene's slots and is throttled to 300 ms.
+- Driving, collision logic, traffic simulation, missions, model files, textures and audio are not changed by this step.
+
+WHY
+The previous renderer created the garage and all six life-scene dioramas before ordinary driving began, even though those scenes were hidden. That allocated their meshes, geometries and materials during startup and retained them in memory. This change defers that work until a scene is actually requested.
 
 INSTALL
-Copy the complete kano-run/js/renderer3d.js file to the same location in your existing project. This replacement is based on the prior mobile-rendering optimization package and retains its changes. The test files are optional validation artifacts and do not need to be copied for the game to run.
+Extract into the existing project and replace only the included js/renderer3d.js file. The tests file is included as a regression record; no test command is being requested from the user.
 
-VALIDATION NOTE
-Focused static regression checks and syntax checks are run on the packaged files before delivery. This does not establish real-phone frame rate or guarantee that all current local edits are represented. Keep a copy of the current file before replacing it.
+VALIDATION PERFORMED HERE
+- JavaScript syntax check passed for renderer3d.js.
+- All 5 focused lazy-scene regression checks passed.
+- ZIP integrity check passed.
+- The full project suite and a physical-phone benchmark were not run. First entry into a previously unseen garage/life scene now constructs only that scene and may incur a one-time setup cost; it is cached for later visits.
