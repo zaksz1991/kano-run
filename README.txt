@@ -1,46 +1,54 @@
-KANO LIFE — STEP 23: MOBILE GLB INSTANCE & PRELOAD BUDGET
+KANO LIFE — STEP 24: GLB VISIBILITY SCAN COST FIX
 
-What was found
---------------
-The mobile renderer deliberately uses procedural flyovers and several roadside
-prop types, but the mobile preload queue still requested their imported GLB
-categories. In addition, the presentation layer could promote as many as 14
-building slots into detailed GLBs on a phone even though the core mobile path
-is designed around a much smaller detailed-scene budget. The GLB model-pool
-patch also retained four suburban and three industrial-building templates on
-mobile.
-
-What this package changes
--------------------------
-- Complete replacement: kano-run/js/KanoGameplayPresentationRepair.js
-- Complete replacement: kano-run/js/main.js
-- New focused test: kano-run/tests/KanoMobileGLBDrawBudget.test.mjs
-- Mobile detail cap: at most four imported building facades; other nearby slots
-  remain as the existing procedural buildings.
-- Mobile pool: two suburban and two industrial building variants, retaining
-  some model variation without keeping seven building templates.
-- Mobile preload queue no longer loads flyover, roadlight, bench, trafficLight,
-  stopSign, busStop or marketStall categories which the mobile renderer keeps
-  procedural (the last three also have no ModelManager candidates).
-- Desktop full-detail category list and building budget are unchanged.
-- Existing GLB one-time bounds preparation, frustum culling and visibility
-  repair from Step 2 are preserved.
-
-What stays
-----------
-The actual keke, traffic simulation, missions, collisions, all road markings,
-procedural streetlights, procedural flyovers, buildings, kerbs, verges, and the
-existing model files remain. No files in public/assets are removed or modified.
-
-Install
+PURPOSE
 -------
-Extract into the existing kano-run folder and replace only the two included
-JavaScript files at their matching paths. The test file may be added to tests/.
-No full npm test run is requested for this update.
+Reduce periodic CPU work from model visibility repair, especially on mobile.
+The old repair pass recursively traversed every object under the road, garage,
+and active life-scene group every 450 ms on mobile. The updated pass uses the
+existing renderer registries (building slots, traffic actors, pedestrians,
+road props, environment detail instances, pothole-zone actors, the active keke,
+and garage/life-scene slots). A shallow direct-child scan remains as a fallback
+for unregistered roots.
 
-Validation performed here
+PACKAGE CONTENTS
+----------------
+- js/KanoGameplayPresentationRepair.js
+  Complete replacement file. No chunk edits are required.
+- tests/KanoMobileGlbRegistryScan.test.mjs
+  New focused regression tests for the bounded registry scan.
+
+BEHAVIOUR PRESERVED
+-------------------
+- Existing imported GLBs and source asset files are unchanged.
+- Imported-model preparation still computes valid geometry bounds once and
+  leaves frustum culling enabled.
+- The existing 450 ms mobile / 250 ms desktop repair cadence remains unchanged.
+- Existing model-pool sizes, building caps, traffic, passenger scenes, road
+  markings, procedural environment, collisions, controls, missions, and saved
+  progress are not intentionally changed.
+- The player keke, live traffic actors, environment ground-details and pothole
+  GLB surfaces are explicitly included in the root registry.
+
+INSTALL
+-------
+1. Open the downloaded ZIP and copy its js/KanoGameplayPresentationRepair.js
+   into the matching js folder of the existing kano-run project, replacing the
+   old file with this complete file.
+2. Optionally copy tests/KanoMobileGlbRegistryScan.test.mjs into the project's
+   tests folder. It is only for regression testing and is not loaded by the game.
+3. Do not replace main.js, renderer3d.js, index.html, assets, or other files for
+   this update.
+
+VALIDATION PERFORMED HERE
 -------------------------
-- node --check passed for main.js and KanoGameplayPresentationRepair.js.
-- Focused regression checks passed (5/5).
+- JavaScript syntax checks passed for main.js and
+  KanoGameplayPresentationRepair.js.
+- The Step 23 mobile GLB budget tests plus the Step 24 tests passed: 9/9.
 - ZIP integrity check passed.
-- The full project suite and physical-phone GPU performance were not run.
+- The available project test snapshot reported 85/88 passing. Three failures
+  are outside this change: the bundled GLB catalog test expects exports absent
+  from scripts/glb-catalog-sync.mjs; the world-performance test expects a
+  different main.js import order; and the root-cause test expects a different
+  version of js/KanoLifeRootCauseRepair.js. These failures were not changed
+  by this package.
+- Full browser playback and physical-device performance were not measured here.

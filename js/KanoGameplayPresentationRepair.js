@@ -5143,13 +5143,49 @@ function kanoRepairBuildingSlotTransform(renderer, slot) {
   }
 }
 
+const KANO_GLB_VISIBILITY_MARKERS = [
+  'modelPath',
+  'kanoEnvironmentAsset',
+  'kanoExistingEnvironmentGlb',
+  'kanoPotholeGlb',
+  'kanoWorldGlbActive',
+  'flyoverModel',
+  'roadPropKey',
+  'lifeSceneModel',
+];
+
+function kanoIsMarkedGlbRoot(root) {
+  const data = root?.userData;
+  return Boolean(root?.isObject3D && data
+    && KANO_GLB_VISIBILITY_MARKERS.some((key) => Boolean(data[key])));
+}
+
+// Inspect only known scene roots and at most two child levels. Imported models
+// are registered in renderer collections when promoted, so a recursive scan of
+// every road mesh is unnecessary. GLB preparation itself remains recursive but
+// happens only once per imported model root.
+function kanoPrepareMarkedGlbChildren(group, prepare) {
+  for (const child of group?.children || []) {
+    if (kanoIsMarkedGlbRoot(child)) prepare(child);
+    for (const nested of child?.children || []) {
+      if (kanoIsMarkedGlbRoot(nested)) prepare(nested);
+    }
+  }
+}
+
+function kanoPrepareMarkedGlbCollection(collection, prepare) {
+  for (const item of collection || []) {
+    const root = item?.actor || item;
+    if (kanoIsMarkedGlbRoot(root)) prepare(root);
+  }
+}
+
 function kanoRepairRendererGlbVisibility(renderer) {
   if (!renderer || renderer.disposed) return;
 
-  // upgradeWorldAssets() is called from Renderer3D.draw(). A repair pass used
-  // to traverse the road, every life diorama and the garage on every frame,
-  // repeatedly overriding distance-based visibility. Scan at a controlled
-  // cadence and only inspect the scene that is currently active.
+  // The renderer's draw loop calls upgradeWorldAssets() every frame. Keep this
+  // repair on its existing cadence, but use the renderer's live asset registries
+  // instead of walking every mesh under world/garage/life groups.
   const now = globalThis.performance?.now?.() ?? Date.now();
   const interval = renderer.mobile ? 450 : 250;
   const previousPass = renderer.__kanoGlbVisibilityLastPassAtMs;
@@ -5177,44 +5213,43 @@ function kanoRepairRendererGlbVisibility(renderer) {
         prepare(slot.actor);
         kanoRepairBuildingSlotTransform(renderer, slot);
       }
-      for (const list of [renderer.flyovers, renderer.streetLights, renderer.pedestrians, renderer.roadProps]) {
-        for (const item of list || []) {
-          const root = item?.actor || item;
-          if (root?.userData?.modelPath || root?.userData?.kanoEnvironmentAsset) prepare(root);
-        }
+
+      kanoPrepareMarkedGlbCollection(renderer.flyovers, prepare);
+      kanoPrepareMarkedGlbCollection(renderer.streetLights, prepare);
+      kanoPrepareMarkedGlbCollection(renderer.pedestrians, prepare);
+      kanoPrepareMarkedGlbCollection(renderer.roadProps, prepare);
+      kanoPrepareMarkedGlbCollection(renderer.trafficActors?.values?.(), prepare);
+      prepare(renderer.player);
+
+      // Ground/environment details are kept in their own instance list. Pothole
+      // GLBs are children of zone actors, so inspect just those known actors.
+      const environmentState = kanoEnvironmentStates.get(renderer);
+      for (const detail of environmentState?.details || []) prepare(detail.object);
+      for (const actor of renderer.zoneActors?.values?.() || []) {
+        kanoPrepareMarkedGlbChildren(actor, prepare);
       }
-      renderer.world?.traverse?.((node) => {
-        if (!node?.userData) return;
-        const hasGLB = Boolean(node.userData.modelPath || node.userData.kanoEnvironmentAsset
-          || node.userData.kanoExistingEnvironmentGlb || node.userData.kanoPotholeGlb
-          || node.userData.kanoWorldGlbActive || node.userData.flyoverModel
-          || node.userData.roadPropKey || node.userData.lifeSceneModel);
-        if (hasGLB && node.isObject3D) prepare(node);
-      });
+
+      // Keep a shallow catch-all for existing GLBs not represented by a slot.
+      // This examines top-level world entries and their direct children only.
+      kanoPrepareMarkedGlbChildren(renderer.world, prepare);
     } else if (activeScene === 'garage' && renderer.garageGroup?.visible !== false) {
-      for (const item of renderer.garageVehicleSlots || []) {
-        const root = item?.actor || item;
-        if (root?.userData?.modelPath || root?.userData?.kanoEnvironmentAsset) prepare(root);
-      }
-      renderer.garageGroup?.traverse?.((node) => {
-        if (node?.userData?.modelPath && node.isObject3D) prepare(node);
-      });
+      kanoPrepareMarkedGlbCollection(renderer.garageVehicleSlots, prepare);
+      prepare(renderer.player);
+      prepare(renderer.securityActor);
+      kanoPrepareMarkedGlbChildren(renderer.garageGroup, prepare);
     } else if (activeScene !== 'road' && activeScene !== 'garage') {
       for (const item of renderer.lifeAssetSlots || []) {
         if (item?.sceneName !== activeScene) continue;
-        const root = item?.actor || item;
-        if (root?.userData?.modelPath || root?.userData?.kanoEnvironmentAsset) prepare(root);
+        prepare(item?.actor || item);
       }
       const activeGroup = renderer.lifeSceneGroups?.get?.(activeScene);
       if (activeGroup?.visible !== false) {
-        activeGroup?.traverse?.((node) => {
-          if (node?.userData?.modelPath && node.isObject3D) prepare(node);
-        });
+        kanoPrepareMarkedGlbChildren(activeGroup, prepare);
       }
     }
   } catch (error) {
     kanoGlbVisibilityStats.errors.push({
-      path: '(active-scene traversal)',
+      path: '(active-scene root registry)',
       stage: 'visibility-pass',
       message: error?.message || String(error),
     });
