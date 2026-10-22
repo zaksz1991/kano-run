@@ -1,42 +1,23 @@
-KANO LIFE — STEP 16: MOBILE REMAINING STANDARD-SHADER FIX
+KANO LIFE — STEP 17: MOBILE DISTANCE-CULLING CPU BUDGET
 
-REPLACE ONLY:
-  kano-run/js/renderer3d.js
+Included files (complete files, existing paths preserved):
+- kano-run/js/renderer3d.js
+- kano-run/tests/KanoMobileDistanceCullingCadence.test.mjs
+- kano-run/tests/KanoMobileFogHorizonCulling.test.mjs
+- kano-run/tests/KanoMobileRemainingStandardShaders.test.mjs
 
-OPTIONAL REGRESSION TEST INCLUDED:
-  kano-run/tests/KanoMobileRemainingStandardShaders.test.mjs
+WHAT CHANGED
+The mobile fog-distance visibility pass now runs at most once every 100 ms instead of scanning all scenery collections on every game render frame. It also avoids allocating a new closure each pass and avoids redundant Object3D.visible writes.
 
-WHY:
-The previous mobile shader optimization used the tier-aware material factory
-for most procedural scenery, but several important paths still explicitly
-created MeshStandardMaterial instances: the large instanced road kerbs, repeated
-flyover stripes, life-scene procedural boxes, and transparent roadside/checkpoint
-pads. These paths bypassed the mobile Lambert material budget.
+WHAT DID NOT CHANGE
+- The normal render loop and game simulation cadence
+- Keke handling, collisions, traffic logic, missions and zones
+- Model, texture and audio assets
+- Mobile render resolution and current mobile shader choices
+- Desktop distance culling (this pass remains mobile-only)
 
-CHANGES:
-- Road kerbs and flyover stripes now use this.material(), which selects cheaper
-  Lambert shading on phones while keeping Standard shading on desktop.
-- Procedural boxes in the optional life scenes use the same tier-aware factory.
-  Any supplied materialOptions are still applied.
-- Roadside stop and checkpoint pads use the tier-aware factory while preserving
-  their transparency and opacity.
-- Player keke glass and fallback traffic window materials retain their authored
-  transparent Standard-shader appearance.
-- No assets are removed or changed. No driving physics, renderer selection,
-  missions, traffic simulation, collision behaviour, or resolution settings are
-  modified.
+INSTALL
+Copy the complete kano-run/js/renderer3d.js file to the same location in your existing project. This replacement is based on the prior mobile-rendering optimization package and retains its changes. The test files are optional validation artifacts and do not need to be copied for the game to run.
 
-INSTALL:
-Copy the complete renderer3d.js over the matching file. Keep all other source
-files and model, texture, and audio assets unchanged. The test file is optional;
-no test command is requested from the project owner.
-
-VALIDATION PERFORMED HERE:
-- Five focused source regression tests passed.
-- renderer3d.js passed module syntax parsing.
-- ZIP integrity check passed.
-
-LIMITATION:
-This verifies source structure only. No physical-phone benchmark was run, so
-this is a targeted shader-path correction and not a claim that mobile FPS is
-already fixed.
+VALIDATION NOTE
+Focused static regression checks and syntax checks are run on the packaged files before delivery. This does not establish real-phone frame rate or guarantee that all current local edits are represented. Keep a copy of the current file before replacing it.

@@ -19,6 +19,14 @@ const VEHICLE_MODEL_KEY = {
  * Safely disposes resources owned by a scene subtree.
  * Cached GLB geometry must not be disposed while shared by other actors.
  */
+function updateMobileActorDistanceVisibility(actor, limit, cameraZ) {
+  if (!actor?.position) return;
+
+  const shouldBeVisible = Math.abs(actor.position.z - cameraZ) <= limit;
+  // Avoid redundant Object3D.visible writes on every visibility pass.
+  if (actor.visible !== shouldBeVisible) actor.visible = shouldBeVisible;
+}
+
 function disposeSceneTree(root, { disposeTextures = false } = {}) {
   if (!root) return;
 
@@ -114,6 +122,9 @@ export class Renderer3D {
     this._activeZoneIds = new Set();
     this._nextMobileWorldAssetUpgradeAt = 0;
     this._nextMobilePedestrianUpgradeAt = 0;
+    // Distance visibility is a low-frequency presentation task, not part of
+    // per-frame movement or collision simulation.
+    this._nextMobileDistanceCullAt = 0;
     this._mobileTrafficCandidateScratch = [];
     this._mobileTrafficTypeScratch = new Set();
     this.zoneActors = new Map();
@@ -3925,6 +3936,13 @@ export class Renderer3D {
   updateMobileDistanceCulling() {
     if (!this.mobile || !this.camera || !this.scene?.fog) return;
 
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    if (now < this._nextMobileDistanceCullAt) return;
+    // Ten passes per second are sufficient for scenery visibility; movement,
+    // physics, collisions and the actual render loop continue at their normal
+    // cadence. This avoids scanning every scenery collection on every frame.
+    this._nextMobileDistanceCullAt = now + 100;
+
     const cameraZ = Number(this.camera.position.z) || 0;
     const fogFar = Math.max(65, Number(this.scene.fog.far) || 105);
     // At this point the fog has concealed most detail. Cutting hidden objects
@@ -3932,27 +3950,22 @@ export class Renderer3D {
     const horizon = Math.min(100, fogFar * 0.90);
     const pedestrianHorizon = horizon * 0.76;
 
-    const updateVisibility = (actor, limit) => {
-      if (!actor?.position) return;
-      actor.visible = Math.abs(actor.position.z - cameraZ) <= limit;
-    };
-
     for (const slot of this.buildingSlots) {
-      updateVisibility(slot.actor, horizon);
+      updateMobileActorDistanceVisibility(slot.actor, horizon, cameraZ);
     }
     for (const pedestrian of this.pedestrians) {
-      updateVisibility(pedestrian.actor, pedestrianHorizon);
+      updateMobileActorDistanceVisibility(pedestrian.actor, pedestrianHorizon, cameraZ);
     }
     for (const pole of this.streetLights) {
-      updateVisibility(pole, horizon);
+      updateMobileActorDistanceVisibility(pole, horizon, cameraZ);
     }
     for (const slot of this.roadProps) {
-      updateVisibility(slot.actor, horizon);
+      updateMobileActorDistanceVisibility(slot.actor, horizon, cameraZ);
     }
     // Flyovers are distinctive landmarks; retain them slightly farther than
     // other scenery, but never beyond the actual mobile fog horizon.
     for (const flyover of this.flyovers) {
-      updateVisibility(flyover, Math.min(110, fogFar));
+      updateMobileActorDistanceVisibility(flyover, Math.min(110, fogFar), cameraZ);
     }
   }
 
