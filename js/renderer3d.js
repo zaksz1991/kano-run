@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
+import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -298,6 +299,9 @@ export class Renderer3D {
     );
     curbMesh.name = 'KANO_INSTANCED_BLACK_WHITE_KERBS';
     curbMesh.userData.kanoRoadKerbs = true;
+    // The pattern spans the full road loop and its instance transforms recycle.
+    // A permanently valid static frustum bound is therefore not available.
+    curbMesh.frustumCulled = false;
     curbMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     const curbColor = new THREE.Color();
     for (let index = 0; index < curbRecords.length; index += 1) {
@@ -332,6 +336,7 @@ export class Renderer3D {
     );
     laneDashMesh.name = 'KANO_INSTANCED_LANE_MARKINGS';
     laneDashMesh.userData.kanoLaneDashInstancing = true;
+    laneDashMesh.frustumCulled = false;
     laneDashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     for (let index = 0; index < laneDashRecords.length; index += 1) {
       const record = laneDashRecords[index];
@@ -4121,33 +4126,25 @@ export class Renderer3D {
     // --------------------------------------------------------
 
     if (this.curbInstanced) {
-      for (let index = 0; index < this.curbRecords.length; index += 1) {
-        const record = this.curbRecords[index];
-        record.z += scroll;
-        if (record.z > 8) record.z -= 250;
-        else if (record.z < -250) record.z += 250;
-        this.curbObject.position.set(record.x, 0.08, record.z);
-        this.curbObject.rotation.set(0, 0, 0);
-        this.curbObject.scale.set(1, 1, 1);
-        this.curbObject.updateMatrix();
-        this.curbInstanced.setMatrixAt(index, this.curbObject.matrix);
-      }
-      this.curbInstanced.instanceMatrix.needsUpdate = true;
+      advanceInstancedRoadPattern({
+        mesh: this.curbInstanced,
+        records: this.curbRecords,
+        scroll,
+        scratch: this.curbObject,
+        y: 0.08,
+        rotationX: 0,
+      });
     }
 
     if (this.laneDashInstanced) {
-      for (let index = 0; index < this.laneDashRecords.length; index += 1) {
-        const record = this.laneDashRecords[index];
-        record.z += scroll;
-        if (record.z > 8) record.z -= 250;
-        else if (record.z < -250) record.z += 250;
-        this.laneDashObject.position.set(record.x, 0.028, record.z);
-        this.laneDashObject.rotation.set(-Math.PI / 2, 0, 0);
-        this.laneDashObject.scale.set(1, 1, 1);
-        this.laneDashObject.updateMatrix();
-        this.laneDashInstanced.setMatrixAt(index, this.laneDashObject.matrix);
-      }
-      this.laneDashInstanced.instanceMatrix.needsUpdate = true;
+      advanceInstancedRoadPattern({
+        mesh: this.laneDashInstanced,
+        records: this.laneDashRecords,
+        scroll,
+        scratch: this.laneDashObject,
+        y: 0.028,
+        rotationX: -Math.PI / 2,
+      });
     } else {
       for (const dash of this.laneDashes) {
         dash.position.z += scroll;
