@@ -1,54 +1,29 @@
-KANO LIFE — STEP 24: GLB VISIBILITY SCAN COST FIX
+KANO LIFE / KANO RUN — STEP 25
+Kano roadside set and visual clarity update
 
-PURPOSE
--------
-Reduce periodic CPU work from model visibility repair, especially on mobile.
-The old repair pass recursively traversed every object under the road, garage,
-and active life-scene group every 450 ms on mobile. The updated pass uses the
-existing renderer registries (building slots, traffic actors, pedestrians,
-road props, environment detail instances, pothole-zone actors, the active keke,
-and garage/life-scene slots). A shallow direct-child scan remains as a fallback
-for unregistered roots.
+CONTENTS
+  js/renderer3d.js                 Complete replacement renderer file
+  tests/kano-roadside-set.test.mjs Focused regression tests for this update
+  TEST-STATUS.txt                  Validation results and known suite failures
 
-PACKAGE CONTENTS
-----------------
-- js/KanoGameplayPresentationRepair.js
-  Complete replacement file. No chunk edits are required.
-- tests/KanoMobileGlbRegistryScan.test.mjs
-  New focused regression tests for the bounded registry scan.
+WHAT CHANGED
+- Adds instanced neem trees on both sides of the road.
+- Adds repeating black-and-white concrete roadside divider segments with diagonal stripes.
+- Adds a second rider to motorcycle traffic for a two-rider achaba look, reusing cached rider geometry.
+- Adds a detailed procedural Kano police pickup fallback when only a generic police-car model is available.
+- Gives the procedural minibus/Hiace fallback a row of side windows, pillars, a green belt stripe, and a raised roof edge.
+- Checks the cached model path before cloning unsuitable police/bus models, avoiding disposal of a clone that may share cached GLB resources.
+- Corrects optional asphalt and market-stall texture paths to /assets/models/environment/ground/.
+- Lightens the night sky/fog and keeps the harmattan sky pale.
+- Uses instanced meshes and recycling loops for repeated trees/dividers to limit added draw calls and avoid growing the scene indefinitely.
 
-BEHAVIOUR PRESERVED
--------------------
-- Existing imported GLBs and source asset files are unchanged.
-- Imported-model preparation still computes valid geometry bounds once and
-  leaves frustum culling enabled.
-- The existing 450 ms mobile / 250 ms desktop repair cadence remains unchanged.
-- Existing model-pool sizes, building caps, traffic, passenger scenes, road
-  markings, procedural environment, collisions, controls, missions, and saved
-  progress are not intentionally changed.
-- The player keke, live traffic actors, environment ground-details and pothole
-  GLB surfaces are explicitly included in the root registry.
+INSTALLATION
+1. Extract this ZIP into the root of your existing kano-run project, keeping the folders shown in the ZIP.
+2. Allow the existing js/renderer3d.js file to be overwritten.
+3. Keep tests/kano-roadside-set.test.mjs as an added test file.
 
-INSTALL
--------
-1. Open the downloaded ZIP and copy its js/KanoGameplayPresentationRepair.js
-   into the matching js folder of the existing kano-run project, replacing the
-   old file with this complete file.
-2. Optionally copy tests/KanoMobileGlbRegistryScan.test.mjs into the project's
-   tests folder. It is only for regression testing and is not loaded by the game.
-3. Do not replace main.js, renderer3d.js, index.html, assets, or other files for
-   this update.
+This update intentionally replaces one runtime file and adds one test file. It does not replace main.js, game.js, CSS, or other life-sim/interaction files. Apply it on top of the latest audit-fix code so your separate day-cycle, breakfast, pickup-interaction, and HUD fixes remain in place.
 
-VALIDATION PERFORMED HERE
--------------------------
-- JavaScript syntax checks passed for main.js and
-  KanoGameplayPresentationRepair.js.
-- The Step 23 mobile GLB budget tests plus the Step 24 tests passed: 9/9.
-- ZIP integrity check passed.
-- The available project test snapshot reported 85/88 passing. Three failures
-  are outside this change: the bundled GLB catalog test expects exports absent
-  from scripts/glb-catalog-sync.mjs; the world-performance test expects a
-  different main.js import order; and the root-cause test expects a different
-  version of js/KanoLifeRootCauseRepair.js. These failures were not changed
-  by this package.
-- Full browser playback and physical-device performance were not measured here.
+LIMITATIONS
+- The new neem trees, dividers, police pickup, and minibus are stylized procedural 3D fallbacks; this ZIP does not include new external GLB assets or reproduce real photographs pixel-for-pixel.
+- No browser screenshot comparison or physical-phone frame-rate test was available in this run.

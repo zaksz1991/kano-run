@@ -1,0 +1,15 @@
+STEP 25 VALIDATION
+
+PASS: node --check js/renderer3d.js
+PASS: focused roadside set tests: 7/7
+PASS: existing static checks: 10/10
+
+FULL PROJECT TEST SUITE
+83 passed, 3 failed (86 total).
+The three failures are existing issues outside this roadside change:
+1. tests/glb-catalog-sync.test.mjs cannot import patchModelManagerVariants because scripts/glb-catalog-sync.mjs does not export it.
+2. The root-cause/GLB script order regression check disagrees with the current refactored integration.
+3. The root-cause repair test expects a previous filename-bound heuristic that is no longer present.
+
+BUILD / VISUAL VALIDATION
+A Vite build was not run successfully because dependencies are not installed in this working copy (vite executable unavailable). No browser render or physical phone benchmark is claimed.
