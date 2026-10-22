@@ -25,9 +25,11 @@ export function getMobileRatios(tier) {
  * roughly 50–65% of pixel shading compared with the previous startup values.
  */
 export function getMobileRenderBudget(tier) {
-  if (tier === 'high') return { max: 0.9, start: 0.72, min: 0.4 };
-  if (tier === 'mid') return { max: 0.78, start: 0.6, min: 0.36 };
-  return { max: 0.66, start: 0.5, min: 0.32 };
+  // Mobile Lite profile: do not render at native DPR on phones. Even a high
+  // tier phone starts well below CSS resolution and can step down under load.
+  if (tier === 'high') return { max: 0.58, start: 0.48, min: 0.30 };
+  if (tier === 'mid') return { max: 0.50, start: 0.40, min: 0.25 };
+  return { max: 0.44, start: 0.34, min: 0.22 };
 }
 
 
@@ -36,7 +38,9 @@ export function getMobileRenderBudget(tier) {
  * models. The player's own keke and gameplay collision simulation are unaffected.
  */
 export function getMobileTrafficModelBudget(tier) {
-  if (tier === 'high') return 3;
-  if (tier === 'mid') return 2;
-  return 1;
+  // Imported traffic meshes are still drawn as many separate material groups.
+  // Keep most mobile traffic procedural; the player's own keke remains GLB-backed.
+  if (tier === 'high') return 1;
+  if (tier === 'mid') return 1;
+  return 0;
 }

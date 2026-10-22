@@ -103,7 +103,10 @@ function reconcileModelledCrowd(instance, now = nowTime()) {
   instance._kanoCrowdLastReconcileAt = now;
 
   const models = instance.renderer.models;
-  const targetCount = instance.mobile ? 3 : 6;
+  // KanoInteractionReliability owns the sole real-person crowd pool. This
+  // patch still fixes procedural gait direction but must not clone a second
+  // overlapping set of GLB pedestrians.
+  const targetCount = 0;
   instance._kanoCrowdModelPool ||= new Map();
   instance._kanoModelledWalkerIndices ||= new Set();
   const pool = instance._kanoCrowdModelPool;
@@ -200,6 +203,14 @@ function patchedUpdateCrowdMatrices() {
     typeof this.writeMatrix !== 'function'
   ) {
     return;
+  }
+
+  // Road actor positions still advance every frame; only the decorative arm/
+  // leg matrix uploads are capped to 15 Hz on mobile to reduce main-thread work.
+  if (this.mobile) {
+    const now = nowTime();
+    if (now - (this._kanoCrowdMatricesAt || 0) < 1000 / 15) return;
+    this._kanoCrowdMatricesAt = now;
   }
 
   reconcileModelledCrowd(this);

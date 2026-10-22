@@ -9,9 +9,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8');
 
 test('mobile traffic model pool is capped by device tier', () => {
-  assert.equal(getMobileTrafficModelBudget('low'), 1);
-  assert.equal(getMobileTrafficModelBudget('mid'), 2);
-  assert.equal(getMobileTrafficModelBudget('high'), 3);
+  assert.equal(getMobileTrafficModelBudget('low'), 0);
+  assert.equal(getMobileTrafficModelBudget('mid'), 1);
+  assert.equal(getMobileTrafficModelBudget('high'), 1);
 });
 
 test('all lane markings use one InstancedMesh instead of individual Mesh draw calls', () => {
@@ -27,7 +27,9 @@ test('mobile traffic uses stable, bounded imported GLB instances with procedural
   assert.match(renderer, /getMobileTrafficModelBudget\(this\.mobileTier\)/);
   assert.match(renderer, /this\._mobileGlbTrafficIds/);
   assert.match(renderer, /makeTrafficActor\(vehicle, \{ allowGLB \}/);
-  assert.match(renderer, /actor\.visible = !this\.mobile \|\| depth <= 2\.65/);
+  assert.match(renderer, /actor\.visible = !this\.mobile \|\| depth <= 1\.35/);
+  assert.match(renderer, /makeTrafficKeke\(\)/);
+  assert.match(renderer, /simplifiedTrafficKeke/);
 });
 
 test('mobile keeps procedural flyover and lightweight props while preserving market-stall GLBs', () => {

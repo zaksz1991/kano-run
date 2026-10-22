@@ -17,9 +17,9 @@ test('actual phone render budgets cut pixel shading while preserving the publish
     assert.ok(budget.min <= budget.start && budget.start <= budget.max, tier);
     assert.ok(budget.start < getMobileRatios(tier).start, `${tier} must start below the former pixel ratio`);
   }
-  assert.deepEqual(getMobileRenderBudget('low'), { max: 0.66, start: 0.5, min: 0.32 });
-  assert.deepEqual(getMobileRenderBudget('mid'), { max: 0.78, start: 0.6, min: 0.36 });
-  assert.deepEqual(getMobileRenderBudget('high'), { max: 0.9, start: 0.72, min: 0.4 });
+  assert.deepEqual(getMobileRenderBudget('low'), { max: 0.44, start: 0.34, min: 0.22 });
+  assert.deepEqual(getMobileRenderBudget('mid'), { max: 0.50, start: 0.40, min: 0.25 });
+  assert.deepEqual(getMobileRenderBudget('high'), { max: 0.58, start: 0.48, min: 0.30 });
 });
 
 test('procedural flyover stripes use one InstancedMesh instead of dozens of stripe meshes', () => {

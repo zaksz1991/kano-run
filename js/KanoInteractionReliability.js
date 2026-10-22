@@ -5,8 +5,8 @@ const MOVE_ZONES_PATCH = Symbol.for('kano.life.stopped-roadside-interaction.v1')
 const CHARACTER_PATCH = Symbol.for('kano.life.late-character-fallback.v2');
 const SCENE_ANIMATION_PATCH = Symbol.for('kano.life.scene-animation-transform-fix.v2');
 const REAL_CROWD_CHARACTER_KEYS = ['pedestrianWoman', 'pedestrian', 'passengerWoman', 'passengerMan', 'passenger', 'passengerVIP'];
-const MOBILE_REAL_CROWD_COUNT = 6;
-const DESKTOP_REAL_CROWD_COUNT = 10;
+const MOBILE_REAL_CROWD_COUNT = 2;
+const DESKTOP_REAL_CROWD_COUNT = 5;
 const REAL_CROWD_ASSET_WAIT_SECONDS = 8;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const ROADSIDE_INTERACTION_DEPTH_OFFSET = 0.12;
@@ -206,21 +206,6 @@ export function getInteractionAdvice(state, gameStatus = 'PLAY') {
   }
   const label = ZONE_LABELS[zone.type];
   if (!label) return null;
-
-  // Do not coach the player to line up for a pickup the game will refuse.
-  if (zone.type === 'pickup' && Number.isFinite(Number(state.capacity)) && Array.isArray(state.passengers)) {
-    const occupied = state.passengers.reduce((total, passenger) => total + (Number(passenger?.seats) || 1), 0);
-    const seatsNeeded = zone.hub ? 2 : 1;
-    if (Number(state.capacity) - occupied < seatsNeeded) {
-      return {
-        type: 'full',
-        zone,
-        message: zone.hub ? 'CHECKPOINT AHEAD · NOT ENOUGH SEATS' : 'KEKE FULL · DROP A PASSENGER FIRST',
-        detail: 'This pickup cannot board until seats are free.',
-      };
-    }
-  }
-
   const speed = Math.max(0, Number(state.speed) || 0);
   const reversing = Boolean(state.reverse) || (Number(state.signedSpeed) || 0) < -0.05;
   if (reversing) {
@@ -334,8 +319,16 @@ function installCharacterFallbacks(renderer) {
   rememberPatch('upgradePedestrians', (original) => function upgradePedestriansWithBestAvailableModel(...args) {
     const result = original.apply(this, args);
     const models = this.models;
+    const phoneBudget = this.mobile ? 1 : Infinity;
+    let modelledCount = (this.pedestrians || []).reduce((count, pedestrian) =>
+      count + (pedestrian?.usingModel && pedestrian?.actor?.userData?.modelManagerInstance ? 1 : 0), 0);
+
     for (const pedestrian of this.pedestrians || []) {
       if (!pedestrian?.actor || !models?.cache?.has) continue;
+      const currentIsModel = Boolean(
+        pedestrian.usingModel && pedestrian.actor.userData?.modelManagerInstance,
+      );
+      if (this.mobile && !currentIsModel && modelledCount >= phoneBudget) continue;
       const keys = Number(pedestrian.index) % 2 === 0
         ? AMBIENT_CHARACTER_KEYS
         : ['pedestrian', 'passengerMan', 'passenger', 'pedestrianWoman', 'passengerWoman', 'passengerVIP'];
@@ -355,6 +348,7 @@ function installCharacterFallbacks(renderer) {
       replacement.rotation.y = pedestrian.side < 0 ? Math.PI / 2 : -Math.PI / 2;
       pedestrian.actor = replacement;
       pedestrian.usingModel = true;
+      if (this.mobile && !currentIsModel) modelledCount += 1;
     }
     return result;
   });

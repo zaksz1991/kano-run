@@ -81,14 +81,14 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
-    this.scene.fog = new THREE.Fog(0x8ccde5, 48, 195);
+    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 24 : 48, mobile ? 105 : 195);
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, 260);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 125 : 260);
     this.camera.position.set(0, 3.85, 10.5);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: !mobile || getMobileTier() === 'high',
+      antialias: !mobile,
       alpha: false,
       powerPreference: 'high-performance',
       failIfMajorPerformanceCaveat: false,
@@ -2000,16 +2000,17 @@ export class Renderer3D {
       'passenger',
     ];
 
-    // GLB human rigs are comparatively expensive on phone GPUs. Keep two
-    // foreground GLB pedestrians at most; the surrounding crowd remains
-    // populated by lightweight instanced silhouettes.
+    // Full GLB walkers are limited because KanoInteractionReliability also
+    // upgrades crowd actors. Most roadside walkers remain animated procedural
+    // characters, avoiding a large pile of duplicated skinned meshes on phones.
     let mobileModelledCount = this.mobile
       ? this.pedestrians.reduce((count, pedestrian) => count + (pedestrian.usingModel ? 1 : 0), 0)
       : 0;
+    const mobilePedestrianBudget = this.mobile ? 1 : Infinity;
 
     for (const pedestrian of this.pedestrians) {
       if (pedestrian.usingModel) continue;
-      if (this.mobile && mobileModelledCount >= 2) continue;
+      if (this.mobile && mobileModelledCount >= mobilePedestrianBudget) continue;
 
       const modelKey =
         characterKeys[pedestrian.index % characterKeys.length];
@@ -2500,6 +2501,71 @@ export class Renderer3D {
     this.camera.updateProjectionMatrix();
   }
 
+  /**
+   * Lightweight traffic-only Adaidaita Sahu. The player keeps the full keke;
+   * this fallback uses shared low-poly geometry so a busy road does not create
+   * dozens of separately tessellated meshes for every background keke.
+   */
+  makeTrafficKeke() {
+    if (!this._mobileTrafficKekeGeometry) {
+      this._mobileTrafficKekeGeometry = {
+        body: new THREE.BoxGeometry(1.12, 0.48, 1.55),
+        nose: new THREE.BoxGeometry(0.82, 0.25, 0.38),
+        roof: new THREE.BoxGeometry(1.12, 0.10, 1.18),
+        post: new THREE.BoxGeometry(0.055, 0.66, 0.055),
+        glass: new THREE.BoxGeometry(0.78, 0.42, 0.035),
+        wheel: new THREE.CylinderGeometry(0.19, 0.19, 0.11, 8),
+        bumper: new THREE.BoxGeometry(0.82, 0.07, 0.08),
+      };
+    }
+
+    const group = new THREE.Group();
+    group.name = 'KANO_LIGHTWEIGHT_TRAFFIC_KEKE';
+    // disposeSceneTree must not release renderer-shared geometry when traffic
+    // actors leave the active pool. Their per-actor materials remain disposable.
+    group.userData.sharedGeometry = true;
+    group.userData.simplifiedTrafficKeke = true;
+
+    const colors = {
+      body: new THREE.MeshLambertMaterial({ color: 0xf1c52f, flatShading: true }),
+      nose: new THREE.MeshLambertMaterial({ color: 0xdba91f, flatShading: true }),
+      roof: new THREE.MeshLambertMaterial({ color: 0x205b40, flatShading: true }),
+      frame: new THREE.MeshLambertMaterial({ color: 0x183b30, flatShading: true }),
+      glass: new THREE.MeshLambertMaterial({ color: 0x8cc9d4, transparent: true, opacity: 0.72, flatShading: true }),
+      rubber: new THREE.MeshLambertMaterial({ color: 0x15191b, flatShading: true }),
+      bumper: new THREE.MeshLambertMaterial({ color: 0x333b3d, flatShading: true }),
+    };
+
+    const add = (geometryName, materialName, position, rotation = null) => {
+      const mesh = new THREE.Mesh(
+        this._mobileTrafficKekeGeometry[geometryName],
+        colors[materialName],
+      );
+      mesh.position.set(position[0], position[1], position[2]);
+      if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      group.add(mesh);
+      return mesh;
+    };
+
+    add('body', 'body', [0, 0.67, 0.05]);
+    add('nose', 'nose', [0, 0.68, -0.83]);
+    add('roof', 'roof', [0, 1.48, 0.08]);
+    add('glass', 'glass', [0, 1.15, -0.49]);
+    add('bumper', 'bumper', [0, 0.43, -1.02]);
+
+    for (const x of [-0.49, 0.49]) {
+      for (const z of [-0.46, 0.59]) add('post', 'frame', [x, 1.10, z]);
+    }
+
+    for (const [x, z] of [[0, -0.68], [-0.55, 0.48], [0.55, 0.48]]) {
+      add('wheel', 'rubber', [x, 0.20, z], [0, 0, Math.PI / 2]);
+    }
+
+    return group;
+  }
+
   makeTrafficActor(vehicle, { allowGLB = true } = {}) {
     const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
     const model = allowGLB ? this.models?.getInstance(key) : null;
@@ -2510,7 +2576,7 @@ export class Renderer3D {
     }
 
     if (vehicle.type === 'keke') {
-      const keke = this.makeKeke();
+      const keke = this.mobile ? this.makeTrafficKeke() : this.makeKeke();
       keke.userData.fallback = true;
       return keke;
     }
@@ -3221,7 +3287,7 @@ export class Renderer3D {
       // Distant traffic past the camera/fog budget stays simulated but is not
       // drawn. Gameplay/collision data is untouched.
       const depth = Math.abs(Number(vehicle.depth) || 0);
-      actor.visible = !this.mobile || depth <= 2.65;
+      actor.visible = !this.mobile || depth <= 1.35;
       actor.position.set(
         (vehicle.lane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
         0,
@@ -3423,11 +3489,13 @@ export class Renderer3D {
           : 0x8ccde5,
     );
 
-    this.scene.fog.near =
-      state.environment === 'harmattan' ? 18 : 48;
+    this.scene.fog.near = this.mobile
+      ? (state.environment === 'harmattan' ? 14 : 24)
+      : (state.environment === 'harmattan' ? 18 : 48);
 
-    this.scene.fog.far =
-      state.environment === 'harmattan' ? 100 : 195;
+    this.scene.fog.far = this.mobile
+      ? (state.environment === 'harmattan' ? 70 : 105)
+      : (state.environment === 'harmattan' ? 100 : 195);
 
     // --------------------------------------------------------
     // PLAYER POSITION AND STEERING
@@ -3631,6 +3699,13 @@ export class Renderer3D {
     disposeSceneTree(this.scene, {
       disposeTextures: true,
     });
+
+    // Traffic keke actors share these low-poly geometries between instances;
+    // they are intentionally skipped by disposeSceneTree and released here.
+    for (const geometry of Object.values(this._mobileTrafficKekeGeometry || {})) {
+      geometry?.dispose?.();
+    }
+    this._mobileTrafficKekeGeometry = null;
 
     this.models?.dispose?.();
 
