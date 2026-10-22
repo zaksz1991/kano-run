@@ -1,30 +1,19 @@
-KANO LIFE — MOBILE BACKFACE-CULLING FIX
+KANO LIFE — STEP 5: MOBILE TRAFFIC KEKE DRAW-CALL REDUCTION
 
-Purpose
--------
-Reduce avoidable rendering work for the procedural 3D world on phones without
-lowering the rendering resolution or replacing the materials with flat shaders.
+Replace only:
+  kano-run/js/renderer3d.js
 
-Change
-------
-Only js/renderer3d.js is a replacement source file. The material() helper now
-uses THREE.FrontSide on mobile for its procedural MeshStandardMaterial surfaces.
-Desktop keeps THREE.DoubleSide unchanged. Colors, roughness, meshes, animations,
-imported GLB materials, gameplay, traffic, collision, resolution policy, and
-assets are untouched.
+Optional regression test included:
+  kano-run/tests/KanoMobileTrafficKekeBatching.test.mjs
 
-This targets solid scenery and ground planes whose outward-facing surfaces are
-intended to be seen from the road. A few intentionally double-sided textured
-sign faces use their own explicit material and remain double-sided.
+What changes:
+- Combines the procedural background mobile keke's body parts into one shared BufferGeometry with vertex colours.
+- Renders each lightweight background keke as one Mesh instead of a group of many meshes, reducing draw calls per keke.
+- Reuses the merged geometry across all fallback background keke actors.
+- Keeps the player's keke, GLB traffic budget, traffic positions, and game-side vehicle/collision simulation unchanged.
+- The translucent-looking windscreen on lightweight traffic becomes a light opaque blue surface so the merged keke can use one material and one draw call.
+- Retains the previous mobile front-face-culling change in renderer3d.js.
 
-Install
--------
-Extract the ZIP into the existing kano-run folder and replace only:
-  js/renderer3d.js
-Keep all other source files and all model, texture, and audio assets unchanged.
+No model, texture, audio or other source files are changed.
 
-Validation performed here
--------------------------
-The full replacement passed Node's JavaScript syntax check and the included
-focused source regression test. The full project test suite and physical-phone
-performance have not been run or claimed.
+Validation performed here: syntax check and focused static regression tests. This is not a physical-phone performance benchmark.

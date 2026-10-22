@@ -2581,63 +2581,99 @@ export class Renderer3D {
    * dozens of separately tessellated meshes for every background keke.
    */
   makeTrafficKeke() {
-    if (!this._mobileTrafficKekeGeometry) {
-      this._mobileTrafficKekeGeometry = {
-        body: new THREE.BoxGeometry(1.12, 0.48, 1.55),
-        nose: new THREE.BoxGeometry(0.82, 0.25, 0.38),
-        roof: new THREE.BoxGeometry(1.12, 0.10, 1.18),
-        post: new THREE.BoxGeometry(0.055, 0.66, 0.055),
-        glass: new THREE.BoxGeometry(0.78, 0.42, 0.035),
-        wheel: new THREE.CylinderGeometry(0.19, 0.19, 0.11, 8),
-        bumper: new THREE.BoxGeometry(0.82, 0.07, 0.08),
-      };
+    // Background mobile keke traffic is procedural, so combine its small body
+    // parts into one vertex-coloured geometry. The previous version produced
+    // twelve separate Mesh objects (and therefore up to twelve draw calls) for
+    // every fallback keke. Keep the shape and colours, but render it as one Mesh.
+    if (!this._mobileTrafficKekeGeometry?.merged) {
+      const parts = [
+        { geometry: new THREE.BoxGeometry(1.12, 0.48, 1.55), color: 0xf1c52f, position: [0, 0.67, 0.05] },
+        { geometry: new THREE.BoxGeometry(0.82, 0.25, 0.38), color: 0xdba91f, position: [0, 0.68, -0.83] },
+        { geometry: new THREE.BoxGeometry(1.12, 0.10, 1.18), color: 0x205b40, position: [0, 1.48, 0.08] },
+        { geometry: new THREE.BoxGeometry(0.78, 0.42, 0.035), color: 0x8cc9d4, position: [0, 1.15, -0.49] },
+        { geometry: new THREE.BoxGeometry(0.82, 0.07, 0.08), color: 0x333b3d, position: [0, 0.43, -1.02] },
+      ];
+
+      for (const x of [-0.49, 0.49]) {
+        for (const z of [-0.46, 0.59]) {
+          parts.push({
+            geometry: new THREE.BoxGeometry(0.055, 0.66, 0.055),
+            color: 0x183b30,
+            position: [x, 1.10, z],
+          });
+        }
+      }
+
+      for (const [x, z] of [[0, -0.68], [-0.55, 0.48], [0.55, 0.48]]) {
+        parts.push({
+          geometry: new THREE.CylinderGeometry(0.19, 0.19, 0.11, 8),
+          color: 0x15191b,
+          position: [x, 0.20, z],
+          rotation: [0, 0, Math.PI / 2],
+        });
+      }
+
+      const positions = [];
+      const normals = [];
+      const colors = [];
+      const translation = new THREE.Vector3();
+      const rotation = new THREE.Euler();
+      const scale = new THREE.Vector3(1, 1, 1);
+      const quaternion = new THREE.Quaternion();
+      const matrix = new THREE.Matrix4();
+
+      for (const part of parts) {
+        const original = part.geometry;
+        const geometry = original.index ? original.toNonIndexed() : original;
+        translation.set(...part.position);
+        rotation.set(...(part.rotation || [0, 0, 0]));
+        quaternion.setFromEuler(rotation);
+        matrix.compose(translation, quaternion, scale);
+        geometry.applyMatrix4(matrix);
+
+        if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+        const positionAttribute = geometry.getAttribute('position');
+        const normalAttribute = geometry.getAttribute('normal');
+        const color = new THREE.Color(part.color);
+
+        for (let index = 0; index < positionAttribute.count; index += 1) {
+          positions.push(
+            positionAttribute.getX(index),
+            positionAttribute.getY(index),
+            positionAttribute.getZ(index),
+          );
+          normals.push(
+            normalAttribute.getX(index),
+            normalAttribute.getY(index),
+            normalAttribute.getZ(index),
+          );
+          colors.push(color.r, color.g, color.b);
+        }
+
+        if (geometry !== original) geometry.dispose();
+        original.dispose();
+      }
+
+      const merged = new THREE.BufferGeometry();
+      merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      merged.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      merged.computeBoundingSphere();
+      this._mobileTrafficKekeGeometry = { merged };
     }
 
-    const group = new THREE.Group();
-    group.name = 'KANO_LIGHTWEIGHT_TRAFFIC_KEKE';
-    // disposeSceneTree must not release renderer-shared geometry when traffic
-    // actors leave the active pool. Their per-actor materials remain disposable.
-    group.userData.sharedGeometry = true;
-    group.userData.simplifiedTrafficKeke = true;
-
-    const colors = {
-      body: new THREE.MeshLambertMaterial({ color: 0xf1c52f, flatShading: true }),
-      nose: new THREE.MeshLambertMaterial({ color: 0xdba91f, flatShading: true }),
-      roof: new THREE.MeshLambertMaterial({ color: 0x205b40, flatShading: true }),
-      frame: new THREE.MeshLambertMaterial({ color: 0x183b30, flatShading: true }),
-      glass: new THREE.MeshLambertMaterial({ color: 0x8cc9d4, transparent: true, opacity: 0.72, flatShading: true }),
-      rubber: new THREE.MeshLambertMaterial({ color: 0x15191b, flatShading: true }),
-      bumper: new THREE.MeshLambertMaterial({ color: 0x333b3d, flatShading: true }),
-    };
-
-    const add = (geometryName, materialName, position, rotation = null) => {
-      const mesh = new THREE.Mesh(
-        this._mobileTrafficKekeGeometry[geometryName],
-        colors[materialName],
-      );
-      mesh.position.set(position[0], position[1], position[2]);
-      if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      group.add(mesh);
-      return mesh;
-    };
-
-    add('body', 'body', [0, 0.67, 0.05]);
-    add('nose', 'nose', [0, 0.68, -0.83]);
-    add('roof', 'roof', [0, 1.48, 0.08]);
-    add('glass', 'glass', [0, 1.15, -0.49]);
-    add('bumper', 'bumper', [0, 0.43, -1.02]);
-
-    for (const x of [-0.49, 0.49]) {
-      for (const z of [-0.46, 0.59]) add('post', 'frame', [x, 1.10, z]);
-    }
-
-    for (const [x, z] of [[0, -0.68], [-0.55, 0.48], [0.55, 0.48]]) {
-      add('wheel', 'rubber', [x, 0.20, z], [0, 0, Math.PI / 2]);
-    }
-
-    return group;
+    const keke = new THREE.Mesh(
+      this._mobileTrafficKekeGeometry.merged,
+      new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+    );
+    keke.name = 'KANO_LIGHTWEIGHT_TRAFFIC_KEKE';
+    keke.castShadow = false;
+    keke.receiveShadow = false;
+    // disposeSceneTree skips renderer-shared geometry but still disposes this
+    // actor's per-instance material when the traffic vehicle leaves the road.
+    keke.userData.sharedGeometry = true;
+    keke.userData.simplifiedTrafficKeke = true;
+    return keke;
   }
 
   makeTrafficActor(vehicle, { allowGLB = true } = {}) {
