@@ -42,6 +42,9 @@ const CHARACTER_FALLBACKS = {
 };
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+// Mobile scenes can add/remove actors at runtime. Rebuild the animated-root
+// inventory at 8 Hz instead of traversing every character hierarchy each frame.
+const MOBILE_ANIMATION_ROOT_DISCOVERY_INTERVAL = 0.12;
 const rand = (min, max) => min + Math.random() * (max - min);
 const choose = (items) => items[Math.floor(Math.random() * items.length)];
 
@@ -404,6 +407,8 @@ export class KanoGLBAnimationManager {
     this.clipPromises = new Map();
     this.mixers = new Map();
     this.lastActiveRoots = new Set();
+    this.cachedActiveRoots = null;
+    this.lastRootDiscoveryElapsed = -Infinity;
     this.originalGetInstance = models.getInstance;
     this.getInstanceWrapper = null;
     this.originalUpgradePedestrians = null;
@@ -753,7 +758,27 @@ export class KanoGLBAnimationManager {
     const dt = clamp(Number(deltaSeconds) || 0, 0, 0.05);
     this.elapsed += dt;
 
-    const activeRoots = this.collectAnimatedRoots();
+    // collectAnimatedRoots() walks pedestrian actors, traffic actors, roadside
+    // zone descendants and the active life scene. Doing that full inventory on
+    // every mobile frame adds CPU cost even when the scene has not changed.
+    // On phones, refresh the inventory every 120 ms; animation mixers still
+    // advance every update, and detached roots are still removed immediately
+    // by the parent check below. Desktop keeps per-frame discovery.
+    let activeRoots;
+    const shouldDiscoverRoots = !this.mobile
+      || !this.cachedActiveRoots
+      || this.elapsed - this.lastRootDiscoveryElapsed >= MOBILE_ANIMATION_ROOT_DISCOVERY_INTERVAL;
+
+    if (shouldDiscoverRoots) {
+      activeRoots = this.collectAnimatedRoots();
+      if (this.mobile) {
+        this.cachedActiveRoots = activeRoots;
+        this.lastRootDiscoveryElapsed = this.elapsed;
+      }
+    } else {
+      activeRoots = this.cachedActiveRoots;
+    }
+
     this.lastActiveRoots = new Set(activeRoots.keys());
 
     for (const [root, role] of activeRoots) {
@@ -828,6 +853,9 @@ export class KanoGLBAnimationManager {
 
     this.mixers.clear();
     this.clipPromises.clear();
+    this.cachedActiveRoots?.clear?.();
+    this.cachedActiveRoots = null;
+    this.lastActiveRoots.clear();
 
     if (this.models.getInstance === this.getInstanceWrapper) {
       this.models.getInstance = this.originalGetInstance;

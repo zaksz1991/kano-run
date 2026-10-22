@@ -1,19 +1,29 @@
-KANO LIFE — GLB CULLING + FRAME-WORK REDUCTION (STEP 2)
+KANO LIFE — MOBILE GLB ANIMATION DISCOVERY BUDGET (STEP 3)
 
-Replace only:
-  js/KanoGameplayPresentationRepair.js
+Included replacement:
+- kano-run/js/KanoAnimationTrafficUpgrade.js
 
-This is a complete replacement based on the previous Single Resolution Controller Fix. It keeps that fix and makes the GLB visibility/transform repair a one-time-per-model preparation plus a throttled active-scene scan.
+Included focused regression test:
+- kano-run/tests/KanoGLBAnimationDiscoveryBudget.test.mjs
 
-Changes:
-- Stops traversing the road, garage and every life-scene model tree on every rendered frame.
-- Mobile visibility repair scans are limited to once every 450 ms; desktop scans to once every 250 ms.
-- Hidden garage/life-scene trees are not traversed while the road scene is active, and vice versa.
-- GLB geometry preparation is cached per root; shared geometry bounds are computed once.
-- Three.js frustum culling is re-enabled instead of forcing every imported mesh to render outside the camera view.
-- The repair routine no longer forces GLB roots visible on every pass, so the adaptive LOD/scene visibility settings remain effective.
-- Includes the preceding single-resolution-controller correction; do not replace any other project file with this package.
+Change:
+On phones, the GLB animation manager no longer rebuilds the complete list of
+animated roots every rendered frame. It refreshes the inventory every 120 ms.
+Existing AnimationMixer updates remain per update for visible active roots;
+detached roots continue to be cleaned up. Desktop retains per-frame discovery.
+The cached inventory is cleared during disposal.
 
-No model, texture, audio, save, collision, mission, speed or game-loop files are changed.
+Scope:
+This does not remove models, change the renderer mode, change resolution,
+alter driving physics, change collision rules, or change asset paths.
+Newly added/removed character animations can take up to about 120 ms to be
+recognized by the mobile inventory. Detached roots are still checked by the
+existing parent-reference cleanup during each update.
 
-Validation performed here: the complete replacement passed node syntax checking; both focused source-regression checks passed. No full npm test/build/browser audit was run against your local project, and no claim of physical-phone performance is made.
+Install by extracting at the project root and replacing only the included
+KanoAnimationTrafficUpgrade.js. Keep all other files/assets unchanged. The
+focused test is included for the project; user does not need to run npm test
+as a condition of this delivery.
+
+Validation performed here: node --check on the replacement and test, plus
+focused regression test execution. This does not prove physical-phone FPS.
