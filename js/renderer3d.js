@@ -2935,6 +2935,110 @@ export class Renderer3D {
   // REPLACE THE PLAYER KEKE
   // ==========================================================
 
+  // Refuse to replace the visible procedural keke with a GLB that only
+  // contains a driver/prop, invisible meshes, or collapsed/implausible bounds.
+  // The incoming instance is left untouched on failure; its geometry may be
+  // shared with ModelManager's cache. The currently active vehicle stays live.
+  validateKekeModelCandidate(object) {
+    if (!object?.isObject3D) {
+      return { ok: false, reason: 'not-an-object3d', meshCount: 0 };
+    }
+
+    object.updateMatrixWorld(true);
+    const rootMatrix = object.matrixWorld.clone();
+    const determinant = rootMatrix.determinant();
+    if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-10) {
+      return { ok: false, reason: 'singular-root-transform', meshCount: 0 };
+    }
+    const inverseRoot = rootMatrix.invert();
+    const bounds = new THREE.Box3();
+    let meshCount = 0;
+
+    object.traverse((node) => {
+      if (!node?.isMesh || !node.geometry) return;
+
+      // The root can initially be hidden in the model cache; applyModel will
+      // set its correct scene visibility after validation. Hidden descendants
+      // are ignored because they will not contribute to the rendered vehicle.
+      let ancestor = node;
+      while (ancestor && ancestor !== object) {
+        if (ancestor.visible === false) return;
+        ancestor = ancestor.parent;
+      }
+      if (ancestor !== object) return;
+
+      const materials = Array.isArray(node.material)
+        ? node.material
+        : [node.material];
+      const canRender = materials.some((material) =>
+        material && material.visible !== false &&
+        Number(material.opacity ?? 1) > 0.025
+      );
+      if (!canRender) return;
+
+      const geometry = node.geometry;
+      if (!geometry.boundingBox) {
+        try { geometry.computeBoundingBox(); } catch { return; }
+      }
+      if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return;
+
+      const relativeMatrix = new THREE.Matrix4().multiplyMatrices(
+        inverseRoot,
+        node.matrixWorld,
+      );
+      const meshBounds = geometry.boundingBox.clone().applyMatrix4(relativeMatrix);
+      if (meshBounds.isEmpty()) return;
+      const meshSize = meshBounds.getSize(new THREE.Vector3());
+      if (![meshSize.x, meshSize.y, meshSize.z].every(Number.isFinite)) return;
+
+      bounds.union(meshBounds);
+      meshCount += 1;
+    });
+
+    if (meshCount === 0 || bounds.isEmpty()) {
+      return { ok: false, reason: 'no-visible-renderable-meshes', meshCount };
+    }
+
+    const size = bounds.getSize(new THREE.Vector3());
+    const footprint = size.x * size.z;
+    const longSide = Math.max(size.x, size.z);
+    const shortSide = Math.min(size.x, size.z);
+    const finite = [size.x, size.y, size.z, footprint].every(Number.isFinite);
+
+    if (!finite) {
+      return { ok: false, reason: 'non-finite-bounds', meshCount };
+    }
+    if (
+      size.y < 0.55 || size.y > 4.25 ||
+      longSide < 0.82 || longSide > 7.5 ||
+      shortSide < 0.30 || footprint < 0.68 || footprint > 30
+    ) {
+      return {
+        ok: false,
+        reason: 'implausible-keke-bounds',
+        meshCount,
+        bounds: {
+          width: Number(size.x.toFixed(3)),
+          height: Number(size.y.toFixed(3)),
+          depth: Number(size.z.toFixed(3)),
+          footprint: Number(footprint.toFixed(3)),
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      reason: 'renderable-vehicle-bounds',
+      meshCount,
+      bounds: {
+        width: Number(size.x.toFixed(3)),
+        height: Number(size.y.toFixed(3)),
+        depth: Number(size.z.toFixed(3)),
+        footprint: Number(footprint.toFixed(3)),
+      },
+    };
+  }
+
   async applyModel(key, object) {
     if (
       !object ||
@@ -2946,6 +3050,28 @@ export class Renderer3D {
     }
 
     const old = this.player;
+    const visualCheck = this.validateKekeModelCandidate(object);
+    if (!visualCheck.ok) {
+      const modelPath = object.userData?.modelPath || object.userData?.modelKey || 'unknown GLB';
+      object.userData.kanoKekeVisualValidation = visualCheck;
+      // Crucially, do not detach or dispose the active vehicle here. This
+      // keeps the procedural keke (with its seated driver) visible when an
+      // imported model is technically loadable but visually unusable.
+      if (old?.isObject3D) {
+        old.visible = this.lifeScene === 'road' || this.lifeScene === 'garage';
+        if (!old.parent) {
+          const fallbackParent = this.lifeScene === 'garage' ? this.garageGroup : this.scene;
+          fallbackParent?.add(old);
+        }
+      }
+      console.warn(
+        `[Kano Life] Rejected visually unusable keke model (${modelPath}); keeping the active vehicle.`,
+        visualCheck,
+      );
+      return false;
+    }
+
+    object.userData.kanoKekeVisualValidation = visualCheck;
     const oldParent = old?.parent || this.scene;
 
     // Preserve the current state until the replacement has been prepared.

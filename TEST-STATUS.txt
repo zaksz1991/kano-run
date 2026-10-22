@@ -1,15 +1,19 @@
-KANO LIFE / KANO RUN — STEP 32 VALIDATION
+KANO LIFE / KANO RUN — STEP 33 VALIDATION
 
-Complete merged source snapshot after applying Steps 24–31 plus this update:
-- Node test suite: 84 passed, 0 failed.
-- JavaScript syntax scan: 122 JavaScript files passed.
-- ZIP integrity: passed.
-- Vite production build: not run in this validation pass.
-- Browser render and physical-phone frame rate: not verified.
+Automated tests: 32 passed, 0 failed
+- Keke visual integrity guard: 7 tests
+- Existing Step 28 renderer merge coverage: 10 tests
+- Existing Step 29 lazy scene build coverage: 5 tests
+- Existing mobile pedestrian merge coverage: 5 tests
+- Existing mobile sidewalk spacing coverage: 5 tests
 
-Specific regressions resolved:
-- The world-instancing module is now registered in index.html in the intended startup order.
-- The catalog-sync test no longer imports removed exports or tests an obsolete variant-pooling implementation; it verifies the current plugin contract.
-- Keke calibration tests now check exact-path calibration and preserved bounds metadata rather than an obsolete automatic axis-guessing algorithm.
+JavaScript syntax: passed for renderer3d.js, KanoDeviceTier.js and KanoInstancedRoadScroll.js.
+ZIP integrity: verified after packaging.
 
-Passing static tests do not prove visual correctness on a browser or phone. Check the running game for lane markings, building-window batching and brightness profiles after applying the update.
+Not verified in this environment:
+- Vite production build
+- Actual GLB asset bounds in a browser
+- Browser screenshot comparison
+- Real-phone frame rate
+
+Note: test assertions primarily verify source structure and update ordering. They do not instantiate Three.js assets or prove that a particular asset will be accepted. The real game still needs to be opened to confirm the player keke remains visible and seated correctly.
