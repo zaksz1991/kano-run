@@ -327,9 +327,9 @@ export class KanoAdaptiveQuality {
     const mobileRatios = this.mobile ? getMobileRatios(this.mobileTier) : null;
     const mobileRenderBudget = this.mobile ? getMobileRenderBudget(this.mobileTier) : null;
 
-    // Keep the raw capability ratios for diagnostics but apply a much lower
-    // actual phone GPU budget. Weak phones start at ~0.50x CSS pixels, and all
-    // tiers can step down farther rather than entering a 2D fallback.
+    // Start at a legible CSS-pixel scale. Under load, this controller lowers
+    // decorative LOD and resolution gradually; it must not make the whole game
+    // blurry just to keep a high frame-rate estimate in software-rendered tests.
     this.maximumRatio = this.mobile ? Math.min(mobileRatios.max, mobileRenderBudget.max) : 1.72;
     this.minimumRatio = this.mobile ? mobileRenderBudget.min : 0.84;
     this.startupRatio = this.mobile ? mobileRenderBudget.start : 1.30;

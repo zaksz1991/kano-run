@@ -19,19 +19,16 @@ export function getMobileRatios(tier) {
 }
 
 /**
- * Actual 3D rendering budget after the long browser audit showed high frame
- * times with GLB traffic. Keep the tier capability ratios above for diagnostics
- * and compatibility, but render phones below native DPR by default. This cuts
- * roughly 50–65% of pixel shading compared with the previous startup values.
+ * Mobile rendering scale measured against CSS pixels, not the phone's full
+ * hardware DPR. The former 0.34–0.48 settings rendered fewer pixels than the
+ * CSS layout and made the entire game visibly soft. These values keep a clear
+ * baseline while allowing the adaptive controller to reduce detail/LOD first.
  */
 export function getMobileRenderBudget(tier) {
-  // Mobile Lite profile: do not render at native DPR on phones. Even a high
-  // tier phone starts well below CSS resolution and can step down under load.
-  if (tier === 'high') return { max: 0.58, start: 0.48, min: 0.30 };
-  if (tier === 'mid') return { max: 0.50, start: 0.40, min: 0.25 };
-  return { max: 0.44, start: 0.34, min: 0.22 };
+  if (tier === 'high') return { max: 1.32, start: 1.10, min: 0.84 };
+  if (tier === 'mid') return { max: 1.16, start: 0.98, min: 0.76 };
+  return { max: 1.05, start: 0.88, min: 0.70 };
 }
-
 
 /** Maximum number of simultaneous imported traffic GLBs during mobile road play.
  * Nearby traffic remains detailed; the remaining vehicles use light procedural

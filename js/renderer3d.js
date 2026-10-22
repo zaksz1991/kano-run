@@ -112,6 +112,9 @@ export class Renderer3D {
     this.laneDashInstanced = null;
     this.laneDashRecords = [];
     this.laneDashObject = new THREE.Object3D();
+    this.curbInstanced = null;
+    this.curbRecords = [];
+    this.curbObject = new THREE.Object3D();
     this._mobileGlbTrafficIds = new Set();
     this.pedestrians = [];
     this.streetLights = [];
@@ -196,7 +199,7 @@ export class Renderer3D {
     const asphaltMaterial = this.material(0x343c43);
 
     const asphalt = new THREE.Mesh(
-      new THREE.PlaneGeometry(11.2, 250),
+      new THREE.PlaneGeometry(10.0, 250),
       asphaltMaterial,
     );
 
@@ -219,16 +222,84 @@ export class Renderer3D {
     ground.position.set(0, -0.09, -92);
     this.world.add(ground);
 
-    for (const x of [-5.4, 5.4]) {
-      const edge = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.12, 250),
-        this.material(0xf5d88e),
+    // Kano-style sandy shoulders. These sit above the broad ground plane but
+    // outside the asphalt, creating a distinct dry verge without extra texture
+    // downloads or per-frame objects.
+    const vergeMaterial = this.material(0xb6a077);
+    const vergeEdgeMaterial = this.material(0x988563);
+    for (const side of [-1, 1]) {
+      const verge = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.7, 250),
+        vergeMaterial,
       );
+      verge.rotation.x = -Math.PI / 2;
+      verge.position.set(side * 6.35, -0.075, -92);
+      verge.name = side < 0 ? 'KANO_LEFT_SAND_VERGE' : 'KANO_RIGHT_SAND_VERGE';
+      this.world.add(verge);
 
+      const dustyShoulderEdge = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.18, 250),
+        vergeEdgeMaterial,
+      );
+      dustyShoulderEdge.rotation.x = -Math.PI / 2;
+      dustyShoulderEdge.position.set(side * 7.82, -0.072, -92);
+      this.world.add(dustyShoulderEdge);
+
+      const edge = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.075, 250),
+        this.material(0xe8d5a4),
+      );
       edge.rotation.x = -Math.PI / 2;
-      edge.position.set(x, 0.025, -92);
+      edge.position.set(side * 4.54, 0.026, -92);
       this.world.add(edge);
     }
+
+    // Painted black-and-white kerbs are one InstancedMesh, not hundreds of
+    // separate meshes. They mark the actual asphalt boundary and are recycled
+    // by the existing road-scroll update, so they cannot drift away from stops.
+    const curbRecords = [];
+    let curbSegment = 0;
+    for (let z = -3.0; z > -248; z -= 2.9) {
+      for (const side of [-1, 1]) {
+        curbRecords.push({
+          x: side * 4.86,
+          z,
+          color: curbSegment % 2 === 0 ? 0x202326 : 0xeee9df,
+        });
+      }
+      curbSegment += 1;
+    }
+    const curbGeometry = new THREE.BoxGeometry(0.28, 0.16, 2.84);
+    const curbMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.96,
+      metalness: 0,
+    });
+    const curbMesh = new THREE.InstancedMesh(
+      curbGeometry,
+      curbMaterial,
+      curbRecords.length,
+    );
+    curbMesh.name = 'KANO_INSTANCED_BLACK_WHITE_KERBS';
+    curbMesh.userData.kanoRoadKerbs = true;
+    curbMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const curbColor = new THREE.Color();
+    for (let index = 0; index < curbRecords.length; index += 1) {
+      const record = curbRecords[index];
+      this.curbObject.position.set(record.x, 0.08, record.z);
+      this.curbObject.rotation.set(0, 0, 0);
+      this.curbObject.scale.set(1, 1, 1);
+      this.curbObject.updateMatrix();
+      curbMesh.setMatrixAt(index, this.curbObject.matrix);
+      curbColor.setHex(record.color);
+      curbMesh.setColorAt(index, curbColor);
+    }
+    curbMesh.instanceMatrix.needsUpdate = true;
+    if (curbMesh.instanceColor) curbMesh.instanceColor.needsUpdate = true;
+    curbMesh.computeBoundingSphere();
+    this.world.add(curbMesh);
+    this.curbInstanced = curbMesh;
+    this.curbRecords = curbRecords;
 
     // Lane dashes are repeated geometry with one material. Batch all 58
     // markings into a single draw call instead of updating/rendering 58 meshes.
@@ -3501,10 +3572,12 @@ export class Renderer3D {
     // PLAYER POSITION AND STEERING
     // --------------------------------------------------------
 
+    // Keep the keke body safely inside the painted kerbs. The earlier ±4.5
+    // visual range let half the vehicle leave the road and clip on narrow phones.
     const laneX = Math.max(
-      -4.5,
+      -3.45,
       Math.min(
-        4.5,
+        3.45,
         (state.steer || 0) * 3 +
           (state.pullOverSide || 0) * 2.35,
       ),
@@ -3617,6 +3690,21 @@ export class Renderer3D {
     // --------------------------------------------------------
     // LANE MARKINGS
     // --------------------------------------------------------
+
+    if (this.curbInstanced) {
+      for (let index = 0; index < this.curbRecords.length; index += 1) {
+        const record = this.curbRecords[index];
+        record.z += scroll;
+        if (record.z > 8) record.z -= 250;
+        else if (record.z < -250) record.z += 250;
+        this.curbObject.position.set(record.x, 0.08, record.z);
+        this.curbObject.rotation.set(0, 0, 0);
+        this.curbObject.scale.set(1, 1, 1);
+        this.curbObject.updateMatrix();
+        this.curbInstanced.setMatrixAt(index, this.curbObject.matrix);
+      }
+      this.curbInstanced.instanceMatrix.needsUpdate = true;
+    }
 
     if (this.laneDashInstanced) {
       for (let index = 0; index < this.laneDashRecords.length; index += 1) {
