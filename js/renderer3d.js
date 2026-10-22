@@ -3913,6 +3913,50 @@ export class Renderer3D {
   }
 
   // ==========================================================
+  // MOBILE FOG-HORIZON CULLING
+  // ==========================================================
+
+  /**
+   * Hide roadside decoration already blended almost completely into fog.
+   * This only affects rendering; actors continue moving and game.js keeps
+   * owning traffic, passenger, collision and mission simulation. Visibility
+   * is recalculated during each road frame so recycled actors reappear.
+   */
+  updateMobileDistanceCulling() {
+    if (!this.mobile || !this.camera || !this.scene?.fog) return;
+
+    const cameraZ = Number(this.camera.position.z) || 0;
+    const fogFar = Math.max(65, Number(this.scene.fog.far) || 105);
+    // At this point the fog has concealed most detail. Cutting hidden objects
+    // here avoids drawing far scenery without shortening the visible road.
+    const horizon = Math.min(100, fogFar * 0.90);
+    const pedestrianHorizon = horizon * 0.76;
+
+    const updateVisibility = (actor, limit) => {
+      if (!actor?.position) return;
+      actor.visible = Math.abs(actor.position.z - cameraZ) <= limit;
+    };
+
+    for (const slot of this.buildingSlots) {
+      updateVisibility(slot.actor, horizon);
+    }
+    for (const pedestrian of this.pedestrians) {
+      updateVisibility(pedestrian.actor, pedestrianHorizon);
+    }
+    for (const pole of this.streetLights) {
+      updateVisibility(pole, horizon);
+    }
+    for (const slot of this.roadProps) {
+      updateVisibility(slot.actor, horizon);
+    }
+    // Flyovers are distinctive landmarks; retain them slightly farther than
+    // other scenery, but never beyond the actual mobile fog horizon.
+    for (const flyover of this.flyovers) {
+      updateVisibility(flyover, Math.min(110, fogFar));
+    }
+  }
+
+  // ==========================================================
   // MAIN RENDER
   // ==========================================================
 
@@ -4084,7 +4128,10 @@ export class Renderer3D {
         pedestrian.actor.position.z += this.pedestrianLoopDistance;
       }
 
-      if (!pedestrian.usingModel && pedestrian.arms) {
+      const animateArms =
+        !this.mobile ||
+        Math.abs(pedestrian.actor.position.z - this.camera.position.z) <= 48;
+      if (animateArms && !pedestrian.usingModel && pedestrian.arms) {
         const phase =
           this.driverAnimationTime + pedestrian.phase;
 
@@ -4199,6 +4246,7 @@ export class Renderer3D {
       cameraTargetZ,
     );
 
+    this.updateMobileDistanceCulling();
     this.renderer.render(this.scene, this.camera);
   }
 
