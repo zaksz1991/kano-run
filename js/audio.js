@@ -1,13 +1,15 @@
 import { save, persist } from './storage.js';
 import { RADIO } from './config.js';
+import { AUDIO_VARIANTS } from './audio-variants.generated.js';
+import { resolveAudioAsset, supportsOpusAudio, switchToMp3Fallback } from './audio-format.js';
 
 const clamp = (value, min, max) => {
   const n = Number(value);
   return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min));
 };
 
-const ENGINE_AUDIO_URL = '/assets/models/audio/engine.mp3';
-const HORN_AUDIO_URL = '/assets/models/audio/horn.mp3';
+const ENGINE_AUDIO_FILE = 'engine.mp3';
+const HORN_AUDIO_FILE = 'horn.mp3';
 
 const RADIO_ROOT = '/assets/models/audio/';
 
@@ -62,6 +64,7 @@ export class AudioManager {
     this.radioRequestIndex = -1;
     this.radioSyncVersion = 0;
     this.radioResolveCache = new Map();
+    this.opusSupported = null;
     this.radioWarned = false;
     this.activeEffects = new Set();
 
@@ -96,40 +99,76 @@ export class AudioManager {
     return this.ctx;
   }
 
+  supportsOpus() {
+    if (this.opusSupported !== null) return this.opusSupported;
+    try {
+      const probe = typeof window !== 'undefined' && typeof window.Audio === 'function'
+        ? new window.Audio()
+        : null;
+      this.opusSupported = supportsOpusAudio(probe);
+    } catch {
+      this.opusSupported = false;
+    }
+    return this.opusSupported;
+  }
+
+  prepareAudioSource(player, filename) {
+    const asset = resolveAudioAsset(filename, AUDIO_VARIANTS, this.supportsOpus(), RADIO_ROOT);
+    if (!asset) throw new Error(`Unsafe audio asset filename: ${filename}`);
+    player.__kanoAudioFallbackUrl = asset.fallbackUrl;
+    player.__kanoAudioFallbackUsed = false;
+    player.__kanoAudioUsingMp3Fallback = false;
+    return asset.url;
+  }
+
   ensureMediaAudio() {
     if (typeof window === 'undefined' || typeof window.Audio !== 'function') return;
 
     if (!this.engineAudio && !this.engineAudioFailed) {
       try {
-        const player = new window.Audio(ENGINE_AUDIO_URL);
+        const player = new window.Audio();
+        const primaryUrl = this.prepareAudioSource(player, ENGINE_AUDIO_FILE);
         player.preload = 'auto';
         player.loop = true;
         player.volume = 0.24;
         player.playbackRate = 0.78;
         player.setAttribute('playsinline', '');
         player.addEventListener('error', () => {
+          if (switchToMp3Fallback(player)) {
+            if (this.enabled && !this.disposed && this.started) {
+              const retry = player.play();
+              retry?.catch?.(() => {});
+            }
+            return;
+          }
           this.engineAudioFailed = true;
           if (this.enabled && !this.disposed && this.started) this.startSynthEngine();
         });
         this.engineAudio = player;
+        player.src = primaryUrl;
       } catch (error) {
         this.engineAudioFailed = true;
-        console.warn('[Kano Life] Could not create engine MP3 player:', error);
+        console.warn('[Kano Life] Could not create engine audio player:', error);
       }
     }
 
     if (!this.hornAudio && !this.hornAudioFailed) {
       try {
-        const player = new window.Audio(HORN_AUDIO_URL);
+        const player = new window.Audio();
+        const primaryUrl = this.prepareAudioSource(player, HORN_AUDIO_FILE);
         player.preload = 'auto';
         player.loop = false;
         player.volume = 0.92;
         player.setAttribute('playsinline', '');
-        player.addEventListener('error', () => { this.hornAudioFailed = true; });
+        player.addEventListener('error', () => {
+          if (switchToMp3Fallback(player)) return;
+          this.hornAudioFailed = true;
+        });
         this.hornAudio = player;
+        player.src = primaryUrl;
       } catch (error) {
         this.hornAudioFailed = true;
-        console.warn('[Kano Life] Could not create horn MP3 player:', error);
+        console.warn('[Kano Life] Could not create horn audio player:', error);
       }
     }
   }
@@ -168,6 +207,8 @@ export class AudioManager {
               this.enginePlayBlocked = true;
               return;
             }
+            if (switchToMp3Fallback(this.engineAudio)) return;
+            if (this.engineAudio?.__kanoAudioUsingMp3Fallback) return;
             this.engineAudioFailed = true;
             this.startSynthEngine();
           });
@@ -175,6 +216,7 @@ export class AudioManager {
       }
       return true;
     } catch (error) {
+      if (switchToMp3Fallback(this.engineAudio) || this.engineAudio?.__kanoAudioUsingMp3Fallback) return false;
       this.engineAudioFailed = true;
       this.startSynthEngine();
       return false;
@@ -403,11 +445,15 @@ export class AudioManager {
         const result = this.hornAudio.play();
         if (result?.catch) {
           result.catch((error) => {
-            if (this.disposed || !this.enabled) return;
-            if (error?.name !== 'NotAllowedError') {
-              this.hornAudioFailed = true;
-              this.playSyntheticHorn();
+            if (this.disposed || !this.enabled || error?.name === 'NotAllowedError') return;
+            if (switchToMp3Fallback(this.hornAudio)) {
+              const retry = this.hornAudio.play();
+              retry?.catch?.(() => {});
+              return;
             }
+            if (this.hornAudio?.__kanoAudioUsingMp3Fallback) return;
+            this.hornAudioFailed = true;
+            this.playSyntheticHorn();
           });
         }
         return true;
@@ -451,11 +497,10 @@ export class AudioManager {
     if (!filename || typeof window === 'undefined' || !KNOWN_RADIO_FILES.has(filename)) return null;
     if (this.radioResolveCache.has(filename)) return this.radioResolveCache.get(filename);
 
-    // Resolve deterministically from the one known public asset directory.
-    // Avoid HEAD requests: Vite/Vercel static hosting can serve the asset
-    // directly, and radio playback is lazy so this does not preload every track.
-    const url = `${RADIO_ROOT}${encodeURIComponent(filename)}`;
-    const lookup = Promise.resolve(url);
+    // Resolve deterministically from the generated variants registry. No HEAD
+    // probing: the chosen station remains lazy and only loads when selected.
+    const asset = resolveAudioAsset(filename, AUDIO_VARIANTS, this.supportsOpus(), RADIO_ROOT);
+    const lookup = Promise.resolve(asset);
     this.radioResolveCache.set(filename, lookup);
     return lookup;
   }
@@ -469,13 +514,13 @@ export class AudioManager {
     const version = ++this.radioSyncVersion;
     this.radioRequestIndex = index;
     this.stopRadio();
-    let url = null;
+    let asset = null;
     for (const filename of RADIO_FILES[index] || []) {
-      url = await this.resolveLocalAudio(filename);
-      if (url) break;
+      asset = await this.resolveLocalAudio(filename);
+      if (asset) break;
     }
     if (this.disposed || !this.enabled || version !== this.radioSyncVersion || index !== this.currentRadioIndex()) return false;
-    if (!url) {
+    if (!asset) {
       this.radioIndex = index;
       if (!this.radioWarned) {
         console.info('[Kano Life] No local radio programme file was found; radio music remains silent while engine sound stays available.');
@@ -484,25 +529,45 @@ export class AudioManager {
       return false;
     }
     try {
-      const player = new window.Audio(url);
+      const player = new window.Audio();
       player.preload = 'none';
       player.loop = true;
       player.volume = 0.16;
       player.setAttribute('playsinline', '');
+      player.__kanoAudioFallbackUrl = asset.fallbackUrl;
+      player.__kanoAudioFallbackUsed = false;
+      player.__kanoAudioUsingMp3Fallback = false;
       player.addEventListener('error', () => {
         if (this.radioAudio !== player) return;
+        if (switchToMp3Fallback(player)) {
+          // Retry on the same media element so the MP3 fallback remains lazy.
+          const retry = player.play();
+          retry?.catch?.(() => {});
+          return;
+        }
         this.radioAudio = null;
         this.radioIndex = -1;
         if (!this.radioWarned) {
-          console.warn(`[Kano Life] Radio track failed to load: ${url}`);
+          console.warn(`[Kano Life] Radio track failed to load: ${asset.url}`);
           this.radioWarned = true;
         }
-      }, { once: true });
+      });
       this.radioAudio = player;
       this.radioIndex = index;
+      player.src = asset.url;
       await player.play();
       return true;
     } catch (error) {
+      const player = this.radioAudio;
+      if (player && switchToMp3Fallback(player)) {
+        try {
+          await player.play();
+          return true;
+        } catch {}
+      }
+      // The HTMLMediaElement error handler can change to MP3 before the
+      // original Opus play promise rejects; don't mark that race as a failure.
+      if (player?.__kanoAudioUsingMp3Fallback && error?.name !== 'NotAllowedError') return false;
       this.radioAudio = null;
       this.radioIndex = error?.name === 'NotAllowedError' ? -1 : index;
       return false;
