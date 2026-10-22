@@ -1,0 +1,953 @@
+{
+  "generatedAt": "2026-10-22T00:54:31.830Z",
+  "modelsRoot": "public/assets/models",
+  "glbCount": 98,
+  "validGlbCount": 98,
+  "colormapGlbCount": 39,
+  "externalTextureReferenceCount": 39,
+  "missingExternalTextureReferenceCount": 39,
+  "colormapModels": [
+    {
+      "file": "public/assets/models/vehicles/special/ambulance.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-a.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-b.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-c.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-d.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-e.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-f.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-g.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-h.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-i.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-j.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-k.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-l.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-m.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-n.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-o.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-p.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-q.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-r.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-s.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-industrial/building-t.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-d.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-e.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-f.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-g.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-h.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-i.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-j.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-k.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-l.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-m.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-n.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-o.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-p.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-q.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-r.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-s.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-t.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    },
+    {
+      "file": "public/assets/models/world/buildings-suburban/building-type-u.glb",
+      "imageUris": [
+        "Textures/colormap.png"
+      ]
+    }
+  ],
+  "externalReferences": [
+    {
+      "model": "public/assets/models/vehicles/special/ambulance.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/vehicles/special/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-a.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-b.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-c.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-d.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-e.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-f.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-g.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-h.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-i.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-j.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-k.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-l.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-m.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-n.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-o.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-p.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-q.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-r.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-s.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-t.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-d.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-e.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-f.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-g.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-h.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-i.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-j.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-k.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-l.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-m.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-n.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-o.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-p.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-q.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-r.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-s.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-t.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-u.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    }
+  ],
+  "missingReferences": [
+    {
+      "model": "public/assets/models/vehicles/special/ambulance.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/vehicles/special/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-a.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-b.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-c.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-d.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-e.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-f.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-g.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-h.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-i.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-j.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-k.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-l.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-m.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-n.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-o.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-p.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-q.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-r.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-s.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-industrial/building-t.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-industrial/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-d.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-e.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-f.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-g.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-h.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-i.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-j.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-k.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-l.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-m.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-n.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-o.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-p.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-q.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-r.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-s.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-t.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    },
+    {
+      "model": "public/assets/models/world/buildings-suburban/building-type-u.glb",
+      "imageIndex": 0,
+      "uri": "Textures/colormap.png",
+      "resolvedPath": "public/assets/models/world/buildings-suburban/Textures/colormap.png",
+      "exists": false,
+      "outsideModelsRoot": false,
+      "isColormap": true
+    }
+  ],
+  "invalidModels": [],
+  "note": "Read-only audit. No assets are deleted, moved, rewritten, or embedded."
+}
