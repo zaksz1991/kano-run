@@ -152,6 +152,45 @@ function normalizeBase(value) {
   return url.toString();
 }
 
+// Vite Preview serves the built static site, not Vercel serverless functions.
+// Stub only these same-origin services in the default local-preview audit so
+// repeated /api/* 404s do not drown out game-loading failures. When
+// KANO_AUDIT_BASE_URL is supplied, the real API is exercised and never stubbed.
+async function installLocalPreviewApiFixtures(page) {
+  if (EXTERNAL_BASE_URL) return [];
+  const fixtures = [
+    { path: '/api/live-users', purpose: 'local preview fixture; live presence is not under test' },
+    { path: '/api/leaderboard', purpose: 'local preview fixture; Redis leaderboard is not under test' },
+  ];
+  await page.route('**/api/live-users', async (route) => {
+    const request = route.request();
+    let action = 'heartbeat';
+    try {
+      const body = request.postDataJSON();
+      if (body?.action === 'leave') action = 'leave';
+    } catch { /* GET and malformed optional payloads use the neutral heartbeat fixture. */ }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json; charset=utf-8',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: true, count: 1, activeWindowSeconds: 45, serverTime: Date.now(), action }),
+    });
+  });
+  await page.route('**/api/leaderboard*', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const board = url.searchParams.get('board') || 'all';
+    const limit = Math.max(1, Math.min(20, Number(url.searchParams.get('limit') || 10) || 10));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json; charset=utf-8',
+      headers: { 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: true, board, limit, rows: [], serverTime: Date.now() }),
+    });
+  });
+  return fixtures;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -389,6 +428,9 @@ async function inspectPageState(page) {
       url: location.href,
       title: document.title,
       renderMode: window.__KANO_RENDER_MODE__ || null,
+      gameReady: Boolean(window.__KANO_LIFE_GAME__ && typeof window.__KANO_LIFE_GAME__.start === 'function'),
+      gameState: window.__KANO_LIFE_GAME__?.state || null,
+      startScreenHasHiddenClass: Boolean(element('#start-screen')?.classList.contains('hidden')),
       startButtonVisible: visible(element('#start-btn')),
       startScreenVisible: visible(start),
       routineVisible: visible(routine),
@@ -445,21 +487,72 @@ async function clickMorningAction(page, name, timeout = 8_000) {
   }
 }
 
-async function advanceMorningRoutine(page) {
-  await page.locator('#start-btn').click({ timeout: 30_000 });
+async function waitForApplicationReady(page, timeout = 30_000) {
+  try {
+    await page.waitForFunction(() => {
+      const game = window.__KANO_LIFE_GAME__;
+      const start = document.querySelector('#start-btn');
+      const hud = document.querySelector('#hud');
+      return Boolean(
+        game && typeof game.start === 'function' && typeof game.state === 'string'
+        && start && hud && window.__KANO_RENDER_MODE__,
+      );
+    }, null, { timeout });
+  } catch (error) {
+    throw new Error(`Kano Life bootstrap did not become ready before interaction. Diagnostics: ${JSON.stringify(await inspectPageState(page))}. ${error.message}`);
+  }
+}
+
+async function waitForPlayableRun(page, actionLabel, timeout = 15_000) {
+  try {
+    await page.waitForFunction(() => {
+      const game = window.__KANO_LIFE_GAME__;
+      const start = document.querySelector('#start-screen');
+      const hud = document.querySelector('#hud');
+      const controls = document.querySelector('#drive-controls');
+      const shown = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      return Boolean(
+        game?.state === 'PLAY'
+        && start?.classList.contains('hidden')
+        && shown(hud) && shown(controls)
+        && window.__KANO_RENDER_MODE__,
+      );
+    }, null, { timeout });
+  } catch (error) {
+    throw new Error(`${actionLabel} did not enter a playable driving state. Diagnostics: ${JSON.stringify(await inspectPageState(page))}. ${error.message}`);
+  }
+}
+
+// The production UI intentionally starts driving directly from START DRIVING.
+// The story remains optional behind REPLAY MORNING ROUTINE. Do not make the
+// main gameplay audit wait for story UI that is deliberately hidden on direct start.
+async function startDrivingRun(page) {
+  await waitForApplicationReady(page);
+  await page.locator('#start-btn').click({ timeout: 10_000 });
+  await waitForPlayableRun(page, 'START DRIVING');
+}
+
+async function advanceOptionalMorningRoutine(page) {
+  await waitForApplicationReady(page);
+  const replay = page.locator('#kano-replay-morning-routine');
+  await replay.waitFor({ state: 'visible', timeout: 10_000 });
+  await replay.click({ timeout: 10_000 });
   try {
     await page.waitForFunction(() => {
       const screen = document.querySelector('#life-routine-screen');
-      if (!screen) return false;
-      const style = getComputedStyle(screen);
-      const rect = screen.getBoundingClientRect();
-      return !screen.classList.contains('hidden') && style.display !== 'none'
-        && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      return Boolean(screen && !screen.classList.contains('hidden')
+        && getComputedStyle(screen).display !== 'none');
     }, null, { timeout: 8_000 });
   } catch (error) {
-    throw new Error(`Clicking START DRIVING did not reveal the morning routine. Diagnostics: ${JSON.stringify(await inspectPageState(page))}. ${error.message}`);
+    throw new Error(`REPLAY MORNING ROUTINE did not reveal the optional story. Diagnostics: ${JSON.stringify(await inspectPageState(page))}. ${error.message}`);
   }
 
+  // Take the normal workday path: skip breakfast, proceed to the guarded park,
+  // greet security, then inspect the parked keke and start the shift.
   const steps = [
     'WAKE UP · WASH AND DRESS',
     'HEAD OUT NOW',
@@ -470,17 +563,13 @@ async function advanceMorningRoutine(page) {
     'GREET MALLAM SECURITY',
     'INSPECT KEKE · UNLOCK · START SHIFT',
   ];
-
   for (const name of steps) await clickMorningAction(page, name);
-
-  await page.waitForFunction(() => {
-    const hud = document.querySelector('#hud');
-    const visible = hud && getComputedStyle(hud).display !== 'none'
-      && getComputedStyle(hud).visibility !== 'hidden';
-    return Boolean(window.__KANO_RENDER_MODE__ && visible);
-  }, null, { timeout: 15_000 }).catch(async (error) => {
-    throw new Error(`Morning routine ended but the driving HUD/render mode did not become ready. Diagnostics: ${JSON.stringify(await inspectPageState(page))}. ${error.message}`);
-  });
+  await waitForPlayableRun(page, 'Completing the optional morning routine');
+  return await page.evaluate(() => ({
+    gameState: window.__KANO_LIFE_GAME__?.state || null,
+    breakfastEaten: window.__KANO_LIFE_GAME__?.s?.breakfastEaten ?? null,
+    routineHiddenAfterShift: Boolean(document.querySelector('#life-routine-screen')?.classList.contains('hidden')),
+  }));
 }
 
 async function maybeResolveStreetEvent(page, counters) {
@@ -512,27 +601,7 @@ async function recoverIfRunEnded(page, counters) {
 }
 
 async function advanceMorningRoutineAfterRestart(page) {
-  const routineVisible = await page.locator('#life-routine-screen').evaluate((el) =>
-    !el.classList.contains('hidden') && getComputedStyle(el).display !== 'none',
-  ).catch(() => false);
-  if (!routineVisible) {
-    await advanceMorningRoutine(page);
-    return;
-  }
-
-  const steps = [
-    'WAKE UP · WASH AND DRESS',
-    'HEAD OUT NOW',
-    'WALK TO THE ROAD-SIDE STALL',
-    'SKIP BREAKFAST',
-    'CONTINUE TO THE PARK',
-    'WALK TO THE GUARDED KEKE PARK',
-    'GREET MALLAM SECURITY',
-    'INSPECT KEKE · UNLOCK · START SHIFT',
-  ];
-  for (const name of steps) {
-    await clickMorningAction(page, name);
-  }
+  await waitForPlayableRun(page, 'Restarting the run');
 }
 
 async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, inventory) {
@@ -552,6 +621,7 @@ async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, 
 
   let intentionalModelBlocking = !withModels;
   const telemetry = makeTelemetry(page, intentionalModelBlocking);
+  const localApiFixtures = await installLocalPreviewApiFixtures(page);
   if (!withModels) {
     await page.route(/\.(?:glb|gltf|bin)(?:[?#]|$)/i, async (route) => {
       await route.abort('blockedbyclient').catch(() => {});
@@ -592,17 +662,20 @@ async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, 
     initialLoad: null,
     durationActuallyDrivenMs: 0,
     note: null,
+    localApiFixtures,
   };
 
   try {
     const url = modeURL(baseURL, mode);
     const navStart = Date.now();
     await page.goto(url, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
-    await page.locator('#start-btn').waitFor({ state: 'visible', timeout: 30_000 });
+    await waitForApplicationReady(page, 45_000);
+    await page.locator('#start-btn').waitFor({ state: 'visible', timeout: 10_000 });
     result.appReadyMs = Date.now() - navStart;
     result.initialLoad = await measureResourceTiming(page);
 
-    await advanceMorningRoutine(page);
+    await startDrivingRun(page);
+    result.gameStateAfterStart = await page.evaluate(() => window.__KANO_LIFE_GAME__?.state || null);
     const frameIndex = await page.evaluate(() => window.__KANO_AUDIT__?.frameIntervals?.length || 0);
     const startAt = Date.now();
     const stopAt = startAt + DURATION_MS;
@@ -747,6 +820,7 @@ async function runThrottleScenario(browser, baseURL, profile) {
   const page = await context.newPage();
   await installBrowserInstrumentation(page);
   const telemetry = makeTelemetry(page, false);
+  const localApiFixtures = await installLocalPreviewApiFixtures(page);
   const cdp = await context.newCDPSession(page);
   await cdp.send('Network.enable');
   await cdp.send('Performance.enable').catch(() => {});
@@ -768,6 +842,7 @@ async function runThrottleScenario(browser, baseURL, profile) {
     },
     completed: false,
     screenshot: asLocalPath(screenshotPath),
+    localApiFixtures,
     consoleErrors: telemetry.data.consoleErrors,
     pageErrors: telemetry.data.pageErrors,
     failedRequests: telemetry.data.failedRequests,
@@ -780,7 +855,8 @@ async function runThrottleScenario(browser, baseURL, profile) {
     const url = modeURL(baseURL, '3d');
     const start = Date.now();
     await page.goto(url, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
-    await page.locator('#start-btn').waitFor({ state: 'visible', timeout: 45_000 });
+    await waitForApplicationReady(page, 60_000);
+    await page.locator('#start-btn').waitFor({ state: 'visible', timeout: 10_000 });
     result.timeToPageLoadMs = Date.now() - start;
     result.navigationTiming = await page.evaluate(() => {
       const nav = performance.getEntriesByType('navigation')[0];
@@ -823,6 +899,49 @@ async function runThrottleScenario(browser, baseURL, profile) {
   return result;
 }
 
+async function runMorningRoutineSmoke(browser, baseURL) {
+  const screenshotPath = path.join(OUTPUT_DIR, 'morning-routine-smoke.png');
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    serviceWorkers: 'block',
+    reducedMotion: 'no-preference',
+  });
+  const page = await context.newPage();
+  await installBrowserInstrumentation(page);
+  const telemetry = makeTelemetry(page, false);
+  const localApiFixtures = await installLocalPreviewApiFixtures(page);
+  const result = {
+    completed: false,
+    screenshot: asLocalPath(screenshotPath),
+    localApiFixtures,
+    consoleErrors: telemetry.data.consoleErrors,
+    pageErrors: telemetry.data.pageErrors,
+    failedRequests: telemetry.data.failedRequests,
+    httpErrors: telemetry.data.httpErrors,
+  };
+  try {
+    await page.goto(modeURL(baseURL, '2d'), { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
+    await waitForApplicationReady(page, 45_000);
+    result.appReady = true;
+    result.transition = await advanceOptionalMorningRoutine(page);
+    await page.screenshot({ path: screenshotPath, animations: 'disabled', fullPage: false });
+    result.completed = result.transition.gameState === 'PLAY'
+      && result.transition.routineHiddenAfterShift === true
+      && result.transition.breakfastEaten === false;
+  } catch (error) {
+    result.error = error.message;
+    result.failureSnapshot = await inspectPageState(page);
+    await page.screenshot({ path: screenshotPath, animations: 'disabled', fullPage: false }).catch(() => {});
+  } finally {
+    result.consoleErrors = telemetry.data.consoleErrors;
+    result.pageErrors = telemetry.data.pageErrors;
+    result.failedRequests = telemetry.data.failedRequests;
+    result.httpErrors = telemetry.data.httpErrors;
+    await context.close().catch(() => {});
+  }
+  return result;
+}
+
 function markdownTable(headers, rows) {
   const escape = (value) => String(value ?? '—').replaceAll('|', '\\|').replaceAll('\n', ' ');
   return [
@@ -860,7 +979,7 @@ function generateMarkdown(report) {
     item.screenshot || '—',
   ]);
 
-  return `# Kano Life — Browser Audit\n\n- **Run:** ${report.runId}\n- **Build under test:** local \`dist/\` served by Vite Preview unless \`KANO_AUDIT_BASE_URL\` was provided.\n- **Asset inventory:** ${report.assetInventory.fileCount} GLB/GLTF/bin files (${report.assetInventory.mib} MiB); ${report.assetInventory.glbCount} GLB.\n- **Duration:** ${report.durationTargetMs / 1000}s per desktop/phone × 2D/3D × model-on/off scenario.\n- **Model status:** ${report.assetInventory.fileCount > 0 ? 'real local model files detected' : '**needs assets** — no files found beneath public/assets/models at audit time'}.\n- **Browser:** ${report.browserVersion || 'unknown'}\n\n## Driving matrix\n\n${markdownTable(['Scenario', 'Status', 'Actual mode', 'Median frame ms', 'P95 frame ms', 'Heap change MiB', 'Console errors', 'Page errors', 'Failed requests', 'HTTP errors', 'Screenshot'], scenarioRows)}\n\n## Scenario failure details\n\n${report.scenarios.filter((item) => item.error).map((item) => `### ${item.scenario}\n\n- **Failure:** ${String(item.error).replaceAll('\\n', ' ')}\n- **Mode at failure:** ${item.failureSnapshot?.renderMode || 'not reported'}\n- **Routine visible:** ${item.failureSnapshot?.routineVisible ?? 'unknown'}\n- **Current step:** ${item.failureSnapshot?.currentStep || '—'}\n- **Available actions:** ${(item.failureSnapshot?.availableActions || []).map((action) => `${action.text}${action.disabled ? ' (disabled)' : ''}${action.visible ? '' : ' (hidden)'}`).join('; ') || '—'}\n- **First console errors:** ${(item.runtimeErrors || []).slice(0, 3).map((entry) => entry.text).join(' | ') || '—'}\n- **First HTTP errors:** ${(item.httpErrors || []).slice(0, 5).map((entry) => `${entry.status} ${entry.url}`).join(' | ') || '—'}\n`).join('\\n') || 'No scenario setup failures were recorded.'}\n\n## Cold first-load throttling\n\n${markdownTable(['Profile', 'Status', 'Time to load ms', 'Resources', 'Transferred MiB', 'Encoded body MiB', 'Model requests', 'Console errors', 'Page errors', 'Failed requests', 'Screenshot'], throttleRows)}\n\n## Notes\n\n- Frame timing samples use a separate requestAnimationFrame sampler in the page. Median FPS is approximately \`1000 / median frame time\`; it is a browser-level estimate, not a physical-device benchmark.\n- Heap change is Chromium CDP's \`JSHeapUsedSize\` end minus start after the game shift begins. Negative values can occur after garbage collection.\n- The no-model scenarios intentionally abort GLB/GLTF/binary model requests. Those aborted model requests are reported separately from unexpected failed requests.\n- Resource Timing transfer sizes can be zero for cross-origin resources without Timing-Allow-Origin and may not include late requests occurring after the settle window.\n- Screenshots and the complete raw JSON are beside this report. Inspect \`httpErrors\`, \`consoleErrors\`, and \`pageErrors\` in the JSON before declaring a scenario clean.\n`;
+  return `# Kano Life — Browser Audit\n\n- **Run:** ${report.runId}\n- **Build under test:** local \`dist/\` served by Vite Preview unless \`KANO_AUDIT_BASE_URL\` was provided.\n- **Asset inventory:** ${report.assetInventory.fileCount} GLB/GLTF/bin files (${report.assetInventory.mib} MiB); ${report.assetInventory.glbCount} GLB.\n- **Duration:** ${report.durationTargetMs / 1000}s per desktop/phone × 2D/3D × model-on/off scenario.\n- **Model status:** ${report.assetInventory.fileCount > 0 ? 'real local model files detected' : '**needs assets** — no files found beneath public/assets/models at audit time'}.\n- **Browser:** ${report.browserVersion || 'unknown'}\n\n## Driving matrix\n\n${markdownTable(['Scenario', 'Status', 'Actual mode', 'Median frame ms', 'P95 frame ms', 'Heap change MiB', 'Console errors', 'Page errors', 'Failed requests', 'HTTP errors', 'Screenshot'], scenarioRows)}\n\n## Scenario failure details\n\n${report.scenarios.filter((item) => item.error).map((item) => `### ${item.scenario}\n\n- **Failure:** ${String(item.error).replaceAll('\\n', ' ')}\n- **Mode at failure:** ${item.failureSnapshot?.renderMode || 'not reported'}\n- **Routine visible:** ${item.failureSnapshot?.routineVisible ?? 'unknown'}\n- **Current step:** ${item.failureSnapshot?.currentStep || '—'}\n- **Available actions:** ${(item.failureSnapshot?.availableActions || []).map((action) => `${action.text}${action.disabled ? ' (disabled)' : ''}${action.visible ? '' : ' (hidden)'}`).join('; ') || '—'}\n- **First console errors:** ${(item.runtimeErrors || []).slice(0, 3).map((entry) => entry.text).join(' | ') || '—'}\n- **First HTTP errors:** ${(item.httpErrors || []).slice(0, 5).map((entry) => `${entry.status} ${entry.url}`).join(' | ') || '—'}\n`).join('\\n') || 'No scenario setup failures were recorded.'}\n\n## Optional morning routine smoke\n\n- **Status:** ${report.morningRoutineSmoke ? (report.morningRoutineSmoke.completed ? 'PASS' : 'FAIL') : 'not run'}\n- **App bootstrap ready:** ${report.morningRoutineSmoke?.appReady ?? false}\n- **Final game state:** ${report.morningRoutineSmoke?.transition?.gameState || '—'}\n- **Skipped breakfast remains false:** ${report.morningRoutineSmoke?.transition?.breakfastEaten === false}\n- **Routine hidden after shift starts:** ${report.morningRoutineSmoke?.transition?.routineHiddenAfterShift ?? '—'}\n- **Failure:** ${report.morningRoutineSmoke?.error ? String(report.morningRoutineSmoke.error).replaceAll('\n', ' ') : '—'}\n- **Screenshot:** ${report.morningRoutineSmoke?.screenshot || '—'}\n\n## Cold first-load throttling\n\n${markdownTable(['Profile', 'Status', 'Time to load ms', 'Resources', 'Transferred MiB', 'Encoded body MiB', 'Model requests', 'Console errors', 'Page errors', 'Failed requests', 'Screenshot'], throttleRows)}\n\n## Notes\n\n- Frame timing samples use a separate requestAnimationFrame sampler in the page. Median FPS is approximately \`1000 / median frame time\`; it is a browser-level estimate, not a physical-device benchmark.\n- Heap change is Chromium CDP's \`JSHeapUsedSize\` end minus start after the game shift begins. Negative values can occur after garbage collection.\n- The no-model scenarios intentionally abort GLB/GLTF/binary model requests. Those aborted model requests are reported separately from unexpected failed requests.\n- Resource Timing transfer sizes can be zero for cross-origin resources without Timing-Allow-Origin and may not include late requests occurring after the settle window.\n- Screenshots and the complete raw JSON are beside this report. Inspect \`httpErrors\`, \`consoleErrors\`, and \`pageErrors\` in the JSON before declaring a scenario clean.\n`;
 }
 
 async function main() {
@@ -876,6 +995,7 @@ async function main() {
     throttleSettleMs: THROTTLE_SETTLE_MS,
     assetInventory,
     scenarios: [],
+    morningRoutineSmoke: null,
     throttledFirstLoads: [],
     limitations: [],
   };
@@ -919,6 +1039,12 @@ async function main() {
       }
     }
 
+    report.morningRoutineSmoke = await runMorningRoutineSmoke(browser, baseURL);
+    console.log(`[Browser Audit] ${report.morningRoutineSmoke.completed ? 'PASS' : 'FAIL'} optional morning routine smoke: ` +
+      `state=${report.morningRoutineSmoke.transition?.gameState || 'unknown'}, ` +
+      `skippedBreakfast=${report.morningRoutineSmoke.transition?.breakfastEaten === false}`);
+    if (report.morningRoutineSmoke.error) console.error(`[Browser Audit] Morning routine smoke failure: ${report.morningRoutineSmoke.error}`);
+
     const profiles = [
       {
         name: 'Fast 3G',
@@ -951,6 +1077,7 @@ async function main() {
   report.scenarioCount = report.scenarios.length;
   report.completedScenarioCount = report.scenarios.filter((item) => item.completed).length;
   report.completedThrottleCount = report.throttledFirstLoads.filter((item) => item.completed).length;
+  report.morningRoutineSmokePassed = Boolean(report.morningRoutineSmoke?.completed);
   report.summaryPath = asLocalPath(path.join(OUTPUT_DIR, 'summary.md'));
   report.jsonPath = asLocalPath(path.join(OUTPUT_DIR, 'report.json'));
 
@@ -960,6 +1087,7 @@ async function main() {
   console.log('\n[Browser Audit] Finished.');
   console.log(`[Browser Audit] Scenarios: ${report.completedScenarioCount}/${report.scenarioCount} completed; ${report.scenarios.filter((item) => item.auditClean).length} clean`);
   console.log(`[Browser Audit] Throttled first-load profiles: ${report.completedThrottleCount}/${report.throttledFirstLoads.length}`);
+  console.log(`[Browser Audit] Optional morning routine smoke: ${report.morningRoutineSmokePassed ? 'PASS' : 'FAIL'}`);
   console.log(`[Browser Audit] Report: ${report.jsonPath}`);
   console.log(`[Browser Audit] Summary: ${report.summaryPath}`);
   console.log(`[Browser Audit] Screenshots: ${report.outputDirectory}`);

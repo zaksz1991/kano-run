@@ -1,23 +1,36 @@
-# Kano Life — Browser Audit Harness Diagnostics Update
+# Kano Life — Step 2 audit harness correction
 
-The latest 10-second run still completed 0/8 driving scenarios. The CLI summary omitted the actual scenario exception, so those results alone do not establish whether the remaining fault is in UI automation or application startup.
+## Diagnosis from the latest user-provided browser output
 
-## What this update changes
+The audit had an incorrect expectation: it clicked `START DRIVING` and then waited for `#life-routine-screen`. In the current application, `KanoGameplayPresentationRepair.js` deliberately overrides `UI.prototype.beginMorningRoutine` so the ordinary start button begins a run immediately. The story remains available through the separately-created `REPLAY MORNING ROUTINE` button. The audit therefore waited for a screen that is intentionally hidden on the default path.
 
-- Resolves morning-routine buttons directly from the live `#life-actions` DOM, with Unicode normalization and visibility/disabled checks.
-- Verifies that clicking START DRIVING visibly opens the morning-routine screen before attempting later actions.
-- Adds a page snapshot to the failure record: current step, available actions, renderer mode, canvas dimensions, visible screens, URL and bootstrap script URLs.
-- Preserves render-mode and frame sampler data for incomplete runs instead of leaving the fields blank by default.
-- Prints each scenario's actual failure and representative HTTP errors in the terminal.
-- Adds a failure-details section to `summary.md` so the next diagnostic run can be assessed without guessing from counts alone.
+The logs also show a startup race: in several cases the Start button remained on the screen after the click. The harness previously waited only for the button to be visible, which happens before the delayed bootstrap chain necessarily reaches `UI.bind()`. The replacement waits for `window.__KANO_LIFE_GAME__`, the game's `start` method, and the renderer mode before interacting.
 
-No game simulation, visual rendering, economy, progression, or binary assets are changed.
+## Changes in this update
+
+- Wait for application initialization before clicking any start action.
+- Treat the normal start button as direct start and require `game.state === 'PLAY'`, a hidden start screen, visible HUD/drive controls, and a reported renderer mode.
+- Update run recovery to wait for direct restart instead of trying to traverse the optional story.
+- Run a separate quick smoke test through `REPLAY MORNING ROUTINE` using the actual current story-button labels. The smoke test follows the skip-breakfast path, proceeds through the guarded park, and checks that the shift starts with `breakfastEaten === false`.
+- In default local Vite Preview runs, return explicit fixture responses for `/api/live-users` and `/api/leaderboard`; Vite Preview does not execute Vercel functions. The fixture endpoints are recorded in each result. If `KANO_AUDIT_BASE_URL` is supplied, the real endpoints are used and no API fixtures are installed.
+- Keep unexpected console/page errors, failed model requests, HTTP errors, frame timings and screenshots in the report.
 
 ## Apply
 
-Extract this ZIP over the existing `kano-run` project. Replace the included `scripts/browser-audit.mjs`, add the updated regression test, and add this document. Preserve `public/assets/`, `js/`, `index.html`, and all other project files.
+Replace these complete files from the ZIP:
 
-## Run a short diagnostic
+- `scripts/browser-audit.mjs`
+- `tests/browser-audit-harness.test.mjs`
+
+Add this document:
+
+- `docs/STEP2-AUDIT-HARNESS-DIAGNOSTICS.md`
+
+Do not replace `public/assets/`, `package-lock.json`, or other project files.
+
+## Verify
+
+Run:
 
 ```powershell
 npm test
@@ -26,6 +39,8 @@ npm run browser:audit
 Remove-Item Env:KANO_AUDIT_DURATION_MS
 ```
 
-This run is diagnostic only; the full audit still requires 60 seconds of driving in each scenario. The terminal will print the caught error, and the generated `summary.md` will include the failure snapshot and representative failed requests.
+The 10-second setting shortens only the eight driving scenarios; it is a diagnostic run, not the full 60-second performance audit. Inspect `summary.md` and `report.json`. If the diagnostic starts successfully, rerun without `KANO_AUDIT_DURATION_MS` for the full 60-second matrix.
 
-If the routine advances successfully, rerun without the duration override to perform the full matrix.
+## Limitations
+
+This package is a source update; it does not claim the browser run passed. It has been checked for JavaScript syntax and the harness's Node regression tests in the generation environment, but not executed against your local Windows browser and its binary asset collection. Real asset rendering remains **needs assets** until the fresh report confirms model response and visual results.
