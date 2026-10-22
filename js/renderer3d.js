@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
 import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
+import { disposeOwnedZoneLabelTexture } from './KanoZoneTextureLifecycle.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -3808,6 +3809,11 @@ export class Renderer3D {
       if (activeIds.has(id)) continue;
 
       this.world.remove(actor);
+      // Each temporary roadside zone owns a unique CanvasTexture for its
+      // sign. disposeSceneTree intentionally preserves textures by default
+      // because many GLB textures are shared; release this zone-owned texture
+      // explicitly to prevent GPU texture accumulation as zones recycle.
+      disposeOwnedZoneLabelTexture(actor);
       disposeSceneTree(actor);
       this.zoneActors.delete(id);
     }

@@ -1,32 +1,36 @@
-KANO LIFE — STEP 21: MOBILE TRAFFIC SELECTION CADENCE
+KANO LIFE — STEP 22: ROADSIDE LABEL TEXTURE LIFECYCLE FIX
 
-Purpose
--------
-Reduce avoidable JavaScript work in the mobile renderer without changing
-resolution, visible traffic counts, vehicle movement, collision ownership,
-missions, models, textures, or audio.
+Source-level finding
+--------------------
+Renderer3D.syncZones() creates a new 512 x 128 CanvasTexture for each temporary
+pickup/drop-off/fuel zone. When a zone leaves the active state, the code removed
+its actor and disposed its materials/geometries with disposeSceneTree(actor),
+but that helper intentionally preserves textures by default because imported
+GLB textures can be shared. The zone-owned label CanvasTexture was therefore
+not explicitly released during normal zone recycling.
 
-Changes
--------
-1. Reuses a persistent deadline and rescans/sorts mobile imported-traffic
-   candidates no more than once every 350 ms while the renderer has free model
-   slots. This specifically avoids sorting on every frame when the model cache
-   exists but contains no eligible vehicle model.
-2. Leaves per-frame traffic movement, actor transforms, and the simulation in
-   the normal update path.
-3. Replaces two hot-path Array.entries() loops for driver/pedestrian arm
-   animation with index loops to avoid per-frame iterator/pair allocations.
-4. Includes a focused source-regression test.
+What this package changes
+-------------------------
+- Complete replacement: kano-run/js/renderer3d.js
+- New helper: kano-run/js/KanoZoneTextureLifecycle.js
+- Focused tests: kano-run/tests/KanoZoneTextureLifecycle.test.mjs
+- Explicitly disposes only each expired zone's unique label texture, clears the
+  reference, then runs the existing scene-tree disposal unchanged.
+- Does not dispose textures on child GLB instances or alter shared ModelManager
+  asset ownership.
+- Does not change rendering scale, road/vehicle geometry, collisions, missions,
+  animation cadence, traffic simulation, or model/audio/texture source assets.
 
 Install
 -------
-Copy the complete kano-run/js/renderer3d.js over the same file in the project.
-Copy the new test into kano-run/tests if desired. Keep every other source file
-and all model, texture, and audio assets unchanged.
+Extract into the existing kano-run folder, preserving directory paths. Replace
+only js/renderer3d.js and add js/KanoZoneTextureLifecycle.js. The test file may
+be added to tests/ if you want to retain the focused regression test; no full
+npm test run is requested for this update.
 
-Validation note
----------------
-This package was checked with JavaScript syntax validation and its four focused
-source-regression tests. It was not benchmarked on a physical phone, and the
-full project test suite was not run. No result here claims the overall game lag
-has been fixed.
+Validation performed in this environment
+----------------------------------------
+- node --check passed for renderer3d.js and KanoZoneTextureLifecycle.js.
+- Focused node:test suite: 4/4 passed.
+- ZIP integrity check passed.
+- The full game/browser audit and physical-phone performance were not run.
