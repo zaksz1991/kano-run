@@ -508,7 +508,7 @@ async function start3D() {
     return;
   }
 
-  const models = new ModelManager();
+  const models = new ModelManager({ mobile });
   attachWebGLRecovery(activeCanvas, generation);
 
   let webglRenderer;
@@ -689,16 +689,13 @@ async function start3D() {
     );
   }
 
+  // On phones, load only the player's keke before the driving scene becomes
+  // available. Traffic and passenger GLBs have procedural fallbacks and are
+  // loaded one at a time while the game is not actively being played. This
+  // prevents several large GLB parses and texture uploads from competing with
+  // the first seconds of driving.
   const essentials = mobile
-    ? [
-        'keke',
-        'car',
-        'taxi',
-        'suv',
-        'motorcycle',
-        'police',
-        'passenger',
-      ]
+    ? ['keke']
     : [
         'keke',
         'car',
@@ -767,6 +764,16 @@ async function start3D() {
   // Load remaining assets in batches on mobile.
   if (mobile) {
     const mobileAssetBatches = [
+      // These were previously parsed concurrently during startup. Keep the
+      // same models available, but defer each one until the game is at rest.
+      [
+        'car',
+        'taxi',
+        'suv',
+        'motorcycle',
+        'police',
+        'passenger',
+      ],
       [
         'flyover',
         'building',
@@ -801,42 +808,41 @@ async function start3D() {
     ];
 
     void essentialLoad.then(async () => {
+      const rendererIsCurrent = () =>
+        !pageClosing &&
+        generation === rendererGeneration &&
+        renderer === webglRenderer &&
+        renderMode === '3D';
+
       for (const keys of mobileAssetBatches) {
-        if (
-          pageClosing ||
-          generation !== rendererGeneration ||
-          renderer !== webglRenderer ||
-          renderMode !== '3D'
-        ) {
-          return;
-        }
+        for (const key of keys) {
+          if (!rendererIsCurrent()) return;
 
-        // GLB parsing/texture uploads can monopolize a phone's main thread.
-        // Let the player drive without background batch parsing; resume in a
-        // menu/garage/end-run screen where a brief load hitch is less harmful.
-        while (game?.state === 'PLAY') {
-          await new Promise((resolve) => window.setTimeout(resolve, 700));
-          if (
-            pageClosing ||
-            generation !== rendererGeneration ||
-            renderer !== webglRenderer ||
-            renderMode !== '3D'
-          ) {
-            return;
+          // GLB parsing and texture upload can monopolize a phone's main
+          // thread. Re-check play state before EVERY asset rather than only
+          // once per batch, so starting a shift stops the next model from
+          // beginning to load. Any current load is allowed to finish safely.
+          while (game?.state === 'PLAY') {
+            await new Promise((resolve) => window.setTimeout(resolve, 700));
+            if (!rendererIsCurrent()) return;
           }
-        }
 
-        try {
-          await models.preload(keys);
-        } catch (error) {
-          console.warn(
-            '[ModelManager] deferred mobile asset batch failed',
-            error,
-          );
+          try {
+            await models.preload([key]);
+          } catch (error) {
+            console.warn(
+              `[ModelManager] deferred mobile asset failed: ${key}`,
+              error,
+            );
+          }
+
+          if (!rendererIsCurrent()) return;
+          // Yield between GLBs so the browser can paint and process input.
+          await new Promise((resolve) => window.setTimeout(resolve, 40));
         }
 
         await new Promise((resolve) => {
-          window.setTimeout(resolve, 250);
+          window.setTimeout(resolve, 180);
         });
       }
     });

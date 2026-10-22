@@ -1164,6 +1164,7 @@ function attachDriverAnimationReferences(instance) {
 export class ModelManager {
   constructor({
     basePath = '/assets/models/',
+    mobile = false,
   } = {}) {
     this.loader = createGLTFLoader();
 
@@ -1171,6 +1172,7 @@ export class ModelManager {
       ? basePath
       : `${basePath}/`;
 
+    this.mobile = Boolean(mobile);
     this.cache = new Map();
     this.pending = new Map();
     this.failed = new Set();
@@ -1469,11 +1471,24 @@ export class ModelManager {
   async preload(keys) {
     if (this.disposed) return [];
 
-    return Promise.all(
-      [...new Set(keys)].map(
-        (key) => this.load(key),
-      ),
-    );
+    const uniqueKeys = [...new Set(keys)];
+
+    // Desktop retains parallel preload throughput. Phones load models in
+    // sequence to avoid simultaneous GLB decoding, material creation and
+    // texture uploads creating large CPU/memory spikes. The task yield after
+    // each model lets the browser paint and process touch input between assets.
+    if (!this.mobile) {
+      return Promise.all(uniqueKeys.map((key) => this.load(key)));
+    }
+
+    const results = [];
+    for (const key of uniqueKeys) {
+      if (this.disposed) break;
+      results.push(await this.load(key));
+      if (this.disposed) break;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return results;
   }
 
   // ----------------------------------------------------------

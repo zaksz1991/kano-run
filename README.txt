@@ -1,33 +1,38 @@
-KANO LIFE — STEP 11: IMPORTED GLB BACK-FACE CULLING
+KANO LIFE — STEP 12: MOBILE MODEL-PRELOAD BUDGET
 
 Purpose
--------
-ModelManager.repairMaterials() previously forced every imported GLB material to
-THREE.DoubleSide. This disables normal back-face culling even for opaque vehicle,
-character and building materials whose GLB specifies single-sided rendering.
-On mobile, that can increase fragment work substantially.
+Reduce phone loading hitches by preventing several imported GLB models from
+being fetched, parsed, and uploaded concurrently during initial startup or an
+active driving shift.
 
-Change
-------
-Complete replacement:
-  kano-run/js/ModelManager.js
+Files included (complete replacements)
+- kano-run/js/main.js
+- kano-run/js/ModelManager.js
+- kano-run/tests/KanoMobileModelPreloadBudget.test.mjs (focused regression test)
 
-The replacement preserves the side setting supplied by GLTFLoader (including
-DoubleSide only where the GLB explicitly authors a double-sided material), keeps
-the existing low-opacity repair and keeps imported-model shadow flags disabled.
-The previous unconditional material.needsUpdate request is removed; it remains
-only when the opacity repair changes transparency.
+What changes
+- On mobile, the player's keke is the only model category in the initial
+  essential preload. The keke can be applied as soon as it is ready.
+- Other mobile GLB categories keep their existing procedural fallback while
+  they load later, one at a time, only while the game is not actively playing.
+- The queue checks the game state between individual assets, not just between
+  groups. Starting a shift stops the next model from starting. An already
+  active fetch/parse is allowed to finish safely.
+- ModelManager sequences multi-model preload requests on mobile and yields to
+  the browser between assets. Desktop keeps its existing parallel preloading.
+- No model, texture, audio, gameplay system, driving physics, or collision
+  file is removed or modified by this package.
 
-Installation
-------------
-Copy only js/ModelManager.js from the ZIP into the existing kano-run/js folder,
-replacing the file at that exact path. Do not replace other source files or any
-models, textures, audio or saved data.
+Install
+Extract the ZIP at the root of the existing repository and replace only the
+included files at the same paths. Keep all other files and all assets.
 
-Validation
-----------
-This change was checked against the available Kano Life source snapshot. Syntax
-check and the three focused source regression tests are run for this package.
-No full project test suite, production build or physical-phone benchmark is
-claimed. If an individual GLB intentionally uses double-sided material, its
-GLB-authored setting remains respected by GLTFLoader.
+Validation performed here
+- node --check on main.js and ModelManager.js: passed
+- focused preload-budget source regression tests: 4/4 passed
+- ZIP integrity: checked
+
+Limitations
+The full project test suite, production build, browser audit and physical-phone
+benchmark were not run in this environment. This change targets overlapping
+model-load work; it does not by itself prove the phone frame rate is fixed.
