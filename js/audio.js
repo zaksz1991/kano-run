@@ -9,24 +9,19 @@ const clamp = (value, min, max) => {
 const ENGINE_AUDIO_URL = '/assets/models/audio/engine.mp3';
 const HORN_AUDIO_URL = '/assets/models/audio/horn.mp3';
 
-const RADIO_ROOTS = [
-  '/assets/models/audio/',
-  '/assets/audio/',
-  '/audio/',
-  '/assets/sounds/',
-  '/sounds/',
-  '/assets/sfx/',
-];
+const RADIO_ROOT = '/assets/models/audio/';
 
-// Order must match js/config.js RADIO.
+// Order must match js/config.js RADIO. These exact filenames exist in the
+// project's asset manifest. Do not probe guessed directories or aliases.
 const RADIO_FILES = [
-  ['vision-fm.mp3', 'vision.mp3', 'radio-kano.mp3', 'ruffneck.mp3'],
-  ['rahama.mp3', 'rahama-radio.mp3'],
-  ['freedom.mp3', 'freedom-radio.mp3'],
-  ['cool.mp3', 'cool-fm.mp3', 'cool-fm-kano.mp3'],
-  ['arewa.mp3', 'arewa-radio.mp3'],
-  ['express-radio-kano.mp3', 'express.mp3', 'wazobia.mp3'],
+  ['radio-kano.mp3'],
+  ['rahama.mp3'],
+  ['freedom.mp3'],
+  ['cool.mp3'],
+  ['arewa.mp3'],
+  ['wazobia.mp3'],
 ];
+const KNOWN_RADIO_FILES = new Set(RADIO_FILES.flat());
 
 /**
  * Kano Life AudioManager
@@ -453,21 +448,14 @@ export class AudioManager {
   }
 
   async resolveLocalAudio(filename) {
-    if (!filename || typeof fetch !== 'function' || typeof window === 'undefined') return null;
+    if (!filename || typeof window === 'undefined' || !KNOWN_RADIO_FILES.has(filename)) return null;
     if (this.radioResolveCache.has(filename)) return this.radioResolveCache.get(filename);
-    const lookup = (async () => {
-      for (const root of RADIO_ROOTS) {
-        const url = `${root}${encodeURIComponent(filename).replace(/%2F/gi, '/')}`;
-        try {
-          const response = await fetch(url, { method: 'HEAD', cache: 'force-cache', credentials: 'same-origin' });
-          if (!response.ok) continue;
-          const contentType = response.headers.get('content-type') || '';
-          if (/text\/html/i.test(contentType)) continue;
-          return url;
-        } catch {}
-      }
-      return null;
-    })();
+
+    // Resolve deterministically from the one known public asset directory.
+    // Avoid HEAD requests: Vite/Vercel static hosting can serve the asset
+    // directly, and radio playback is lazy so this does not preload every track.
+    const url = `${RADIO_ROOT}${encodeURIComponent(filename)}`;
+    const lookup = Promise.resolve(url);
     this.radioResolveCache.set(filename, lookup);
     return lookup;
   }
@@ -497,10 +485,19 @@ export class AudioManager {
     }
     try {
       const player = new window.Audio(url);
-      player.preload = 'auto';
+      player.preload = 'none';
       player.loop = true;
       player.volume = 0.16;
       player.setAttribute('playsinline', '');
+      player.addEventListener('error', () => {
+        if (this.radioAudio !== player) return;
+        this.radioAudio = null;
+        this.radioIndex = -1;
+        if (!this.radioWarned) {
+          console.warn(`[Kano Life] Radio track failed to load: ${url}`);
+          this.radioWarned = true;
+        }
+      }, { once: true });
       this.radioAudio = player;
       this.radioIndex = index;
       await player.play();
