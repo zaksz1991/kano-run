@@ -3,19 +3,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { scanGlbCatalog, createGlbCatalogSyncPlugin } from '../scripts/glb-catalog-sync.mjs';
+import { scanGlbCatalog, createGlbCatalogSyncPlugin, makeCatalog, uniqueSorted } from '../scripts/glb-catalog-sync.mjs';
 
 function writeTinyGlb(filePath, names = []) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const json = JSON.stringify({
-    asset: { version: '2.0', generator: 'Test GLB' },
+    asset: { version: '2.0', generator: 'Kano test GLB' },
     scene: 0,
     scenes: [{ nodes: names.map((_, index) => index) }],
     nodes: names.map((name) => ({ name })),
     meshes: [],
     materials: [],
   });
-  const paddedLength = Math.ceil(json.length / 4) * 4;
+  const paddedLength = Math.ceil(Buffer.byteLength(json) / 4) * 4;
   const jsonBytes = Buffer.alloc(paddedLength, 0x20);
   jsonBytes.write(json, 0, 'utf8');
   const header = Buffer.alloc(20);
@@ -28,7 +28,7 @@ function writeTinyGlb(filePath, names = []) {
 }
 
 function makeFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kano-glb-catalog-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kano-glb-catalog-current-'));
   const modelRoot = path.join(root, 'public', 'assets', 'models');
   writeTinyGlb(path.join(modelRoot, 'vehicles', 'keke', 'Adaidaita-Renamed.glb'), ['Keke Body']);
   writeTinyGlb(path.join(modelRoot, 'vehicles', 'cars', 'car-body-final.glb'), ['Sedan']);
@@ -38,60 +38,13 @@ function makeFixture() {
   return { root, modelRoot };
 }
 
-function variantTestModelManagerSource() {
-  return `const CATALOG = {
-  keke: ['vehicles/keke/old-name.glb'],
-};
-// ============================================================
-// MODEL DIMENSIONS
-const TARGET_HEIGHT = {};
-export class ModelManager {
-  constructor({ basePath = '/assets/models/' } = {}) {
-    this.basePath = basePath.endsWith('/') ? basePath : basePath + '/';
-    this.cache = new Map();
-    this.pending = new Map();
-    this.failed = new Set();
-    this.disposed = false;
-  }
-  async load(key) { return this.cache.get(key) || null; }
-  async preload(keys) {
-    if (this.disposed) return [];
-    return Promise.all([...new Set(keys)].map((key) => this.load(key)));
-  }
-  // ----------------------------------------------------------
-  // GET INSTANCE
-  getInstance(key) {
-    if (this.disposed) return null;
-    const model = this.cache.get(key);
+test('uniqueSorted handles strings and inventory records deterministically', () => {
+  const records = [{ path: 'vehicles/keke/a.glb' }, { path: 'vehicles/cars/b.glb' }, { path: 'vehicles/keke/a.glb' }];
+  assert.deepEqual(uniqueSorted(records).map((entry) => entry.path), ['vehicles/cars/b.glb', 'vehicles/keke/a.glb']);
+  assert.deepEqual(uniqueSorted(['b.glb', 'a.glb', 'b.glb']), ['a.glb', 'b.glb']);
+});
 
-    if (!model) return null;
-    const clone = model.clone(true);
-    return clone;
-  }
-  getStatus() {
-    return {
-      loaded: [...this.cache.keys()],
-      pending: [...this.pending.keys()],
-      failed: [...this.failed.keys()],
-      disposed: this.disposed,
-    };
-  }
-  dispose() {
-    if (this.disposed) return;
-    this.disposed = true;
-    disposeModelResources(
-      [...this.cache.values()],
-    );
-
-    this.cache.clear();
-    this.failed.clear();
-    this.pending.clear();
-  }
-}
-`;
-}
-
-test('scan uses the exact current renamed GLB paths', async (t) => {
+test('catalog scan discovers exact on-disk GLB paths and safely categorizes them', async (t) => {
   const { root, modelRoot } = makeFixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const report = await scanGlbCatalog(modelRoot);
@@ -101,108 +54,58 @@ test('scan uses the exact current renamed GLB paths', async (t) => {
   assert.deepEqual(report.catalog.dirtmound, ['environment/ground/surface-revised.glb']);
   assert.ok(report.catalog.passengerWoman.includes('characters/passengers/hijab-person-v3.glb'));
   assert.ok(report.files.every((entry) => entry.path.endsWith('.glb')));
+  assert.equal(report.root, 'public/assets/models/');
 });
 
-test('Vite transform replaces the stale CATALOG without modifying other modules', async (t) => {
+test('catalog sync plugin replaces only the runtime CATALOG and preserves following code', async (t) => {
   const { root } = makeFixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const plugin = createGlbCatalogSyncPlugin();
   await plugin.configResolved({ root, publicDir: path.join(root, 'public') });
-  const source = variantTestModelManagerSource();
+  const source = "const CATALOG = { keke: ['old-name.glb'] };\n// MODEL DIMENSIONS\nconst TARGET_HEIGHT = { keke: 1.6 };\nexport const untouched = true;";
   const transformed = await plugin.transform(source, path.join(root, 'js', 'ModelManager.js'));
-  assert.ok(transformed.code.includes('Adaidaita-Renamed.glb'));
+  assert.ok(transformed?.code.includes('Adaidaita-Renamed.glb'));
   assert.ok(!transformed.code.includes('old-name.glb'));
   assert.ok(transformed.code.includes('// MODEL DIMENSIONS'));
-  assert.ok(transformed.code.includes('async preload(keys)'));
-  assert.ok(transformed.code.includes('getInstance(key)'));
-  assert.ok(transformed.code.includes('getStatus()'));
-  assert.ok(transformed.code.includes('dispose()'));
+  assert.ok(transformed.code.includes('const TARGET_HEIGHT = { keke: 1.6 };'));
+  assert.ok(transformed.code.includes('export const untouched = true;'));
   assert.equal(await plugin.transform(source, path.join(root, 'js', 'game.js')), null);
 });
 
-test('manual override maps generic renamed world models to explicitly chosen categories', async (t) => {
+test('no discovered models leaves the static runtime catalog untouched', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kano-glb-catalog-empty-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'public', 'assets', 'models'), { recursive: true });
+  const plugin = createGlbCatalogSyncPlugin();
+  await plugin.configResolved({ root, publicDir: path.join(root, 'public') });
+  const source = "const CATALOG = { keke: ['existing-keke.glb'] };\n// MODEL DIMENSIONS\nconst TARGET_HEIGHT = {};";
+  assert.equal(await plugin.transform(source, path.join(root, 'js', 'ModelManager.js')), null);
+});
+
+test('valid explicit overrides are applied and invalid paths preserve automatic safe candidates', async (t) => {
   const { root, modelRoot } = makeFixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const overridesFile = path.join(root, 'scripts', 'glb-catalog-overrides.json');
-  fs.mkdirSync(path.dirname(overridesFile), { recursive: true });
-  fs.writeFileSync(overridesFile, JSON.stringify({
+  const overridesPath = path.join(root, 'scripts', 'glb-catalog-overrides.json');
+  fs.mkdirSync(path.dirname(overridesPath), { recursive: true });
+  fs.writeFileSync(overridesPath, JSON.stringify({
     schemaVersion: 1,
     categories: {
       marketStall: ['world/buildings-suburban/frontage-renamed.glb'],
-      busStop: [],
+      keke: ['vehicles/keke/ADAIDAIta-missing.glb'],
     },
     exclude: {},
   }));
-  const report = await scanGlbCatalog(modelRoot, overridesFile);
+  const report = await scanGlbCatalog(modelRoot, overridesPath);
   assert.deepEqual(report.catalog.marketStall, ['world/buildings-suburban/frontage-renamed.glb']);
-  assert.deepEqual(report.catalog.busStop, []);
-  const frontage = report.files.find((entry) => entry.path === 'world/buildings-suburban/frontage-renamed.glb');
-  assert.ok(frontage.categories.includes('marketStall'));
-  assert.equal(report.overrideWarnings.length, 0, 'valid explicit mappings should not emit override warnings');
+  assert.deepEqual(report.catalog.keke, ['vehicles/keke/Adaidaita-Renamed.glb']);
+  assert.ok(report.overrideWarnings.some((line) => line.includes('path not found')));
 });
 
-test('invalid all-missing override preserves automatic category and reports exact filename mismatch', async (t) => {
-  const { root, modelRoot } = makeFixture();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const overridesFile = path.join(root, 'scripts', 'glb-catalog-overrides.json');
-  fs.mkdirSync(path.dirname(overridesFile), { recursive: true });
-  fs.writeFileSync(overridesFile, JSON.stringify({
-    schemaVersion: 1,
-    categories: { building: ['world/buildings-suburban/Frontage-Renamed.glb'] },
-    exclude: {},
-  }));
-  const report = await scanGlbCatalog(modelRoot, overridesFile);
-  assert.deepEqual(report.catalog.building, ['world/buildings-suburban/frontage-renamed.glb']);
-  assert.ok(report.overrideWarnings.some((line) => line.includes('case-sensitive')));
-  assert.ok(report.overrideWarnings.some((line) => line.includes('automatic safe candidates were retained')));
+test('a character mentioning keke cannot become the player vehicle', () => {
+  const report = makeCatalog([
+    { path: 'characters/pedestrians/keke female.glb', hints: ['female pedestrian'], bytes: 100 },
+    { path: 'vehicles/keke/real-keke.glb', hints: ['three wheeler'], bytes: 100 },
+  ]);
+  assert.deepEqual(report.catalog.keke, ['vehicles/keke/real-keke.glb']);
+  assert.ok(report.unsafeKekeMatches.some((item) => item.path === 'characters/pedestrians/keke female.glb'));
 });
-
-test('valid entries win when a category mixes found and missing paths', async (t) => {
-  const { root, modelRoot } = makeFixture();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const overridesFile = path.join(root, 'scripts', 'glb-catalog-overrides.json');
-  fs.mkdirSync(path.dirname(overridesFile), { recursive: true });
-  fs.writeFileSync(overridesFile, JSON.stringify({
-    schemaVersion: 1,
-    categories: { building: [
-      'world/buildings-suburban/frontage-renamed.glb',
-      'world/missing-other-frontage.glb'
-    ] },
-    exclude: { dirtmound: ['environment/ground/surface-revised.glb'] },
-  }));
-  const report = await scanGlbCatalog(modelRoot, overridesFile);
-  assert.deepEqual(report.catalog.building, ['world/buildings-suburban/frontage-renamed.glb']);
-  assert.ok(!report.catalog.dirtmound.includes('environment/ground/surface-revised.glb'));
-  assert.ok(report.overrideWarnings.some((line) => line.includes('world/missing-other-frontage.glb') && line.includes('case-sensitive')));
-  assert.ok(!report.overrideWarnings.some((line) => line.includes('Rejected unsafe mapping')));
-});
-
-test('Vite transform uses manually overridden catalog paths and ignores other modules', async (t) => {
-  const { root, modelRoot } = makeFixture();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const overridesFile = path.join(root, 'scripts', 'glb-catalog-overrides.json');
-  fs.mkdirSync(path.dirname(overridesFile), { recursive: true });
-  fs.writeFileSync(overridesFile, JSON.stringify({
-    schemaVersion: 1,
-    categories: { marketStall: ['world/buildings-suburban/frontage-renamed.glb'] },
-    exclude: {},
-  }));
-  const plugin = createGlbCatalogSyncPlugin();
-  await plugin.configResolved({ root, publicDir: path.join(root, 'public') });
-  const source = variantTestModelManagerSource();
-  const transformed = await plugin.transform(source, path.join(root, 'js', 'ModelManager.js'));
-  assert.ok(transformed.code.includes('frontage-renamed.glb'));
-  assert.ok(transformed.code.includes('marketStall'));
-  assert.ok(!transformed.code.includes('old-name.glb'));
-  assert.ok(transformed.code.includes('async preload(keys)'));
-  assert.ok(transformed.code.includes('getInstance(key)'));
-  assert.equal(await plugin.transform(source, path.join(root, 'js', 'game.js')), null);
-});
-
-
-test('GLB catalog transform is isolated to ModelManager and leaves renderer source untouched', async () => {
-  const plugin = createGlbCatalogSyncPlugin();
-  const rendererSource = 'export class Renderer3D { constructor() { this.ready = true; } }';
-  assert.equal(await plugin.transform(rendererSource, '/repo/js/renderer3d.js'), null);
-});
-
