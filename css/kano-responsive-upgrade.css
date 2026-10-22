@@ -391,3 +391,11 @@
     scroll-behavior: auto !important;
   }
 }
+/* Desktop and tablet: the minimap occupies top 140px to 228px, so the
+   passenger list starts below it instead of covering it. */
+@media (min-width: 760px) {
+  .passenger-list {
+    top: 238px;
+    left: 14px;
+  }
+}
