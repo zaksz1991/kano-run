@@ -6,7 +6,7 @@
  * damage values, collision detection, steering, speed, or progression.
  */
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import * as ModelManagerModule from './ModelManager.js';
 import * as RendererModule from './renderer3d.js';
@@ -327,7 +327,7 @@ function embeddedClipsForPath(path) {
   if (!path) return Promise.resolve([]);
   if (embeddedClipPromises.has(path)) return embeddedClipPromises.get(path);
   rootAudit.embeddedAnimations.requestedAssets += 1;
-  const promise = new GLTFLoader().loadAsync(encodedAssetUrl(path)).then((gltf) => {
+  const promise = createGLTFLoader().loadAsync(encodedAssetUrl(path)).then((gltf) => {
     const clips = Array.isArray(gltf.animations) ? gltf.animations.map((clip) => clip.clone()) : [];
     disposeAnimationProbeScene(gltf.scene);
     if (clips.length) {
@@ -944,7 +944,7 @@ async function loadGoatTemplate() {
   if (goatTemplatePromise) return goatTemplatePromise;
   goatTemplatePromise = (async () => {
     const path = await discoverGoatAsset();
-    const gltf = await new GLTFLoader().loadAsync(encodedAssetUrl(path));
+    const gltf = await createGLTFLoader().loadAsync(encodedAssetUrl(path));
     if (!gltf?.scene) throw new Error('Goat GLB has no default scene.');
     const template = gltf.scene;
     const bounds = getModelBounds(template);

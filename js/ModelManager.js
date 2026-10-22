@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from './createGLTFLoader.js';
 
 // ============================================================
 // KANO LIFE — MODEL MANAGER
@@ -1162,7 +1162,7 @@ export class ModelManager {
   constructor({
     basePath = '/assets/models/',
   } = {}) {
-    this.loader = new GLTFLoader();
+    this.loader = createGLTFLoader();
 
     this.basePath = basePath.endsWith('/')
       ? basePath

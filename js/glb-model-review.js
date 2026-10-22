@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from './createGLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   CATALOG_KEYS, CATEGORY_LABELS, cloneJson, initialOverridesFromReport,
@@ -199,7 +199,7 @@ async function loadSelectedModel(reload = false) {
   elements.detailDimensions.textContent = '…';
   const url = publicModelUrl(file.path);
   try {
-    const loader = new GLTFLoader();
+    const loader = createGLTFLoader();
     const gltf = await loader.loadAsync(url);
     if (token !== loadToken) { disposeRoot(gltf.scene); return; }
     const root = gltf.scene || gltf.scenes?.[0];

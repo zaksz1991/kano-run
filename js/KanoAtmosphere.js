@@ -88,8 +88,6 @@ function persistLifestyle(lifestyle) {
 // constructs Renderer3D. It only intercepts the two known missing textures.
 // ---------------------------------------------------------------------------
 const TEXTURE_FALLBACKS = new Map([
-  ['/assets/environment/ground/asphalt.jpg', 'asphalt'],
-  ['/assets/environment/ground/market-stall.jpg', 'marketStall'],
   ['/assets/models/environment/ground/asphalt.jpg', 'asphalt'],
   ['/assets/models/environment/ground/market-stall.jpg', 'marketStall'],
 ]);

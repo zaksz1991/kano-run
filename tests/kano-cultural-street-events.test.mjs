@@ -30,7 +30,7 @@ test('roadside children use existing ModelManager character instances', () => {
 
 test('goat is loaded from generated real-asset inventory and no goat placeholder is fabricated', () => {
   assert.match(moduleSource, /model-catalog-audit\.generated\.json/);
-  assert.match(moduleSource, /new GLTFLoader\(\)\.load\(url/);
+  assert.match(moduleSource, /createGLTFLoader\(\)\.load\(url/);
   assert.match(moduleSource, /no-goat-glb-found-in-inventory/);
   assert.match(moduleSource, /no primitive goat placeholder was created/);
 });

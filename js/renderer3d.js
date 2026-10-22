@@ -197,7 +197,7 @@ export class Renderer3D {
     this.world.add(asphalt);
 
     this.loadOptionalTexture(
-      '/assets/environment/ground/asphalt.jpg',
+      '/assets/models/environment/ground/asphalt.jpg',
       asphaltMaterial,
       [3, 64],
     );
@@ -1654,7 +1654,7 @@ export class Renderer3D {
         const canopyMaterial = this.material(colors[index % colors.length]);
 
         this.loadOptionalTexture(
-          '/assets/environment/ground/market-stall.jpg',
+          '/assets/models/environment/ground/market-stall.jpg',
           canopyMaterial,
           [1, 1],
         );

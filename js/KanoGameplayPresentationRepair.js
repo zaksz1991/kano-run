@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
 import { ModelManager, MODEL_KEYS, getModelAssetAuditReport } from './ModelManager.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from './createGLTFLoader.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
 import { AudioManager } from './audio.js';
@@ -493,7 +493,7 @@ function kanoLoadEnvironmentAsset(renderer, state, spec) {
     error: null,
   });
   const report = state.assets.get(spec.id);
-  const loader = new GLTFLoader();
+  const loader = createGLTFLoader();
   loader.load(
     report.url,
     (gltf) => {

@@ -8,7 +8,7 @@
  * No new binary assets are introduced, and game damage/fare rules are untouched.
  */
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { Renderer3D } from './renderer3d.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
@@ -263,7 +263,7 @@ function startGoatLoad(system, state) {
     state.goatStatus = 'loading-existing-goat-glb';
     cultureAudit.goatAssetStatus = state.goatStatus;
     cultureAudit.goatModelPath = relativePath;
-    new GLTFLoader().load(url, (gltf) => {
+    createGLTFLoader().load(url, (gltf) => {
       if (state.disposed || system.renderer?.disposed || !system.renderer?.world) {
         disposeUniqueTree(gltf?.scene);
         state.goatStatus = 'discarded-after-scene-dispose';
