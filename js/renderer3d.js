@@ -157,10 +157,13 @@ export class Renderer3D {
   }
 
   material(color, roughness = 1) {
+    // Nearly all procedural mobile scenery uses closed solids or upward-facing
+    // ground planes. Rendering both sides of those surfaces wastes fill-rate.
+    // Keep desktop appearance unchanged; use front-face culling on mobile.
     return new THREE.MeshStandardMaterial({
       color,
       roughness,
-      side: THREE.DoubleSide,
+      side: this.mobile ? THREE.FrontSide : THREE.DoubleSide,
     });
   }
 

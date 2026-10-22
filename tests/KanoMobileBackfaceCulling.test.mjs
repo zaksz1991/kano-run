@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const file = path.join(root, 'js', 'renderer3d.js');
+const source = await readFile(file, 'utf8');
+const syntax = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
+assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
+const materialStart = source.indexOf('  material(color, roughness = 1) {');
+const materialEnd = source.indexOf('\n  loadOptionalTexture(', materialStart);
+assert.ok(materialStart >= 0 && materialEnd > materialStart, 'material method boundaries exist');
+const material = source.slice(materialStart, materialEnd);
+assert.match(material, /new THREE\.MeshStandardMaterial\(/);
+assert.match(material, /side:\s*this\.mobile\s*\?\s*THREE\.FrontSide\s*:\s*THREE\.DoubleSide/);
+assert.match(source, /this\.renderer\.shadowMap\.enabled = false/);
+assert.match(source, /KANO_INSTANCED_BLACK_WHITE_KERBS/);
+assert.match(source, /KANO_INSTANCED_LANE_MARKINGS/);
+assert.match(source, /new THREE\.InstancedMesh\(/);
+console.log('PASS: JavaScript syntax');
+console.log('PASS: mobile procedural materials use front-face culling');
+console.log('PASS: desktop material side is unchanged');
+console.log('PASS: existing shadows-off, kerb and lane-mark instancing remain');

@@ -1,29 +1,30 @@
-KANO LIFE — MOBILE GLB ANIMATION DISCOVERY BUDGET (STEP 3)
+KANO LIFE — MOBILE BACKFACE-CULLING FIX
 
-Included replacement:
-- kano-run/js/KanoAnimationTrafficUpgrade.js
+Purpose
+-------
+Reduce avoidable rendering work for the procedural 3D world on phones without
+lowering the rendering resolution or replacing the materials with flat shaders.
 
-Included focused regression test:
-- kano-run/tests/KanoGLBAnimationDiscoveryBudget.test.mjs
+Change
+------
+Only js/renderer3d.js is a replacement source file. The material() helper now
+uses THREE.FrontSide on mobile for its procedural MeshStandardMaterial surfaces.
+Desktop keeps THREE.DoubleSide unchanged. Colors, roughness, meshes, animations,
+imported GLB materials, gameplay, traffic, collision, resolution policy, and
+assets are untouched.
 
-Change:
-On phones, the GLB animation manager no longer rebuilds the complete list of
-animated roots every rendered frame. It refreshes the inventory every 120 ms.
-Existing AnimationMixer updates remain per update for visible active roots;
-detached roots continue to be cleaned up. Desktop retains per-frame discovery.
-The cached inventory is cleared during disposal.
+This targets solid scenery and ground planes whose outward-facing surfaces are
+intended to be seen from the road. A few intentionally double-sided textured
+sign faces use their own explicit material and remain double-sided.
 
-Scope:
-This does not remove models, change the renderer mode, change resolution,
-alter driving physics, change collision rules, or change asset paths.
-Newly added/removed character animations can take up to about 120 ms to be
-recognized by the mobile inventory. Detached roots are still checked by the
-existing parent-reference cleanup during each update.
+Install
+-------
+Extract the ZIP into the existing kano-run folder and replace only:
+  js/renderer3d.js
+Keep all other source files and all model, texture, and audio assets unchanged.
 
-Install by extracting at the project root and replacing only the included
-KanoAnimationTrafficUpgrade.js. Keep all other files/assets unchanged. The
-focused test is included for the project; user does not need to run npm test
-as a condition of this delivery.
-
-Validation performed here: node --check on the replacement and test, plus
-focused regression test execution. This does not prove physical-phone FPS.
+Validation performed here
+-------------------------
+The full replacement passed Node's JavaScript syntax check and the included
+focused source regression test. The full project test suite and physical-phone
+performance have not been run or claimed.
