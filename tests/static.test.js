@@ -44,7 +44,8 @@ test('2D fallback always replaces the active canvas before creating its context'
   const main = read('js/main.js');
   assert.match(main, /function freshCanvas\(/);
   assert.match(main, /function start2D[\s\S]*?const newCanvas = freshCanvas\(\)[\s\S]*?new Renderer2D\(newCanvas\)/);
-  assert.match(main, /function start3D[\s\S]*?const activeCanvas = freshCanvas\(\)[\s\S]*?new Renderer3D\(activeCanvas/);
+  assert.match(main, /function start3D[\s\S]*?const activeCanvas = freshCanvas\(\)[\s\S]*?activeCanvas\.getContext\('webgl2'[\s\S]*?new Renderer3D\(activeCanvas/);
+  assert.doesNotMatch(main, /getExtension\('WEBGL_lose_context'\)[\s\S]{0,80}loseContext\(\)/);
 });
 
 test('saved 2D preference is resolved before WebGL startup and force3d overrides it', () => {
@@ -209,7 +210,8 @@ test('roadside zones pause when the keke stops and traffic scroll matches the ca
   const game = read('js/game.js');
   const renderer = read('js/renderer3d.js');
   assert.match(game, /const ROAD_DEPTH_SCALE = 316\.8/);
-  assert.match(game, /this\.mode === 'timeAttack' \? 150 : this\.mode === 'freeRoam' \? 36 : 38/);
+  assert.match(game, /this\.mode === 'timeAttack' \? 150 : this\.mode === 'freeRoam' \? 48 : 46/);
+  assert.match(game, /this\.mode === 'timeAttack' \? 1\.8 : 1\.35/);
   assert.match(game, /const desiredSpeed = s\.gas && s\.fuel > 0 \? maxSpeed : 0/);
   assert.match(game, /const closingSpeed = s\.signedSpeed - trafficSignedSpeed/);
   assert.match(renderer, /const scroll = signedSpeed \* dt \* 0\.28/);
@@ -217,7 +219,10 @@ test('roadside zones pause when the keke stops and traffic scroll matches the ca
   // Driver view must sit above and behind the canopy instead of looking through the body.
   assert.match(renderer, /this\.camera\.position\.y = driverView \? 2\.9 : 3\.35/);
   assert.match(renderer, /this\.camera\.position\.z = driverView \? 7\.2 : 8\.6/);
-  assert.match(renderer, /zone\.side \|\| \(zone\.lane === 0 \? -1 : 1\)\) \* 6\.7/);
+  assert.match(renderer, /zone\.side \|\| \(zone\.lane === 0 \? -1 : 1\)\) \* 4\.55/);
+  assert.match(renderer, /new THREE\.PlaneGeometry\(11\.2, 250\)/);
+  assert.match(renderer, /const laneX = Math\.max\([\s\S]*?-4\.5[\s\S]*?4\.5/);
+  assert.match(renderer, /const cameraFollow = driverView \? 0\.72 : 0\.92/);
 });
 
 
@@ -249,8 +254,10 @@ test('vehicles face with the road flow and 2D perspective lane centers remain in
 test('collision plane is tight enough to match visible vehicle contact and ordinary stops are forgiving', () => {
   const game = read('js/game.js');
   const renderer2d = read('js/renderer2d.js');
-  assert.match(game, /const impactDepth = 0\.022/);
-  assert.match(game, /vehicle\.depth <= 0\.035 && vehicle\.depth >= 0\.012/);
+  assert.match(game, /const impactDepth = clamp\([\s\S]*?trafficHalfLength \+ PLAYER_KEKE_HALF_LENGTH - 2\) \/ 88/);
+  assert.match(game, /const lateralGap = Math\.abs\(trafficWorldX - playerWorldX\)/);
+  assert.match(game, /const collisionGap = PLAYER_KEKE_HALF_WIDTH \+ trafficHalfWidth \+ 0\.12/);
+  assert.match(game, /vehicle\.collisionKickTime = 0\.44/);
   assert.match(game, /zone\.hub \? 6\.5 : 12/);
   assert.match(game, /const largePassenger = Boolean\(zone\.hub\)/);
   assert.match(game, /const requestedSeats = zone\.hub \? special \|\| largePassenger \? 2 : clamp\(zone\.seats \|\| 2, 2, 4\) : 1/);
@@ -261,4 +268,24 @@ test('heavy procedural traffic has distinct left and right side windows', () => 
   const renderer = read('js/renderer3d.js');
   assert.match(renderer, /rightSideWindow\.position\.set\(bodyWidth \* 0\.48/);
   assert.match(renderer, /leftSideWindow\.position\.set\(-bodyWidth \* 0\.48/);
+});
+
+
+test('safe-speed objective matches a reachable city-keke speed and collision uses world-space lateral position', () => {
+  const config = read('js/config.js');
+  const game = read('js/game.js');
+  assert.match(config, /SAFE_SPEED_MISSION_KMH = 30/);
+  assert.match(config, /Hold \${SAFE_SPEED_MISSION_KMH} km\/h without a crash for 12 seconds/);
+  assert.match(game, /s\.speed >= SAFE_SPEED_MISSION_KMH/);
+  assert.match(game, /pullOverSide/);
+});
+
+test('mobile render policy uses device tiers and never changes to 2D for low FPS', () => {
+  const renderer = read('js/renderer3d.js');
+  const adaptive = read('js/KanoAdaptiveQuality.js');
+  const main = read('js/main.js');
+  assert.match(renderer, /antialias: !mobile \|\| getMobileTier\(\) === 'high'/);
+  assert.match(adaptive, /const mobileRatios = this\.mobile \? getMobileRatios\(this\.mobileTier\) : null/);
+  assert.match(adaptive, /criticallySlow/);
+  assert.match(main, /activeCanvas\.getContext\('webgl2'/);
 });

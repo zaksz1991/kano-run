@@ -10,6 +10,7 @@
  * the separate life-scene dioramas are deliberately never culled by this file.
  */
 import * as THREE from 'three';
+import { getMobileTier, getMobileRatios } from './KanoDeviceTier.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
 import { KanoGLBAnimationManager } from './KanoAnimationTrafficUpgrade.js';
 
@@ -311,11 +312,14 @@ export class KanoAdaptiveQuality {
 
     this.originalRatio = Number(this.webgl.getPixelRatio()) || 1;
     this.deviceRatio = safeDevicePixelRatio();
+    this.mobileTier = this.mobile ? getMobileTier() : 'desktop';
+    const mobileRatios = this.mobile ? getMobileRatios(this.mobileTier) : null;
 
-    // Limit GPU fill-rate cost without making the mobile image excessively soft.
-    this.maximumRatio = this.mobile ? 1.28 : 1.72;
-    this.minimumRatio = this.mobile ? 0.78 : 0.84;
-    this.startupRatio = this.mobile ? 1.06 : 1.30;
+    // Phone GPU cost is bounded by tier. Weak phones start substantially below
+    // native DPR and can step down quickly instead of stuttering for several seconds.
+    this.maximumRatio = this.mobile ? mobileRatios.max : 1.72;
+    this.minimumRatio = this.mobile ? mobileRatios.min : 0.84;
+    this.startupRatio = this.mobile ? mobileRatios.start : 1.30;
     this.maxSupportedRatio = Math.max(
       this.minimumRatio,
       Math.min(this.deviceRatio, this.maximumRatio),
@@ -325,7 +329,7 @@ export class KanoAdaptiveQuality {
 
     this.levels = this.buildLevels();
     this.lodDistances = this.mobile
-      ? [Infinity, 230, 210, 190, 170, 150]
+      ? [Infinity, 220, 195, 175, 155, 140, 118]
       : [Infinity, 270, 245, 220, 195, 175];
 
     const targetStart = Math.min(this.baseRatio, this.startupRatio);
@@ -362,6 +366,7 @@ export class KanoAdaptiveQuality {
       this.baseRatio * 0.87,
       this.baseRatio * 0.81,
       this.baseRatio * 0.75,
+      Math.min(this.baseRatio, this.startupRatio),
       this.minRatio,
     ];
     const unique = [];
@@ -507,7 +512,7 @@ export class KanoAdaptiveQuality {
 
     const maxDistance = this.currentLodDistance;
     const pedestrianDistance = Number.isFinite(maxDistance)
-      ? Math.max(115, maxDistance - (this.mobile ? 14 : 4))
+      ? Math.max(88, maxDistance - (this.mobile ? 18 : 4))
       : Infinity;
 
     for (const actor of this.collectDecorativeActors()) {
@@ -555,7 +560,7 @@ export class KanoAdaptiveQuality {
     }
 
     const sinceChange = now - this.lastChangeAt;
-    if (this.lastFps < (this.mobile ? 43 : 47)) {
+    if (this.lastFps < (this.mobile ? 45 : 47)) {
       this.slowWindows += 1;
       this.fastWindows = 0;
     } else if (this.lastFps > 57) {
@@ -566,9 +571,10 @@ export class KanoAdaptiveQuality {
       this.fastWindows = 0;
     }
 
+    const criticallySlow = this.mobile && this.lastFps < 32;
     if (
-      this.slowWindows >= 2 &&
-      sinceChange >= 2200 &&
+      (criticallySlow || this.slowWindows >= 2) &&
+      sinceChange >= (this.mobile ? 900 : 2200) &&
       this.levelIndex < this.levels.length - 1
     ) {
       this.setLevel(this.levelIndex + 1, now, 'performance');

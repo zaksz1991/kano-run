@@ -17,19 +17,21 @@ test('phone tier follows cores and memory, and unknown memory is treated as mid-
   assert.equal(getMobileTier({ cores: 8, memory: undefined }), 'mid');
 });
 
-test('every tier keeps min <= start <= max and weak phones keep the old conservative limits', () => {
+test('every tier keeps min <= start <= max and weak phones start at a reduced GPU load', () => {
   for (const tier of ['high', 'mid', 'low']) {
     const r = getMobileRatios(tier);
     assert.ok(r.min <= r.start && r.start <= r.max, tier);
   }
-  assert.deepEqual(getMobileRatios('low'), { max: 1.28, start: 1.06, min: 0.78 });
-  assert.ok(getMobileRatios('high').max > getMobileRatios('mid').max);
+  assert.deepEqual(getMobileRatios('low'), { max: 1.1, start: 0.82, min: 0.58 });
+  assert.deepEqual(getMobileRatios('mid'), { max: 1.25, start: 0.94, min: 0.62 });
+  assert.deepEqual(getMobileRatios('high'), { max: 1.45, start: 1.08, min: 0.7 });
 });
 
 test('anti-aliasing on phones is limited to the high tier; desktop is unchanged', () => {
   const renderer = read('js/renderer3d.js');
   assert.match(renderer, /antialias: !mobile \|\| getMobileTier\(\) === 'high'/);
 });
+
 
 test('a checkpoint group gets a long bay marker while a roadside pick-up stays a small disc', () => {
   const renderer = read('js/renderer3d.js');

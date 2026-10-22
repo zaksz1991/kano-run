@@ -11,6 +11,7 @@ export const DRIVERS=[
 export const RADIO=[{name:'Vision FM',freq:'92.1'},{name:'Rahama Radio',freq:'97.3'},{name:'Freedom Radio',freq:'99.5'},{name:'Cool FM Kano',freq:'96.9'},{name:'Arewa Radio',freq:'93.1'},{name:'Express Radio Kano',freq:'90.3'}];
 export const DIALECT={hausa:{greet:'Sannu! Ina za ka?',fare:'Ka rage farashin mana!',ok:'To, mu je.',fuel:'Man fetur ya kusa ƙarewa!',argue:'Yanzu wannan kuɗin ne?',thanks:'Nagode, Allah ya saka da alheri.'},yoruba:{greet:'Ẹ káàbọ̀! Ẹ n lọ síbo?',fare:'Ẹ jọ̀ọ́, dín owó kù!',ok:'Ó dáa, ẹ jẹ́ ká lọ.',fuel:'Epo ti fẹ́ tán!',argue:'Owó yìí kò tó o!',thanks:'Ẹ ṣé, ẹ kú iṣẹ́.'},igbo:{greet:'Nnọọ! Ebee ka ị na-aga?',fare:'Biko, belata ego!',ok:'Ọ dị mma, ka anyị gawa.',fuel:'Mmanụ ọkụ na-agwụ!',argue:'Ego a ezughị!',thanks:'Daalụ, i meela.'}};
 export const MODES={career:{label:'Career',target:Infinity},timeAttack:{label:'Time Attack',target:3.5},fuel:{label:'Fuel Gauge Challenge',target:4},matchDrop:{label:'Match Drop',target:Infinity},potholes:{label:'Potholes Challenge',target:3},freeRoam:{label:'Free roam',target:Infinity}};
+export const SAFE_SPEED_MISSION_KMH = 30;
 export const MISSION_POOL=[
 {id:'drops5',text:'Drop 5 passengers',target:5,key:'drops',reward:900},
 {id:'board5',text:'Board 5 passengers',target:5,key:'boards',reward:700},
@@ -29,7 +30,7 @@ export const MISSION_POOL=[
 {id:'aishat',text:'Board Aishat and Hibba',target:1,key:'aishat',reward:1200},
 {id:'streak3',text:'Keep a Match Drop streak of 3',target:3,key:'streak',reward:800},
 {id:'near5',text:'Near-miss traffic 5 times',target:5,key:'nearMisses',reward:900},
-{id:'safeSpeed',text:'Hold 95 km/h without a crash for 12 seconds',target:12,key:'safeSpeedSeconds',reward:800},
+{id:'safeSpeed',text:`Hold ${SAFE_SPEED_MISSION_KMH} km/h without a crash for 12 seconds`,target:12,key:'safeSpeedSeconds',reward:800},
 {id:'cleanRoad',text:'Drive 1.5 km without a vehicle collision',target:1.5,key:'noCollisionKm',reward:850},
 {id:'horn3',text:'Use the horn near traffic 3 times',target:3,key:'horns',reward:350},
 {id:'richDrama',text:'Resolve a rich-man vehicle drama',target:1,key:'richDramas',reward:1000},

@@ -1,28 +1,19 @@
-// ============================================================
-// KANO LIFE — DEVICE TIER (render quality for phones)
-// File: js/KanoDeviceTier.js
-// Picks a render-quality tier from what the browser reports. The adaptive
-// quality system still lowers resolution at runtime if the frame rate drops.
-// ============================================================
-
-/**
- * @param {{cores?: number, memory?: number}} [hardware]
- * @returns {'high'|'mid'|'low'}
- */
+// KANO LIFE — DEVICE TIER FOR PHONE RENDER BUDGETS.
+/** @param {{cores?: number, memory?: number}} [hardware] @returns {'high'|'mid'|'low'} */
 export function getMobileTier(hardware = {}) {
   const nav = typeof navigator === 'undefined' ? {} : navigator;
   const cores = Number(hardware.cores ?? nav.hardwareConcurrency) || 4;
-  // deviceMemory is Chromium-only (values like 0.5, 1, 2, 4, 8). Assume 4 when unknown.
+  // Chromium deviceMemory is optional; unknown memory is treated as mid-range.
   const memory = Number(hardware.memory ?? nav.deviceMemory) || 4;
-
   if (cores >= 8 && memory >= 8) return 'high';
   if (cores >= 6 && memory >= 4) return 'mid';
   return 'low';
 }
 
-/** Render-resolution limits relative to CSS pixels, per tier (phones only). */
+/** Resolution budgets relative to CSS pixels. Lower startup/minimum values
+ * deliberately reserve GPU headroom for GLB characters, traffic and markets. */
 export function getMobileRatios(tier) {
-  if (tier === 'high') return { max: 1.75, start: 1.5, min: 0.9 };
-  if (tier === 'mid') return { max: 1.5, start: 1.25, min: 0.8 };
-  return { max: 1.28, start: 1.06, min: 0.78 };
+  if (tier === 'high') return { max: 1.45, start: 1.08, min: 0.7 };
+  if (tier === 'mid') return { max: 1.25, start: 0.94, min: 0.62 };
+  return { max: 1.1, start: 0.82, min: 0.58 };
 }

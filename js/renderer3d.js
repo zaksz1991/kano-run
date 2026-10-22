@@ -75,6 +75,7 @@ export class Renderer3D {
     this.canvas = canvas;
     this.models = models;
     this.mobile = mobile;
+    this.mobileTier = mobile ? getMobileTier() : 'desktop';
     this.ready = false;
     this.disposed = false;
 
@@ -87,8 +88,6 @@ export class Renderer3D {
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      // Phones get anti-aliasing only on the high tier; the adaptive system
-      // handles resolution, but MSAA cannot be switched on later.
       antialias: !mobile || getMobileTier() === 'high',
       alpha: false,
       powerPreference: 'high-performance',
@@ -193,7 +192,7 @@ export class Renderer3D {
     const asphaltMaterial = this.material(0x343c43);
 
     const asphalt = new THREE.Mesh(
-      new THREE.PlaneGeometry(13, 250),
+      new THREE.PlaneGeometry(11.2, 250),
       asphaltMaterial,
     );
 
@@ -202,7 +201,7 @@ export class Renderer3D {
     this.world.add(asphalt);
 
     this.loadOptionalTexture(
-      '/assets/models/environment/ground/asphalt.jpg',
+      '/assets/environment/ground/asphalt.jpg',
       asphaltMaterial,
       [3, 64],
     );
@@ -216,7 +215,7 @@ export class Renderer3D {
     ground.position.set(0, -0.09, -92);
     this.world.add(ground);
 
-    for (const x of [-6.15, 6.15]) {
+    for (const x of [-5.4, 5.4]) {
       const edge = new THREE.Mesh(
         new THREE.PlaneGeometry(0.12, 250),
         this.material(0xf5d88e),
@@ -227,7 +226,7 @@ export class Renderer3D {
       this.world.add(edge);
     }
 
-    for (const x of [-2, 2]) {
+    for (const x of [-1.8, 1.8]) {
       for (let z = -4; z > -245; z -= 8.5) {
         const dash = new THREE.Mesh(
           new THREE.PlaneGeometry(0.095, 3.4),
@@ -1659,7 +1658,7 @@ export class Renderer3D {
         const canopyMaterial = this.material(colors[index % colors.length]);
 
         this.loadOptionalTexture(
-          '/assets/models/environment/ground/market-stall.jpg',
+          '/assets/environment/ground/market-stall.jpg',
           canopyMaterial,
           [1, 1],
         );
@@ -2909,10 +2908,9 @@ export class Renderer3D {
               ? 0.68
               : 0.98;
 
-          // A General Checkpoint is a long loading bay for a group, so its
-          // marked ground is a long strip; a roadside stop stays a small disc.
+          // General Checkpoint is a long loading bay for group passengers;
+          // ordinary roadside stops keep their compact circular marker.
           const checkpointBay = Boolean(zone.hub) && zone.type === 'pickup';
-
           const pad = new THREE.Mesh(
             checkpointBay
               ? new THREE.BoxGeometry(2.6, 0.04, 5.2)
@@ -3097,7 +3095,7 @@ export class Renderer3D {
       const markerX =
         zone.type === 'pothole'
           ? (zone.lane - 1) * 3
-          : (zone.side || (zone.lane === 0 ? -1 : 1)) * 6.7;
+          : (zone.side || (zone.lane === 0 ? -1 : 1)) * 4.55;
 
       // Zone depth remains controlled by game.js.
       // In reverse gear, zone.depth must increase in game.js as
@@ -3156,7 +3154,7 @@ export class Renderer3D {
       }
 
       actor.position.set(
-        (vehicle.lane - 1) * 3,
+        (vehicle.lane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
         0,
         -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
       );
@@ -3368,13 +3366,18 @@ export class Renderer3D {
     // PLAYER POSITION AND STEERING
     // --------------------------------------------------------
 
-    const laneX =
-      (state.steer || 0) * 3 +
-      (state.pullOverSide || 0) * 2.35;
+    const laneX = Math.max(
+      -4.5,
+      Math.min(
+        4.5,
+        (state.steer || 0) * 3 +
+          (state.pullOverSide || 0) * 2.35,
+      ),
+    );
 
     this.player.position.x +=
       (laneX - this.player.position.x) *
-      Math.min(1, dt * 5.4);
+      Math.min(1, dt * 5.8);
 
     // Steering rotates the vehicle slightly, not 180 degrees.
     // Reverse gear moves it backwards without making it face forward.
@@ -3494,15 +3497,13 @@ export class Renderer3D {
     // CAMERA
     // --------------------------------------------------------
 
-    const targetX = this.player.position.x * 0.45;
     const driverView = state.camera === 'driver';
+    const cameraFollow = driverView ? 0.72 : 0.92;
+    const targetX = this.player.position.x * cameraFollow;
 
     this.camera.position.x += (
-      (driverView
-        ? this.player.position.x * 0.25
-        : this.player.position.x * 0.45) -
-      this.camera.position.x
-    ) * Math.min(1, dt * 2.2);
+      targetX - this.camera.position.x
+    ) * Math.min(1, dt * 3.4);
 
     // Raise and pull the driver camera behind the keke canopy. The old low,
     // close position looked through the bodywork and could fill the viewport.

@@ -7,6 +7,7 @@ import {
   MISSION_POOL,
   DAILY_MISSION_POOL,
   ACHIEVEMENTS,
+  SAFE_SPEED_MISSION_KMH,
 } from './config.js';
 
 import {
@@ -63,6 +64,35 @@ const POTHOLE_CONTACT_MAX = 0.012;
 
 // Road-object depth uses a consistent scale throughout the game.
 const ROAD_DEPTH_SCALE = 316.8;
+
+// Approximate half-lengths of the traffic models in world units. The player
+// keke's center is at z=2 and traffic is projected from depth using 88 units.
+const PLAYER_KEKE_HALF_LENGTH = 1.15;
+const PLAYER_KEKE_HALF_WIDTH = 0.62;
+const TRAFFIC_COLLISION_LENGTH = Object.freeze({
+  motorcycle: 0.78,
+  keke: 1.18,
+  car: 1.78,
+  taxi: 1.72,
+  suv: 1.9,
+  police: 1.78,
+  karota: 1.7,
+  ambulance: 2.18,
+  truck: 2.72,
+  bus: 3.0,
+});
+const TRAFFIC_COLLISION_WIDTH = Object.freeze({
+  motorcycle: 0.35,
+  keke: 0.62,
+  car: 0.9,
+  taxi: 0.9,
+  suv: 0.98,
+  police: 0.9,
+  karota: 0.82,
+  ambulance: 0.92,
+  truck: 1.08,
+  bus: 1.12,
+});
 
 // ==========================================================
 // COLLISION VISUAL FEEDBACK
@@ -158,7 +188,7 @@ export class Game {
       score: 0,
       fares: 0,
 
-      breakfastEaten: null,
+      breakfastEaten: false,
       breakfastCost: 0,
 
       morale: 75,
@@ -799,8 +829,8 @@ export class Game {
       this.mode === 'timeAttack'
         ? 150
         : this.mode === 'freeRoam'
-          ? 36
-          : 38;
+          ? 48
+          : 46;
 
     // Mechanical wear now has a practical effect on road performance.
     // A damaged engine reduces top speed; poor overall condition adds a
@@ -857,7 +887,7 @@ export class Game {
         : s.gas && s.fuel > 0
           ? this.mode === 'timeAttack'
             ? 1.8
-            : 1.0
+            : 1.35
           : 1.6;
 
       const engineResponse = 0.62 + 0.38 * engineHealth;
@@ -1075,7 +1105,7 @@ export class Game {
       }
 
       s.safeSpeedSeconds =
-        !s.reverse && s.speed >= 95
+        !s.reverse && s.speed >= SAFE_SPEED_MISSION_KMH
           ? s.safeSpeedSeconds + dt
           : 0;
     } else {
@@ -1441,7 +1471,14 @@ export class Game {
   moveTraffic(dt) {
     const s = this.s;
 
-    const playerLane = s.steer + 1;
+    // Use the actual rendered lateral position, including roadside pull-over.
+    // The old lane-only comparison ignored pullOverSide and let side-by-side
+    // GLB models visibly overlap without registering a collision.
+    const playerWorldX = clamp(
+      (Number(s.steer) || 0) * 3 + (Number(s.pullOverSide) || 0) * 2.35,
+      -4.5,
+      4.5,
+    );
 
     for (
       let index = s.traffic.length - 1;
@@ -1451,6 +1488,18 @@ export class Game {
       const vehicle = s.traffic[index];
 
       const previousDepth = vehicle.depth;
+
+      // Visual-only post-contact deflection makes an impact readable instead
+      // of letting one GLB appear to slide straight through the player.
+      if (Number(vehicle.collisionKickTime) > 0) {
+        const duration = Number(vehicle.collisionKickDuration) || 0.44;
+        vehicle.collisionKickTime = Math.max(0, Number(vehicle.collisionKickTime) - dt);
+        const progress = clamp(1 - vehicle.collisionKickTime / duration, 0, 1);
+        vehicle.visualOffsetX = (Number(vehicle.collisionKickSide) || 1) * 0.92 * Math.sin(Math.PI * progress);
+        if (vehicle.collisionKickTime === 0) vehicle.visualOffsetX = 0;
+      } else {
+        vehicle.visualOffsetX = 0;
+      }
 
       const trafficSpeed =
         Number.isFinite(vehicle.speedKmh)
@@ -1480,20 +1529,28 @@ export class Game {
         dt *
         roadFactor;
 
-      const impactDepth = 0.022;
+      const trafficHalfLength = TRAFFIC_COLLISION_LENGTH[vehicle.type] || 1.65;
+      const impactDepth = clamp(
+        (trafficHalfLength + PLAYER_KEKE_HALF_LENGTH - 2) / 88,
+        0.004,
+        0.027,
+      );
 
       const crossedImpactPlane =
         closingSpeed > 0 &&
         previousDepth > impactDepth &&
         vehicle.depth <= impactDepth;
 
+      // Narrow tolerance around the model-specific plane covers fast frames
+      // without triggering large buses and tiny motorcycles at the same depth.
       const insideContactBand =
-        vehicle.depth <= 0.035 &&
-        vehicle.depth >= 0.012;
+        vehicle.depth <= impactDepth + 0.002 &&
+        vehicle.depth >= Math.max(0, impactDepth - 0.004);
 
-      const laneGap = Math.abs(
-        vehicle.lane - playerLane,
-      );
+      const trafficWorldX = ((Number(vehicle.lane) || 1) - 1) * 3;
+      const lateralGap = Math.abs(trafficWorldX - playerWorldX);
+      const trafficHalfWidth = TRAFFIC_COLLISION_WIDTH[vehicle.type] || 0.82;
+      const collisionGap = PLAYER_KEKE_HALF_WIDTH + trafficHalfWidth + 0.12;
 
       const approachingContact =
         crossedImpactPlane ||
@@ -1506,15 +1563,18 @@ export class Game {
         !vehicle.passed &&
         approachingContact
       ) {
-        if (
-          laneGap <= 0.38 &&
-          s.invuln <= 0
-        ) {
+        if (lateralGap <= collisionGap) {
           vehicle.passed = true;
+          vehicle.collisionKickDuration = 0.44;
+          vehicle.collisionKickTime = 0.44;
+          vehicle.collisionKickSide = trafficWorldX >= playerWorldX ? 1 : -1;
+          vehicle.visualOffsetX = vehicle.collisionKickSide * 0.08;
 
-          this.hit(vehicle);
+          // Invulnerability prevents repeat damage, not the physical scrape
+          // response or collision classification.
+          if (s.invuln <= 0) this.hit(vehicle);
         } else if (
-          laneGap <= 0.82 &&
+          lateralGap <= collisionGap + 0.72 &&
           closingSpeed > 4
         ) {
           vehicle.passed = true;
@@ -1659,7 +1719,7 @@ export class Game {
       clamp(relativeSpeed / 65, 0.2, 1),
     );
 
-    showCollisionFlash('traffic', severity, vehicle.lane - (s.steer + 1));
+    showCollisionFlash('traffic', severity, ((Number(vehicle.lane) || 1) - 1) * 3 - ((Number(s.steer) || 0) * 3 + (Number(s.pullOverSide) || 0) * 2.35));
 
     s.steer = clamp(
       s.steer +

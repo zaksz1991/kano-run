@@ -4,6 +4,7 @@ import { Controls } from './controls.js';
 import { AudioManager } from './audio.js';
 import { Renderer2D } from './renderer2d.js';
 import { Renderer3D } from './renderer3d.js';
+import { getMobileTier } from './KanoDeviceTier.js';
 import { ModelManager } from './ModelManager.js';
 import { createModelAuditPanel } from './ModelAuditPanel.js';
 import { save } from './storage.js';
@@ -462,19 +463,20 @@ async function start3D() {
 
   disposeRenderer();
 
-  // Probe WebGL using a temporary canvas.
-  const probe = document.createElement('canvas');
-
+  // Probe WebGL2 on the canvas that Three.js will actually render into.
+  // WebGL1 is not enough for the installed Three.js release. Reusing one
+  // context avoids a throwaway context consuming a mobile GPU context slot.
+  const activeCanvas = freshCanvas();
   let gl = null;
-
   try {
-    gl =
-      probe.getContext('webgl2', {
-        failIfMajorPerformanceCaveat: false,
-      }) ||
-      probe.getContext('webgl', {
-        failIfMajorPerformanceCaveat: false,
-      });
+    gl = activeCanvas.getContext('webgl2', {
+      alpha: false,
+      antialias: !mobile || getMobileTier() === 'high',
+      depth: true,
+      stencil: false,
+      powerPreference: 'high-performance',
+      failIfMajorPerformanceCaveat: false,
+    });
   } catch {
     gl = null;
   }
@@ -496,13 +498,8 @@ async function start3D() {
   webglEverAvailable = true;
   webglUnavailableConfirmed = false;
 
-  try {
-    gl
-      .getExtension('WEBGL_lose_context')
-      ?.loseContext();
-  } catch {
-    // The extension is optional.
-  }
+  // Do not force-lose a successful context before Three.js attaches to it.
+  // On some phones the old probe + immediate re-creation caused 2D fallback.
 
   if (
     pageClosing ||
@@ -512,8 +509,6 @@ async function start3D() {
   }
 
   const models = new ModelManager();
-  const activeCanvas = freshCanvas();
-
   attachWebGLRecovery(activeCanvas, generation);
 
   let webglRenderer;
