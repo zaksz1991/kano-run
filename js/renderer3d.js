@@ -116,6 +116,7 @@ export class Renderer3D {
     this.curbRecords = [];
     this.curbObject = new THREE.Object3D();
     this._mobileGlbTrafficIds = new Set();
+    this._mobileTrafficVehicleGeometry = new Map();
     this.pedestrians = [];
     this.streetLights = [];
     this.roadProps = [];
@@ -2676,6 +2677,211 @@ export class Renderer3D {
     return keke;
   }
 
+  /**
+   * Compact one-mesh mobile fallback for background traffic.
+   *
+   * The detailed desktop fallback below remains untouched. On phones, non-GLB
+   * cars, buses, trucks, emergency vehicles and motorcycles use a small cached
+   * vertex-coloured mesh. Each moving vehicle therefore uses one draw call
+   * rather than a dozen separately-materialed primitive meshes. Gameplay
+   * traffic, lane positions and collision state remain owned by game.js.
+   */
+  makeMobileLiteTrafficVehicle(type) {
+    const cache = this._mobileTrafficVehicleGeometry;
+    let geometry = cache.get(type);
+
+    if (!geometry) {
+      const parts = [];
+      const add = (shape, color, position, rotation = [0, 0, 0], scale = [1, 1, 1]) => {
+        parts.push({ shape, color, position, rotation, scale });
+      };
+      const box = (size, color, position, rotation, scale) =>
+        add(new THREE.BoxGeometry(...size), color, position, rotation, scale);
+      const sphere = (radius, color, position, scale = [1, 1, 1], segments = [10, 7]) =>
+        add(new THREE.SphereGeometry(radius, segments[0], segments[1]), color, position, [0, 0, 0], scale);
+      const wheel = (x, z, radius = 0.22, y = 0.27) => {
+        add(
+          new THREE.CylinderGeometry(radius, radius, 0.12, 8),
+          0x15191b,
+          [x, y, z],
+          [0, 0, Math.PI / 2],
+        );
+        add(
+          new THREE.CylinderGeometry(radius * 0.38, radius * 0.38, 0.135, 8),
+          0x9aa3a5,
+          [x, y, z],
+          [0, 0, Math.PI / 2],
+        );
+      };
+      const lamp = (x, y, z, color, sx = 0.12, sy = 0.075, sz = 0.055) =>
+        sphere(1, color, [x, y, z], [sx, sy, sz], [6, 5]);
+
+      const bodyColors = {
+        car: 0x8f9fa7,
+        taxi: 0xe8c64b,
+        suv: 0x37465a,
+        motorcycle: 0xc84a3b,
+        police: 0xe8edf3,
+        karota: 0x328ac2,
+        truck: 0x9e5544,
+        bus: 0xd4ad46,
+        ambulance: 0xe8eceb,
+      };
+      const bodyColor = bodyColors[type] || 0xd6dce1;
+      const glass = 0x5e8490;
+      const rubber = 0x15191b;
+      const trim = 0x39434a;
+      const frontLight = 0xf6e6a9;
+      const rearLight = 0xb93631;
+
+      if (type === 'motorcycle') {
+        // Side-profile wheels and frame keep the motorcycle silhouette visible
+        // at mobile scale without a torus, axle, tank, rider and helmet mesh each.
+        wheel(0, -0.50, 0.215, 0.25);
+        wheel(0, 0.50, 0.215, 0.25);
+        add(new THREE.CylinderGeometry(0.045, 0.055, 0.78, 6), bodyColor, [0, 0.49, 0.00], [Math.PI / 2.9, 0, 0]);
+        sphere(0.25, bodyColor, [0, 0.66, -0.08], [0.72, 0.58, 1.08], [8, 6]);
+        box([0.25, 0.09, 0.42], 0x1d272c, [0, 0.71, 0.29]);
+        box([0.28, 0.42, 0.24], 0x2b5141, [0, 1.02, 0.22], [-0.18, 0, 0]);
+        sphere(0.15, 0x2d363b, [0, 1.36, -0.04], [1, 0.96, 0.96], [8, 6]);
+        box([0.48, 0.045, 0.06], trim, [0, 0.87, -0.43]);
+        lamp(0, 0.76, -0.54, frontLight, 0.09, 0.08, 0.06);
+      } else if (['truck', 'bus', 'karota', 'ambulance'].includes(type)) {
+        const truck = type === 'truck';
+        const bus = type === 'bus';
+        const width = truck ? 1.86 : bus ? 1.72 : 1.56;
+        const length = truck ? 4.0 : bus ? 3.45 : type === 'ambulance' ? 3.05 : 2.85;
+        const height = truck ? 1.10 : bus ? 1.32 : 1.05;
+
+        if (truck) {
+          box([width, 0.44, length * 0.9], bodyColor, [0, 0.52, 0.05]);
+          box([width * 0.93, 1.12, length * 0.53], 0xb7a18a, [0, 1.30, 0.47]);
+          box([width * 0.90, 0.78, 0.88], bodyColor, [0, 0.88, -1.28]);
+          box([width * 0.73, 0.31, 0.035], glass, [0, 1.02, -1.73]);
+          for (const x of [-width * 0.5, width * 0.5]) {
+            for (const z of [-1.38, -0.48, 1.35]) wheel(x, z, 0.27, 0.29);
+          }
+        } else {
+          box([width, height, length], bodyColor, [0, 0.88, 0.02]);
+          const windowY = bus ? 1.10 : 0.98;
+          const windowH = bus ? 0.42 : 0.30;
+          for (const x of [-width * 0.505, width * 0.505]) {
+            box([0.035, windowH, length * 0.60], glass, [x, windowY, 0.02]);
+          }
+          box([width * 0.74, bus ? 0.37 : 0.31, 0.035], glass, [0, windowY, -length * 0.505]);
+          box([width * 0.70, 0.24, 0.035], glass, [0, windowY, length * 0.505]);
+          if (type === 'ambulance') {
+            box([0.055, 0.25, length * 0.48], 0xc83e37, [width * 0.51, 0.82, 0.02]);
+            box([0.055, 0.25, length * 0.48], 0xc83e37, [-width * 0.51, 0.82, 0.02]);
+            box([0.06, 0.28, 0.06], 0xc83e37, [0, 1.38, 0.02]);
+            box([0.19, 0.06, 0.06], 0xc83e37, [0, 1.38, 0.02]);
+          }
+          const wheelZ = bus ? [-1.08, 1.06] : [-0.95, 0.95];
+          for (const x of [-width * 0.49, width * 0.49]) {
+            for (const z of wheelZ) wheel(x, z, 0.245, 0.28);
+          }
+        }
+        if (type === 'karota') {
+          box([width * 0.90, 0.12, length * 0.66], 0x195d97, [0, 0.82, 0.02]);
+        }
+        if (type === 'bus') {
+          box([width * 0.86, 0.10, length * 0.68], 0x8c6c25, [0, 0.46, 0.02]);
+        }
+        if (type === 'truck') {
+          box([width * 0.86, 0.07, 0.12], 0xbfc2c0, [0, 0.30, -length * 0.48]);
+        }
+        lamp(-width * 0.31, 0.64, -length * 0.51, frontLight);
+        lamp(width * 0.31, 0.64, -length * 0.51, frontLight);
+        lamp(-width * 0.32, 0.63, length * 0.51, rearLight);
+        lamp(width * 0.32, 0.63, length * 0.51, rearLight);
+      } else {
+        const suv = type === 'suv';
+        const width = suv ? 1.72 : 1.52;
+        const length = suv ? 3.02 : 2.72;
+        const height = suv ? 0.53 : 0.40;
+        box([width, height, length * 0.89], bodyColor, [0, 0.50, 0.05]);
+        box([width * 0.90, 0.18, length * 0.25], bodyColor, [0, 0.63, -length * 0.31]);
+        box([width * 0.71, suv ? 0.49 : 0.41, length * 0.45], bodyColor, [0, suv ? 0.89 : 0.82, 0.01]);
+        box([width * 0.64, suv ? 0.27 : 0.23, 0.035], glass, [0, suv ? 0.95 : 0.87, -length * 0.22]);
+        box([width * 0.62, suv ? 0.24 : 0.21, 0.035], glass, [0, suv ? 0.94 : 0.86, length * 0.24]);
+        for (const x of [-width * 0.365, width * 0.365]) {
+          box([0.035, 0.22, length * 0.29], glass, [x, suv ? 0.92 : 0.84, 0.03]);
+        }
+        for (const x of [-width * 0.47, width * 0.47]) {
+          for (const z of [-length * 0.29, length * 0.29]) wheel(x, z, suv ? 0.27 : 0.235, 0.27);
+        }
+        box([width * 0.92, 0.10, 0.13], 0x9aa3a5, [0, 0.31, -length * 0.49]);
+        box([width * 0.92, 0.10, 0.13], 0x9aa3a5, [0, 0.31, length * 0.49]);
+        lamp(-width * 0.34, 0.55, -length * 0.47, frontLight);
+        lamp(width * 0.34, 0.55, -length * 0.47, frontLight);
+        lamp(-width * 0.34, 0.55, length * 0.47, rearLight);
+        lamp(width * 0.34, 0.55, length * 0.47, rearLight);
+        if (type === 'taxi') {
+          box([0.36, 0.12, 0.22], 0xf1e4bd, [0, 1.13, -0.02]);
+        }
+        if (type === 'police') {
+          box([width * 0.035, 0.10, length * 0.70], 0x2c68ad, [width * 0.51, 0.53, 0.02]);
+          box([width * 0.035, 0.10, length * 0.70], 0x2c68ad, [-width * 0.51, 0.53, 0.02]);
+          box([0.28, 0.07, 0.12], 0x3b78c1, [0, 1.15, 0.01]);
+        }
+      }
+
+      const positions = [];
+      const colors = [];
+      const translation = new THREE.Vector3();
+      const rotation = new THREE.Euler();
+      const scale = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const matrix = new THREE.Matrix4();
+
+      for (const part of parts) {
+        const original = part.shape;
+        const transformed = original.index ? original.toNonIndexed() : original;
+        translation.set(...part.position);
+        rotation.set(...part.rotation);
+        scale.set(...part.scale);
+        quaternion.setFromEuler(rotation);
+        matrix.compose(translation, quaternion, scale);
+        transformed.applyMatrix4(matrix);
+        transformed.computeVertexNormals();
+
+        const positionAttribute = transformed.getAttribute('position');
+        const color = new THREE.Color(part.color);
+        for (let index = 0; index < positionAttribute.count; index += 1) {
+          positions.push(
+            positionAttribute.getX(index),
+            positionAttribute.getY(index),
+            positionAttribute.getZ(index),
+          );
+          colors.push(color.r, color.g, color.b);
+        }
+
+        transformed.dispose();
+        if (transformed !== original) original.dispose();
+      }
+
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
+      cache.set(type, geometry);
+    }
+
+    const actor = new THREE.Mesh(
+      geometry,
+      new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+    );
+    actor.name = `KANO_LITE_TRAFFIC_${String(type).toUpperCase()}`;
+    actor.castShadow = false;
+    actor.receiveShadow = false;
+    actor.userData.sharedGeometry = true;
+    actor.userData.simplifiedTrafficVehicle = true;
+    actor.userData.vehicleType = type;
+    actor.userData.fallback = true;
+    return actor;
+  }
+
   makeTrafficActor(vehicle, { allowGLB = true } = {}) {
     const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
     const model = allowGLB ? this.models?.getInstance(key) : null;
@@ -2689,6 +2895,12 @@ export class Renderer3D {
       const keke = this.mobile ? this.makeTrafficKeke() : this.makeKeke();
       keke.userData.fallback = true;
       return keke;
+    }
+
+    // Background traffic on phones gets a one-mesh representation. Desktop
+    // retains the multi-part detailed procedural models below.
+    if (this.mobile) {
+      return this.makeMobileLiteTrafficVehicle(vehicle.type);
     }
 
     const group = new THREE.Group();
@@ -3833,6 +4045,11 @@ export class Renderer3D {
       geometry?.dispose?.();
     }
     this._mobileTrafficKekeGeometry = null;
+
+    for (const geometry of this._mobileTrafficVehicleGeometry?.values?.() || []) {
+      geometry?.dispose?.();
+    }
+    this._mobileTrafficVehicleGeometry?.clear?.();
 
     this.models?.dispose?.();
 

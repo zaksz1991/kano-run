@@ -1,19 +1,29 @@
-KANO LIFE — STEP 5: MOBILE TRAFFIC KEKE DRAW-CALL REDUCTION
+KANO LIFE — MOBILE BACKGROUND TRAFFIC MESH-BUDGET FIX
 
-Replace only:
+Replace only this complete file in the existing project:
   kano-run/js/renderer3d.js
 
-Optional regression test included:
-  kano-run/tests/KanoMobileTrafficKekeBatching.test.mjs
+Optional focused regression test included:
+  kano-run/tests/KanoMobileFallbackTrafficBatching.test.mjs
 
-What changes:
-- Combines the procedural background mobile keke's body parts into one shared BufferGeometry with vertex colours.
-- Renders each lightweight background keke as one Mesh instead of a group of many meshes, reducing draw calls per keke.
-- Reuses the merged geometry across all fallback background keke actors.
-- Keeps the player's keke, GLB traffic budget, traffic positions, and game-side vehicle/collision simulation unchanged.
-- The translucent-looking windscreen on lightweight traffic becomes a light opaque blue surface so the merged keke can use one material and one draw call.
-- Retains the previous mobile front-face-culling change in renderer3d.js.
+WHAT CHANGES
+- Mobile fallback cars, motorcycles, SUVs, taxis, buses, trucks, KAROTA and
+  ambulance traffic are rendered as one vertex-coloured mesh per vehicle.
+- The merged geometry is created once per vehicle type and reused by later
+  fallback vehicles. It is released when Renderer3D is disposed.
+- This affects background traffic visuals only. Game traffic positions,
+  speed, steering, collisions, missions, player keke and the desktop procedural
+  traffic models are not changed by this optimization.
+- Imported GLB vehicles remain available within the existing mobile model
+  budget; vehicles that use them are not replaced by the simplified mesh.
+- This replacement includes the previously delivered mobile kerb batching,
+  mobile back-face culling and simplified background-keke mesh work contained
+  in the current renderer3d.js baseline used for this update.
 
-No model, texture, audio or other source files are changed.
-
-Validation performed here: syntax check and focused static regression tests. This is not a physical-phone performance benchmark.
+NOTES
+- No model, texture, audio, or other source assets are deleted or moved.
+- This is a draw-call reduction, not a guarantee of a particular phone frame
+  rate. Actual performance still depends on the device and scene.
+- Only the focused static regression checks and JavaScript syntax checks were
+  run for this package. The full project test suite and production build were
+  not run here.
