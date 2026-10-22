@@ -27,6 +27,33 @@ function updateMobileActorDistanceVisibility(actor, limit, cameraZ) {
   if (actor.visible !== shouldBeVisible) actor.visible = shouldBeVisible;
 }
 
+/**
+ * Keep only the active cached life-scene group attached to the scene graph.
+ * Three.js updates world matrices for descendants even when an ancestor is
+ * merely marked invisible. Detaching inactive cached groups preserves their
+ * geometry and state without making every previously visited diorama part of
+ * the render traversal. Pass null to detach all cached life scenes.
+ */
+export function mountActiveLifeDiorama(root, groups, activeName = null) {
+  if (!root || !(groups instanceof Map)) return null;
+
+  let activeGroup = null;
+  for (const [name, group] of groups) {
+    if (name === activeName) {
+      if (group.parent !== root) root.add(group);
+      if (!group.visible) group.visible = true;
+      activeGroup = group;
+      continue;
+    }
+
+    if (group.visible) group.visible = false;
+    if (group.parent === root) root.remove(group);
+  }
+
+  root.visible = Boolean(activeGroup);
+  return activeGroup;
+}
+
 function disposeSceneTree(root, { disposeTextures = false } = {}) {
   if (!root) return;
 
@@ -887,9 +914,11 @@ export class Renderer3D {
 
       if (this.garageGroup) this.garageGroup.visible = false;
 
-      if (this.lifeDioramaRoot) {
-        this.lifeDioramaRoot.visible = false;
-      }
+      mountActiveLifeDiorama(
+        this.lifeDioramaRoot,
+        this.lifeSceneGroups,
+        null,
+      );
 
       this.world.visible = true;
 
@@ -909,9 +938,11 @@ export class Renderer3D {
 
       this.world.visible = false;
 
-      if (this.lifeDioramaRoot) {
-        this.lifeDioramaRoot.visible = false;
-      }
+      mountActiveLifeDiorama(
+        this.lifeDioramaRoot,
+        this.lifeSceneGroups,
+        null,
+      );
 
       this.garageGroup.visible = true;
 
@@ -934,13 +965,11 @@ export class Renderer3D {
     this.world.visible = false;
     if (this.garageGroup) this.garageGroup.visible = false;
 
-    if (this.lifeDioramaRoot) {
-      this.lifeDioramaRoot.visible = true;
-    }
-
-    for (const [name, group] of this.lifeSceneGroups) {
-      group.visible = name === nextScene;
-    }
+    mountActiveLifeDiorama(
+      this.lifeDioramaRoot,
+      this.lifeSceneGroups,
+      nextScene,
+    );
 
     this.upgradeLifeSceneAssets();
 
@@ -4134,13 +4163,12 @@ export class Renderer3D {
       ) {
         this.buildLifeDioramas(this.lifeScene);
       }
+      mountActiveLifeDiorama(
+        this.lifeDioramaRoot,
+        this.lifeSceneGroups,
+        this.lifeScene,
+      );
       this.upgradeLifeSceneAssets();
-
-      if (this.lifeDioramaRoot) this.lifeDioramaRoot.visible = true;
-
-      for (const [name, group] of this.lifeSceneGroups) {
-        group.visible = name === this.lifeScene;
-      }
 
       this.camera.position.set(0, 4.15, 14.2);
       this.camera.lookAt(0, 1.35, -0.4);
@@ -4150,7 +4178,11 @@ export class Renderer3D {
       return;
     }
 
-    if (this.lifeDioramaRoot) this.lifeDioramaRoot.visible = false;
+    mountActiveLifeDiorama(
+      this.lifeDioramaRoot,
+      this.lifeSceneGroups,
+      null,
+    );
     this.world.visible = true;
     if (this.garageGroup) this.garageGroup.visible = false;
 

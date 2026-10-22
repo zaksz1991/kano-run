@@ -38,6 +38,6 @@ test('draw path does not construct hidden scenes as part of ordinary road drivin
   const draw = source.slice(source.indexOf('  draw(state, deltaSeconds)'), source.indexOf('  dispose()'));
   const roadPath = draw.slice(draw.indexOf("if (this.lifeScene !== 'road')"));
   assert.match(roadPath, /if \(this\.lifeScene !== 'road'\)/);
-  assert.match(draw, /if \(this\.lifeDioramaRoot\) this\.lifeDioramaRoot\.visible = false;/);
+  assert.match(draw, /mountActiveLifeDiorama\(\s*this\.lifeDioramaRoot,\s*this\.lifeSceneGroups,\s*null\s*,?\s*\)/);
   assert.match(draw, /if \(this\.garageGroup\) this\.garageGroup\.visible = false;/);
 });

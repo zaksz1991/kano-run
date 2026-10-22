@@ -1,33 +1,21 @@
-KANO LIFE — STEP 19: MOBILE PROCEDURAL PEDESTRIAN DRAW-CALL REDUCTION
+KANO LIFE — STEP 20: CACHED LIFE-SCENE TRAVERSAL FIX
 
-REPLACES
-- kano-run/js/renderer3d.js (complete replacement based on the Step 18 cumulative renderer snapshot)
+WHY
+The lazy-scene update prevents all story scenes from being constructed at startup, but after scenes are visited they stay parented under lifeDioramaRoot and are only set invisible. Three.js still traverses descendants during world-matrix updates even when an ancestor is invisible. This step keeps only the currently active life scene attached to the scene graph.
 
-ADDS
-- kano-run/tests/KanoMobilePedestrianMeshMerge.test.mjs (focused regression record)
+FILES
+- kano-run/js/renderer3d.js — complete replacement, based on the Step 19 renderer snapshot shared in this conversation.
+- kano-run/tests/KanoCachedLifeSceneMount.test.mjs — focused tests for detaching/caching life scenes.
+- kano-run/tests/KanoLazySceneBuild.test.mjs — updated regression test so it checks the new detach behaviour rather than expecting the old hide-only behaviour.
 
-WHAT CHANGES
-- On phones, each procedural roadside pedestrian's static body, head, clothing, accessories, and legs are merged into one vertex-coloured mesh.
-- The two pivoted arm meshes remain separate so the current arm-swing animation still works.
-- Each procedural phone pedestrian therefore drops from roughly 5–8 mesh submissions to about 3, depending on clothing variant.
-- Desktop pedestrian geometry and visual detail remain unchanged.
-- The static merged geometry is disposed with its pedestrian when a GLB replaces the procedural actor. Materials still used by animated arms are not disposed early.
-- No model, texture, or audio assets are added, removed, or moved.
-
-PRESERVED
-- Existing road markings, curb/shoulder rendering, mobile traffic batches, fog-distance visibility, animation timing, lazy garage/life-scene construction, and mobile procedural Lambert materials from the Step 18 snapshot.
-- Pedestrian path positions and arm animation behavior.
-- Player keke, traffic simulation, collisions, missions, and renderer selection.
+BEHAVIOUR
+- While driving or inside the garage, cached life-scene groups are detached from the render graph but remain in the lifeSceneGroups Map with their geometry, materials, actors and state retained.
+- When a routine is selected, its cached group is attached and made visible; other groups are detached.
+- Revisiting a routine reuses the existing group; it does not rebuild or dispose the scene.
+- This targets scene traversal CPU work after multiple life scenes have been visited. It does not claim to fix every source of mobile GPU lag.
 
 INSTALL
-Extract the ZIP into the existing project and replace only js/renderer3d.js. The new test is included as a regression record; no test command is being requested from you.
+Extract the ZIP into the existing kano-run folder. Replace only the included files at their matching paths. Keep all other source files, models, textures and audio unchanged. This replacement is based on the latest Step 19 renderer snapshot available in this conversation; it cannot preserve unrelated edits that exist only in your local folder and were not shared here.
 
-VALIDATION PERFORMED HERE
-- node --check passed for the complete replacement renderer.
-- All 5 focused static regression assertions passed.
-- An isolated geometry runtime check passed against the repository-bundled Three.js module: static geometry merged, normals and vertex colours were generated, and the animated arm pivot/material remained attached.
-- ZIP integrity check passed.
-- The production browser scene and physical phone were not benchmarked. The runtime check used the repo-bundled Three.js r170 module, not the installed npm Three.js version. This is a draw-call reduction target, not a claim that the overall phone-performance issue is solved.
-
-NOTE
-This package continues from the Step 18 renderer snapshot. Because earlier upgrades touched the same file, this replacement should be applied only if that cumulative Step 18 version is the current renderer file in the project. It does not modify other source files or assets.
+VALIDATION
+The changed renderer passed node --check. Four focused cache-mount tests and five lazy-scene regression checks passed in the assembled validation environment. The full project test suite, production browser audit and physical-phone performance were not run or claimed as verified.
