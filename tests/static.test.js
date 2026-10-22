@@ -209,7 +209,10 @@ test('roadside zones pause when the keke stops and traffic scroll matches the ca
   assert.match(game, /const desiredSpeed = s\.gas && s\.fuel > 0 \? maxSpeed : 0/);
   assert.match(game, /const closingSpeed = s\.signedSpeed - trafficSignedSpeed/);
   assert.match(renderer, /const scroll = signedSpeed \* dt \* 0\.28/);
-  assert.match(renderer, /this\.camera\.lookAt\(targetX, driverView \? 1\.2 : 0\.72/);
+  assert.match(renderer, /this\.camera\.lookAt\(targetX, driverView \? 1\.6 : 0\.72/);
+  // Driver view must sit above and behind the canopy instead of looking through the body.
+  assert.match(renderer, /this\.camera\.position\.y = driverView \? 2\.9 : 3\.35/);
+  assert.match(renderer, /this\.camera\.position\.z = driverView \? 7\.2 : 8\.6/);
   assert.match(renderer, /zone\.side \|\| \(zone\.lane === 0 \? -1 : 1\)\) \* 6\.7/);
 });
 

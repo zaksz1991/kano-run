@@ -315,6 +315,72 @@
 }
 
 /* ============================================================
+   COMPACT PHONE HUD
+   Keep the decorative Kano label from bleeding through stat cards, hide
+   secondary chips on narrow screens, and leave a clear passenger-list lane.
+   ============================================================ */
+
+@media (max-width: 760px) {
+  .sky-label {
+    display: none !important;
+  }
+
+  #hud #dialect-label,
+  #hud #radio-label,
+  #hud #lives-label,
+  #hud #level-label,
+  #hud #combo-label,
+  #hud #kano-overall-record,
+  #hud #kano-vehicle-health {
+    display: none !important;
+  }
+
+  #hud .hud-top {
+    gap: 3px !important;
+    max-width: calc(100% - 44px) !important;
+  }
+
+  #hud .stat {
+    padding: 3px 4px !important;
+  }
+
+  #hud .stat small {
+    font-size: 6.5px !important;
+  }
+
+  #hud .stat strong {
+    font-size: clamp(10px, 2.9vw, 12px) !important;
+  }
+
+  #hud .meter {
+    margin-top: 2px !important;
+    height: 3px !important;
+  }
+
+  #hud .hud-bottom {
+    justify-content: flex-start !important;
+    gap: 3px !important;
+    row-gap: 3px !important;
+    max-width: calc(100% - 44px) !important;
+    margin: 3px 0 0 !important;
+  }
+
+  #hud .hud-bottom span {
+    padding: 3px 5px !important;
+    font-size: 7px !important;
+    line-height: 1.05 !important;
+  }
+
+  #hud .mission-pill {
+    max-width: calc(100% - 48px) !important;
+    margin: 3px 0 0 !important;
+    padding: 4px 7px !important;
+    font-size: 8px !important;
+    line-height: 1.15 !important;
+  }
+}
+
+/* ============================================================
    ACCESSIBILITY
    ============================================================ */
 

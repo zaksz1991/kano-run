@@ -197,7 +197,7 @@ export class Renderer3D {
     this.world.add(asphalt);
 
     this.loadOptionalTexture(
-      '/assets/models/environment/ground/asphalt.jpg',
+      '/assets/environment/ground/asphalt.jpg',
       asphaltMaterial,
       [3, 64],
     );
@@ -1654,7 +1654,7 @@ export class Renderer3D {
         const canopyMaterial = this.material(colors[index % colors.length]);
 
         this.loadOptionalTexture(
-          '/assets/models/environment/ground/market-stall.jpg',
+          '/assets/environment/ground/market-stall.jpg',
           canopyMaterial,
           [1, 1],
         );
@@ -3493,8 +3493,10 @@ export class Renderer3D {
       this.camera.position.x
     ) * Math.min(1, dt * 2.2);
 
-    this.camera.position.y = driverView ? 1.65 : 3.35;
-    this.camera.position.z = driverView ? 4.7 : 8.6;
+    // Raise and pull the driver camera behind the keke canopy. The old low,
+    // close position looked through the bodywork and could fill the viewport.
+    this.camera.position.y = driverView ? 2.9 : 3.35;
+    this.camera.position.z = driverView ? 7.2 : 8.6;
 
     const shake = Math.max(
       0,
@@ -3515,7 +3517,7 @@ export class Renderer3D {
 
     this.camera.lookAt(
       targetX,
-      driverView ? 1.2 : 0.72,
+      driverView ? 1.6 : 0.72,
       cameraTargetZ,
     );
 
