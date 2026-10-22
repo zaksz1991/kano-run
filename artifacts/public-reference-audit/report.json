@@ -1,0 +1,231 @@
+{
+  "generatedAt": "2026-10-22T02:41:16.023Z",
+  "scannedPublicFiles": 140,
+  "scannedSourceFiles": 122,
+  "candidateCount": 37,
+  "candidateBytes": 41681407,
+  "findings": [
+    {
+      "path": "/assets/models/audio/arewa.mp3",
+      "bytes": 2311254,
+      "status": "REVIEW_PATH_OR_DYNAMIC_REFERENCE",
+      "evidence": "Full public path not found; basename occurs in js/audio.js. Review before moving."
+    },
+    {
+      "path": "/assets/models/audio/cool.mp3",
+      "bytes": 165303,
+      "status": "REVIEW_PATH_OR_DYNAMIC_REFERENCE",
+      "evidence": "Full public path not found; basename occurs in js/audio.js. Review before moving."
+    },
+    {
+      "path": "/assets/models/audio/freedom.mp3",
+      "bytes": 1430300,
+      "status": "REVIEW_PATH_OR_DYNAMIC_REFERENCE",
+      "evidence": "Full public path not found; basename occurs in js/audio.js. Review before moving."
+    },
+    {
+      "path": "/assets/models/audio/hausa-radio.mp3",
+      "bytes": 3416651,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/igbo-radio.mp3",
+      "bytes": 1752128,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/Igbo.mp3",
+      "bytes": 1540014,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/kano-radio.mp3",
+      "bytes": 6109771,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/kwankwasiyya-radio.mp3",
+      "bytes": 3667844,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/nigeria.mp3",
+      "bytes": 6736919,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/radio-kano.mp3",
+      "bytes": 902836,
+      "status": "REVIEW_PATH_OR_DYNAMIC_REFERENCE",
+      "evidence": "Full public path not found; basename occurs in js/audio.js. Review before moving."
+    },
+    {
+      "path": "/assets/models/audio/rahama.mp3",
+      "bytes": 691531,
+      "status": "REVIEW_PATH_OR_DYNAMIC_REFERENCE",
+      "evidence": "Full public path not found; basename occurs in js/audio.js. Review before moving."
+    },
+    {
+      "path": "/assets/models/audio/ruffneck-2.mp3",
+      "bytes": 2619899,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/ruffneck.mp3",
+      "bytes": 113580,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/wazobia.mp3",
+      "bytes": 224131,
+      "status": "REVIEW_PATH_OR_DYNAMIC_REFERENCE",
+      "evidence": "Full public path not found; basename occurs in js/audio.js. Review before moving."
+    },
+    {
+      "path": "/assets/models/audio/whistle.mp3",
+      "bytes": 32332,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/yoruba-radio.mp3",
+      "bytes": 1743142,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/audio/yoruba.mp3",
+      "bytes": 4285170,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/free_-_skybox_basic_sky.glb",
+      "bytes": 196396,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/environment/sky/rainbow_bk.png",
+      "bytes": 284497,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/rainbow_ft.png",
+      "bytes": 237391,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/rainbow_lf.png",
+      "bytes": 276150,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/rainbow_rt.png",
+      "bytes": 294576,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/sh_up.png",
+      "bytes": 206204,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/sky_cloud_of_azure_lane_island.glb",
+      "bytes": 815172,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/environment/sky/sky_dome_demo.glb",
+      "bytes": 115624,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/environment/sky/sky_pano_-_milkyway.glb",
+      "bytes": 80568,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/environment/sky/sky_pano_-_monument_valley_lookout.glb",
+      "bytes": 134056,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/environment/sky/skype_up.png",
+      "bytes": 240532,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/sp2_up.png",
+      "bytes": 77131,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/sp3_dn.png",
+      "bytes": 86107,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/sp3_up.png",
+      "bytes": 40087,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    },
+    {
+      "path": "/assets/models/environment/sky/starry_night_sky_hdri_background_photosphere.glb",
+      "bytes": 83340,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/vehicles/wheels/turbine-wheel.glb",
+      "bytes": 101840,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/vehicles/wheels/wheel-model.glb",
+      "bytes": 43556,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/world/props/Man.glb",
+      "bytes": 493196,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/assets/models/world/props/SUV.glb",
+      "bytes": 131812,
+      "status": "REVIEW_UNCLASSIFIED_GLB",
+      "evidence": "GLB was discovered by the actual-asset catalogue scanner but assigned to no runtime category. Keep pending manual visual/source review."
+    },
+    {
+      "path": "/css/mobile-hud.css",
+      "bytes": 367,
+      "status": "REVIEW_NO_TEXT_REFERENCE",
+      "evidence": "No direct path or basename reference found in scanned JavaScript, CSS, HTML, or configuration. GLB/glTF external image and buffer URIs are also followed into public files."
+    }
+  ]
+}
