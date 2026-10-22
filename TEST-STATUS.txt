@@ -1,14 +1,16 @@
-STEP 26 VALIDATION
+STEP 27 VALIDATION
 
-PASS: node --check js/KanoSceneUpgrade.js
-PASS: focused seated-driver calibration regression tests: 7/7
+PASS: node --check js/KanoCulturalStreetEventsUpgrade.js
+PASS: focused cultural-event + goat-fallback tests: 13/13
 PASS: ZIP integrity checked after packaging
 
 SCOPE
-- Tests assert complete vehicle-bound measurement, exclusion of driver geometry, correct parent-space seat placement, fallback de-duplication, and model-change recalibration.
-- Tests are static source-level checks; they do not emulate Three.js rendering.
-- Browser rendering and physical-phone verification remain unperformed.
+- Tests confirm real GLB loading remains preferred.
+- Tests cover fallback triggers for missing inventory, failed GLB loading and
+  unavailable asset inventory.
+- Tests assert goat anatomy, fallback leg animation, existing crossing timing,
+  and lifecycle cleanup.
 
-ADDITIONAL EXISTING-TEST SPOT CHECK
-- 15/16 passed across three existing audit/performance test files.
-- The single failure is the pre-existing registration-order assertion in tests/kano-world-performance-upgrade.test.mjs; this update does not modify main.js or module registration order. The same mismatch was already identified in the supplied audit notes.
+NOT VERIFIED
+- Full repository test suite was not run for this update.
+- No browser render, screenshot comparison or physical-phone performance test.

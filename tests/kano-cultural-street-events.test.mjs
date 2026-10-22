@@ -28,11 +28,23 @@ test('roadside children use existing ModelManager character instances', () => {
   assert.doesNotMatch(moduleSource, /new THREE\.CapsuleGeometry\([^\n]*child/i);
 });
 
-test('goat is loaded from generated real-asset inventory and no goat placeholder is fabricated', () => {
+test('goat loader prefers an existing real GLB and falls back when inventory or loading fails', () => {
   assert.match(moduleSource, /model-catalog-audit\.generated\.json/);
-  assert.match(moduleSource, /createGLTFLoader\(\)\.load\(url/);
+  assert.match(moduleSource, /new GLTFLoader\(\)\.load\(url/);
   assert.match(moduleSource, /no-goat-glb-found-in-inventory/);
-  assert.match(moduleSource, /no primitive goat placeholder was created/);
+  assert.match(moduleSource, /installProceduralGoatFallback\(system, state, 'no-goat-glb-found-in-inventory'\)/);
+  assert.match(moduleSource, /installProceduralGoatFallback\(system, state, 'glb-load-failed'\)/);
+  assert.match(moduleSource, /installProceduralGoatFallback\(system, state, 'inventory-unavailable'\)/);
+  assert.match(moduleSource, /Existing goat GLB loaded:/);
+});
+
+test('procedural goat fallback has recognizable anatomy and animated leg pivots', () => {
+  assert.match(moduleSource, /KANO_PROCEDURAL_GOAT_CROSSING/);
+  assert.match(moduleSource, /createProceduralGoat\(\)/);
+  assert.match(moduleSource, /new THREE\.CapsuleGeometry/);
+  assert.match(moduleSource, /new THREE\.ConeGeometry/);
+  assert.match(moduleSource, /goatFallbackLegs\.forEach/);
+  assert.match(moduleSource, /procedural-fallback-\$\{reason\}/);
 });
 
 test('goat crossing uses the loaded asset and its available animation clips', () => {

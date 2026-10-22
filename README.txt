@@ -1,29 +1,40 @@
-KANO LIFE / KANO RUN — STEP 26
-Seated-driver placement and GLB calibration repair
+KANO LIFE / KANO RUN — STEP 27
+GLB-first goat crossing fallback
 
-CONTENTS
-  js/KanoSceneUpgrade.js
-      Complete replacement for the existing scene upgrade module.
-  tests/kano-seated-driver-calibration.test.mjs
-      Focused regression tests for this repair.
-  TEST-STATUS.txt
-      Validation results and limitations.
+PURPOSE
+The cultural events module previously created a goat crossing only when the
+asset inventory contained a valid goat GLB. The current inventory does not
+list a goat model, so the event can be absent from the road scene. This update
+keeps the real-GLB path as the preferred option and adds an articulated,
+procedural goat only when the model inventory is empty/unavailable or the GLB
+fails to load or has invalid bounds.
 
 WHAT CHANGED
-- Measures the full set of visible vehicle mesh bounds instead of trusting the first nested GLB child.
-- Excludes the new seated driver and visual-only dynamics pieces from the vehicle measurement.
-- Transforms the target seat position into the driver pivot's actual parent coordinate space, including nested imported model transforms.
-- Keeps the procedural driver attached to the player keke and preserves the built-in fallback driver without creating a duplicate.
-- Leaves a recognized, artist-authored GLB driver rig in its authored position instead of moving a nested rig as if it were a direct child of the vehicle.
-- Retains the existing passenger boarding/alighting, market street, crowd, morning-life scenes, and interaction reliability logic in this module.
+- Keeps existing real-goat GLB discovery and loading as the first choice.
+- Adds a recognizable low-poly goat fallback with torso, raised neck, head,
+  muzzle, eyes, ears, horns, tail, four legs and hooves.
+- Animates the fallback leg pivots during the existing goat crossing event.
+- Keeps the existing crossing timing, roadside travel, cultural events,
+  passenger/fare logic, vehicle collision rules and other game systems intact.
+- Adds diagnostics that distinguish GLB-loaded and procedural-fallback states.
+- Cleans up fallback geometry and materials when the scene upgrade is disposed.
 
 INSTALLATION
-1. Extract this ZIP into the root of the existing kano-run project folder.
-2. Allow js/KanoSceneUpgrade.js to be overwritten.
-3. Keep tests/kano-seated-driver-calibration.test.mjs as an additional regression test.
+1. Extract this ZIP into the root of your existing kano-run project folder.
+2. Allow js/KanoCulturalStreetEventsUpgrade.js to be overwritten with the
+   complete replacement file.
+3. Keep tests/kano-cultural-street-events.test.mjs (updated existing test) and
+   tests/kano-goat-fallback.test.mjs (new regression test).
+4. No other runtime files need to be replaced for this update. Do not replace
+   main.js, game.js, renderer3d.js, KanoSceneUpgrade.js, or CSS for Step 27.
 
-This update replaces one complete JavaScript file. It does not replace main.js, game.js, renderer3d.js, CSS, assets, or other life-sim/interaction modules.
+BEHAVIOR
+The goat crossing still starts after the existing in-game delay and only while
+playing the road scene. If a valid real GLB exists, it is used instead of the
+fallback. The fallback is not an external asset and is not claimed to be a
+photorealistic scanned model.
 
 LIMITATIONS
-- Static regression tests and JavaScript syntax checks can verify the calibration code path, but they cannot prove exact seating across every GLB asset.
-- No browser render or physical-phone test was available in this run. The next visual check should confirm the driver sits inside the keke with the live GLB model and in the procedural fallback.
+- JavaScript syntax and focused source-level regression tests pass.
+- No browser screenshot or physical-phone render was available in this run.
+  The goat's appearance and phone frame-time impact still require visual review.

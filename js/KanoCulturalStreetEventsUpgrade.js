@@ -3,12 +3,12 @@
  *
  * Uses existing vehicle/character GLBs wherever available. Wedding convoy cars
  * receive lightweight celebration decoration. Roadside children are cloned
- * from loaded character GLBs and carry bowl props. Goat crossings are activated
- * only when a real goat GLB can be found in the generated asset inventory.
- * No new binary assets are introduced, and game damage/fare rules are untouched.
+ * from loaded character GLBs and carry bowl props. Goat crossings prefer a real
+ * goat GLB from the generated inventory, with an articulated low-poly fallback
+ * when the inventory or asset is unavailable. Game damage/fare rules are untouched.
  */
 import * as THREE from 'three';
-import { createGLTFLoader } from './createGLTFLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { Renderer3D } from './renderer3d.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
@@ -246,6 +246,96 @@ async function discoverGoatPath() {
   return candidates[0]?.path || null;
 }
 
+function createProceduralGoat() {
+  const root = new THREE.Group();
+  root.name = 'KANO_PROCEDURAL_GOAT_CROSSING';
+  root.userData.kanoCulturalRole = 'goat-crossing';
+  root.userData.kanoProceduralFallback = true;
+
+  const coat = new THREE.MeshStandardMaterial({ color: 0x8d7558, roughness: 0.96 });
+  const lightCoat = new THREE.MeshStandardMaterial({ color: 0xc8b89b, roughness: 0.96 });
+  const darkCoat = new THREE.MeshStandardMaterial({ color: 0x5c4735, roughness: 0.98 });
+  const hornMaterial = new THREE.MeshStandardMaterial({ color: 0xd7c9aa, roughness: 0.76 });
+  const innerEarMaterial = new THREE.MeshStandardMaterial({ color: 0x6f4a3e, roughness: 0.95 });
+  const muzzleMaterial = new THREE.MeshStandardMaterial({ color: 0x9b7766, roughness: 0.93 });
+  const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x171512, roughness: 0.72 });
+  const hoofMaterial = new THREE.MeshStandardMaterial({ color: 0x342c24, roughness: 0.94 });
+  const legPivots = [];
+
+  const addPart = (geometry, material, position, scale = [1, 1, 1], rotation = [0, 0, 0]) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(position[0], position[1], position[2]);
+    mesh.scale.set(scale[0], scale[1], scale[2]);
+    mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    root.add(mesh);
+    return mesh;
+  };
+
+  // Rounded torso, shoulder, rump, and belly form a recognizable goat profile.
+  addPart(new THREE.SphereGeometry(1, 14, 10), coat, [-0.08, 0.70, 0], [0.49, 0.30, 0.245]);
+  addPart(new THREE.SphereGeometry(1, 12, 9), darkCoat, [-0.34, 0.70, 0], [0.24, 0.275, 0.25]);
+  addPart(new THREE.SphereGeometry(1, 12, 9), lightCoat, [-0.02, 0.52, 0], [0.34, 0.12, 0.19]);
+  addPart(new THREE.SphereGeometry(1, 12, 9), coat, [0.29, 0.75, 0], [0.23, 0.25, 0.22]);
+
+  // Slightly raised, forward-sloping neck and compact head.
+  addPart(new THREE.CapsuleGeometry(0.145, 0.27, 3, 8), lightCoat, [0.39, 0.88, 0], [0.88, 1.0, 0.92], [0, 0, -0.50]);
+  addPart(new THREE.SphereGeometry(1, 12, 9), coat, [0.53, 1.075, 0], [0.17, 0.15, 0.14]);
+  addPart(new THREE.SphereGeometry(1, 10, 8), muzzleMaterial, [0.666, 1.012, 0], [0.12, 0.085, 0.105]);
+
+  for (const side of [-1, 1]) {
+    addPart(new THREE.SphereGeometry(0.028, 7, 5), eyeMaterial, [0.585, 1.105, side * 0.122]);
+    addPart(new THREE.CapsuleGeometry(0.022, 0.115, 2, 5), coat, [0.445, 1.16, side * 0.105], [0.9, 1.0, 0.65], [0, side * 0.12, -0.84]);
+    addPart(new THREE.CapsuleGeometry(0.018, 0.105, 2, 5), innerEarMaterial, [0.46, 1.15, side * 0.115], [0.84, 1.0, 0.55], [0, side * 0.12, -0.84]);
+    addPart(new THREE.ConeGeometry(0.033, 0.145, 7), hornMaterial, [0.455, 1.235, side * 0.062], [1, 1, 1], [0, side * 0.18, -0.18]);
+  }
+
+  // Short tail, four articulated legs, dark lower joints, and visible hooves.
+  addPart(new THREE.CylinderGeometry(0.018, 0.03, 0.23, 6), darkCoat, [-0.55, 0.79, 0], [1, 1, 1], [0, 0, 0.45]);
+  for (const x of [-0.36, 0.27]) {
+    for (const z of [-0.155, 0.155]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, 0.57, z);
+      root.add(pivot);
+      const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, 0.14, 2, 5), coat);
+      upper.position.y = -0.12;
+      upper.castShadow = false;
+      upper.receiveShadow = false;
+      pivot.add(upper);
+      const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.027, 0.16, 2, 5), lightCoat);
+      lower.position.set(0.012, -0.315, 0);
+      lower.castShadow = false;
+      lower.receiveShadow = false;
+      pivot.add(lower);
+      const hoof = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.055, 0.075), hoofMaterial);
+      hoof.position.set(0.018, -0.455, 0);
+      hoof.castShadow = false;
+      hoof.receiveShadow = false;
+      pivot.add(hoof);
+      legPivots.push(pivot);
+    }
+  }
+
+  root.scale.setScalar(0.88);
+  root.position.set(0, 0.012, -23);
+  root.visible = false;
+  return { root, legPivots };
+}
+
+function installProceduralGoatFallback(system, state, reason) {
+  if (state.disposed || state.goatRoot || system.renderer?.disposed || !system.renderer?.world) return false;
+  const goat = createProceduralGoat();
+  system.renderer.world.add(goat.root);
+  state.goatRoot = goat.root;
+  state.goatFallbackLegs = goat.legPivots;
+  state.goatStatus = `procedural-fallback-${reason}`;
+  cultureAudit.goatAssetStatus = state.goatStatus;
+  cultureAudit.notes.push(`No usable goat GLB (${reason}); using a low-poly articulated goat fallback.`);
+  if (cultureAudit.notes.length > 12) cultureAudit.notes.shift();
+  return true;
+}
+
 function startGoatLoad(system, state) {
   if (state.goatLoadStarted || state.disposed) return;
   state.goatLoadStarted = true;
@@ -253,9 +343,7 @@ function startGoatLoad(system, state) {
   cultureAudit.goatAssetStatus = state.goatStatus;
   discoverGoatPath().then((relativePath) => {
     if (!relativePath) {
-      state.goatStatus = 'no-goat-glb-found-in-inventory';
-      cultureAudit.goatAssetStatus = state.goatStatus;
-      cultureAudit.notes.push('No goat GLB was found; no primitive goat placeholder was created.');
+      installProceduralGoatFallback(system, state, 'no-goat-glb-found-in-inventory');
       return;
     }
     const base = String(system.renderer?.models?.basePath || '/assets/models/').replace(/\/?$/, '/');
@@ -263,7 +351,7 @@ function startGoatLoad(system, state) {
     state.goatStatus = 'loading-existing-goat-glb';
     cultureAudit.goatAssetStatus = state.goatStatus;
     cultureAudit.goatModelPath = relativePath;
-    createGLTFLoader().load(url, (gltf) => {
+    new GLTFLoader().load(url, (gltf) => {
       if (state.disposed || system.renderer?.disposed || !system.renderer?.world) {
         disposeUniqueTree(gltf?.scene);
         state.goatStatus = 'discarded-after-scene-dispose';
@@ -274,6 +362,7 @@ function startGoatLoad(system, state) {
       if (!root?.isObject3D) {
         state.goatStatus = 'loaded-without-scene-root';
         cultureAudit.goatAssetStatus = state.goatStatus;
+        installProceduralGoatFallback(system, state, 'loaded-without-scene-root');
         return;
       }
       root.name = 'KANO_ANIMATED_GOAT_CROSSING';
@@ -292,6 +381,8 @@ function startGoatLoad(system, state) {
       if (!Number.isFinite(size.y) || size.y < 0.03) {
         state.goatStatus = 'rejected-invalid-bounds';
         cultureAudit.goatAssetStatus = state.goatStatus;
+        disposeUniqueTree(root);
+        installProceduralGoatFallback(system, state, 'rejected-invalid-bounds');
         return;
       }
       const scale = 0.76 / size.y;
@@ -319,13 +410,15 @@ function startGoatLoad(system, state) {
       state.goatStatus = 'goat-glb-load-failed';
       cultureAudit.goatAssetStatus = state.goatStatus;
       cultureAudit.modelLoadFailures.push({ path: relativePath, message: String(error?.message || error) });
-      console.warn('[Kano cultural events] Goat GLB failed to load:', relativePath, error);
+      console.warn('[Kano cultural events] Goat GLB failed to load; using the procedural fallback:', relativePath, error);
+      installProceduralGoatFallback(system, state, 'glb-load-failed');
     });
   }).catch((error) => {
     state.goatStatus = 'inventory-unavailable';
     cultureAudit.goatAssetStatus = state.goatStatus;
     cultureAudit.modelLoadFailures.push({ path: 'model-catalog-audit.generated.json', message: String(error?.message || error) });
-    console.warn('[Kano cultural events] Goat inventory scan unavailable; no fallback goat was fabricated.', error);
+    console.warn('[Kano cultural events] Goat inventory scan unavailable; using the procedural fallback.', error);
+    installProceduralGoatFallback(system, state, 'inventory-unavailable');
   });
 }
 
@@ -368,6 +461,7 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
       goatRoot: null,
       goatMixer: null,
       goatAction: null,
+      goatFallbackLegs: [],
       goatStarted: false,
       goatCrossing: null,
       goatNextAt: 20,
@@ -413,6 +507,11 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
 
   startGoatLoad(system, state);
   if (state.goatMixer) state.goatMixer.update(delta);
+  if (state.goatFallbackLegs?.length) {
+    state.goatFallbackLegs.forEach((leg, index) => {
+      leg.rotation.z = Math.sin(state.elapsed * 8.2 + index * Math.PI * 0.5) * 0.13;
+    });
+  }
   if (state.goatRoot) {
     state.goatRoot.position.z += scroll;
     if (!state.goatCrossing && state.elapsed >= state.goatNextAt && game?.state === 'PLAY' && !stateSnapshot?.event) {
@@ -581,4 +680,4 @@ if (typeof window !== 'undefined') {
   });
 }
 
-console.info('[Kano cultural events] Bikin Aure convoy decoration, existing-character roadside bowl actors, and inventory-backed goat crossing registered.');
+console.info('[Kano cultural events] Bikin Aure convoy decoration, roadside bowl actors, and GLB-first articulated goat crossing registered.');
