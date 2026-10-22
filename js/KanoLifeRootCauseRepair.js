@@ -6,7 +6,7 @@
  * damage values, collision detection, steering, speed, or progression.
  */
 import * as THREE from 'three';
-import { createGLTFLoader } from './createGLTFLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import * as ModelManagerModule from './ModelManager.js';
 import * as RendererModule from './renderer3d.js';
@@ -327,7 +327,7 @@ function embeddedClipsForPath(path) {
   if (!path) return Promise.resolve([]);
   if (embeddedClipPromises.has(path)) return embeddedClipPromises.get(path);
   rootAudit.embeddedAnimations.requestedAssets += 1;
-  const promise = createGLTFLoader().loadAsync(encodedAssetUrl(path)).then((gltf) => {
+  const promise = new GLTFLoader().loadAsync(encodedAssetUrl(path)).then((gltf) => {
     const clips = Array.isArray(gltf.animations) ? gltf.animations.map((clip) => clip.clone()) : [];
     disposeAnimationProbeScene(gltf.scene);
     if (clips.length) {
@@ -542,9 +542,15 @@ function updateEmbeddedAnimations(renderer, dt) {
       continue;
     }
     let top = actor;
-    while (top.parent) top = top.parent;
+    let ancestryVisible = actor.visible !== false;
+    while (top.parent) {
+      top = top.parent;
+      if (top.visible === false) ancestryVisible = false;
+    }
     if (renderer?.scene && top !== renderer.scene) continue;
-    if (actor.visible) safeCall(() => entry.mixer.update(clamp(dt, 0, 0.05)));
+    // Object3D.visible is not inherited by reading only the leaf actor. A
+    // hidden scene parent must pause its child mixers as well.
+    if (ancestryVisible) safeCall(() => entry.mixer.update(clamp(dt, 0, 0.05)));
     if (entry.outgoingAction && nowMs() >= entry.outgoingUntil) {
       const old = entry.outgoingAction;
       entry.outgoingAction = null;
@@ -944,7 +950,7 @@ async function loadGoatTemplate() {
   if (goatTemplatePromise) return goatTemplatePromise;
   goatTemplatePromise = (async () => {
     const path = await discoverGoatAsset();
-    const gltf = await createGLTFLoader().loadAsync(encodedAssetUrl(path));
+    const gltf = await new GLTFLoader().loadAsync(encodedAssetUrl(path));
     if (!gltf?.scene) throw new Error('Goat GLB has no default scene.');
     const template = gltf.scene;
     const bounds = getModelBounds(template);

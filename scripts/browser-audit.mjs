@@ -202,9 +202,25 @@ async function installBrowserInstrumentation(page) {
   await page.addInitScript(() => {
     const store = {
       frameIntervals: [],
+      renderModeHistory: [],
       lastFrame: null,
       startedAt: performance.now(),
     };
+    // Observe every renderer-mode assignment throughout the 60-second run.
+    // A final mode alone can hide a temporary, unwanted 3D -> 2D switch.
+    let currentRenderMode = null;
+    Object.defineProperty(window, '__KANO_RENDER_MODE__', {
+      configurable: true,
+      enumerable: true,
+      get: () => currentRenderMode,
+      set: (value) => {
+        const next = value == null ? null : String(value);
+        if (next && next !== currentRenderMode) {
+          store.renderModeHistory.push({ mode: next, atMs: Math.round(performance.now()) });
+        }
+        currentRenderMode = next;
+      },
+    });
     Object.defineProperty(window, '__KANO_AUDIT__', {
       configurable: false,
       enumerable: false,
@@ -793,6 +809,13 @@ async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, 
     }, frameIndex).then(summarizeFrames);
 
     result.actualRenderMode = await page.evaluate(() => window.__KANO_RENDER_MODE__ || 'NOT_REPORTED').catch(() => 'PAGE_UNAVAILABLE');
+    result.renderModeHistory = await page.evaluate(() => window.__KANO_AUDIT__?.renderModeHistory || []).catch(() => []);
+    const expectedMode = mode === '2d' ? '2D' : '3D';
+    result.unexpectedRenderModeChanges = result.renderModeHistory.filter((entry) => entry.mode !== expectedMode);
+    result.modeStabilityPass = result.renderModeHistory.length > 0
+      && result.renderModeHistory.every((entry) => entry.mode === expectedMode)
+      && result.actualRenderMode === expectedMode;
+    result.frameAssessment = assessFrameTime(result.frameTime);
     result.canvas = await page.locator('#game-canvas').evaluate((canvas) => ({
       width: canvas.width,
       height: canvas.height,
@@ -863,6 +886,7 @@ async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, 
       && result.pageErrorCount === 0
       && result.unexpectedFailedRequestCount === 0
       && result.httpErrorCount === 0
+      && result.modeStabilityPass !== false
     );
     result.modelRequestCount = result.modelRequests.length;
     result.blockedModelRequestCount = result.intentionalModelBlocks.length;
@@ -1015,11 +1039,34 @@ function markdownTable(headers, rows) {
   ].join('\n');
 }
 
+function assessFrameTime(frameTime) {
+  if (!frameTime || !Number.isFinite(frameTime.medianFrameMs) || !Number.isFinite(frameTime.p95FrameMs)) {
+    return 'INSUFFICIENT_SAMPLES';
+  }
+  return frameTime.medianFrameMs > 50 || frameTime.p95FrameMs > 100
+    ? 'HIGH_FRAME_TIME_IN_SOFTWARE_RENDERER'
+    : 'FRAME_TIME_WITHIN_SOFTWARE_AUDIT_RANGE';
+}
+
+// Replaces the old binary CLEAN / DONE_WITH_ERRORS labels with separate runtime and frame-cost assessments.
+function scenarioStatus(item) {
+  if (!item.completed) return 'INCOMPLETE';
+  const runtime = item.auditClean ? 'RUNTIME CLEAN' : 'RUNTIME / MODE ISSUE';
+  if (item.frameAssessment === 'HIGH_FRAME_TIME_IN_SOFTWARE_RENDERER') {
+    return `${runtime} · HIGH FRAME TIME (SOFTWARE WEBGL)`;
+  }
+  if (!item.frameAssessment || item.frameAssessment === 'INSUFFICIENT_SAMPLES') {
+    return `${runtime} · FRAME TIME UNKNOWN`;
+  }
+  return `${runtime} · FRAME SAMPLE RECORDED (SOFTWARE WEBGL)`;
+}
+
 function generateMarkdown(report) {
   const scenarioRows = report.scenarios.map((item) => [
     item.scenario,
-    item.completed ? (item.auditClean ? 'CLEAN' : 'completed with errors') : 'INCOMPLETE',
+    scenarioStatus(item),
     item.actualRenderMode || '—',
+    item.renderModeHistory?.map((entry) => entry.mode).join(' → ') || '—',
     item.frameTime?.medianFrameMs ?? '—',
     item.frameTime?.p95FrameMs ?? '—',
     item.memoryGrowthMiB ?? '—',
@@ -1044,7 +1091,7 @@ function generateMarkdown(report) {
     item.screenshot || '—',
   ]);
 
-  return `# Kano Life — Browser Audit\n\n- **Run:** ${report.runId}\n- **Build under test:** local \`dist/\` served by Vite Preview unless \`KANO_AUDIT_BASE_URL\` was provided.\n- **Asset inventory:** ${report.assetInventory.fileCount} GLB/GLTF/bin files (${report.assetInventory.mib} MiB); ${report.assetInventory.glbCount} GLB.\n- **Duration:** ${report.durationTargetMs / 1000}s per desktop/phone × 2D/3D × model-on/off driving scenario.\n- **Model status:** ${report.assetInventory.fileCount > 0 ? 'real local model files detected' : '**needs assets** — no files found beneath public/assets/models at audit time'}.\n- **Browser:** ${report.browserVersion || 'unknown'}\n\n## Driving matrix\n\n${markdownTable(['Scenario', 'Status', 'Actual mode', 'Median frame ms', 'P95 frame ms', 'Heap change MiB', 'Console errors', 'Expected blocked-model messages', 'Page errors', 'Failed requests', 'HTTP errors', 'Screenshot'], scenarioRows)}\n\n## Scenario failure details\n\n${report.scenarios.filter((item) => item.error).map((item) => `### ${item.scenario}\n\n- **Failure:** ${String(item.error).replaceAll('\\n', ' ')}\n- **Mode at failure:** ${item.failureSnapshot?.renderMode || 'not reported'}\n- **Routine visible:** ${item.failureSnapshot?.routineVisible ?? 'unknown'}\n- **Current step:** ${item.failureSnapshot?.currentStep || '—'}\n- **Available actions:** ${(item.failureSnapshot?.availableActions || []).map((action) => `${action.text}${action.disabled ? ' (disabled)' : ''}${action.visible ? '' : ' (hidden)'}`).join('; ') || '—'}\n- **First console errors:** ${(item.runtimeErrors || []).slice(0, 3).map((entry) => entry.text).join(' | ') || '—'}\n- **First HTTP errors:** ${(item.httpErrors || []).slice(0, 5).map((entry) => `${entry.status} ${entry.url}`).join(' | ') || '—'}\n`).join('\\n') || 'No scenario setup failures were recorded.'}\n\n## Optional morning routine smoke\n\n- **Status:** ${report.morningRoutineSmoke ? (report.morningRoutineSmoke.completed ? 'PASS' : 'FAIL') : 'not run'}\n- **App bootstrap ready:** ${report.morningRoutineSmoke?.appReady ?? false}\n- **Final game state:** ${report.morningRoutineSmoke?.transition?.gameState || '—'}\n- **Skipped breakfast remains false:** ${report.morningRoutineSmoke?.transition?.breakfastEaten === false}\n- **Routine hidden after shift starts:** ${report.morningRoutineSmoke?.transition?.routineHiddenAfterShift ?? '—'}\n- **Failure:** ${report.morningRoutineSmoke?.error ? String(report.morningRoutineSmoke.error).replaceAll('\n', ' ') : '—'}\n- **Screenshot:** ${report.morningRoutineSmoke?.screenshot || '—'}\n\n## Cold first-load throttling\n\n${markdownTable(['Profile', 'Status', 'Navigation load ms', 'Resources', 'Transferred MiB', 'Encoded body MiB', 'Model requests', 'Console errors', 'Page errors', 'Failed requests', 'Screenshot'], throttleRows)}\n\n## Notes\n\n- Frame timing samples use a separate requestAnimationFrame sampler in the page. Median FPS is approximately \`1000 / median frame time\`; it is a browser-level estimate, not a physical-device benchmark.\n- Heap change is Chromium CDP's \`JSHeapUsedSize\` end minus start after the game shift begins. Negative values can occur after garbage collection.\n- The no-model scenarios intentionally abort GLB/GLTF/binary model requests. Those aborted model requests and generic Chromium \`ERR_FAILED\`/GLTF-loader messages are reported separately as expected fallback noise; unexpected non-model failed requests and HTTP errors still prevent a clean result.\n- Resource Timing transfer sizes can be zero for cross-origin resources without Timing-Allow-Origin and may not include late requests occurring after the settle window.\n- Screenshots and the complete raw JSON are beside this report. Inspect \`httpErrors\`, \`consoleErrors\`, and \`pageErrors\` in the JSON before declaring a scenario clean.\n`;
+  return `# Kano Life — Browser Audit\n\n- **Run:** ${report.runId}\n- **Build under test:** local \`dist/\` served by Vite Preview unless \`KANO_AUDIT_BASE_URL\` was provided.\n- **Asset inventory:** ${report.assetInventory.fileCount} GLB/GLTF/bin files (${report.assetInventory.mib} MiB); ${report.assetInventory.glbCount} GLB.\n- **Duration:** ${report.durationTargetMs / 1000}s per desktop/phone × 2D/3D × model-on/off driving scenario.\n- **Model status:** ${report.assetInventory.fileCount > 0 ? 'real local model files detected' : '**needs assets** — no files found beneath public/assets/models at audit time'}.\n- **Browser:** ${report.browserVersion || 'unknown'}\n- **WebGL backend:** ${report.rendererBackend || 'unknown'}\n\n## Driving matrix\n\n${markdownTable(['Scenario', 'Status', 'Actual mode', 'Mode history', 'Median frame ms', 'P95 frame ms', 'Heap change MiB', 'Console errors', 'Expected blocked-model messages', 'Page errors', 'Failed requests', 'HTTP errors', 'Screenshot'], scenarioRows)}\n\n## Scenario failure details\n\n${report.scenarios.filter((item) => item.error).map((item) => `### ${item.scenario}\n\n- **Failure:** ${String(item.error).replaceAll('\\n', ' ')}\n- **Mode at failure:** ${item.failureSnapshot?.renderMode || 'not reported'}\n- **Routine visible:** ${item.failureSnapshot?.routineVisible ?? 'unknown'}\n- **Current step:** ${item.failureSnapshot?.currentStep || '—'}\n- **Available actions:** ${(item.failureSnapshot?.availableActions || []).map((action) => `${action.text}${action.disabled ? ' (disabled)' : ''}${action.visible ? '' : ' (hidden)'}`).join('; ') || '—'}\n- **First console errors:** ${(item.runtimeErrors || []).slice(0, 3).map((entry) => entry.text).join(' | ') || '—'}\n- **First HTTP errors:** ${(item.httpErrors || []).slice(0, 5).map((entry) => `${entry.status} ${entry.url}`).join(' | ') || '—'}\n`).join('\\n') || 'No scenario setup failures were recorded.'}\n\n## Optional morning routine smoke\n\n- **Status:** ${report.morningRoutineSmoke ? (report.morningRoutineSmoke.completed ? 'PASS' : 'FAIL') : 'not run'}\n- **App bootstrap ready:** ${report.morningRoutineSmoke?.appReady ?? false}\n- **Final game state:** ${report.morningRoutineSmoke?.transition?.gameState || '—'}\n- **Skipped breakfast remains false:** ${report.morningRoutineSmoke?.transition?.breakfastEaten === false}\n- **Routine hidden after shift starts:** ${report.morningRoutineSmoke?.transition?.routineHiddenAfterShift ?? '—'}\n- **Failure:** ${report.morningRoutineSmoke?.error ? String(report.morningRoutineSmoke.error).replaceAll('\n', ' ') : '—'}\n- **Screenshot:** ${report.morningRoutineSmoke?.screenshot || '—'}\n\n## Cold first-load throttling\n\n${markdownTable(['Profile', 'Status', 'Navigation load ms', 'Resources', 'Transferred MiB', 'Encoded body MiB', 'Model requests', 'Console errors', 'Page errors', 'Failed requests', 'Screenshot'], throttleRows)}\n\n## Notes\n\n- This audit launches headless Chromium with \`--use-gl=angle --use-angle=swiftshader\`, forcing **SwiftShader software WebGL**. Its frame timings are a software-renderer diagnostic, not a physical-phone GPU benchmark. A \`RUNTIME CLEAN\` status means no tracked app/network errors; it does **not** mean performance passed. \`HIGH FRAME TIME\` is shown separately so slow runs are not labelled simply CLEAN.\n- Renderer-mode assignments are recorded for the entire driving interval. In a 3D scenario, any 2D mode assignment is reported as an unexpected mode change even if the game later returns to 3D.\n- Frame timing samples use a separate requestAnimationFrame sampler in the page. Median FPS is approximately \`1000 / median frame time\`; it is a browser-level estimate, not a physical-device benchmark.\n- Heap change is Chromium CDP's \`JSHeapUsedSize\` end minus start after the game shift begins. Negative values can occur after garbage collection.\n- The no-model scenarios intentionally abort GLB/GLTF/binary model requests. Those aborted model requests and generic Chromium \`ERR_FAILED\`/GLTF-loader messages are reported separately as expected fallback noise; unexpected non-model failed requests and HTTP errors still prevent a clean result.\n- Resource Timing transfer sizes can be zero for cross-origin resources without Timing-Allow-Origin and may not include late requests occurring after the settle window.\n- Screenshots and the complete raw JSON are beside this report. Inspect \`httpErrors\`, \`consoleErrors\`, and \`pageErrors\` in the JSON before declaring a scenario clean.\n`;
 }
 
 async function main() {
@@ -1059,6 +1106,7 @@ async function main() {
     durationTargetMs: DURATION_MS,
     throttleSettleMs: THROTTLE_SETTLE_MS,
     assetInventory,
+    rendererBackend: 'SwiftShader software WebGL (forced by Playwright headless launch arguments)',
     scenarios: [],
     morningRoutineSmoke: null,
     throttledFirstLoads: [],
@@ -1068,6 +1116,7 @@ async function main() {
   if (assetInventory.fileCount === 0) {
     report.limitations.push('No GLB/GLTF/bin files were found under public/assets/models. Real-model results are needs assets; the no-model fallback scenarios are still useful.');
   }
+  report.limitations.push('Playwright headless forces SwiftShader software WebGL. Frame timings are diagnostic for that software renderer and are not a physical-device GPU benchmark.');
   if (EXTERNAL_BASE_URL) {
     report.limitations.push('KANO_AUDIT_BASE_URL was supplied. The script audited that URL, not necessarily the just-built local dist output.');
   }
@@ -1094,10 +1143,11 @@ async function main() {
         for (const withModels of [true, false]) {
           const result = await runDrivingScenario(browser, baseURL, viewport, mode, withModels, assetInventory);
           report.scenarios.push(result);
-          console.log(`[Browser Audit] ${result.completed ? (result.auditClean ? 'CLEAN' : 'DONE_WITH_ERRORS') : 'INCOMPLETE'} ${result.scenario}: ` +
+          console.log(`[Browser Audit] ${scenarioStatus(result)} ${result.scenario}: ` +
             `mode=${result.actualRenderMode || 'unknown'}, frames=${result.frameTime?.samples ?? 0}, ` +
             `console=${result.consoleErrorCount ?? 0}, page=${result.pageErrorCount ?? 0}, ` +
             `failedRequests=${result.unexpectedFailedRequestCount ?? 0}, ` +
+            `modeChanges=${result.renderModeHistory?.map((entry) => entry.mode).join('→') || 'none'}, ` +
             `expectedModelFallback=${result.expectedModelFallbackMessages?.length ?? 0}`);
           if (result.error) console.error(`[Browser Audit] ${result.scenario} failure: ${result.error}`);
           if (result.httpErrors?.length) console.error(`[Browser Audit] ${result.scenario} HTTP errors (first 5): ${result.httpErrors.slice(0, 5).map((item) => `${item.status} ${item.url}`).join(' | ')}`);
@@ -1151,7 +1201,7 @@ async function main() {
   await fs.writeFile(path.join(OUTPUT_DIR, 'summary.md'), generateMarkdown(report));
 
   console.log('\n[Browser Audit] Finished.');
-  console.log(`[Browser Audit] Scenarios: ${report.completedScenarioCount}/${report.scenarioCount} completed; ${report.scenarios.filter((item) => item.auditClean).length} clean`);
+  console.log(`[Browser Audit] Scenarios: ${report.completedScenarioCount}/${report.scenarioCount} completed; ${report.scenarios.filter((item) => item.auditClean).length} runtime-clean; ${report.scenarios.filter((item) => item.frameAssessment === 'HIGH_FRAME_TIME_IN_SOFTWARE_RENDERER').length} high-frame-time in SwiftShader (not a phone GPU benchmark)`);
   console.log(`[Browser Audit] Throttled first-load profiles: ${report.completedThrottleCount}/${report.throttledFirstLoads.length}`);
   console.log(`[Browser Audit] Optional morning routine smoke: ${report.morningRoutineSmokePassed ? 'PASS' : 'FAIL'}`);
   console.log(`[Browser Audit] Report: ${report.jsonPath}`);

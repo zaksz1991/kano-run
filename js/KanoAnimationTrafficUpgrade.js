@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGLTFLoader } from './createGLTFLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 
 const CHARACTER_KEYS = new Set([
@@ -400,7 +400,7 @@ export class KanoGLBAnimationManager {
     this.debug = Boolean(debug);
     this.disposed = false;
     this.elapsed = 0;
-    this.loader = createGLTFLoader();
+    this.loader = new GLTFLoader();
     this.clipPromises = new Map();
     this.mixers = new Map();
     this.lastActiveRoots = new Set();
@@ -693,14 +693,14 @@ export class KanoGLBAnimationManager {
       actor.traverse((object) => add(object, 'idle'));
     }
 
-    for (const group of this.renderer.lifeSceneGroups?.values?.() || []) {
-      group.traverse((object) => {
-        if (object.userData?.modelPath && isCharacterModel(object)) add(object, 'idle');
-      });
-    }
-
-    for (const root of this.renderer.lifeDioramaRoot ? [this.renderer.lifeDioramaRoot] : []) {
-      root.traverse((object) => {
+    // The bedroom, breakfast, walk and school dioramas are hidden during the
+    // road-driving scene. Do not traverse or bind their GLB rigs every frame.
+    // Only discover rigs in the currently active life scene; road traffic and
+    // roadside passengers above remain unaffected.
+    const activeLifeScene = this.renderer.lifeScene;
+    if (activeLifeScene && activeLifeScene !== 'road' && activeLifeScene !== 'garage') {
+      const activeGroup = this.renderer.lifeSceneGroups?.get?.(activeLifeScene);
+      activeGroup?.traverse((object) => {
         if (object.userData?.modelPath && isCharacterModel(object)) add(object, 'idle');
       });
     }

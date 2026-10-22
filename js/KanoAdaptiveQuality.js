@@ -10,7 +10,7 @@
  * the separate life-scene dioramas are deliberately never culled by this file.
  */
 import * as THREE from 'three';
-import { getMobileTier, getMobileRatios } from './KanoDeviceTier.js';
+import { getMobileTier, getMobileRatios, getMobileRenderBudget } from './KanoDeviceTier.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
 import { KanoGLBAnimationManager } from './KanoAnimationTrafficUpgrade.js';
 
@@ -314,12 +314,14 @@ export class KanoAdaptiveQuality {
     this.deviceRatio = safeDevicePixelRatio();
     this.mobileTier = this.mobile ? getMobileTier() : 'desktop';
     const mobileRatios = this.mobile ? getMobileRatios(this.mobileTier) : null;
+    const mobileRenderBudget = this.mobile ? getMobileRenderBudget(this.mobileTier) : null;
 
-    // Phone GPU cost is bounded by tier. Weak phones start substantially below
-    // native DPR and can step down quickly instead of stuttering for several seconds.
-    this.maximumRatio = this.mobile ? mobileRatios.max : 1.72;
-    this.minimumRatio = this.mobile ? mobileRatios.min : 0.84;
-    this.startupRatio = this.mobile ? mobileRatios.start : 1.30;
+    // Keep the raw capability ratios for diagnostics but apply a much lower
+    // actual phone GPU budget. Weak phones start at ~0.50x CSS pixels, and all
+    // tiers can step down farther rather than entering a 2D fallback.
+    this.maximumRatio = this.mobile ? Math.min(mobileRatios.max, mobileRenderBudget.max) : 1.72;
+    this.minimumRatio = this.mobile ? mobileRenderBudget.min : 0.84;
+    this.startupRatio = this.mobile ? mobileRenderBudget.start : 1.30;
     this.maxSupportedRatio = Math.max(
       this.minimumRatio,
       Math.min(this.deviceRatio, this.maximumRatio),
@@ -329,7 +331,7 @@ export class KanoAdaptiveQuality {
 
     this.levels = this.buildLevels();
     this.lodDistances = this.mobile
-      ? [Infinity, 220, 195, 175, 155, 140, 118]
+      ? [Infinity, 190, 165, 140, 118, 95, 75]
       : [Infinity, 270, 245, 220, 195, 175];
 
     const targetStart = Math.min(this.baseRatio, this.startupRatio);
@@ -571,7 +573,7 @@ export class KanoAdaptiveQuality {
       this.fastWindows = 0;
     }
 
-    const criticallySlow = this.mobile && this.lastFps < 32;
+    const criticallySlow = this.mobile && this.lastFps < 36;
     if (
       (criticallySlow || this.slowWindows >= 2) &&
       sinceChange >= (this.mobile ? 900 : 2200) &&

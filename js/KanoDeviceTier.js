@@ -17,3 +17,15 @@ export function getMobileRatios(tier) {
   if (tier === 'mid') return { max: 1.25, start: 0.94, min: 0.62 };
   return { max: 1.1, start: 0.82, min: 0.58 };
 }
+
+/**
+ * Actual 3D rendering budget after the long browser audit showed high frame
+ * times with GLB traffic. Keep the tier capability ratios above for diagnostics
+ * and compatibility, but render phones below native DPR by default. This cuts
+ * roughly 50–65% of pixel shading compared with the previous startup values.
+ */
+export function getMobileRenderBudget(tier) {
+  if (tier === 'high') return { max: 0.9, start: 0.72, min: 0.4 };
+  if (tier === 'mid') return { max: 0.78, start: 0.6, min: 0.36 };
+  return { max: 0.66, start: 0.5, min: 0.32 };
+}

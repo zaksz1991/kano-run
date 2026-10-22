@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getMobileTier, getMobileRatios } from './KanoDeviceTier.js';
+import { getMobileTier, getMobileRenderBudget } from './KanoDeviceTier.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -96,7 +96,7 @@ export class Renderer3D {
 
     this.renderer.setPixelRatio(
       mobile
-        ? Math.min(window.devicePixelRatio || 1, getMobileRatios(getMobileTier()).start)
+        ? Math.min(window.devicePixelRatio || 1, getMobileRenderBudget(getMobileTier()).start)
         : Math.min(window.devicePixelRatio || 1, 1.5),
     );
 
@@ -383,36 +383,55 @@ export class Renderer3D {
         rail.position.set(0, 4.77, sideZ);
         group.add(rail);
 
-        const stripeCount = this.mobile ? 11 : 15;
-        const stripeWidth = width / stripeCount;
+      }
 
-        for (
-          let stripeIndex = 0;
-          stripeIndex < stripeCount;
-          stripeIndex += 1
-        ) {
-          const stripe = new THREE.Mesh(
-            new THREE.BoxGeometry(
-              stripeWidth * 0.96,
-              0.29,
-              0.035,
-            ),
-            this.material(
-              stripeIndex % 2 === 0
-                ? 0xc83d37
-                : 0xf4eee0,
-            ),
-          );
+      // One InstancedMesh renders both red/white parapet stripes on this
+      // flyover. The former loop created 22 mobile / 30 desktop meshes and
+      // materials per span, wasting draw calls for a purely decorative detail.
+      const stripeCount = this.mobile ? 11 : 15;
+      const stripeWidth = width / stripeCount;
+      const stripeGeometry = new THREE.BoxGeometry(
+        stripeWidth * 0.96,
+        0.29,
+        0.035,
+      );
+      const stripeMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.92,
+      });
+      const stripes = new THREE.InstancedMesh(
+        stripeGeometry,
+        stripeMaterial,
+        stripeCount * 2,
+      );
+      stripes.name = `KANO_FLYOVER_STRIPES_${index}`;
+      stripes.userData.kanoFlyoverStripeInstancing = true;
+      const stripeMatrix = new THREE.Matrix4();
+      const stripePosition = new THREE.Vector3();
+      const stripeQuaternion = new THREE.Quaternion();
+      const stripeScale = new THREE.Vector3(1, 1, 1);
+      const stripeColor = new THREE.Color();
+      let stripeInstance = 0;
 
-          stripe.position.set(
+      for (const sideZ of [-2.25, 2.25]) {
+        for (let stripeIndex = 0; stripeIndex < stripeCount; stripeIndex += 1) {
+          stripePosition.set(
             -width / 2 + stripeWidth * (stripeIndex + 0.5),
             4.78,
             sideZ + (sideZ > 0 ? 0.135 : -0.135),
           );
-
-          group.add(stripe);
+          stripeMatrix.compose(stripePosition, stripeQuaternion, stripeScale);
+          stripes.setMatrixAt(stripeInstance, stripeMatrix);
+          stripeColor.setHex(stripeIndex % 2 === 0 ? 0xc83d37 : 0xf4eee0);
+          stripes.setColorAt(stripeInstance, stripeColor);
+          stripeInstance += 1;
         }
       }
+
+      stripes.instanceMatrix.needsUpdate = true;
+      if (stripes.instanceColor) stripes.instanceColor.needsUpdate = true;
+      stripes.computeBoundingSphere();
+      group.add(stripes);
 
       for (const x of [-8.4, 8.4]) {
         const pillar = new THREE.Mesh(
@@ -1961,8 +1980,16 @@ export class Renderer3D {
       'passenger',
     ];
 
+    // GLB human rigs are comparatively expensive on phone GPUs. Keep two
+    // foreground GLB pedestrians at most; the surrounding crowd remains
+    // populated by lightweight instanced silhouettes.
+    let mobileModelledCount = this.mobile
+      ? this.pedestrians.reduce((count, pedestrian) => count + (pedestrian.usingModel ? 1 : 0), 0)
+      : 0;
+
     for (const pedestrian of this.pedestrians) {
       if (pedestrian.usingModel) continue;
+      if (this.mobile && mobileModelledCount >= 2) continue;
 
       const modelKey =
         characterKeys[pedestrian.index % characterKeys.length];
@@ -1985,6 +2012,7 @@ export class Renderer3D {
 
       pedestrian.actor = model;
       pedestrian.usingModel = true;
+      if (this.mobile) mobileModelledCount += 1;
     }
   }
 
@@ -3499,11 +3527,15 @@ export class Renderer3D {
 
     const driverView = state.camera === 'driver';
     const cameraFollow = driverView ? 0.72 : 0.92;
-    const targetX = this.player.position.x * cameraFollow;
+    // Keep enough lateral framing margin that the keke remains visible during
+    // hard steering. The previous 0.72 driver-view follow left the vehicle too
+    // far from centre when combined with the narrow phone viewport.
+    const lateralCameraTracking = driverView ? 0.94 : 0.98;
+    const targetX = this.player.position.x * Math.max(cameraFollow, lateralCameraTracking);
 
     this.camera.position.x += (
       targetX - this.camera.position.x
-    ) * Math.min(1, dt * 3.4);
+    ) * Math.min(1, dt * 6.0);
 
     // Raise and pull the driver camera behind the keke canopy. The old low,
     // close position looked through the bodywork and could fill the viewport.

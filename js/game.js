@@ -1530,39 +1530,51 @@ export class Game {
         roadFactor;
 
       const trafficHalfLength = TRAFFIC_COLLISION_LENGTH[vehicle.type] || 1.65;
+      const trafficHalfWidth = TRAFFIC_COLLISION_WIDTH[vehicle.type] || 0.82;
+      const combinedHalfLength = trafficHalfLength + PLAYER_KEKE_HALF_LENGTH;
+      // Keep a named reference contact plane for debugging; unlike the old
+      // plane-only test, the actual test below uses swept model dimensions.
       const impactDepth = clamp(
         (trafficHalfLength + PLAYER_KEKE_HALF_LENGTH - 2) / 88,
         0.004,
         0.027,
       );
+      const crossedImpactPlane = closingSpeed > 0
+        && previousDepth > impactDepth
+        && vehicle.depth <= impactDepth;
+      const previousLongitudinalSeparation = 2 + previousDepth * 88;
+      const currentLongitudinalSeparation = 2 + vehicle.depth * 88;
+      const sweptLongitudinalGap = previousLongitudinalSeparation * currentLongitudinalSeparation <= 0
+        ? 0
+        : Math.min(
+            Math.abs(previousLongitudinalSeparation),
+            Math.abs(currentLongitudinalSeparation),
+          );
+      const longitudinalOverlap = crossedImpactPlane || sweptLongitudinalGap <= combinedHalfLength;
 
-      const crossedImpactPlane =
-        closingSpeed > 0 &&
-        previousDepth > impactDepth &&
-        vehicle.depth <= impactDepth;
-
-      // Narrow tolerance around the model-specific plane covers fast frames
-      // without triggering large buses and tiny motorcycles at the same depth.
-      const insideContactBand =
-        vehicle.depth <= impactDepth + 0.002 &&
-        vehicle.depth >= Math.max(0, impactDepth - 0.004);
-
-      const trafficWorldX = ((Number(vehicle.lane) || 1) - 1) * 3;
+      // Do not use `Number(lane) || 1`: lane 0 is a valid left lane, not the
+      // centre lane. Match the rendered position, including visible deflection.
+      const rawLane = Number(vehicle.lane);
+      const trafficLane = Number.isFinite(rawLane) ? clamp(rawLane, 0, 2) : 1;
+      const trafficWorldX =
+        (trafficLane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0);
       const lateralGap = Math.abs(trafficWorldX - playerWorldX);
-      const trafficHalfWidth = TRAFFIC_COLLISION_WIDTH[vehicle.type] || 0.82;
       const collisionGap = PLAYER_KEKE_HALF_WIDTH + trafficHalfWidth + 0.12;
+      const nearMissGap = collisionGap + 0.72;
 
-      const approachingContact =
-        crossedImpactPlane ||
-        (
-          insideContactBand &&
-          closingSpeed > 6
+      if (!vehicle.passed && longitudinalOverlap) {
+        // Re-check every overlapping frame. This catches a player steering
+        // sideways into a vehicle already beside them, even when both vehicles
+        // have nearly identical speeds and neither crosses a narrow depth plane.
+        vehicle.contactObserved = true;
+        vehicle.contactMinLateralGap = Math.min(
+          Number.isFinite(vehicle.contactMinLateralGap)
+            ? vehicle.contactMinLateralGap
+            : Infinity,
+          lateralGap,
         );
+        if (closingSpeed > 4) vehicle.contactWasClosing = true;
 
-      if (
-        !vehicle.passed &&
-        approachingContact
-      ) {
         if (lateralGap <= collisionGap) {
           vehicle.passed = true;
           vehicle.collisionKickDuration = 0.44;
@@ -1570,40 +1582,30 @@ export class Game {
           vehicle.collisionKickSide = trafficWorldX >= playerWorldX ? 1 : -1;
           vehicle.visualOffsetX = vehicle.collisionKickSide * 0.08;
 
-          // Invulnerability prevents repeat damage, not the physical scrape
-          // response or collision classification.
+          // Invulnerability prevents repeat damage, not physical collision
+          // classification or the visual contact response.
           if (s.invuln <= 0) this.hit(vehicle);
-        } else if (
-          lateralGap <= collisionGap + 0.72 &&
-          closingSpeed > 4
+        } else if (lateralGap <= nearMissGap) {
+          vehicle.nearMissPending = true;
+        }
+      } else if (!vehicle.passed && vehicle.contactObserved) {
+        // Only finalize a safe pass after the body has cleared the keke. This
+        // leaves collision checks active during lane changes and pull-overs.
+        vehicle.passed = true;
+        if (
+          vehicle.nearMissPending &&
+          vehicle.contactWasClosing &&
+          vehicle.contactMinLateralGap <= nearMissGap
         ) {
-          vehicle.passed = true;
-
           s.nearMisses += 1;
-
           this.dailyAdd('nearMisses', 1);
-
-          s.combo = Math.min(
-            20,
-            s.combo + 1,
-          );
-
+          s.combo = Math.min(20, s.combo + 1);
           s.comboTimer = 5.5;
-
-          const bonus = Math.floor(
-            80 * this.comboMultiplier(),
-          );
-
+          const bonus = Math.floor(80 * this.comboMultiplier());
           s.score += bonus;
-
-          this.ui.toast(
-            `Near miss! +₦${bonus.toLocaleString()} · combo ×${s.combo}`,
-          );
-
+          this.ui.toast(`Near miss! +₦${bonus.toLocaleString()} · combo ×${s.combo}`);
           this.missionAdd('nearMisses', 1);
           this.missionAdd('combo', s.combo);
-        } else {
-          vehicle.passed = true;
         }
       }
 
