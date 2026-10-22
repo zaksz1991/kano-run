@@ -28,6 +28,9 @@ const corpus = searchFiles.map(({ absolute, rel }) => {
   catch { return { rel, text: '' }; }
 });
 const publicFiles = walk(PUBLIC).map(({ absolute, rel }) => ({ absolute, rel: `/${rel}` }));
+// Declare the model root before either URI traversal or catalog discovery uses it.
+// Keeping this above the first `existsSync(modelRoot)` avoids a temporal-dead-zone crash.
+const modelRoot = path.join(PUBLIC, 'assets', 'models');
 const externalModelRefs = new Set();
 function addExternalUri(modelFile, uri) {
   if (typeof uri !== 'string' || !uri || uri.startsWith('data:') || /^https?:\/\//i.test(uri)) return;
@@ -73,7 +76,6 @@ const findings = [];
 // to avoid falsely calling catalog-driven GLBs unused simply because filenames
 // are not hard-coded in the renderer source.
 let catalog = null;
-const modelRoot = path.join(PUBLIC, 'assets', 'models');
 if (fs.existsSync(modelRoot)) {
   try { catalog = await scanGlbCatalog(modelRoot, path.join(ROOT, 'scripts', 'glb-catalog-overrides.json')); }
   catch (error) { console.warn(`[Public Asset Audit] GLB catalogue scan unavailable: ${error.message}`); }
