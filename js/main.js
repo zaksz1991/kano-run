@@ -353,31 +353,52 @@ function start2D(reason = '2D MODE · ROAD VISIBLE') {
 // WEBGL CONTEXT RECOVERY
 // ============================================================
 
+let contextRecoveryTimer = 0;
+let contextRebuilds = 0;
+let rebuilding3D = false;
+
+// Rebuild the 3D renderer from scratch instead of dropping to 2D.
+function rebuild3D(reason) {
+  if (pageClosing || rebuilding3D) return;
+  rebuilding3D = true;
+  console.warn('[Kano Life] rebuilding 3D renderer:', reason);
+  start3D()
+    .catch((error) => {
+      console.warn('[Kano Life] 3D rebuild failed', error);
+      if (!keep3D) start2D('2D MODE · WEBGL UNAVAILABLE');
+    })
+    .finally(() => { rebuilding3D = false; });
+}
+
 function attachWebGLRecovery(
   targetCanvas,
   generation,
 ) {
-  targetCanvas.addEventListener(
-    'webglcontextlost',
-    (event) => {
-      event.preventDefault();
+  targetCanvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
 
-      // Ignore notifications from a replaced renderer.
-      if (
-        generation !== rendererGeneration ||
-        renderMode !== '3D'
-      ) {
-        return;
+    if (generation !== rendererGeneration || renderMode !== '3D') return;
+
+    console.error('[Kano Life] WebGL context lost; waiting for restore');
+    clearTimeout(contextRecoveryTimer);
+
+    // Phones often drop the GPU context under memory pressure.
+    // Wait briefly for the browser to restore it, then rebuild 3D.
+    contextRecoveryTimer = setTimeout(() => {
+      if (generation !== rendererGeneration || pageClosing) return;
+      if (contextRebuilds < 6) {
+        contextRebuilds += 1;
+        rebuild3D('context lost');
+      } else if (!keep3D) {
+        start2D('2D MODE · WEBGL CONTEXT LOST');
       }
+    }, 2500);
+  });
 
-      console.error(
-        '[Kano Life] WebGL context lost; switching to Canvas 2D',
-      );
-
-      start2D('2D MODE · WEBGL CONTEXT LOST');
-    },
-    { once: true },
-  );
+  targetCanvas.addEventListener('webglcontextrestored', () => {
+    clearTimeout(contextRecoveryTimer);
+    console.warn('[Kano Life] WebGL context restored');
+  });
 }
 
 // ============================================================
@@ -1182,9 +1203,11 @@ function frame(now) {
     );
 
     if (renderMode === '3D') {
-      start2D(
-        '2D MODE · RECOVERED AFTER ERROR',
-      );
+      if (!keep3D) {
+        start2D('2D MODE · RECOVERED AFTER ERROR');
+      } else if (runtimeFailureCount === 2) {
+        rebuild3D('repeated frame error');
+      }
     }
 
     if (
