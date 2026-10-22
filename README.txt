@@ -1,28 +1,42 @@
-KANO LIFE — STEP 15: MOBILE FOG-HORIZON CULLING
+KANO LIFE — STEP 16: MOBILE REMAINING STANDARD-SHADER FIX
 
-Replace only:
+REPLACE ONLY:
   kano-run/js/renderer3d.js
 
-Also included:
-  kano-run/tests/KanoMobileFogHorizonCulling.test.mjs
+OPTIONAL REGRESSION TEST INCLUDED:
+  kano-run/tests/KanoMobileRemainingStandardShaders.test.mjs
 
-What this change does:
-- On mobile road gameplay, hides roadside visual actors that are already
-  substantially blended into the existing fog: distant buildings, pedestrians,
-  street lights and roadside props.
-- Keeps flyovers visible to a slightly longer distance because they are major
-  Kano road landmarks.
-- Re-evaluates visibility as actors move and recycle, so they can reappear.
-- Skips only cosmetic procedural pedestrian arm sway beyond the near detail
-  distance. Actor movement and gameplay simulation remain unchanged.
-- Does not change renderer mode, resolution, model files, textures, audio,
-  traffic simulation, passenger stops, collisions, missions or player physics.
-- Desktop behaviour is unchanged.
+WHY:
+The previous mobile shader optimization used the tier-aware material factory
+for most procedural scenery, but several important paths still explicitly
+created MeshStandardMaterial instances: the large instanced road kerbs, repeated
+flyover stripes, life-scene procedural boxes, and transparent roadside/checkpoint
+pads. These paths bypassed the mobile Lambert material budget.
 
-Installation: copy the complete replacement renderer3d.js over the matching
-file and leave all other project files and assets alone.
+CHANGES:
+- Road kerbs and flyover stripes now use this.material(), which selects cheaper
+  Lambert shading on phones while keeping Standard shading on desktop.
+- Procedural boxes in the optional life scenes use the same tier-aware factory.
+  Any supplied materialOptions are still applied.
+- Roadside stop and checkpoint pads use the tier-aware factory while preserving
+  their transparency and opacity.
+- Player keke glass and fallback traffic window materials retain their authored
+  transparent Standard-shader appearance.
+- No assets are removed or changed. No driving physics, renderer selection,
+  missions, traffic simulation, collision behaviour, or resolution settings are
+  modified.
 
-Validation performed in this package environment: syntax check and six
-focused source regression checks. The full game and physical-device FPS were
-not benchmarked; reduced draw cost is a targeted optimization, not a claim that
-phone performance is already fixed.
+INSTALL:
+Copy the complete renderer3d.js over the matching file. Keep all other source
+files and model, texture, and audio assets unchanged. The test file is optional;
+no test command is requested from the project owner.
+
+VALIDATION PERFORMED HERE:
+- Five focused source regression tests passed.
+- renderer3d.js passed module syntax parsing.
+- ZIP integrity check passed.
+
+LIMITATION:
+This verifies source structure only. No physical-phone benchmark was run, so
+this is a targeted shader-path correction and not a claim that mobile FPS is
+already fixed.

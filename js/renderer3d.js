@@ -289,11 +289,10 @@ export class Renderer3D {
       curbSegment += 1;
     }
     const curbGeometry = new THREE.BoxGeometry(0.28, 0.16, 2.84);
-    const curbMaterial = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.96,
-      metalness: 0,
-    });
+    // Route road-detail shading through the same tier-aware material factory.
+    // Phones use Lambert shading; desktop retains Standard material, keeping
+    // this large instanced road-edge batch cheaper without changing its colors.
+    const curbMaterial = this.material(0xffffff, 0.96);
     const curbMesh = new THREE.InstancedMesh(
       curbGeometry,
       curbMaterial,
@@ -508,10 +507,8 @@ export class Renderer3D {
         0.29,
         0.035,
       );
-      const stripeMaterial = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        roughness: 0.92,
-      });
+      // Match the mobile procedural shader budget for repeated flyover stripes.
+      const stripeMaterial = this.material(0xffffff, 0.92);
       const stripes = new THREE.InstancedMesh(
         stripeGeometry,
         stripeMaterial,
@@ -1056,12 +1053,14 @@ export class Renderer3D {
       color,
       materialOptions = {},
     ) => {
-      const material = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.9,
-        side: THREE.DoubleSide,
-        ...materialOptions,
-      });
+      // Life-scene prop boxes are procedural scenery too. Use the tier-aware
+      // material factory instead of forcing expensive, double-sided Standard
+      // shaders for every box on phones. Desktop keeps the former Standard path.
+      const material = this.material(color, materialOptions.roughness ?? 0.9);
+      for (const [key, value] of Object.entries(materialOptions)) {
+        if (key === 'color') material.color.set(value);
+        else material[key] = value;
+      }
 
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(...dimensions),
@@ -3433,16 +3432,17 @@ export class Renderer3D {
           // General Checkpoint is a long loading bay for group passengers;
           // ordinary roadside stops keep their compact circular marker.
           const checkpointBay = Boolean(zone.hub) && zone.type === 'pickup';
+          const padMaterial = this.material(
+            colors[zone.type] || 0x353b42,
+          );
+          padMaterial.transparent = true;
+          padMaterial.opacity = 0.78;
+
           const pad = new THREE.Mesh(
             checkpointBay
               ? new THREE.BoxGeometry(2.6, 0.04, 5.2)
               : new THREE.CylinderGeometry(radius, radius, 0.04, 20),
-            new THREE.MeshStandardMaterial({
-              color: colors[zone.type] || 0x353b42,
-              side: THREE.DoubleSide,
-              transparent: true,
-              opacity: 0.78,
-            }),
+            padMaterial,
           );
 
           pad.position.y = 0.035;
