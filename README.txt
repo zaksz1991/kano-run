@@ -1,26 +1,28 @@
-KANO LIFE / KANO RUN — STEP 29
-Mobile sidewalk pedestrian spacing and crowd-loop fix
+KANO LIFE / KANO RUN — STEP 30
+Mobile Kano traffic mix and service-vehicle activation
 
 WHY THIS UPDATE
-The mobile crowd alternated pedestrians between left and right sidewalks while increasing depth by one spacing value for every person. That means each individual sidewalk had only half the intended density: a low-tier sidewalk repeated every 38 metres and a mid/high-tier sidewalk every 32 metres. The crowd could look sparse even with all listed pedestrian actors present.
+The presentation repair layer already balanced normal traffic into approximately 40% keke, 30% motorcycles, and 30% four-wheel vehicles. However, its four-wheel selector only chose car, taxi, and SUV. That made the existing renderer's mobile Hiace and police-pickup fallbacks unreachable during ordinary traffic spawning.
 
 WHAT CHANGED
-- Pairs each left- and right-side pedestrian at the same depth row on mobile.
-- Calculates the mobile pedestrian loop using rows per sidewalk, so the shorter loop matches the paired layout.
-- Leaves desktop crowd placement and loop length unchanged.
-- Does not add new models, actors, geometry types, GLB promotion slots, or per-frame draw calls.
-- Retains the device-tier pedestrian count, static-mesh merging, arm animation, distance culling, and recycling behavior.
+- Keeps the 40/30/30 family split: keke / motorcycles / all four-wheel road traffic.
+- Lets buses and police pickups appear on phones within the existing four-wheel share; this does not increase total traffic spawn count.
+- On desktop, also permits trucks and KAROTA vehicles within that same four-wheel share.
+- Leaves explicit event and wedding-convoy vehicles untouched.
+- Uses the existing renderer fallbacks when a suitable dedicated GLB is unavailable. It does not create or replace binary model assets.
+- Adds a pure traffic selector helper and deterministic regression tests.
 
 FILES
-- js/renderer3d.js — complete replacement file.
-- tests/kano-pedestrian-sidewalk-spacing.test.mjs — new regression tests.
-- tests/KanoStep28RendererMerge.test.mjs — retained Step 28 regression test.
-- tests/KanoLazySceneBuild.test.mjs — retained lazy-scene regression test.
-- tests/KanoMobilePedestrianMeshMerge.test.mjs — retained mobile-mesh regression test.
-- TEST-STATUS.txt — validation summary.
+- js/KanoGameplayPresentationRepair.js — complete replacement; retains the Step 24 GLB visibility registry and existing presentation repairs.
+- js/KanoTrafficMix.js — new helper imported by the presentation repair module.
+- tests/KanoMobileGlbRegistryScan.test.mjs — retained Step 24 regression tests.
+- tests/kano-traffic-mix-upgrade.test.mjs — new tests for the traffic family ratio and mobile/desktop vehicle types.
+- TEST-STATUS.txt — test summary.
 
 INSTALLATION
-Extract the ZIP into the root of the existing Kano Run project, assuming the Step 28 renderer merge is already installed. Replace js/renderer3d.js with the complete file. Keep all other game files, assets, and previous Step 26/27 upgrades unchanged. No code snippets or partial replacements are required.
+Extract the ZIP into the root of the existing Kano Run project. Replace js/KanoGameplayPresentationRepair.js and add js/KanoTrafficMix.js at that exact path. Do not replace main.js, game.js, index.html, renderer3d.js, CSS, assets, or save data.
 
-LIMITATIONS
-Source-level tests and JavaScript syntax checks do not confirm visual placement on a live browser. This update has not been rendered in a browser or measured on a physical phone.
+The existing index.html already loads KanoModelAssetVisualUpgrade.js, which imports KanoGameplayPresentationRepair.js. No extra script tag or chunk replacement is needed. The import of KanoTrafficMix.js is included in the complete replacement file.
+
+VALIDATION LIMITS
+The selector and source integration regression tests pass, JavaScript syntax checks pass, and the ZIP archive is valid. A Vite production build, browser rendering, and physical-phone traffic count/FPS have not been run here. Bus and police visuals use the game's available GLB assets or its existing procedural fallbacks.

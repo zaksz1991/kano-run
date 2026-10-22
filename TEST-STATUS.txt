@@ -1,11 +1,15 @@
-KANO LIFE / KANO RUN — STEP 29 TEST STATUS
+KANO LIFE / KANO RUN — STEP 30 TEST STATUS
 
 Passed:
-- Focused renderer/lifecycle/mesh-merge/crowd regression suite: 25/25.
-- JavaScript syntax checks: js/renderer3d.js, js/KanoDeviceTier.js, js/KanoInstancedRoadScroll.js.
-- ZIP integrity: verified after packaging.
+- Step 24 GLB visibility registry tests: 4/4
+- Traffic mix and integration tests: 4/4
+- JavaScript syntax: KanoGameplayPresentationRepair.js and KanoTrafficMix.js
+- ZIP integrity after packaging
+
+Traffic ratio coverage samples 10,000 evenly spaced base mix values and verifies exactly 40% keke, 30% motorcycles, and 30% four-wheel vehicles. Additional tests verify that mobile four-wheel choices include Hiace-style buses and police pickups, and desktop choices also include trucks and KAROTA.
 
 Not verified:
-- Browser rendering or screenshot comparison.
-- Full Vite production build.
-- FPS, thermal behaviour, or visual crowd placement on a physical phone.
+- Vite production build
+- Live browser rendering
+- Actual traffic proportions over a real run
+- Real-phone performance or thermal behaviour

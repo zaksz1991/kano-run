@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
+import { chooseKanoTrafficType } from './KanoTrafficMix.js';
 import { ModelManager, MODEL_KEYS, getModelAssetAuditReport } from './ModelManager.js';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { Game } from './game.js';
@@ -4644,20 +4645,19 @@ if (typeof originalSyncTraffic === 'function') {
   };
 }
 
-// Requested Kano traffic mix: approximately 40% keke, 30% motorcycles, 30% cars.
+// Keep the requested 40/30/30 family split while allowing Kano service
+// traffic to appear inside the 30% four-wheel category. The renderer already
+// provides mobile-safe Hiace and police-pickup fallbacks when a matching GLB
+// is unavailable; these types must actually reach it to become visible.
 if (typeof originalSpawnTraffic === 'function') {
   Game.prototype.spawnTraffic = function balancedKanoTraffic(...args) {
     const before = new Set(this.s?.traffic || []);
     const result = originalSpawnTraffic.apply(this, args);
     const added = (this.s?.traffic || []).filter((vehicle) => !before.has(vehicle));
     for (const vehicle of added) {
-      const value = Math.random();
-      if (value < 0.40) vehicle.type = 'keke';
-      else if (value < 0.70) vehicle.type = 'motorcycle';
-      else {
-        const carChoice = Math.random();
-        vehicle.type = carChoice < 0.63 ? 'car' : carChoice < 0.84 ? 'taxi' : 'suv';
-      }
+      // Event/convey traffic has explicit authored types and is left untouched.
+      if (vehicle?.event || vehicle?.convoy) continue;
+      vehicle.type = chooseKanoTrafficType(Math.random(), Math.random, Boolean(this.mobile));
     }
     return result;
   };
