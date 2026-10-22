@@ -1,26 +1,33 @@
-KANO LIFE — STEP 18: LAZY HIDDEN-SCENE CONSTRUCTION
+KANO LIFE — STEP 19: MOBILE PROCEDURAL PEDESTRIAN DRAW-CALL REDUCTION
 
 REPLACES
-- kano-run/js/renderer3d.js (complete replacement, based on the Step 17 cumulative renderer snapshot)
+- kano-run/js/renderer3d.js (complete replacement based on the Step 18 cumulative renderer snapshot)
 
 ADDS
-- kano-run/tests/KanoLazySceneBuild.test.mjs (focused regression test)
+- kano-run/tests/KanoMobilePedestrianMeshMerge.test.mjs (focused regression record)
 
 WHAT CHANGES
-- The garage is not constructed during initial road-renderer startup; it is built the first time the garage is entered.
-- Life-scene dioramas are built one at a time, only when that specific scene is first entered. The other five scenes are not allocated yet.
-- Built scenes remain cached so revisiting a scene does not rebuild its objects.
-- Mobile life-scene model promotion checks only the active scene's slots and is throttled to 300 ms.
-- Driving, collision logic, traffic simulation, missions, model files, textures and audio are not changed by this step.
+- On phones, each procedural roadside pedestrian's static body, head, clothing, accessories, and legs are merged into one vertex-coloured mesh.
+- The two pivoted arm meshes remain separate so the current arm-swing animation still works.
+- Each procedural phone pedestrian therefore drops from roughly 5–8 mesh submissions to about 3, depending on clothing variant.
+- Desktop pedestrian geometry and visual detail remain unchanged.
+- The static merged geometry is disposed with its pedestrian when a GLB replaces the procedural actor. Materials still used by animated arms are not disposed early.
+- No model, texture, or audio assets are added, removed, or moved.
 
-WHY
-The previous renderer created the garage and all six life-scene dioramas before ordinary driving began, even though those scenes were hidden. That allocated their meshes, geometries and materials during startup and retained them in memory. This change defers that work until a scene is actually requested.
+PRESERVED
+- Existing road markings, curb/shoulder rendering, mobile traffic batches, fog-distance visibility, animation timing, lazy garage/life-scene construction, and mobile procedural Lambert materials from the Step 18 snapshot.
+- Pedestrian path positions and arm animation behavior.
+- Player keke, traffic simulation, collisions, missions, and renderer selection.
 
 INSTALL
-Extract into the existing project and replace only the included js/renderer3d.js file. The tests file is included as a regression record; no test command is being requested from the user.
+Extract the ZIP into the existing project and replace only js/renderer3d.js. The new test is included as a regression record; no test command is being requested from you.
 
 VALIDATION PERFORMED HERE
-- JavaScript syntax check passed for renderer3d.js.
-- All 5 focused lazy-scene regression checks passed.
+- node --check passed for the complete replacement renderer.
+- All 5 focused static regression assertions passed.
+- An isolated geometry runtime check passed against the repository-bundled Three.js module: static geometry merged, normals and vertex colours were generated, and the animated arm pivot/material remained attached.
 - ZIP integrity check passed.
-- The full project suite and a physical-phone benchmark were not run. First entry into a previously unseen garage/life scene now constructs only that scene and may incur a one-time setup cost; it is cached for later visits.
+- The production browser scene and physical phone were not benchmarked. The runtime check used the repo-bundled Three.js r170 module, not the installed npm Three.js version. This is a draw-call reduction target, not a claim that the overall phone-performance issue is solved.
+
+NOTE
+This package continues from the Step 18 renderer snapshot. Because earlier upgrades touched the same file, this replacement should be applied only if that cumulative Step 18 version is the current renderer file in the project. It does not modify other source files or assets.

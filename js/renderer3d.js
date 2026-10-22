@@ -1558,6 +1558,109 @@ export class Renderer3D {
     this.world.add(sign);
   }
 
+  /**
+   * Merge the static parts of a procedural phone pedestrian into one mesh.
+   * Arms stay as separate pivoted meshes so the existing walking animation
+   * still works. This is intentionally mobile-only; desktop detail is intact.
+   *
+   * The source parts are procedural, opaque, untextured meshes that already
+   * use this renderer's mobile Lambert material path. Vertex colours preserve
+   * each part's original material colour after the parts share one draw call.
+   */
+  mergeMobilePedestrianStaticParts(group) {
+    if (!this.mobile || !group?.children?.length) return;
+
+    const staticParts = group.children.filter((child) =>
+      child.isMesh && child.geometry?.getAttribute?.('position') && child.material,
+    );
+    if (staticParts.length < 2) return;
+
+    const positions = [];
+    const normals = [];
+    const colors = [];
+    const oldMaterials = new Set();
+    const retainedMaterials = new Set();
+    const staticPartSet = new Set(staticParts);
+
+    // Arm pivots survive as children of the actor. Keep their shared clothing
+    // materials alive while disposing materials used only by merged parts.
+    for (const child of group.children) {
+      if (staticPartSet.has(child)) continue;
+      child.traverse?.((object) => {
+        const list = Array.isArray(object.material)
+          ? object.material
+          : object.material
+            ? [object.material]
+            : [];
+        for (const material of list) {
+          if (material) retainedMaterials.add(material);
+        }
+      });
+    }
+
+    for (const part of staticParts) {
+      part.updateMatrix();
+      const sourceGeometry = part.geometry.index
+        ? part.geometry.toNonIndexed()
+        : part.geometry.clone();
+      sourceGeometry.applyMatrix4(part.matrix);
+
+      let position = sourceGeometry.getAttribute('position');
+      let normal = sourceGeometry.getAttribute('normal');
+      if (!normal) {
+        sourceGeometry.computeVertexNormals();
+        normal = sourceGeometry.getAttribute('normal');
+      }
+
+      const partMaterial = Array.isArray(part.material)
+        ? part.material[0]
+        : part.material;
+      const color = partMaterial?.color || new THREE.Color(0xffffff);
+
+      for (let index = 0; index < position.count; index += 1) {
+        positions.push(position.getX(index), position.getY(index), position.getZ(index));
+        normals.push(normal.getX(index), normal.getY(index), normal.getZ(index));
+        colors.push(color.r, color.g, color.b);
+      }
+
+      const materialList = Array.isArray(part.material)
+        ? part.material
+        : [part.material];
+      for (const material of materialList) {
+        if (material) oldMaterials.add(material);
+      }
+
+      // The original geometries are owned by these freshly constructed
+      // procedural pedestrians, not by the shared GLB cache.
+      part.geometry.dispose();
+      group.remove(part);
+      sourceGeometry.dispose();
+    }
+
+    if (!positions.length) return;
+
+    const mergedGeometry = new THREE.BufferGeometry();
+    mergedGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    mergedGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    mergedGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    mergedGeometry.computeBoundingBox();
+    mergedGeometry.computeBoundingSphere();
+
+    const mergedMaterial = new THREE.MeshLambertMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      side: THREE.FrontSide,
+    });
+    const mergedMesh = new THREE.Mesh(mergedGeometry, mergedMaterial);
+    mergedMesh.name = 'KANO_MOBILE_PEDESTRIAN_STATIC_PARTS';
+    mergedMesh.frustumCulled = true;
+    group.add(mergedMesh);
+
+    for (const material of oldMaterials) {
+      if (!retainedMaterials.has(material)) material.dispose?.();
+    }
+  }
+
   buildSidewalkLife() {
     const count = this.mobile ? 8 : 22;
 
@@ -1678,6 +1781,11 @@ export class Renderer3D {
         basket.position.set(side * 0.25, 0.16, 0.08);
         group.add(basket);
       }
+
+      // Static clothing/body/accessory parts become a single vertex-coloured
+      // mesh on phones. The two animated arm pivots remain independent, reducing
+      // each procedural pedestrian from roughly 5–8 draw calls to three.
+      this.mergeMobilePedestrianStaticParts(group);
 
       group.scale.setScalar(index % 3 === 0 ? 0.94 : 0.82);
 
