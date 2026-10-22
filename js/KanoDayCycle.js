@@ -63,10 +63,11 @@ export class KanoDayCycle {
    * @param {string} o.storageKey            localStorage key, or null to disable persistence
    * @param {(event:{type:string,detail?:object})=>void} o.onEvent
    */
-  constructor({ gameMinutesPerSecond = 0.5, storageKey = 'kano-day-cycle-v1', onEvent = () => {}, storage } = {}) {
+  constructor({ gameMinutesPerSecond = 0.5, storageKey = 'kano-day-cycle-v1', onEvent = () => {}, onTimeSkip = () => {}, storage } = {}) {
     this.rate = Math.max(0.01, gameMinutesPerSecond);
     this.storageKey = storageKey;
     this.onEvent = onEvent;
+    this.onTimeSkip = typeof onTimeSkip === 'function' ? onTimeSkip : () => {};
     this.storage = storage ?? (typeof localStorage !== 'undefined' ? localStorage : null);
     this.state = { ...DEFAULTS, ...this.#load() };
     this.#sanitise();
@@ -100,20 +101,33 @@ export class KanoDayCycle {
   #emit(type, detail = {}) { try { this.onEvent({ type, detail, snapshot: this.snapshot() }); } catch { /* UI errors must not stop the sim */ } }
 
   /** Advance the sim. Call once per frame while the run is active. */
-  update(dt, { speedKmh = 0, passengerOnboard = false } = {}) {
+  update(dt, { speedKmh = 0, passengerOnboard = false, minuteOfDay, day } = {}) {
     if (this.destroyed || !Number.isFinite(dt) || dt <= 0) return;
     const sec = Math.min(dt, 0.25);
     const s = this.state;
     const moving = Math.max(0, Number(speedKmh) || 0) > 2;
+    const hasExternalClock = minuteOfDay !== null && minuteOfDay !== undefined
+      && Number.isFinite(Number(minuteOfDay));
+    const previousDay = s.day;
 
-    s.minuteOfDay += sec * this.rate;
-    while (s.minuteOfDay >= 1440) {
-      s.minuteOfDay -= 1440;
-      s.day += 1;
-      this.#emit('new_day', { day: s.day });
+    if (hasExternalClock) {
+      // KanoAtmosphere / KanoPersistentDailySchedule already own the world clock.
+      // Mirror that clock here instead of running a competing second clock.
+      s.minuteOfDay = ((Number(minuteOfDay) % 1440) + 1440) % 1440;
+      if (day !== null && day !== undefined && Number.isFinite(Number(day))) {
+        s.day = Math.max(1, Math.floor(Number(day)));
+      }
+      if (s.day > previousDay) this.#emit('new_day', { day: s.day });
+    } else {
+      s.minuteOfDay += sec * this.rate;
+      while (s.minuteOfDay >= 1440) {
+        s.minuteOfDay -= 1440;
+        s.day += 1;
+        this.#emit('new_day', { day: s.day });
+      }
     }
 
-    // Per game-minute rates, so changing the clock speed keeps the pacing consistent.
+    // The same game-time rate as the world clock keeps hunger/fatigue pacing aligned.
     const gm = sec * this.rate;
     s.hunger = clamp(s.hunger + gm * 0.09, 0, 100);
     if (moving) s.fatigue = clamp(s.fatigue + gm * (passengerOnboard ? 0.11 : 0.08), 0, 100);
@@ -154,11 +168,17 @@ export class KanoDayCycle {
    * depends on breakfast: true = ate (bigger meal, less hunger), false = skipped it on purpose,
    * null/undefined = the morning routine was not played, so start neutral.
    */
-  beginShift({ breakfast = null, breakfastCost = 0 } = {}) {
+  beginShift({ breakfast = null, breakfastCost = 0, minuteOfDay, day } = {}) {
     const s = this.state;
-    if (s.started) s.day += 1;
+    if (day !== null && day !== undefined && Number.isFinite(Number(day))) {
+      s.day = Math.max(1, Math.floor(Number(day)));
+    } else if (s.started) {
+      s.day += 1;
+    }
     s.started = true;
-    s.minuteOfDay = SHIFT_START_MINUTE;
+    s.minuteOfDay = minuteOfDay !== null && minuteOfDay !== undefined && Number.isFinite(Number(minuteOfDay))
+      ? ((Number(minuteOfDay) % 1440) + 1440) % 1440
+      : SHIFT_START_MINUTE;
     s.fatigue = 5;
     s.hunger = breakfast === true
       ? clamp(30 - (Number(breakfastCost) || 0) / 15, 0, 30)
@@ -182,6 +202,7 @@ export class KanoDayCycle {
     this.state.fatigue = clamp(this.state.fatigue - m * 0.5, 0, 100);
     this.state.minuteOfDay += m;
     while (this.state.minuteOfDay >= 1440) { this.state.minuteOfDay -= 1440; this.state.day += 1; }
+    try { this.onTimeSkip(m, this.snapshot()); } catch { /* clock sync must not interrupt gameplay */ }
     this.#emit('rested', { minutes: m });
     this.save();
   }

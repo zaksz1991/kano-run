@@ -723,6 +723,7 @@ export class PureWaterHawker {
     this.game.s.heat = Math.max(0, (this.game.s.heat ?? 0) - 8);
     this.game.s.morale = Math.min(100, (this.game.s.morale ?? 75) + 6);
     this.cooldown = 18;
+    this.game.dayCycle?.eat?.(6); // small hunger relief when the day cycle is active
     this.game.ui?.toast?.('Pure water bought · ₦50 · vehicle condition +5 · KAROTA heat −8%.');
     return true;
   }
