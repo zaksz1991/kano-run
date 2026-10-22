@@ -1,31 +1,30 @@
-KANO LIFE — MOBILE TRAFFIC FRAME-ALLOCATION FIX
+KANO LIFE — STEP 9: MOBILE SCENE-PROMOTION AND FRAME-ALLOCATION FIX
 
-Purpose
-- Reduce avoidable JavaScript garbage/allocation in Renderer3D.syncTraffic(),
-  which runs on each active driving frame.
-- Reuse the active-traffic Set, mobile GLB candidate array, and traffic-type Set.
-- Replace per-frame filter/filter/sort temporary arrays with one reusable
-  candidate array and a single in-place sort only when GLB model slots are free.
-- Keep traffic selection priority (closest eligible vehicles first), model
-  budgets, instance batching, traffic movement, collisions, and player keke
-  unchanged.
+This package continues from the latest Mobile Traffic Frame-Allocation Fix and
+contains a complete replacement for js/renderer3d.js plus one focused regression
+test. It does not change gameplay physics, traffic movement, collision rules,
+missions, renderer-mode selection, model assets, textures, or audio.
 
-Files
-- kano-run/js/renderer3d.js: complete replacement, based on the preceding
-  Mobile Traffic Instancing Fix source and preserving those earlier changes.
-- kano-run/tests/KanoMobileTrafficFrameAllocation.test.mjs: optional focused
-  static regression checks.
+Changes:
+1. Mobile world-asset and pedestrian model-promotion scans run at most once
+   every 300 ms per subsystem, rather than scanning model slots and pedestrian
+   arrays on every rendered frame. Desktop remains unthrottled. New models can
+   therefore take up to 300 ms longer to replace procedural placeholders.
+2. Zone synchronization reuses one Set instead of allocating a new Set each
+   rendered frame.
+3. Includes all previous rendering and traffic optimizations from the supplied
+   Step 8 renderer replacement.
 
-Install
-1. Extract this ZIP.
-2. Copy the complete kano-run/js/renderer3d.js to the same path in your
-   existing project, replacing that file only.
-3. Keep every other source file and all model, texture, and audio assets intact.
+Install:
+Copy the complete kano-run/js/renderer3d.js over the same file in the existing
+project. Copy the included test only if you want to keep the regression fixture.
+Do not replace other files or modify/move/delete model, texture, or audio assets.
 
-Validation performed here
-- JavaScript syntax check passed.
-- Four focused static regression checks passed in an isolated assembled copy.
-- ZIP integrity passed.
-- Full project tests/build and physical-phone benchmarking were not run here.
+Validation performed during preparation:
+- node --check js/renderer3d.js: passed
+- node --test tests/KanoMobileScenePromotionBudget.test.mjs: passed
+- ZIP integrity: passed
 
-This targets traffic-sync CPU allocation; it is not a claim that all lag is fixed.
+This is a source-level optimization. It has not been benchmarked on a physical
+phone, and this package does not claim the game's overall frame rate is fixed.
+No full project test suite was run.

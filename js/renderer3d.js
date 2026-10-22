@@ -110,6 +110,9 @@ export class Renderer3D {
     // Reuse hot-path collections: traffic sync runs on every active driving
     // frame, so rebuilding these sets/arrays creates avoidable garbage.
     this._activeTrafficIds = new Set();
+    this._activeZoneIds = new Set();
+    this._nextMobileWorldAssetUpgradeAt = 0;
+    this._nextMobilePedestrianUpgradeAt = 0;
     this._mobileTrafficCandidateScratch = [];
     this._mobileTrafficTypeScratch = new Set();
     this.zoneActors = new Map();
@@ -1920,8 +1923,20 @@ export class Renderer3D {
     }
   }
 
+  shouldRunMobilePromotionCheck(kind, now = (globalThis.performance?.now?.() ?? Date.now())) {
+    if (!this.mobile) return true;
+
+    const deadlineField = kind === 'pedestrians'
+      ? '_nextMobilePedestrianUpgradeAt'
+      : '_nextMobileWorldAssetUpgradeAt';
+
+    if (now < this[deadlineField]) return false;
+    this[deadlineField] = now + 300;
+    return true;
+  }
+
   upgradeWorldAssets() {
-    if (!this.models) return;
+    if (!this.models || !this.shouldRunMobilePromotionCheck('world')) return;
 
     const activeBuildingSlots = this.mobile
       ? this.buildingSlots.slice(0, 2)
@@ -2074,7 +2089,11 @@ export class Renderer3D {
   }
 
   upgradePedestrians() {
-    if (!this.models || !this.pedestrians.length) return;
+    if (
+      !this.models ||
+      !this.pedestrians.length ||
+      !this.shouldRunMobilePromotionCheck('pedestrians')
+    ) return;
 
     const characterKeys = [
       'pedestrianWoman',
@@ -3378,7 +3397,8 @@ export class Renderer3D {
   }
 
   syncZones(state) {
-    const activeIds = new Set();
+    const activeIds = this._activeZoneIds;
+    activeIds.clear();
 
     for (const zone of state.zones || []) {
       activeIds.add(zone.id);
