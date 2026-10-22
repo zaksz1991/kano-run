@@ -365,33 +365,101 @@ async function measureResourceTiming(page) {
   });
 }
 
-async function clickMorningAction(page, name, timeout = 20_000) {
-  // Buttons are siblings inside #life-actions, not nested inside one another.
-  const button = page.locator('#life-actions').getByRole('button', { name, exact: true });
-  try {
-    await button.waitFor({ state: 'visible', timeout });
-    await button.click();
-  } catch (error) {
-    const diagnostics = await page.evaluate(() => ({
-      routineVisible: (() => {
-        const el = document.querySelector('#life-routine-screen');
-        return Boolean(el && !el.classList.contains('hidden') && getComputedStyle(el).display !== 'none');
-      })(),
-      currentStep: document.querySelector('#life-step-label')?.textContent?.trim() || null,
-      currentTitle: document.querySelector('#life-title')?.textContent?.trim() || null,
-      availableActions: Array.from(document.querySelectorAll('#life-actions button')).map((el) => ({
-        text: el.textContent?.trim() || '',
-        disabled: Boolean(el.disabled),
-      })),
+async function inspectPageState(page) {
+  return page.evaluate(() => {
+    const visible = (el) => {
+      if (!el) return false;
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && Number(style.opacity || 1) > 0 && rect.width > 0 && rect.height > 0;
+    };
+    const element = (selector) => document.querySelector(selector);
+    const buttons = Array.from(document.querySelectorAll('#life-actions button')).map((button) => ({
+      text: (button.innerText || button.textContent || '').replace(/\s+/g, ' ').trim(),
+      disabled: Boolean(button.disabled),
+      visible: visible(button),
+    }));
+    const routine = element('#life-routine-screen');
+    const start = element('#start-screen');
+    const hud = element('#hud');
+    const canvas = element('#game-canvas');
+    return {
+      readyState: document.readyState,
+      url: location.href,
+      title: document.title,
       renderMode: window.__KANO_RENDER_MODE__ || null,
-      pageReady: document.readyState,
-    })).catch(() => null);
+      startButtonVisible: visible(element('#start-btn')),
+      startScreenVisible: visible(start),
+      routineVisible: visible(routine),
+      currentStep: element('#life-step-label')?.textContent?.trim() || null,
+      currentTitle: element('#life-title')?.textContent?.trim() || null,
+      availableActions: buttons,
+      hudVisible: visible(hud),
+      canvas: canvas ? {
+        width: canvas.width,
+        height: canvas.height,
+        cssWidth: Number(canvas.getBoundingClientRect().width.toFixed(1)),
+        cssHeight: Number(canvas.getBoundingClientRect().height.toFixed(1)),
+      } : null,
+      bootstrapScripts: Array.from(document.scripts).map((script) => script.src).filter(Boolean),
+    };
+  }).catch((error) => ({ snapshotError: error.message }));
+}
+
+function normalizeButtonText(value) {
+  return String(value || '').normalize('NFKC').replace(/[\u00a0\s]+/g, ' ').trim().toLocaleUpperCase('en-US');
+}
+
+async function clickMorningAction(page, name, timeout = 8_000) {
+  // Resolve the button from the live DOM; accessibility-name matching is too
+  // brittle for generated UI labels containing punctuation and whitespace.
+  const target = normalizeButtonText(name);
+  try {
+    await page.waitForFunction(({ wanted }) => {
+      const visible = (button) => {
+        const style = getComputedStyle(button);
+        const rect = button.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden'
+          && Number(style.opacity || 1) > 0 && rect.width > 0 && rect.height > 0
+          && !button.disabled;
+      };
+      const normalize = (value) => String(value || '').normalize('NFKC')
+        .replace(/[\u00a0\s]+/g, ' ').trim().toLocaleUpperCase('en-US');
+      return Array.from(document.querySelectorAll('#life-actions button'))
+        .some((button) => visible(button)
+          && normalize(button.innerText || button.textContent) === wanted);
+    }, { wanted: target }, { timeout });
+
+    const index = await page.locator('#life-actions button').evaluateAll((buttons, wanted) => {
+      const normalize = (value) => String(value || '').normalize('NFKC')
+        .replace(/[\u00a0\s]+/g, ' ').trim().toLocaleUpperCase('en-US');
+      return buttons.findIndex((button) => normalize(button.innerText || button.textContent) === wanted
+        && !button.disabled);
+    }, target);
+    if (index < 0) throw new Error('Visible action was found but could not be resolved to a button index.');
+    await page.locator('#life-actions button').nth(index).click({ timeout });
+  } catch (error) {
+    const diagnostics = await inspectPageState(page);
     throw new Error(`Morning routine action "${name}" failed. Diagnostics: ${JSON.stringify(diagnostics)}. ${error.message}`);
   }
 }
 
 async function advanceMorningRoutine(page) {
   await page.locator('#start-btn').click({ timeout: 30_000 });
+  try {
+    await page.waitForFunction(() => {
+      const screen = document.querySelector('#life-routine-screen');
+      if (!screen) return false;
+      const style = getComputedStyle(screen);
+      const rect = screen.getBoundingClientRect();
+      return !screen.classList.contains('hidden') && style.display !== 'none'
+        && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }, null, { timeout: 8_000 });
+  } catch (error) {
+    throw new Error(`Clicking START DRIVING did not reveal the morning routine. Diagnostics: ${JSON.stringify(await inspectPageState(page))}. ${error.message}`);
+  }
+
   const steps = [
     'WAKE UP · WASH AND DRESS',
     'HEAD OUT NOW',
@@ -403,18 +471,16 @@ async function advanceMorningRoutine(page) {
     'INSPECT KEKE · UNLOCK · START SHIFT',
   ];
 
-  for (const name of steps) {
-    await clickMorningAction(page, name);
-  }
+  for (const name of steps) await clickMorningAction(page, name);
 
   await page.waitForFunction(() => {
     const hud = document.querySelector('#hud');
-    return Boolean(
-      window.__KANO_RENDER_MODE__
-      && hud
-      && getComputedStyle(hud).display !== 'none',
-    );
-  }, null, { timeout: 30_000 });
+    const visible = hud && getComputedStyle(hud).display !== 'none'
+      && getComputedStyle(hud).visibility !== 'hidden';
+    return Boolean(window.__KANO_RENDER_MODE__ && visible);
+  }, null, { timeout: 15_000 }).catch(async (error) => {
+    throw new Error(`Morning routine ended but the driving HUD/render mode did not become ready. Diagnostics: ${JSON.stringify(await inspectPageState(page))}. ${error.message}`);
+  });
 }
 
 async function maybeResolveStreetEvent(page, counters) {
@@ -632,7 +698,15 @@ async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, 
   } catch (error) {
     result.error = error.message;
     result.note ||= 'Scenario did not complete; inspect the error and console/request logs.';
-    await page.screenshot({ path: screenshotPath, animations: 'disabled', fullPage: false }).catch(() => {});
+    result.failureSnapshot = await inspectPageState(page);
+    result.actualRenderMode = result.failureSnapshot?.renderMode || null;
+    result.canvas = result.failureSnapshot?.canvas || null;
+    result.frameTime = await page.evaluate(() => window.__KANO_AUDIT__?.frameIntervals || [])
+      .then(summarizeFrames).catch(() => summarizeFrames([]));
+    result.durationActuallyDrivenMs = 0;
+    await page.screenshot({ path: screenshotPath, animations: 'disabled', fullPage: false }).catch((screenshotError) => {
+      result.screenshotError = screenshotError.message;
+    });
   } finally {
     result.runtimeErrors = telemetry.data.consoleErrors;
     result.pageErrors = telemetry.data.pageErrors;
@@ -786,7 +860,7 @@ function generateMarkdown(report) {
     item.screenshot || '—',
   ]);
 
-  return `# Kano Life — Browser Audit\n\n- **Run:** ${report.runId}\n- **Build under test:** local \`dist/\` served by Vite Preview unless \`KANO_AUDIT_BASE_URL\` was provided.\n- **Asset inventory:** ${report.assetInventory.fileCount} GLB/GLTF/bin files (${report.assetInventory.mib} MiB); ${report.assetInventory.glbCount} GLB.\n- **Duration:** ${report.durationTargetMs / 1000}s per desktop/phone × 2D/3D × model-on/off scenario.\n- **Model status:** ${report.assetInventory.fileCount > 0 ? 'real local model files detected' : '**needs assets** — no files found beneath public/assets/models at audit time'}.\n- **Browser:** ${report.browserVersion || 'unknown'}\n\n## Driving matrix\n\n${markdownTable(['Scenario', 'Status', 'Actual mode', 'Median frame ms', 'P95 frame ms', 'Heap change MiB', 'Console errors', 'Page errors', 'Failed requests', 'HTTP errors', 'Screenshot'], scenarioRows)}\n\n## Cold first-load throttling\n\n${markdownTable(['Profile', 'Status', 'Time to load ms', 'Resources', 'Transferred MiB', 'Encoded body MiB', 'Model requests', 'Console errors', 'Page errors', 'Failed requests', 'Screenshot'], throttleRows)}\n\n## Notes\n\n- Frame timing samples use a separate requestAnimationFrame sampler in the page. Median FPS is approximately \`1000 / median frame time\`; it is a browser-level estimate, not a physical-device benchmark.\n- Heap change is Chromium CDP's \`JSHeapUsedSize\` end minus start after the game shift begins. Negative values can occur after garbage collection.\n- The no-model scenarios intentionally abort GLB/GLTF/binary model requests. Those aborted model requests are reported separately from unexpected failed requests.\n- Resource Timing transfer sizes can be zero for cross-origin resources without Timing-Allow-Origin and may not include late requests occurring after the settle window.\n- Screenshots and the complete raw JSON are beside this report. Inspect \`httpErrors\`, \`consoleErrors\`, and \`pageErrors\` in the JSON before declaring a scenario clean.\n`;
+  return `# Kano Life — Browser Audit\n\n- **Run:** ${report.runId}\n- **Build under test:** local \`dist/\` served by Vite Preview unless \`KANO_AUDIT_BASE_URL\` was provided.\n- **Asset inventory:** ${report.assetInventory.fileCount} GLB/GLTF/bin files (${report.assetInventory.mib} MiB); ${report.assetInventory.glbCount} GLB.\n- **Duration:** ${report.durationTargetMs / 1000}s per desktop/phone × 2D/3D × model-on/off scenario.\n- **Model status:** ${report.assetInventory.fileCount > 0 ? 'real local model files detected' : '**needs assets** — no files found beneath public/assets/models at audit time'}.\n- **Browser:** ${report.browserVersion || 'unknown'}\n\n## Driving matrix\n\n${markdownTable(['Scenario', 'Status', 'Actual mode', 'Median frame ms', 'P95 frame ms', 'Heap change MiB', 'Console errors', 'Page errors', 'Failed requests', 'HTTP errors', 'Screenshot'], scenarioRows)}\n\n## Scenario failure details\n\n${report.scenarios.filter((item) => item.error).map((item) => `### ${item.scenario}\n\n- **Failure:** ${String(item.error).replaceAll('\\n', ' ')}\n- **Mode at failure:** ${item.failureSnapshot?.renderMode || 'not reported'}\n- **Routine visible:** ${item.failureSnapshot?.routineVisible ?? 'unknown'}\n- **Current step:** ${item.failureSnapshot?.currentStep || '—'}\n- **Available actions:** ${(item.failureSnapshot?.availableActions || []).map((action) => `${action.text}${action.disabled ? ' (disabled)' : ''}${action.visible ? '' : ' (hidden)'}`).join('; ') || '—'}\n- **First console errors:** ${(item.runtimeErrors || []).slice(0, 3).map((entry) => entry.text).join(' | ') || '—'}\n- **First HTTP errors:** ${(item.httpErrors || []).slice(0, 5).map((entry) => `${entry.status} ${entry.url}`).join(' | ') || '—'}\n`).join('\\n') || 'No scenario setup failures were recorded.'}\n\n## Cold first-load throttling\n\n${markdownTable(['Profile', 'Status', 'Time to load ms', 'Resources', 'Transferred MiB', 'Encoded body MiB', 'Model requests', 'Console errors', 'Page errors', 'Failed requests', 'Screenshot'], throttleRows)}\n\n## Notes\n\n- Frame timing samples use a separate requestAnimationFrame sampler in the page. Median FPS is approximately \`1000 / median frame time\`; it is a browser-level estimate, not a physical-device benchmark.\n- Heap change is Chromium CDP's \`JSHeapUsedSize\` end minus start after the game shift begins. Negative values can occur after garbage collection.\n- The no-model scenarios intentionally abort GLB/GLTF/binary model requests. Those aborted model requests are reported separately from unexpected failed requests.\n- Resource Timing transfer sizes can be zero for cross-origin resources without Timing-Allow-Origin and may not include late requests occurring after the settle window.\n- Screenshots and the complete raw JSON are beside this report. Inspect \`httpErrors\`, \`consoleErrors\`, and \`pageErrors\` in the JSON before declaring a scenario clean.\n`;
 }
 
 async function main() {
@@ -839,6 +913,8 @@ async function main() {
             `mode=${result.actualRenderMode || 'unknown'}, frames=${result.frameTime?.samples ?? 0}, ` +
             `console=${result.consoleErrorCount ?? 0}, page=${result.pageErrorCount ?? 0}, ` +
             `failedRequests=${result.unexpectedFailedRequestCount ?? 0}`);
+          if (result.error) console.error(`[Browser Audit] ${result.scenario} failure: ${result.error}`);
+          if (result.httpErrors?.length) console.error(`[Browser Audit] ${result.scenario} HTTP errors (first 5): ${result.httpErrors.slice(0, 5).map((item) => `${item.status} ${item.url}`).join(' | ')}`);
         }
       }
     }
