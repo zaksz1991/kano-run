@@ -5052,6 +5052,7 @@ if (!Renderer3D.prototype[KANO_GLB_VISIBLE_WORLD_PATCH]) {
 const KANO_GLB_VISIBILITY_TRANSFORM_PATCH = Symbol.for('kano.life.glbVisibilityTransform.v3');
 const kanoGlbVisibilityStats = {
   passes: 0,
+  throttledCalls: 0,
   worldRootsRepaired: 0,
   groundAlignments: 0,
   meshesPrepared: 0,
@@ -5061,35 +5062,47 @@ const kanoGlbVisibilityStats = {
 
 function kanoPrepareVisibleGlbRoot(root) {
   if (!root?.traverse || !root?.userData) return { root: false, meshes: 0 };
+
+  // GLB roots are frequently encountered through several renderer collections.
+  // Geometry preparation is a one-time operation, not per-frame maintenance.
+  if (root.userData.kanoGlbVisibilityPrepared === true) {
+    return { root: true, meshes: 0 };
+  }
+
   const path = root.userData.modelPath || root.userData.kanoEnvironmentAsset;
   if (!path && !root.userData.kanoWorldGlbActive && !root.userData.flyoverModel
       && !root.userData.roadPropKey && !root.userData.lifeSceneModel
       && !root.userData.kanoExistingEnvironmentGlb && !root.userData.kanoPotholeGlb) {
     return { root: false, meshes: 0 };
   }
-  root.visible = true;
-  root.userData.kanoGlbVisibilityPrepared = true;
+
   let meshes = 0;
   root.traverse((node) => {
     if (!node?.isMesh || !node.geometry) return;
     meshes += 1;
-    // Imported GLB bounds can be too small or offset for the slot transform.
-    // Disable frustum culling for these scene assets rather than allowing the
-    // renderer to drop them before their malformed imported bounds are repaired.
-    node.frustumCulled = false;
-    if (!node.geometry.boundingBox) node.geometry.computeBoundingBox?.();
-    if (!node.geometry.boundingSphere) node.geometry.computeBoundingSphere?.();
-    if (node.material) {
-      const mats = Array.isArray(node.material) ? node.material : [node.material];
-      for (const mat of mats) {
-        if (mat && mat.visible === false && node.userData?.kanoHiddenByGame !== true) {
-          // Don't override materials intentionally hidden by a game system.
-          // Mesh visibility and culling are the known sources of false invisibility.
-        }
+
+    // Keep Three.js frustum culling enabled. Recompute invalid/stale local
+    // bounds once per shared geometry instead of drawing every GLB mesh even
+    // when it is outside the camera view.
+    node.frustumCulled = true;
+    const geometry = node.geometry;
+    geometry.userData ||= {};
+    if (geometry.userData.kanoGlbCullingBoundsPrepared !== true) {
+      try {
+        geometry.computeBoundingBox?.();
+        geometry.computeBoundingSphere?.();
+        geometry.userData.kanoGlbCullingBoundsPrepared = true;
+      } catch (error) {
+        // Keep the scene playable if one malformed geometry cannot compute bounds.
+        geometry.userData.kanoGlbCullingBoundsPrepared = false;
       }
     }
   });
+
   root.updateMatrixWorld?.(true);
+  // Do not force root.visible here. The scene manager and adaptive LOD controller
+  // own visibility after the first model-preparation pass.
+  root.userData.kanoGlbVisibilityPrepared = true;
   kanoGlbVisibilityStats.meshesPrepared += meshes;
   return { root: true, meshes };
 }
@@ -5130,6 +5143,20 @@ function kanoRepairBuildingSlotTransform(renderer, slot) {
 
 function kanoRepairRendererGlbVisibility(renderer) {
   if (!renderer || renderer.disposed) return;
+
+  // upgradeWorldAssets() is called from Renderer3D.draw(). A repair pass used
+  // to traverse the road, every life diorama and the garage on every frame,
+  // repeatedly overriding distance-based visibility. Scan at a controlled
+  // cadence and only inspect the scene that is currently active.
+  const now = globalThis.performance?.now?.() ?? Date.now();
+  const interval = renderer.mobile ? 450 : 250;
+  const previousPass = renderer.__kanoGlbVisibilityLastPassAtMs;
+  if (Number.isFinite(previousPass) && now - previousPass < interval) {
+    kanoGlbVisibilityStats.throttledCalls += 1;
+    return;
+  }
+  renderer.__kanoGlbVisibilityLastPassAtMs = now;
+
   kanoGlbVisibilityStats.passes += 1;
   kanoGlbVisibilityStats.lastPassAt = new Date().toISOString();
   const seen = new Set();
@@ -5140,36 +5167,52 @@ function kanoRepairRendererGlbVisibility(renderer) {
     if (result.root) kanoGlbVisibilityStats.worldRootsRepaired += 1;
   };
 
+  const activeScene = renderer.lifeScene || 'road';
   try {
-    for (const slot of renderer.buildingSlots || []) {
-      if (!slot?.replaced || !slot.actor?.userData?.modelPath) continue;
-      prepare(slot.actor);
-      kanoRepairBuildingSlotTransform(renderer, slot);
-    }
-    for (const list of [renderer.flyovers, renderer.streetLights, renderer.pedestrians,
-      renderer.roadProps, renderer.lifeAssetSlots, renderer.garageVehicleSlots]) {
-      for (const item of list || []) {
+    if (activeScene === 'road' && renderer.world?.visible !== false) {
+      for (const slot of renderer.buildingSlots || []) {
+        if (!slot?.replaced || !slot.actor?.userData?.modelPath) continue;
+        prepare(slot.actor);
+        kanoRepairBuildingSlotTransform(renderer, slot);
+      }
+      for (const list of [renderer.flyovers, renderer.streetLights, renderer.pedestrians, renderer.roadProps]) {
+        for (const item of list || []) {
+          const root = item?.actor || item;
+          if (root?.userData?.modelPath || root?.userData?.kanoEnvironmentAsset) prepare(root);
+        }
+      }
+      renderer.world?.traverse?.((node) => {
+        if (!node?.userData) return;
+        const hasGLB = Boolean(node.userData.modelPath || node.userData.kanoEnvironmentAsset
+          || node.userData.kanoExistingEnvironmentGlb || node.userData.kanoPotholeGlb
+          || node.userData.kanoWorldGlbActive || node.userData.flyoverModel
+          || node.userData.roadPropKey || node.userData.lifeSceneModel);
+        if (hasGLB && node.isObject3D) prepare(node);
+      });
+    } else if (activeScene === 'garage' && renderer.garageGroup?.visible !== false) {
+      for (const item of renderer.garageVehicleSlots || []) {
         const root = item?.actor || item;
         if (root?.userData?.modelPath || root?.userData?.kanoEnvironmentAsset) prepare(root);
       }
+      renderer.garageGroup?.traverse?.((node) => {
+        if (node?.userData?.modelPath && node.isObject3D) prepare(node);
+      });
+    } else if (activeScene !== 'road' && activeScene !== 'garage') {
+      for (const item of renderer.lifeAssetSlots || []) {
+        if (item?.sceneName !== activeScene) continue;
+        const root = item?.actor || item;
+        if (root?.userData?.modelPath || root?.userData?.kanoEnvironmentAsset) prepare(root);
+      }
+      const activeGroup = renderer.lifeSceneGroups?.get?.(activeScene);
+      if (activeGroup?.visible !== false) {
+        activeGroup?.traverse?.((node) => {
+          if (node?.userData?.modelPath && node.isObject3D) prepare(node);
+        });
+      }
     }
-    renderer.world?.traverse?.((node) => {
-      if (!node?.userData) return;
-      const hasGLB = Boolean(node.userData.modelPath || node.userData.kanoEnvironmentAsset
-        || node.userData.kanoExistingEnvironmentGlb || node.userData.kanoPotholeGlb
-        || node.userData.kanoWorldGlbActive || node.userData.flyoverModel
-        || node.userData.roadPropKey || node.userData.lifeSceneModel);
-      if (hasGLB && node.isObject3D) prepare(node);
-    });
-    renderer.lifeDioramaRoot?.traverse?.((node) => {
-      if (node?.userData?.modelPath && node.isObject3D) prepare(node);
-    });
-    renderer.garageGroup?.traverse?.((node) => {
-      if (node?.userData?.modelPath && node.isObject3D) prepare(node);
-    });
   } catch (error) {
     kanoGlbVisibilityStats.errors.push({
-      path: '(scene traversal)',
+      path: '(active-scene traversal)',
       stage: 'visibility-pass',
       message: error?.message || String(error),
     });

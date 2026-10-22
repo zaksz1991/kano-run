@@ -1,17 +1,19 @@
-KANO LIFE — 3D MODE ASSERTION FIX
+KANO LIFE — GLB CULLING + FRAME-WORK REDUCTION (STEP 2)
 
-This ZIP contains complete replacement files:
-- tests/static.test.js
-- tests/Kano3DStaysOn.test.mjs
-- package.json
+Replace only:
+  js/KanoGameplayPresentationRepair.js
 
-What changed:
-1. The saved-quality regression test now checks userSelected2D = quality === '2d', the current setting handler's explicit 2D choice, and the initial selection logic. It verifies that saved 2D is read before the initial WebGL start and that ?force3d overrides a saved 2D preference.
-2. The context-loss and frame-error tests now check the current 3D rebuild implementation instead of obsolete identifiers/branches.
-3. package.json restores the browser:audit script and declares Playwright 1.64.1. Existing check/test/build/release/assets/audio scripts are preserved.
+This is a complete replacement based on the previous Single Resolution Controller Fix. It keeps that fix and makes the GLB visibility/transform repair a one-time-per-model preparation plus a throttled active-scene scan.
 
-Install:
-Extract into the repository root and replace the listed files. Do not replace public assets.
-Then run `npm install` so package-lock.json matches package.json, followed by `npm test`, `npm run check`, and `npm run browser:audit`.
+Changes:
+- Stops traversing the road, garage and every life-scene model tree on every rendered frame.
+- Mobile visibility repair scans are limited to once every 450 ms; desktop scans to once every 250 ms.
+- Hidden garage/life-scene trees are not traversed while the road scene is active, and vice versa.
+- GLB geometry preparation is cached per root; shared geometry bounds are computed once.
+- Three.js frustum culling is re-enabled instead of forcing every imported mesh to render outside the camera view.
+- The repair routine no longer forces GLB roots visible on every pass, so the adaptive LOD/scene visibility settings remain effective.
+- Includes the preceding single-resolution-controller correction; do not replace any other project file with this package.
 
-No GLB, texture, audio, save or other user data is included or modified.
+No model, texture, audio, save, collision, mission, speed or game-loop files are changed.
+
+Validation performed here: the complete replacement passed node syntax checking; both focused source-regression checks passed. No full npm test/build/browser audit was run against your local project, and no claim of physical-phone performance is made.
