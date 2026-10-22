@@ -17,6 +17,9 @@ const PORT = Number.parseInt(process.env.KANO_AUDIT_PORT || '4173', 10);
 const DURATION_MS = positiveInt(process.env.KANO_AUDIT_DURATION_MS, 60_000);
 const NAV_TIMEOUT_MS = positiveInt(process.env.KANO_AUDIT_NAV_TIMEOUT_MS, 120_000);
 const THROTTLE_SETTLE_MS = positiveInt(process.env.KANO_AUDIT_THROTTLE_SETTLE_MS, 8_000);
+// Software-rendered 3D startup can be much slower than the game itself. Allow
+// a dedicated startup budget instead of confusing delayed UI with a deadlock.
+const START_ACTION_TIMEOUT_MS = positiveInt(process.env.KANO_AUDIT_START_TIMEOUT_MS, 45_000);
 const EXTERNAL_BASE_URL = process.env.KANO_AUDIT_BASE_URL?.trim();
 const MODEL_EXTENSION = /\.(?:glb|gltf|bin)(?:[?#]|$)/i;
 
@@ -250,11 +253,20 @@ function makeTelemetry(page, modelsBlocked) {
       location: message.location(),
       at: new Date().toISOString(),
     };
-    if (modelsBlocked && MODEL_EXTENSION.test(item.text)) {
-      data.expectedModelFallbackMessages.push(item);
-    } else {
-      data.consoleErrors.push(item);
-    }
+    // The no-model scenarios deliberately abort only GLB/GLTF/buffer requests.
+    // Chromium emits a generic ERR_FAILED console line without the asset URL,
+    // so bucket that known abort noise separately. Unexpected non-model network
+    // failures still remain visible in failedRequests/httpErrors below.
+    const text = item.text;
+    const context = `${text} ${item.location?.url || ''}`;
+    const expectedBlockedModelError = modelsBlocked && (
+      MODEL_EXTENSION.test(context)
+      || /Failed to load resource:\s*net::ERR_(?:FAILED|ABORTED)/i.test(text)
+      || /net::ERR_(?:FAILED|ABORTED)/i.test(text)
+      || /THREE\.GLTFLoader.*(?:load|fetch|resource)/i.test(text)
+    );
+    if (expectedBlockedModelError) data.expectedModelFallbackMessages.push(item);
+    else data.consoleErrors.push(item);
   });
 
   page.on('pageerror', (error) => {
@@ -530,10 +542,60 @@ async function waitForPlayableRun(page, actionLabel, timeout = 15_000) {
 // The production UI intentionally starts driving directly from START DRIVING.
 // The story remains optional behind REPLAY MORNING ROUTINE. Do not make the
 // main gameplay audit wait for story UI that is deliberately hidden on direct start.
-async function startDrivingRun(page) {
-  await waitForApplicationReady(page);
-  await page.locator('#start-btn').click({ timeout: 10_000 });
-  await waitForPlayableRun(page, 'START DRIVING');
+async function isRunPlayable(page) {
+  return page.evaluate(() => {
+    const game = window.__KANO_LIFE_GAME__;
+    const start = document.querySelector('#start-screen');
+    const hud = document.querySelector('#hud');
+    const controls = document.querySelector('#drive-controls');
+    const shown = (element) => {
+      if (!element) return false;
+      const style = getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    return Boolean(game?.state === 'PLAY' && start?.classList.contains('hidden')
+      && shown(hud) && shown(controls) && window.__KANO_RENDER_MODE__);
+  });
+}
+
+async function waitForStartOrPlayable(page, timeout = START_ACTION_TIMEOUT_MS) {
+  try {
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#start-btn');
+      const game = window.__KANO_LIFE_GAME__;
+      const start = document.querySelector('#start-screen');
+      const hud = document.querySelector('#hud');
+      const controls = document.querySelector('#drive-controls');
+      const shown = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden'
+          && Number(style.opacity || 1) > 0 && rect.width > 0 && rect.height > 0;
+      };
+      const readyToDrive = Boolean(game?.state === 'PLAY' && start?.classList.contains('hidden')
+        && shown(hud) && shown(controls) && window.__KANO_RENDER_MODE__);
+      return readyToDrive || shown(button);
+    }, null, { timeout });
+  } catch (error) {
+    throw new Error(`Neither the start button nor a playable state became available within ${timeout}ms. Diagnostics: ${JSON.stringify(await inspectPageState(page))}. ${error.message}`);
+  }
+}
+
+// The production UI starts driving directly from START DRIVING. The story is
+// optional behind REPLAY MORNING ROUTINE. Allow slower software-rendered 3D to
+// show the start control; also accept a genuine already-playing state.
+async function startDrivingRun(page, timeout = START_ACTION_TIMEOUT_MS) {
+  await waitForApplicationReady(page, timeout);
+  await waitForStartOrPlayable(page, timeout);
+  if (!await isRunPlayable(page)) {
+    const buttonVisible = await page.locator('#start-btn').isVisible().catch(() => false);
+    if (!buttonVisible) {
+      throw new Error(`START DRIVING is hidden and the game is not playable. Diagnostics: ${JSON.stringify(await inspectPageState(page))}`);
+    }
+    await page.locator('#start-btn').click({ timeout: Math.min(timeout, 15_000) });
+  }
+  await waitForPlayableRun(page, 'START DRIVING', Math.min(timeout, 30_000));
 }
 
 async function advanceOptionalMorningRoutine(page) {
@@ -669,12 +731,13 @@ async function runDrivingScenario(browser, baseURL, viewport, mode, withModels, 
     const url = modeURL(baseURL, mode);
     const navStart = Date.now();
     await page.goto(url, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
-    await waitForApplicationReady(page, 45_000);
-    await page.locator('#start-btn').waitFor({ state: 'visible', timeout: 10_000 });
+    await waitForApplicationReady(page, START_ACTION_TIMEOUT_MS);
     result.appReadyMs = Date.now() - navStart;
     result.initialLoad = await measureResourceTiming(page);
 
-    await startDrivingRun(page);
+    // startDrivingRun handles both a visible start button and a restored/early
+    // PLAY state, with a long enough budget for software-rendered desktop 3D.
+    await startDrivingRun(page, START_ACTION_TIMEOUT_MS);
     result.gameStateAfterStart = await page.evaluate(() => window.__KANO_LIFE_GAME__?.state || null);
     const frameIndex = await page.evaluate(() => window.__KANO_AUDIT__?.frameIntervals?.length || 0);
     const startAt = Date.now();
@@ -855,9 +918,10 @@ async function runThrottleScenario(browser, baseURL, profile) {
     const url = modeURL(baseURL, '3d');
     const start = Date.now();
     await page.goto(url, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
-    await waitForApplicationReady(page, 60_000);
-    await page.locator('#start-btn').waitFor({ state: 'visible', timeout: 10_000 });
     result.timeToPageLoadMs = Date.now() - start;
+    await waitForApplicationReady(page, START_ACTION_TIMEOUT_MS);
+    await waitForStartOrPlayable(page, START_ACTION_TIMEOUT_MS);
+    result.timeToAppReadyMs = Date.now() - start;
     result.navigationTiming = await page.evaluate(() => {
       const nav = performance.getEntriesByType('navigation')[0];
       return nav ? {
@@ -960,6 +1024,7 @@ function generateMarkdown(report) {
     item.frameTime?.p95FrameMs ?? '—',
     item.memoryGrowthMiB ?? '—',
     item.consoleErrorCount ?? '—',
+    item.expectedModelFallbackMessages?.length ?? 0,
     item.pageErrorCount ?? '—',
     item.unexpectedFailedRequestCount ?? '—',
     item.httpErrorCount ?? '—',
@@ -979,7 +1044,7 @@ function generateMarkdown(report) {
     item.screenshot || '—',
   ]);
 
-  return `# Kano Life — Browser Audit\n\n- **Run:** ${report.runId}\n- **Build under test:** local \`dist/\` served by Vite Preview unless \`KANO_AUDIT_BASE_URL\` was provided.\n- **Asset inventory:** ${report.assetInventory.fileCount} GLB/GLTF/bin files (${report.assetInventory.mib} MiB); ${report.assetInventory.glbCount} GLB.\n- **Duration:** ${report.durationTargetMs / 1000}s per desktop/phone × 2D/3D × model-on/off scenario.\n- **Model status:** ${report.assetInventory.fileCount > 0 ? 'real local model files detected' : '**needs assets** — no files found beneath public/assets/models at audit time'}.\n- **Browser:** ${report.browserVersion || 'unknown'}\n\n## Driving matrix\n\n${markdownTable(['Scenario', 'Status', 'Actual mode', 'Median frame ms', 'P95 frame ms', 'Heap change MiB', 'Console errors', 'Page errors', 'Failed requests', 'HTTP errors', 'Screenshot'], scenarioRows)}\n\n## Scenario failure details\n\n${report.scenarios.filter((item) => item.error).map((item) => `### ${item.scenario}\n\n- **Failure:** ${String(item.error).replaceAll('\\n', ' ')}\n- **Mode at failure:** ${item.failureSnapshot?.renderMode || 'not reported'}\n- **Routine visible:** ${item.failureSnapshot?.routineVisible ?? 'unknown'}\n- **Current step:** ${item.failureSnapshot?.currentStep || '—'}\n- **Available actions:** ${(item.failureSnapshot?.availableActions || []).map((action) => `${action.text}${action.disabled ? ' (disabled)' : ''}${action.visible ? '' : ' (hidden)'}`).join('; ') || '—'}\n- **First console errors:** ${(item.runtimeErrors || []).slice(0, 3).map((entry) => entry.text).join(' | ') || '—'}\n- **First HTTP errors:** ${(item.httpErrors || []).slice(0, 5).map((entry) => `${entry.status} ${entry.url}`).join(' | ') || '—'}\n`).join('\\n') || 'No scenario setup failures were recorded.'}\n\n## Optional morning routine smoke\n\n- **Status:** ${report.morningRoutineSmoke ? (report.morningRoutineSmoke.completed ? 'PASS' : 'FAIL') : 'not run'}\n- **App bootstrap ready:** ${report.morningRoutineSmoke?.appReady ?? false}\n- **Final game state:** ${report.morningRoutineSmoke?.transition?.gameState || '—'}\n- **Skipped breakfast remains false:** ${report.morningRoutineSmoke?.transition?.breakfastEaten === false}\n- **Routine hidden after shift starts:** ${report.morningRoutineSmoke?.transition?.routineHiddenAfterShift ?? '—'}\n- **Failure:** ${report.morningRoutineSmoke?.error ? String(report.morningRoutineSmoke.error).replaceAll('\n', ' ') : '—'}\n- **Screenshot:** ${report.morningRoutineSmoke?.screenshot || '—'}\n\n## Cold first-load throttling\n\n${markdownTable(['Profile', 'Status', 'Time to load ms', 'Resources', 'Transferred MiB', 'Encoded body MiB', 'Model requests', 'Console errors', 'Page errors', 'Failed requests', 'Screenshot'], throttleRows)}\n\n## Notes\n\n- Frame timing samples use a separate requestAnimationFrame sampler in the page. Median FPS is approximately \`1000 / median frame time\`; it is a browser-level estimate, not a physical-device benchmark.\n- Heap change is Chromium CDP's \`JSHeapUsedSize\` end minus start after the game shift begins. Negative values can occur after garbage collection.\n- The no-model scenarios intentionally abort GLB/GLTF/binary model requests. Those aborted model requests are reported separately from unexpected failed requests.\n- Resource Timing transfer sizes can be zero for cross-origin resources without Timing-Allow-Origin and may not include late requests occurring after the settle window.\n- Screenshots and the complete raw JSON are beside this report. Inspect \`httpErrors\`, \`consoleErrors\`, and \`pageErrors\` in the JSON before declaring a scenario clean.\n`;
+  return `# Kano Life — Browser Audit\n\n- **Run:** ${report.runId}\n- **Build under test:** local \`dist/\` served by Vite Preview unless \`KANO_AUDIT_BASE_URL\` was provided.\n- **Asset inventory:** ${report.assetInventory.fileCount} GLB/GLTF/bin files (${report.assetInventory.mib} MiB); ${report.assetInventory.glbCount} GLB.\n- **Duration:** ${report.durationTargetMs / 1000}s per desktop/phone × 2D/3D × model-on/off driving scenario.\n- **Model status:** ${report.assetInventory.fileCount > 0 ? 'real local model files detected' : '**needs assets** — no files found beneath public/assets/models at audit time'}.\n- **Browser:** ${report.browserVersion || 'unknown'}\n\n## Driving matrix\n\n${markdownTable(['Scenario', 'Status', 'Actual mode', 'Median frame ms', 'P95 frame ms', 'Heap change MiB', 'Console errors', 'Expected blocked-model messages', 'Page errors', 'Failed requests', 'HTTP errors', 'Screenshot'], scenarioRows)}\n\n## Scenario failure details\n\n${report.scenarios.filter((item) => item.error).map((item) => `### ${item.scenario}\n\n- **Failure:** ${String(item.error).replaceAll('\\n', ' ')}\n- **Mode at failure:** ${item.failureSnapshot?.renderMode || 'not reported'}\n- **Routine visible:** ${item.failureSnapshot?.routineVisible ?? 'unknown'}\n- **Current step:** ${item.failureSnapshot?.currentStep || '—'}\n- **Available actions:** ${(item.failureSnapshot?.availableActions || []).map((action) => `${action.text}${action.disabled ? ' (disabled)' : ''}${action.visible ? '' : ' (hidden)'}`).join('; ') || '—'}\n- **First console errors:** ${(item.runtimeErrors || []).slice(0, 3).map((entry) => entry.text).join(' | ') || '—'}\n- **First HTTP errors:** ${(item.httpErrors || []).slice(0, 5).map((entry) => `${entry.status} ${entry.url}`).join(' | ') || '—'}\n`).join('\\n') || 'No scenario setup failures were recorded.'}\n\n## Optional morning routine smoke\n\n- **Status:** ${report.morningRoutineSmoke ? (report.morningRoutineSmoke.completed ? 'PASS' : 'FAIL') : 'not run'}\n- **App bootstrap ready:** ${report.morningRoutineSmoke?.appReady ?? false}\n- **Final game state:** ${report.morningRoutineSmoke?.transition?.gameState || '—'}\n- **Skipped breakfast remains false:** ${report.morningRoutineSmoke?.transition?.breakfastEaten === false}\n- **Routine hidden after shift starts:** ${report.morningRoutineSmoke?.transition?.routineHiddenAfterShift ?? '—'}\n- **Failure:** ${report.morningRoutineSmoke?.error ? String(report.morningRoutineSmoke.error).replaceAll('\n', ' ') : '—'}\n- **Screenshot:** ${report.morningRoutineSmoke?.screenshot || '—'}\n\n## Cold first-load throttling\n\n${markdownTable(['Profile', 'Status', 'Navigation load ms', 'Resources', 'Transferred MiB', 'Encoded body MiB', 'Model requests', 'Console errors', 'Page errors', 'Failed requests', 'Screenshot'], throttleRows)}\n\n## Notes\n\n- Frame timing samples use a separate requestAnimationFrame sampler in the page. Median FPS is approximately \`1000 / median frame time\`; it is a browser-level estimate, not a physical-device benchmark.\n- Heap change is Chromium CDP's \`JSHeapUsedSize\` end minus start after the game shift begins. Negative values can occur after garbage collection.\n- The no-model scenarios intentionally abort GLB/GLTF/binary model requests. Those aborted model requests and generic Chromium \`ERR_FAILED\`/GLTF-loader messages are reported separately as expected fallback noise; unexpected non-model failed requests and HTTP errors still prevent a clean result.\n- Resource Timing transfer sizes can be zero for cross-origin resources without Timing-Allow-Origin and may not include late requests occurring after the settle window.\n- Screenshots and the complete raw JSON are beside this report. Inspect \`httpErrors\`, \`consoleErrors\`, and \`pageErrors\` in the JSON before declaring a scenario clean.\n`;
 }
 
 async function main() {
@@ -1032,7 +1097,8 @@ async function main() {
           console.log(`[Browser Audit] ${result.completed ? (result.auditClean ? 'CLEAN' : 'DONE_WITH_ERRORS') : 'INCOMPLETE'} ${result.scenario}: ` +
             `mode=${result.actualRenderMode || 'unknown'}, frames=${result.frameTime?.samples ?? 0}, ` +
             `console=${result.consoleErrorCount ?? 0}, page=${result.pageErrorCount ?? 0}, ` +
-            `failedRequests=${result.unexpectedFailedRequestCount ?? 0}`);
+            `failedRequests=${result.unexpectedFailedRequestCount ?? 0}, ` +
+            `expectedModelFallback=${result.expectedModelFallbackMessages?.length ?? 0}`);
           if (result.error) console.error(`[Browser Audit] ${result.scenario} failure: ${result.error}`);
           if (result.httpErrors?.length) console.error(`[Browser Audit] ${result.scenario} HTTP errors (first 5): ${result.httpErrors.slice(0, 5).map((item) => `${item.status} ${item.url}`).join(' | ')}`);
         }
@@ -1065,7 +1131,7 @@ async function main() {
       const result = await runThrottleScenario(browser, baseURL, profile);
       report.throttledFirstLoads.push(result);
       console.log(`[Browser Audit] ${result.completed ? 'DONE' : 'INCOMPLETE'} ${profile.name}: ` +
-        `pageLoad=${result.timeToPageLoadMs ?? 'n/a'}ms, transfer=${result.resourceTiming?.totalTransferredMiB ?? 'n/a'}MiB, ` +
+        `navLoad=${result.timeToPageLoadMs ?? 'n/a'}ms, appReady=${result.timeToAppReadyMs ?? 'n/a'}ms, transfer=${result.resourceTiming?.totalTransferredMiB ?? 'n/a'}MiB, ` +
         `failedRequests=${result.failedRequests?.length ?? 0}`);
     }
   } finally {

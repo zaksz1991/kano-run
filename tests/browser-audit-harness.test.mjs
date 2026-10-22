@@ -12,12 +12,20 @@ test('driving scenarios wait until the real game bootstrap is ready before click
   assert.match(script, /async function waitForApplicationReady\(/);
   assert.match(script, /window\.__KANO_LIFE_GAME__/);
   assert.match(script, /typeof game\.start === 'function'/);
-  assert.match(script, /await waitForApplicationReady\(page, 45_000\)/);
+  assert.match(script, /await waitForApplicationReady\(page, START_ACTION_TIMEOUT_MS\)/);
+  assert.match(script, /const START_ACTION_TIMEOUT_MS = positiveInt\(process\.env\.KANO_AUDIT_START_TIMEOUT_MS, 45_000\)/);
 });
 
 test('START DRIVING is tested as the direct-start gameplay flow', () => {
   assert.match(script, /async function startDrivingRun\(/);
   assert.match(script, /await page\.locator\('#start-btn'\)\.click/);
+  assert.match(script, /async function isRunPlayable\(page\)/);
+  assert.match(script, /async function waitForStartOrPlayable\(page/);
+  assert.match(script, /Neither the start button nor a playable state became available within/);
+  assert.match(script, /await startDrivingRun\(page, START_ACTION_TIMEOUT_MS\)/);
+  assert.doesNotMatch(script, /async function startDrivingRun[\s\S]{0,1000}locator\('#start-btn'\)\.click\(\{ timeout: 10_000 \}\)/);
+  assert.match(script, /await waitForStartOrPlayable\(page, START_ACTION_TIMEOUT_MS\)/);
+  assert.match(script, /result\.timeToAppReadyMs = Date\.now\(\) - start/);
   assert.match(script, /game\?\.state === 'PLAY'/);
   assert.match(script, /did not enter a playable driving state/);
   assert.doesNotMatch(script, /Clicking START DRIVING did not reveal the morning routine/);
@@ -62,5 +70,8 @@ test('failed scenarios preserve runtime diagnostics and completed runs are disti
   assert.match(script, /result\.frameTime = await page\.evaluate/);
   assert.match(script, /result\.auditClean = Boolean\(/);
   assert.match(script, /DONE_WITH_ERRORS/);
+  assert.match(script, /expectedBlockedModelError/);
+  assert.match(script, /Expected blocked-model messages/);
+  assert.match(script, /expectedModelFallback=\$\{result\.expectedModelFallbackMessages/);
   assert.match(script, /Scenario failure details/);
 });
