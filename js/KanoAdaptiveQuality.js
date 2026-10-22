@@ -10,6 +10,7 @@
  * the separate life-scene dioramas are deliberately never culled by this file.
  */
 import * as THREE from 'three';
+import { getMobileTier, getMobileRatios } from './KanoDeviceTier.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
 import { KanoGLBAnimationManager } from './KanoAnimationTrafficUpgrade.js';
 
@@ -313,9 +314,10 @@ export class KanoAdaptiveQuality {
     this.deviceRatio = safeDevicePixelRatio();
 
     // Limit GPU fill-rate cost without making the mobile image excessively soft.
-    this.maximumRatio = this.mobile ? 1.28 : 1.72;
-    this.minimumRatio = this.mobile ? 0.78 : 0.84;
-    this.startupRatio = this.mobile ? 1.06 : 1.30;
+    const tierRatios = getMobileRatios(getMobileTier());
+    this.maximumRatio = this.mobile ? tierRatios.max : 1.72;
+    this.minimumRatio = this.mobile ? tierRatios.min : 0.84;
+    this.startupRatio = this.mobile ? tierRatios.start : 1.30;
     this.maxSupportedRatio = Math.max(
       this.minimumRatio,
       Math.min(this.deviceRatio, this.maximumRatio),

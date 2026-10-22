@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getMobileTier, getMobileRatios } from './KanoDeviceTier.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -86,14 +87,18 @@ export class Renderer3D {
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: !mobile,
+      // Phones get anti-aliasing only on the high tier; the adaptive system
+      // handles resolution, but MSAA cannot be switched on later.
+      antialias: !mobile || getMobileTier() === 'high',
       alpha: false,
       powerPreference: 'high-performance',
       failIfMajorPerformanceCaveat: false,
     });
 
     this.renderer.setPixelRatio(
-      mobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.5),
+      mobile
+        ? Math.min(window.devicePixelRatio || 1, getMobileRatios(getMobileTier()).start)
+        : Math.min(window.devicePixelRatio || 1, 1.5),
     );
 
     this.renderer.shadowMap.enabled = false;
@@ -2904,8 +2909,14 @@ export class Renderer3D {
               ? 0.68
               : 0.98;
 
+          // A General Checkpoint is a long loading bay for a group, so its
+          // marked ground is a long strip; a roadside stop stays a small disc.
+          const checkpointBay = Boolean(zone.hub) && zone.type === 'pickup';
+
           const pad = new THREE.Mesh(
-            new THREE.CylinderGeometry(radius, radius, 0.04, 20),
+            checkpointBay
+              ? new THREE.BoxGeometry(2.6, 0.04, 5.2)
+              : new THREE.CylinderGeometry(radius, radius, 0.04, 20),
             new THREE.MeshStandardMaterial({
               color: colors[zone.type] || 0x353b42,
               side: THREE.DoubleSide,

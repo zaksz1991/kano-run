@@ -455,11 +455,14 @@ export class Renderer2D {
 
       ctx.beginPath();
 
+      // A checkpoint group bay is drawn longer than a single roadside stop.
+      const bay = zone.type === 'pickup' && zone.hub;
+
       ctx.ellipse(
         x,
         y,
-        size,
-        size * 0.35,
+        bay ? size * 1.15 : size,
+        bay ? size * 0.72 : size * 0.35,
         0,
         0,
         Math.PI * 2,
