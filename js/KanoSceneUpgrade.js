@@ -54,9 +54,12 @@ export class KanoSceneUpgrade {
     this.dummy = new THREE.Object3D();
     this.tempColor = new THREE.Color();
     this.inverseMatrix = new THREE.Matrix4();
+    this.localMatrix = new THREE.Matrix4();
     this.localBox = new THREE.Box3();
+    this.vehicleMeshBox = new THREE.Box3();
     this.localSize = new THREE.Vector3();
     this.localCenter = new THREE.Vector3();
+    this.driverSeatWorld = new THREE.Vector3();
     this.driverPlayer = null;
     this.seatedDriverRoots = new Set();
     this.lastSceneName = '';
@@ -512,16 +515,73 @@ export class KanoSceneUpgrade {
   // pedestrian beside the player keke.
   // ----------------------------------------------------------
 
+  /**
+   * Measure the complete vehicle body in player-local space, excluding any
+   * seated driver already attached to the vehicle. Imported GLBs often have
+   * several nested groups; using the first child group can calibrate the driver
+   * against a wheel, door, or tiny decorative mesh and place the person outside
+   * the keke. The union below uses all visible vehicle meshes instead.
+   */
+  measureVehicleLocalBounds(player, excludedDriverRoot = null) {
+    if (!player?.isObject3D) return false;
+
+    player.updateMatrixWorld(true);
+    this.inverseMatrix.copy(player.matrixWorld).invert();
+    this.localBox.makeEmpty();
+
+    player.traverse((object) => {
+      if (!object.isMesh || !object.geometry || object.visible === false) return;
+
+      // Do not let a driver rig or a visual-only dynamics layer enlarge the
+      // vehicle bounds used to place the driver.
+      let ancestor = object;
+      while (ancestor && ancestor !== player) {
+        if (
+          ancestor === excludedDriverRoot ||
+          ancestor.userData?.kanoDriverVisual === true ||
+          ancestor.userData?.kanoDynamicsPivot === true ||
+          ancestor.name === 'KANO_KEKE_DYNAMICS_VISUAL_PIVOT' ||
+          ancestor.name === 'KANO_KEKE_SEATED_DRIVER' ||
+          ancestor.name === 'KANO_KEKE_DRIVER_PIVOT'
+        ) {
+          return;
+        }
+        ancestor = ancestor.parent;
+      }
+
+      const geometry = object.geometry;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return;
+
+      // Convert each mesh's geometry bounds to the same local space as the
+      // player root. This handles nested GLB transforms without assuming that
+      // the first child represents the whole vehicle.
+      this.localMatrix.multiplyMatrices(
+        this.inverseMatrix,
+        object.matrixWorld,
+      );
+      this.vehicleMeshBox
+        .copy(geometry.boundingBox)
+        .applyMatrix4(this.localMatrix);
+
+      if (!this.vehicleMeshBox.isEmpty()) {
+        this.localBox.union(this.vehicleMeshBox);
+      }
+    });
+
+    return !this.localBox.isEmpty();
+  }
+
   ensureSeatedDriver(force = false) {
     const player = this.renderer?.player;
     if (!player?.isObject3D || this.disposed) return;
     if (!force && this.driverPlayer === player && player.userData.kanoDriverCalibrated) return;
 
-    // The procedural fallback already contains its own correctly seated driver.
-    // Reuse that rig rather than creating a second person on top of the first.
     let driverRoot = player.getObjectByName('KANO_KEKE_SEATED_DRIVER');
     let driverPivot = player.getObjectByName('KANO_KEKE_DRIVER_PIVOT');
 
+    // The procedural renderer fallback already includes a correctly seated
+    // driver. Keep its existing animation rig and do not add another person.
     if (player.userData?.fallback && driverPivot) {
       if (!player.userData.driverAnimationParts) {
         const arms = [];
@@ -532,14 +592,16 @@ export class KanoSceneUpgrade {
         }
         player.userData.driverAnimationParts = { driverPivot, arms, wheels: [] };
       }
+      player.userData.hasSeatedDriver = true;
       player.userData.kanoDriverCalibrated = true;
       this.driverPlayer = player;
       return;
     }
 
+    let createdProceduralRig = false;
     if (!driverPivot) {
-      // A GLB that contains a mesh called "driver" may only mean a door or
-      // panel; only the explicit seated rig names count as a seated person.
+      // Only explicit KANO rig names count as a seated driver. A random GLB
+      // mesh named "driver" may be a door, panel, or seat component.
       const rig = this.createSeatedDriverRig();
       driverRoot = rig.root;
       driverPivot = rig.pivot;
@@ -551,53 +613,52 @@ export class KanoSceneUpgrade {
         wheels: [],
       };
       player.userData.hasSeatedDriver = true;
-    } else if (!driverRoot) {
-      // Renderer3D.makeKeke() exposes the pivot directly under the root.
-      // Do not scale or move the whole vehicle as if it were a driver group.
-      driverRoot = driverPivot.parent !== player ? driverPivot.parent : null;
-      if (!player.userData.driverAnimationParts) {
-        const arms = [];
-        for (const side of [-1, 1]) {
-          const shoulder = player.getObjectByName(side < 0 ? 'KANO_KEKE_DRIVER_SHOULDER_LEFT' : 'KANO_KEKE_DRIVER_SHOULDER_RIGHT');
-          const forearm = player.getObjectByName(side < 0 ? 'KANO_KEKE_DRIVER_FOREARM_LEFT' : 'KANO_KEKE_DRIVER_FOREARM_RIGHT');
-          if (shoulder && forearm) arms.push({ shoulder, forearm });
-        }
-        player.userData.driverAnimationParts = { driverPivot, arms, wheels: [] };
-      }
+      createdProceduralRig = true;
     }
 
-    player.updateMatrixWorld(true);
-    // Find the vehicle shell, not an external/world-space person actor.
-    let shell = null;
-    for (const child of player.children) {
-      if (child === driverRoot || child === driverPivot || child.userData?.kanoDynamicsPivot || child.name === 'KANO_KEKE_DYNAMICS_VISUAL_PIVOT') continue;
-      if (child.isObject3D && child.children?.length) {
-        shell = child;
-        break;
-      }
-    }
+    // If the imported GLB supplies its own explicitly named driver rig, leave
+    // its authored transform intact. Calibrating a nested imported pivot as if
+    // it were a direct child of the keke root is what previously displaced it.
+    const driverIsOurs = Boolean(
+      createdProceduralRig ||
+      (driverRoot && this.seatedDriverRoots.has(driverRoot)),
+    );
 
-    if (shell) {
-      shell.updateMatrixWorld(true);
-      const worldBox = new THREE.Box3().setFromObject(shell);
-      if (!worldBox.isEmpty()) {
-        this.inverseMatrix.copy(player.matrixWorld).invert();
-        this.localBox.copy(worldBox).applyMatrix4(this.inverseMatrix);
+    if (driverIsOurs && driverRoot?.parent === player) {
+      const hasBounds = this.measureVehicleLocalBounds(player, driverRoot);
+      if (hasBounds) {
         this.localBox.getSize(this.localSize);
         this.localBox.getCenter(this.localCenter);
+
         const height = clamp(this.localSize.y, 1.1, 2.25);
         const width = clamp(this.localSize.x, 0.8, 2.7);
         const length = clamp(this.localSize.z, 1.0, 3.8);
+        const uniformScale = clamp(height / 1.85, 0.82, 1.08);
+        const sx = uniformScale * clamp(width / 1.5, 0.82, 1.03);
+        const sy = uniformScale;
+        const sz = uniformScale;
 
-        if (driverRoot && driverRoot !== player) {
-          driverRoot.position.set(0, 0, 0);
-          const uniformScale = clamp(height / 1.85, 0.82, 1.08);
-          driverRoot.scale.set(uniformScale * clamp(width / 1.5, 0.82, 1.03), uniformScale, uniformScale);
-        }
-        driverPivot.position.set(
+        // Keep the procedural person proportional, then place the pivot by
+        // transforming the measured seat point into its actual parent space.
+        driverRoot.position.set(0, 0, 0);
+        driverRoot.scale.set(sx, sy, sz);
+        player.updateMatrixWorld(true);
+        driverRoot.updateMatrixWorld(true);
+
+        const seatLocal = new THREE.Vector3(
           this.localCenter.x,
           this.localBox.min.y + height * 0.59,
           this.localCenter.z + length * 0.015,
+        );
+        this.driverSeatWorld
+          .copy(seatLocal)
+          .applyMatrix4(player.matrixWorld);
+
+        const pivotParent = driverPivot.parent || driverRoot;
+        pivotParent.updateMatrixWorld(true);
+        this.inverseMatrix.copy(pivotParent.matrixWorld).invert();
+        driverPivot.position.copy(
+          this.driverSeatWorld.applyMatrix4(this.inverseMatrix),
         );
       }
     }

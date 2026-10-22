@@ -1,15 +1,14 @@
-STEP 25 VALIDATION
+STEP 26 VALIDATION
 
-PASS: node --check js/renderer3d.js
-PASS: focused roadside set tests: 7/7
-PASS: existing static checks: 10/10
+PASS: node --check js/KanoSceneUpgrade.js
+PASS: focused seated-driver calibration regression tests: 7/7
+PASS: ZIP integrity checked after packaging
 
-FULL PROJECT TEST SUITE
-83 passed, 3 failed (86 total).
-The three failures are existing issues outside this roadside change:
-1. tests/glb-catalog-sync.test.mjs cannot import patchModelManagerVariants because scripts/glb-catalog-sync.mjs does not export it.
-2. The root-cause/GLB script order regression check disagrees with the current refactored integration.
-3. The root-cause repair test expects a previous filename-bound heuristic that is no longer present.
+SCOPE
+- Tests assert complete vehicle-bound measurement, exclusion of driver geometry, correct parent-space seat placement, fallback de-duplication, and model-change recalibration.
+- Tests are static source-level checks; they do not emulate Three.js rendering.
+- Browser rendering and physical-phone verification remain unperformed.
 
-BUILD / VISUAL VALIDATION
-A Vite build was not run successfully because dependencies are not installed in this working copy (vite executable unavailable). No browser render or physical phone benchmark is claimed.
+ADDITIONAL EXISTING-TEST SPOT CHECK
+- 15/16 passed across three existing audit/performance test files.
+- The single failure is the pre-existing registration-order assertion in tests/kano-world-performance-upgrade.test.mjs; this update does not modify main.js or module registration order. The same mismatch was already identified in the supplied audit notes.
