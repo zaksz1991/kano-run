@@ -93,3 +93,25 @@ test('reverse and moving vehicles never receive the stopped-interaction epsilon'
     restore();
   }
 });
+
+test('a full keke is told it is full instead of being coached to line up for a pickup', () => {
+  const full = state({ capacity: 5, passengers: [{ seats: 1 }, { seats: 1 }, { seats: 1 }, { seats: 1 }, { seats: 1 }] });
+  const advice = getInteractionAdvice(full, 'PLAY');
+  assert.equal(advice.type, 'full');
+  assert.match(advice.message, /KEKE FULL/);
+});
+
+test('a checkpoint group needs two free seats; one free seat is not enough', () => {
+  const hub = { id: 'hub-1', type: 'pickup', depth: 0.05, lane: 1, hub: true };
+  const oneFree = state({ zones: [hub], capacity: 5, passengers: [{ seats: 1 }, { seats: 1 }, { seats: 1 }, { seats: 1 }] });
+  assert.equal(getInteractionAdvice(oneFree, 'PLAY').type, 'full');
+  const twoFree = state({ zones: [hub], capacity: 5, passengers: [{ seats: 1 }, { seats: 1 }, { seats: 1 }] });
+  assert.notEqual(getInteractionAdvice(twoFree, 'PLAY').type, 'full');
+});
+
+test('pickup guidance is unchanged when seats are free or capacity is unknown, and drop-offs are never blocked', () => {
+  assert.equal(getInteractionAdvice(state({ capacity: 5, passengers: [{ seats: 1 }] }), 'PLAY').type, 'ready');
+  assert.equal(getInteractionAdvice(state(), 'PLAY').type, 'ready');
+  const dropWhenFull = state({ zones: [{ type: 'drop', depth: 0.05, lane: 1 }], capacity: 5, passengers: new Array(5).fill({ seats: 1 }) });
+  assert.notEqual(getInteractionAdvice(dropWhenFull, 'PLAY').type, 'full');
+});
