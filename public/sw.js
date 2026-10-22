@@ -5,10 +5,10 @@
  *   and changed files are picked up on the following visit without bumping a version.
  * - Audio (large, uses Range requests), /api/ and cross-origin requests are left to the network.
  */
-const VERSION = 'kano-life-v1';
+const VERSION = 'kano-life-v2';
 const SHELL = `${VERSION}-shell`;
 const STATIC = `${VERSION}-static`;
-const MODELS = 'kano-life-models'; // intentionally not versioned: survives code releases
+const MODELS = `${VERSION}-models`; // versioned so asset repairs cannot be hidden by an old model/texture cache
 const MAX_MODEL_ENTRIES = 400;
 const SHELL_URLS = ['/', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png'];
 
