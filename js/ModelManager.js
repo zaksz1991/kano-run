@@ -597,17 +597,20 @@ function repairMaterials(root) {
     for (const material of materials) {
       if (!material) continue;
 
-      material.side = THREE.DoubleSide;
-
+      // Preserve the material side authored in the GLB. GLTFLoader already
+      // maps doubleSided=true to THREE.DoubleSide and otherwise uses the normal
+      // front-face material. Forcing every imported mesh to DoubleSide disables
+      // back-face culling across nearly the entire model catalogue on phones.
+      // Keep the existing low-opacity repair, and request a program update only
+      // when that repair actually changes material transparency.
       if (
         Number.isFinite(material.opacity) &&
         material.opacity < 0.12
       ) {
         material.opacity = 0.85;
         material.transparent = true;
+        material.needsUpdate = true;
       }
-
-      material.needsUpdate = true;
     }
   });
 }
