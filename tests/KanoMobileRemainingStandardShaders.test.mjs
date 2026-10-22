@@ -26,7 +26,7 @@ test('repeating flyover stripes use the tier-aware material factory', () => {
 
 test('life-scene procedural boxes avoid forced double-sided Standard materials on phones', () => {
   const start = source.indexOf('    const box = (\n      group,\n      dimensions,');
-  const end = source.indexOf('\n    for (const name of [', start);
+  const end = source.indexOf('\n    const group = new THREE.Group();\n    group.visible = false;', start);
   assert.ok(start >= 0 && end > start, 'life-scene box helper should exist');
   const block = source.slice(start, end);
   assert.match(block, /const material = this\.material\(color, materialOptions\.roughness \?\? 0\.9\)/);

@@ -27,7 +27,7 @@ test('mobile renders fewer imported traffic models and uses lightweight traffic 
   assert.match(tier, /if \(tier === 'mid'\) return 1/);
   assert.match(tier, /return 0/);
   assert.match(renderer, /this\.mobile \? this\.makeTrafficKeke\(\) : this\.makeKeke\(\)/);
-  assert.match(renderer, /group\.userData\.sharedGeometry = true/);
+  assert.match(renderer, /keke\.userData\.sharedGeometry = true/);
 });
 
 test('mobile rendering avoids MSAA and limits distant scenery at camera and fog level', () => {

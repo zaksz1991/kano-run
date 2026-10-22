@@ -206,6 +206,21 @@ export function getInteractionAdvice(state, gameStatus = 'PLAY') {
   }
   const label = ZONE_LABELS[zone.type];
   if (!label) return null;
+
+  // Do not coach the player to line up for a pickup the game will refuse.
+  if (zone.type === 'pickup' && Number.isFinite(Number(state.capacity)) && Array.isArray(state.passengers)) {
+    const occupied = state.passengers.reduce((total, passenger) => total + (Number(passenger?.seats) || 1), 0);
+    const seatsNeeded = zone.hub ? 2 : 1;
+    if (Number(state.capacity) - occupied < seatsNeeded) {
+      return {
+        type: 'full',
+        zone,
+        message: zone.hub ? 'CHECKPOINT AHEAD · NOT ENOUGH SEATS' : 'KEKE FULL · DROP A PASSENGER FIRST',
+        detail: 'This pickup cannot board until seats are free.',
+      };
+    }
+  }
+
   const speed = Math.max(0, Number(state.speed) || 0);
   const reversing = Boolean(state.reverse) || (Number(state.signedSpeed) || 0) < -0.05;
   if (reversing) {

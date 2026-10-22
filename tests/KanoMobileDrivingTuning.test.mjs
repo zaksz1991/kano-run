@@ -25,8 +25,8 @@ test('city keke acceleration and cruise speed are increased without changing Tim
 
 test('roadside pull-over position is clamped into view and camera tracks lateral movement', () => {
   const renderer = read('js/renderer3d.js');
-  assert.match(renderer, /new THREE\.PlaneGeometry\(11\.2, 250\)/);
-  assert.match(renderer, /-4\.5[\s\S]*?4\.5/);
+  assert.match(renderer, /new THREE\.PlaneGeometry\(10\.0, 250\)/);
+  assert.match(renderer, /-3\.45[\s\S]*?3\.45/);
   assert.match(renderer, /const cameraFollow = driverView \? 0\.72 : 0\.92/);
   assert.match(renderer, /\(Number\(vehicle\.visualOffsetX\) \|\| 0\)/);
 });

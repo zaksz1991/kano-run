@@ -18,8 +18,8 @@ test('all lane markings use one InstancedMesh instead of individual Mesh draw ca
   const renderer = read('js/renderer3d.js');
   assert.match(renderer, /KANO_INSTANCED_LANE_MARKINGS/);
   assert.match(renderer, /new THREE\.InstancedMesh\([\s\S]*?laneDashRecords\.length/);
-  assert.match(renderer, /laneDashInstanced\.setMatrixAt\(index, this\.laneDashObject\.matrix\)/);
-  assert.match(renderer, /this\.laneDashInstanced\.instanceMatrix\.needsUpdate = true/);
+  assert.match(renderer, /laneDashMesh\.setMatrixAt\(index, this\.laneDashObject\.matrix\)/);
+  assert.match(renderer, /laneDashMesh\.instanceMatrix\.needsUpdate = true/);
 });
 
 test('mobile traffic uses stable, bounded imported GLB instances with procedural fallbacks', () => {
@@ -27,7 +27,7 @@ test('mobile traffic uses stable, bounded imported GLB instances with procedural
   assert.match(renderer, /getMobileTrafficModelBudget\(this\.mobileTier\)/);
   assert.match(renderer, /this\._mobileGlbTrafficIds/);
   assert.match(renderer, /makeTrafficActor\(vehicle, \{ allowGLB \}/);
-  assert.match(renderer, /actor\.visible = !this\.mobile \|\| depth <= 1\.35/);
+  assert.match(renderer, /const visible = !this\.mobile \|\| depth <= 1\.35/);
   assert.match(renderer, /makeTrafficKeke\(\)/);
   assert.match(renderer, /simplifiedTrafficKeke/);
 });
@@ -42,5 +42,5 @@ test('nonessential model batches pause during active driving', () => {
   const main = read('js/main.js');
   const block = main.slice(main.indexOf('const mobileAssetBatches'), main.indexOf('// WORKSHOP PANEL CLEANUP'));
   assert.match(block, /while \(game\?\.state === 'PLAY'\)/);
-  assert.match(block, /await models\.preload\(keys\)/);
+  assert.match(block, /await models\.preload\(\[key\]\)/);
 });

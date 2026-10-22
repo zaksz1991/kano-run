@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 
 const CHARACTER_KEYS = new Set([
@@ -405,7 +405,7 @@ export class KanoGLBAnimationManager {
     this.debug = Boolean(debug);
     this.disposed = false;
     this.elapsed = 0;
-    this.loader = new GLTFLoader();
+    this.loader = createGLTFLoader();
     this.clipPromises = new Map();
     this.mixers = new Map();
     this.lastActiveRoots = new Set();

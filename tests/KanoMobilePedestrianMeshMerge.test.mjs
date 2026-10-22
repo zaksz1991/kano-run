@@ -24,7 +24,7 @@ test('animated arm pivots remain separate after static pedestrian parts are merg
   assert.match(renderer, /const arms = \[\]/);
   assert.match(renderer, /arms\.push\(armPivot\)/);
   assert.match(renderer, /this\.mergeMobilePedestrianStaticParts\(group\)/);
-  assert.match(renderer, /for \(const \[index, arm\] of pedestrian\.arms\.entries\(\)\)/);
+  assert.match(renderer, /const arms = pedestrian\.arms;[\s\S]*?arms\[index\]\.rotation\.z/);
 });
 
 test('merged source geometries are disposed and obsolete materials still used by arms are retained', () => {

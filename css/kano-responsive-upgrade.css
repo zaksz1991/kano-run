@@ -399,3 +399,17 @@
     left: 14px;
   }
 }
+
+/* Phone: the toast was shrink-wrapped to half the screen (left:50% limits its
+   auto width), so it wrapped to three lines and covered the passenger list.
+   Size it to its text and park it in the clear band under the HUD. */
+@media (max-width: 760px) {
+  .toast {
+    top: clamp(166px, 19vh, 200px);
+    width: max-content;
+    max-width: min(88vw, 340px);
+    padding: 7px 12px;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+}

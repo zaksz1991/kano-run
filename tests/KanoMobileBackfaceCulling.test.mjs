@@ -14,7 +14,7 @@ const materialEnd = source.indexOf('\n  loadOptionalTexture(', materialStart);
 assert.ok(materialStart >= 0 && materialEnd > materialStart, 'material method boundaries exist');
 const material = source.slice(materialStart, materialEnd);
 assert.match(material, /new THREE\.MeshStandardMaterial\(/);
-assert.match(material, /side:\s*this\.mobile\s*\?\s*THREE\.FrontSide\s*:\s*THREE\.DoubleSide/);
+assert.match(material, /side = this\.mobile \? THREE\.FrontSide : THREE\.DoubleSide/);
 assert.match(source, /this\.renderer\.shadowMap\.enabled = false/);
 assert.match(source, /KANO_INSTANCED_BLACK_WHITE_KERBS/);
 assert.match(source, /KANO_INSTANCED_LANE_MARKINGS/);

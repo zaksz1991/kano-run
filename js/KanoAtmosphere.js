@@ -35,12 +35,13 @@ const TIME_PROFILES = {
   },
   evening: {
     background: 0xe4b18b, fog: 0xd7b49a, fogNear: 38, fogFar: 172,
-    hemi: 0.94, directional: 0.76, light: 0xffbf83,
+    hemi: 1.02, directional: 0.8, light: 0xffbf83,
     temperature: { hotDry: '30–35°C', harmattan: '24–29°C', rainy: '24–28°C', cool: '23–28°C' },
   },
   night: {
     background: 0x1d2a43, fog: 0x283650, fogNear: 24, fogFar: 132,
-    hemi: 0.76, directional: 0.42, light: 0x9ab5e2,
+    // Night stays readable on a phone screen in daylight: keke bodywork and road edges must not crush to black.
+    hemi: 0.98, directional: 0.58, light: 0xaec4ea,
     temperature: { hotDry: '25–30°C', harmattan: '13–19°C', rainy: '21–25°C', cool: '15–20°C' },
   },
 };

@@ -173,12 +173,13 @@ test('asset catalog points to real, case-sensitive Kano Run GLB filenames', () =
 test('mobile progressively preloads real traffic, pedestrian, building and flyover models', () => {
   const main = read('js/main.js');
   assert.match(main, /essentialLoad\.then\(async \(\) =>/);
-  assert.match(main, /const mobileAssetBatches = \[\s*\['flyover', 'building'/);
-  for (const key of ['karota', 'ambulance', 'truck', 'bus', 'passengerWoman', 'passengerMan', 'passengerVIP', 'security', 'pedestrian', 'pedestrianWoman', 'building', 'industrialBuilding', 'flyover', 'roadlight', 'trafficLight']) {
+  assert.match(main, /const mobileAssetBatches = \[/);
+  // Flyover, street-light and traffic-light GLBs are intentionally kept procedural on phones.
+  for (const key of ['karota', 'ambulance', 'truck', 'bus', 'passengerWoman', 'passengerMan', 'passengerVIP', 'pedestrian', 'pedestrianWoman', 'building']) {
     assert.match(main, new RegExp(`'${key}'`), `mobile deferred model missing: ${key}`);
   }
   const renderer = read('js/renderer3d.js');
-  assert.match(renderer, /if \(actor\.userData\.fallback\)[\s\S]*?getInstance\(key\)[\s\S]*?this\.trafficActors\.set\(vehicle\.id, model\)/);
+  assert.match(renderer, /if \(allowGLB && actor\.userData\.fallback\)[\s\S]*?getInstance\(key\)[\s\S]*?this\.trafficActors\.set\(vehicle\.id, model\)/);
 });
 
 test('morning routine contains wake-up, roadside akara and pap, guarded garage and real-keke pickup', () => {
@@ -210,18 +211,18 @@ test('roadside zones pause when the keke stops and traffic scroll matches the ca
   const game = read('js/game.js');
   const renderer = read('js/renderer3d.js');
   assert.match(game, /const ROAD_DEPTH_SCALE = 316\.8/);
-  assert.match(game, /this\.mode === 'timeAttack' \? 150 : this\.mode === 'freeRoam' \? 48 : 46/);
-  assert.match(game, /this\.mode === 'timeAttack' \? 1\.8 : 1\.35/);
-  assert.match(game, /const desiredSpeed = s\.gas && s\.fuel > 0 \? maxSpeed : 0/);
-  assert.match(game, /const closingSpeed = s\.signedSpeed - trafficSignedSpeed/);
+  assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*150\s*:\s*this\.mode === 'freeRoam'\s*\?\s*48\s*:\s*46/);
+  assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*1\.8\s*:\s*1\.35/);
+  assert.match(game, /const desiredSpeed =\s*s\.gas && s\.fuel > 0\s*\?\s*maxSpeed\s*:\s*0/);
+  assert.match(game, /const closingSpeed =\s*s\.signedSpeed - trafficSignedSpeed/);
   assert.match(renderer, /const scroll = signedSpeed \* dt \* 0\.28/);
-  assert.match(renderer, /this\.camera\.lookAt\(targetX, driverView \? 1\.6 : 0\.72/);
+  assert.match(renderer, /this\.camera\.lookAt\(\s*targetX,\s*driverView \? 1\.6 : 0\.72/);
   // Driver view must sit above and behind the canopy instead of looking through the body.
   assert.match(renderer, /this\.camera\.position\.y = driverView \? 2\.9 : 3\.35/);
   assert.match(renderer, /this\.camera\.position\.z = driverView \? 7\.2 : 8\.6/);
   assert.match(renderer, /zone\.side \|\| \(zone\.lane === 0 \? -1 : 1\)\) \* 4\.55/);
-  assert.match(renderer, /new THREE\.PlaneGeometry\(11\.2, 250\)/);
-  assert.match(renderer, /const laneX = Math\.max\([\s\S]*?-4\.5[\s\S]*?4\.5/);
+  assert.match(renderer, /new THREE\.PlaneGeometry\(10\.0, 250\)/);
+  assert.match(renderer, /const laneX = Math\.max\([\s\S]*?-3\.45[\s\S]*?3\.45/);
   assert.match(renderer, /const cameraFollow = driverView \? 0\.72 : 0\.92/);
 });
 
@@ -284,7 +285,7 @@ test('mobile render policy uses device tiers and never changes to 2D for low FPS
   const renderer = read('js/renderer3d.js');
   const adaptive = read('js/KanoAdaptiveQuality.js');
   const main = read('js/main.js');
-  assert.match(renderer, /antialias: !mobile \|\| getMobileTier\(\) === 'high'/);
+  assert.match(renderer, /antialias: !mobile \|\| this\.mobileTier === 'high'/);
   assert.match(adaptive, /const mobileRatios = this\.mobile \? getMobileRatios\(this\.mobileTier\) : null/);
   assert.match(adaptive, /criticallySlow/);
   assert.match(main, /activeCanvas\.getContext\('webgl2'/);

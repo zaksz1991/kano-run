@@ -8,18 +8,16 @@ import { getMobileRatios, getMobileRenderBudget } from '../js/KanoDeviceTier.js'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8');
 
-test('actual phone render budgets cut pixel shading while preserving the published capability tier ratios', () => {
-  assert.deepEqual(getMobileRatios('low'), { max: 1.1, start: 0.82, min: 0.58 });
-  assert.deepEqual(getMobileRatios('mid'), { max: 1.25, start: 0.94, min: 0.62 });
-  assert.deepEqual(getMobileRatios('high'), { max: 1.45, start: 1.08, min: 0.7 });
+test('phone render budgets stay sharp (about CSS-pixel scale or better) and never exceed the capability ratios', () => {
   for (const tier of ['low', 'mid', 'high']) {
     const budget = getMobileRenderBudget(tier);
+    const ratios = getMobileRatios(tier);
     assert.ok(budget.min <= budget.start && budget.start <= budget.max, tier);
-    assert.ok(budget.start < getMobileRatios(tier).start, `${tier} must start below the former pixel ratio`);
+    assert.ok(budget.max <= ratios.max, `${tier} budget must not exceed the capability ceiling`);
+    assert.ok(budget.start >= 0.9, `${tier} must not start visibly blurry`);
   }
-  assert.deepEqual(getMobileRenderBudget('low'), { max: 0.44, start: 0.34, min: 0.22 });
-  assert.deepEqual(getMobileRenderBudget('mid'), { max: 0.50, start: 0.40, min: 0.25 });
-  assert.deepEqual(getMobileRenderBudget('high'), { max: 0.58, start: 0.48, min: 0.30 });
+  assert.ok(getMobileRenderBudget('high').start > getMobileRenderBudget('low').start);
+  assert.deepEqual(getMobileRenderBudget('mid'), { max: 1.4, start: 1.15, min: 0.8 });
 });
 
 test('procedural flyover stripes use one InstancedMesh instead of dozens of stripe meshes', () => {

@@ -13,9 +13,9 @@ export function getMobileTier(hardware = {}) {
 /** Resolution budgets relative to CSS pixels. Lower startup/minimum values
  * deliberately reserve GPU headroom for GLB characters, traffic and markets. */
 export function getMobileRatios(tier) {
-  if (tier === 'high') return { max: 1.45, start: 1.08, min: 0.7 };
-  if (tier === 'mid') return { max: 1.25, start: 0.94, min: 0.62 };
-  return { max: 1.1, start: 0.82, min: 0.58 };
+  if (tier === 'high') return { max: 1.75, start: 1.4, min: 0.9 };
+  if (tier === 'mid') return { max: 1.5, start: 1.2, min: 0.82 };
+  return { max: 1.2, start: 0.95, min: 0.7 };
 }
 
 /**
@@ -25,9 +25,9 @@ export function getMobileRatios(tier) {
  * baseline while allowing the adaptive controller to reduce detail/LOD first.
  */
 export function getMobileRenderBudget(tier) {
-  if (tier === 'high') return { max: 1.32, start: 1.10, min: 0.84 };
-  if (tier === 'mid') return { max: 1.16, start: 0.98, min: 0.76 };
-  return { max: 1.05, start: 0.88, min: 0.70 };
+  if (tier === 'high') return { max: 1.6, start: 1.35, min: 0.9 };
+  if (tier === 'mid') return { max: 1.4, start: 1.15, min: 0.8 };
+  return { max: 1.1, start: 0.92, min: 0.7 };
 }
 
 /** Maximum number of simultaneous imported traffic GLBs during mobile road play.

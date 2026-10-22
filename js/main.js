@@ -24,6 +24,8 @@ import { KanoAtmosphere } from './KanoAtmosphere.js';
 import { KanoInteractionReliability } from './KanoInteractionReliability.js';
 import { KanoWorkshopPanel } from './KanoWorkshopPanel.js';
 import { registerServiceWorker } from './registerServiceWorker.js';
+import { KanoDayCycle } from './KanoDayCycle.js';
+import { KanoDayHud } from './KanoDayHud.js';
 import {
   canUse2D,
   createWebGLUnavailableError,
@@ -104,6 +106,9 @@ let interactionReliability = null;
 let controls = null;
 let game = null;
 let workshopPanel = null;
+let dayCycle = null;
+let dayHud = null;
+let shiftPending = false;
 
 let renderMode = '2D';
 let lastFrame = performance.now();
@@ -917,6 +922,52 @@ function boot() {
   ui.bind?.(game);
 
   // ----------------------------------------------------------
+  // DAY CYCLE: clock, prayer periods, hunger and fatigue.
+  // The clock follows the world clock that also drives the sky, so the
+  // HUD time and the lighting always agree. Warnings reuse the toast.
+  // ----------------------------------------------------------
+
+  try {
+    dayHud = new KanoDayHud({ container });
+
+    dayCycle = new KanoDayCycle({
+      gameMinutesPerSecond: 1.1,
+      onEvent: ({ type, detail }) => {
+        const messages = {
+          hunger_high: 'You are getting hungry · find food soon',
+          hunger_critical: 'Very hungry · tips are suffering',
+          fatigue_high: 'You are getting tired · rest when you can',
+          fatigue_critical: 'Exhausted · steering is getting heavy',
+          new_day: `A new day in Kano · day ${detail.day}`,
+        };
+
+        if (messages[type]) ui.toast?.(messages[type]);
+
+        if (type === 'hunger_high' || type === 'hunger_critical') {
+          game.offerBreak?.('mealBreak');
+        } else if (type === 'fatigue_high' || type === 'fatigue_critical') {
+          game.offerBreak?.('restBreak');
+        }
+      },
+    });
+
+    window.kanoDayCycle = dayCycle;
+
+    // Lets game.js apply fare and steering effects. Both fall back to 1 when null.
+    game.dayCycle = dayCycle;
+
+    // Each new run is a new shift; applied on the first driving frame.
+    const startRun = game.start.bind(game);
+
+    game.start = (...args) => {
+      shiftPending = true;
+      return startRun(...args);
+    };
+  } catch (error) {
+    console.warn('[Kano Life] day cycle unavailable', error);
+  }
+
+  // ----------------------------------------------------------
   // WORKSHOP, REPAIRS, AND ROADSIDE RECOVERY
   // This DOM panel persists when switching between 2D and 3D.
   // ----------------------------------------------------------
@@ -1136,6 +1187,38 @@ function frame(now) {
 
     game?.tick(dt);
 
+    // Day cycle runs only while actively driving; its HUD hides during
+    // menus, the morning routine and street events.
+    if (dayCycle) {
+      const driving = game?.state === 'PLAY';
+
+      dayHud?.show(driving);
+
+      if (driving && shiftPending) {
+        shiftPending = false;
+
+        dayCycle.beginShift({
+          breakfast: game.s?.breakfastEaten ?? null,
+          breakfastCost: game.s?.breakfastCost || 0,
+        });
+      }
+
+      if (driving) {
+        dayCycle.update(dt, {
+          speedKmh: game.s?.speed,
+          passengerOnboard: (game.s?.passengers?.length || 0) > 0,
+        });
+
+        // Follow the world clock so the HUD time matches the sky.
+        const worldMinutes = Number(game.s?.__kanoScheduleClockMinutes);
+        const worldDay = Number(game.s?.__kanoScheduleCurrentDay);
+        if (Number.isFinite(worldMinutes)) dayCycle.state.minuteOfDay = worldMinutes;
+        if (Number.isFinite(worldDay) && worldDay >= 1) dayCycle.state.day = worldDay;
+
+        dayHud?.render(dayCycle.snapshot());
+      }
+    }
+
     interactionReliability?.update?.(
       dt,
       game?.s || {},
@@ -1296,6 +1379,8 @@ window.addEventListener(
 
     try {
       liveUserCounter?.dispose?.();
+      dayHud?.dispose?.();
+      dayCycle?.dispose?.();
     } catch {
       // The page is closing.
     }
