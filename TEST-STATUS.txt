@@ -1,13 +1,11 @@
-KANO LIFE / KANO RUN — STEP 28 TEST STATUS
+KANO LIFE / KANO RUN — STEP 29 TEST STATUS
 
 Passed:
-- Focused regression tests: 20/20
-- JavaScript syntax: js/renderer3d.js, js/KanoDeviceTier.js, js/KanoInstancedRoadScroll.js
-- ZIP archive integrity: checked after packaging
+- Focused renderer/lifecycle/mesh-merge/crowd regression suite: 25/25.
+- JavaScript syntax checks: js/renderer3d.js, js/KanoDeviceTier.js, js/KanoInstancedRoadScroll.js.
+- ZIP integrity: verified after packaging.
 
-Coverage includes mobile sharpness/adaptive budget values, mobile traffic instancing, cached lazy life scenes, mesh-merged pedestrian fallback, tier-aware pedestrian/model budgets, instanced Kano roadside trees/dividers, two-rider Achaba traffic, police pickup/Hiace fallback guards, texture paths, phone fog horizon, and resource cleanup.
-
-Not claimed as completed:
-- No live browser render or screenshot comparison was performed.
-- No full Vite build was run because the source package dependencies were not installed in this workspace.
-- No physical-phone FPS or thermal test was performed.
+Not verified:
+- Browser rendering or screenshot comparison.
+- Full Vite production build.
+- FPS, thermal behaviour, or visual crowd placement on a physical phone.

@@ -1708,7 +1708,14 @@ export class Renderer3D {
       ? (this.mobileTier === 'low' ? 19 : 16)
       : 12;
 
-    this.pedestrianLoopDistance = count * pedestrianSpacing;
+    // On phones, each pair is one row: one walker on each sidewalk at the
+    // same depth. The previous index * spacing pattern alternated sides after
+    // every step, accidentally doubling the gap between people on the same
+    // sidewalk. Keep desktop placement unchanged to preserve its longer vista.
+    const rowsPerSide = Math.ceil(count / 2);
+    this.pedestrianLoopDistance = this.mobile
+      ? rowsPerSide * pedestrianSpacing
+      : count * pedestrianSpacing;
 
     const clothes = [
       0xf1e7ce,
@@ -1832,7 +1839,8 @@ export class Renderer3D {
 
       group.scale.setScalar(index % 3 === 0 ? 0.94 : 0.82);
 
-      const z = -5 - index * pedestrianSpacing;
+      const rowIndex = this.mobile ? Math.floor(index / 2) : index;
+      const z = -5 - rowIndex * pedestrianSpacing;
 
       group.position.set(
         side * (7.0 + (index % 3) * 0.45),
