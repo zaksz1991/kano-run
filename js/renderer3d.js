@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
+import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -17,6 +19,41 @@ const VEHICLE_MODEL_KEY = {
  * Safely disposes resources owned by a scene subtree.
  * Cached GLB geometry must not be disposed while shared by other actors.
  */
+function updateMobileActorDistanceVisibility(actor, limit, cameraZ) {
+  if (!actor?.position) return;
+
+  const shouldBeVisible = Math.abs(actor.position.z - cameraZ) <= limit;
+  // Avoid redundant Object3D.visible writes on every visibility pass.
+  if (actor.visible !== shouldBeVisible) actor.visible = shouldBeVisible;
+}
+
+/**
+ * Keep only the active cached life-scene group attached to the scene graph.
+ * Three.js updates world matrices for descendants even when an ancestor is
+ * merely marked invisible. Detaching inactive cached groups preserves their
+ * geometry and state without making every previously visited diorama part of
+ * the render traversal. Pass null to detach all cached life scenes.
+ */
+export function mountActiveLifeDiorama(root, groups, activeName = null) {
+  if (!root || !(groups instanceof Map)) return null;
+
+  let activeGroup = null;
+  for (const [name, group] of groups) {
+    if (name === activeName) {
+      if (group.parent !== root) root.add(group);
+      if (!group.visible) group.visible = true;
+      activeGroup = group;
+      continue;
+    }
+
+    if (group.visible) group.visible = false;
+    if (group.parent === root) root.remove(group);
+  }
+
+  root.visible = Boolean(activeGroup);
+  return activeGroup;
+}
+
 function disposeSceneTree(root, { disposeTextures = false } = {}) {
   if (!root) return;
 
@@ -74,14 +111,15 @@ export class Renderer3D {
     this.canvas = canvas;
     this.models = models;
     this.mobile = mobile;
+    this.mobileTier = mobile ? getMobileTier() : 'desktop';
     this.ready = false;
     this.disposed = false;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
-    this.scene.fog = new THREE.Fog(0x8ccde5, 48, 195);
+    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 24 : 48, mobile ? 105 : 195);
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, 260);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 125 : 260);
     this.camera.position.set(0, 3.85, 10.5);
 
     this.renderer = new THREE.WebGLRenderer({
@@ -93,7 +131,9 @@ export class Renderer3D {
     });
 
     this.renderer.setPixelRatio(
-      mobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.5),
+      mobile
+        ? Math.min(window.devicePixelRatio || 1, getMobileRenderBudget(this.mobileTier).start)
+        : Math.min(window.devicePixelRatio || 1, 1.5),
     );
 
     this.renderer.shadowMap.enabled = false;
@@ -103,15 +143,37 @@ export class Renderer3D {
     this.scene.add(this.world);
 
     this.trafficActors = new Map();
+    // Reuse hot-path collections: traffic sync runs on every active driving
+    // frame, so rebuilding these sets/arrays creates avoidable garbage.
+    this._activeTrafficIds = new Set();
+    this._activeZoneIds = new Set();
+    this._nextMobileWorldAssetUpgradeAt = 0;
+    this._nextMobilePedestrianUpgradeAt = 0;
+    // Distance visibility is a low-frequency presentation task, not part of
+    // per-frame movement or collision simulation.
+    this._nextMobileDistanceCullAt = 0;
+    this._mobileTrafficCandidateScratch = [];
+    this._mobileTrafficTypeScratch = new Set();
     this.zoneActors = new Map();
     this.laneDashes = [];
+    this.laneDashInstanced = null;
+    this.laneDashRecords = [];
+    this.laneDashObject = new THREE.Object3D();
+    this.curbInstanced = null;
+    this.curbRecords = [];
+    this.curbObject = new THREE.Object3D();
+    this._mobileGlbTrafficIds = new Set();
+    this._mobileTrafficVehicleGeometry = new Map();
+    // One dynamic instanced draw per fallback vehicle type on phones.
+    this._mobileTrafficBatches = new Map();
+    this._mobileFallbackTrafficByType = new Map();
+    this._mobileTrafficInstanceTransform = new THREE.Object3D();
     this.pedestrians = [];
     this.streetLights = [];
     this.roadProps = [];
     this.buildingSlots = [];
 
-    // Kano roadside set. Repeated trees and concrete dividers use InstancedMesh
-    // so the extra street detail adds only a handful of draw calls on phones.
+    // Instanced Kano roadside detail keeps added scenery inexpensive on phones.
     this.kanoNeemTrees = [];
     this.kanoDividerSegments = [];
     this.kanoRoadsideMeshes = {};
@@ -149,18 +211,25 @@ export class Renderer3D {
     this.player.position.set(0, 0, 2);
     this.scene.add(this.player);
 
-    this.buildGarageScene();
-    this.buildLifeDioramas();
+    // Garage and life-scene geometry is created only when that scene is first
+    // entered. The normal driving scene should not pay their startup CPU/memory
+    // cost, and the scenes remain cached after first use for quick revisits.
+    this._nextLifeSceneAssetUpgradeAt = 0;
 
     this.ready = true;
   }
 
   material(color, roughness = 1) {
-    return new THREE.MeshStandardMaterial({
-      color,
-      roughness,
-      side: THREE.DoubleSide,
-    });
+    // Procedural fallback scenery dominates the mobile scene and does not need
+    // physically based roughness/metalness lighting. Lambert shading uses a
+    // cheaper shader while retaining directional lighting, colour and texture
+    // support. This changes only this renderer's procedural materials on phones;
+    // imported GLB materials and all desktop materials keep their authored path.
+    const side = this.mobile ? THREE.FrontSide : THREE.DoubleSide;
+    if (this.mobile) {
+      return new THREE.MeshLambertMaterial({ color, side });
+    }
+    return new THREE.MeshStandardMaterial({ color, roughness, side });
   }
 
   loadOptionalTexture(url, material, repeat = [1, 1]) {
@@ -198,7 +267,7 @@ export class Renderer3D {
     const asphaltMaterial = this.material(0x343c43);
 
     const asphalt = new THREE.Mesh(
-      new THREE.PlaneGeometry(13, 250),
+      new THREE.PlaneGeometry(10.0, 250),
       asphaltMaterial,
     );
 
@@ -221,31 +290,117 @@ export class Renderer3D {
     ground.position.set(0, -0.09, -92);
     this.world.add(ground);
 
-    for (const x of [-6.15, 6.15]) {
-      const edge = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.12, 250),
-        this.material(0xf5d88e),
+    // Kano-style sandy shoulders. These sit above the broad ground plane but
+    // outside the asphalt, creating a distinct dry verge without extra texture
+    // downloads or per-frame objects.
+    const vergeMaterial = this.material(0xb6a077);
+    const vergeEdgeMaterial = this.material(0x988563);
+    for (const side of [-1, 1]) {
+      const verge = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.7, 250),
+        vergeMaterial,
       );
+      verge.rotation.x = -Math.PI / 2;
+      verge.position.set(side * 6.35, -0.075, -92);
+      verge.name = side < 0 ? 'KANO_LEFT_SAND_VERGE' : 'KANO_RIGHT_SAND_VERGE';
+      this.world.add(verge);
 
+      const dustyShoulderEdge = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.18, 250),
+        vergeEdgeMaterial,
+      );
+      dustyShoulderEdge.rotation.x = -Math.PI / 2;
+      dustyShoulderEdge.position.set(side * 7.82, -0.072, -92);
+      this.world.add(dustyShoulderEdge);
+
+      const edge = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.075, 250),
+        this.material(0xe8d5a4),
+      );
       edge.rotation.x = -Math.PI / 2;
-      edge.position.set(x, 0.025, -92);
+      edge.position.set(side * 4.54, 0.026, -92);
       this.world.add(edge);
     }
 
-    for (const x of [-2, 2]) {
+    // Painted black-and-white kerbs are one InstancedMesh, not hundreds of
+    // separate meshes. They mark the actual asphalt boundary and are recycled
+    // by the existing road-scroll update, so they cannot drift away from stops.
+    const curbRecords = [];
+    let curbSegment = 0;
+    for (let z = -3.0; z > -248; z -= 2.9) {
+      for (const side of [-1, 1]) {
+        curbRecords.push({
+          x: side * 4.86,
+          z,
+          color: curbSegment % 2 === 0 ? 0x202326 : 0xeee9df,
+        });
+      }
+      curbSegment += 1;
+    }
+    const curbGeometry = new THREE.BoxGeometry(0.28, 0.16, 2.84);
+    // Route road-detail shading through the same tier-aware material factory.
+    // Phones use Lambert shading; desktop retains Standard material, keeping
+    // this large instanced road-edge batch cheaper without changing its colors.
+    const curbMaterial = this.material(0xffffff, 0.96);
+    const curbMesh = new THREE.InstancedMesh(
+      curbGeometry,
+      curbMaterial,
+      curbRecords.length,
+    );
+    curbMesh.name = 'KANO_INSTANCED_BLACK_WHITE_KERBS';
+    curbMesh.userData.kanoRoadKerbs = true;
+    // The pattern spans the full road loop and its instance transforms recycle.
+    // A permanently valid static frustum bound is therefore not available.
+    curbMesh.frustumCulled = false;
+    curbMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const curbColor = new THREE.Color();
+    for (let index = 0; index < curbRecords.length; index += 1) {
+      const record = curbRecords[index];
+      this.curbObject.position.set(record.x, 0.08, record.z);
+      this.curbObject.rotation.set(0, 0, 0);
+      this.curbObject.scale.set(1, 1, 1);
+      this.curbObject.updateMatrix();
+      curbMesh.setMatrixAt(index, this.curbObject.matrix);
+      curbColor.setHex(record.color);
+      curbMesh.setColorAt(index, curbColor);
+    }
+    curbMesh.instanceMatrix.needsUpdate = true;
+    if (curbMesh.instanceColor) curbMesh.instanceColor.needsUpdate = true;
+    curbMesh.computeBoundingSphere();
+    this.world.add(curbMesh);
+    this.curbInstanced = curbMesh;
+    this.curbRecords = curbRecords;
+
+    // Lane dashes are repeated geometry with one material. Batch all 58
+    // markings into a single draw call instead of updating/rendering 58 meshes.
+    const laneDashGeometry = new THREE.PlaneGeometry(0.095, 3.4);
+    const laneDashMaterial = this.material(0xe8e0c8);
+    const laneDashRecords = [];
+    for (const x of [-1.8, 1.8]) {
       for (let z = -4; z > -245; z -= 8.5) {
-        const dash = new THREE.Mesh(
-          new THREE.PlaneGeometry(0.095, 3.4),
-          this.material(0xe8e0c8),
-        );
-
-        dash.rotation.x = -Math.PI / 2;
-        dash.position.set(x, 0.028, z);
-
-        this.world.add(dash);
-        this.laneDashes.push(dash);
+        laneDashRecords.push({ x, z });
       }
     }
+    const laneDashMesh = new THREE.InstancedMesh(
+      laneDashGeometry, laneDashMaterial, laneDashRecords.length,
+    );
+    laneDashMesh.name = 'KANO_INSTANCED_LANE_MARKINGS';
+    laneDashMesh.userData.kanoLaneDashInstancing = true;
+    laneDashMesh.frustumCulled = false;
+    laneDashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (let index = 0; index < laneDashRecords.length; index += 1) {
+      const record = laneDashRecords[index];
+      this.laneDashObject.position.set(record.x, 0.028, record.z);
+      this.laneDashObject.rotation.set(-Math.PI / 2, 0, 0);
+      this.laneDashObject.scale.set(1, 1, 1);
+      this.laneDashObject.updateMatrix();
+      laneDashMesh.setMatrixAt(index, this.laneDashObject.matrix);
+    }
+    laneDashMesh.instanceMatrix.needsUpdate = true;
+    this.world.add(laneDashMesh);
+    this.laneDashInstanced = laneDashMesh;
+    this.laneDashRecords = laneDashRecords;
+    laneDashGeometry.computeBoundingSphere();
 
     const buildingCount = this.mobile ? 10 : 24;
     const buildingSpacing = this.mobile ? 14 : 9;
@@ -390,36 +545,53 @@ export class Renderer3D {
         rail.position.set(0, 4.77, sideZ);
         group.add(rail);
 
-        const stripeCount = this.mobile ? 11 : 15;
-        const stripeWidth = width / stripeCount;
+      }
 
-        for (
-          let stripeIndex = 0;
-          stripeIndex < stripeCount;
-          stripeIndex += 1
-        ) {
-          const stripe = new THREE.Mesh(
-            new THREE.BoxGeometry(
-              stripeWidth * 0.96,
-              0.29,
-              0.035,
-            ),
-            this.material(
-              stripeIndex % 2 === 0
-                ? 0xc83d37
-                : 0xf4eee0,
-            ),
-          );
+      // One InstancedMesh renders both red/white parapet stripes on this
+      // flyover. The former loop created 22 mobile / 30 desktop meshes and
+      // materials per span, wasting draw calls for a purely decorative detail.
+      const stripeCount = this.mobile ? 11 : 15;
+      const stripeWidth = width / stripeCount;
+      const stripeGeometry = new THREE.BoxGeometry(
+        stripeWidth * 0.96,
+        0.29,
+        0.035,
+      );
+      // Match the mobile procedural shader budget for repeated flyover stripes.
+      const stripeMaterial = this.material(0xffffff, 0.92);
+      const stripes = new THREE.InstancedMesh(
+        stripeGeometry,
+        stripeMaterial,
+        stripeCount * 2,
+      );
+      stripes.name = `KANO_FLYOVER_STRIPES_${index}`;
+      stripes.userData.kanoFlyoverStripeInstancing = true;
+      const stripeMatrix = new THREE.Matrix4();
+      const stripePosition = new THREE.Vector3();
+      const stripeQuaternion = new THREE.Quaternion();
+      const stripeScale = new THREE.Vector3(1, 1, 1);
+      const stripeColor = new THREE.Color();
+      let stripeInstance = 0;
 
-          stripe.position.set(
+      for (const sideZ of [-2.25, 2.25]) {
+        for (let stripeIndex = 0; stripeIndex < stripeCount; stripeIndex += 1) {
+          stripePosition.set(
             -width / 2 + stripeWidth * (stripeIndex + 0.5),
             4.78,
             sideZ + (sideZ > 0 ? 0.135 : -0.135),
           );
-
-          group.add(stripe);
+          stripeMatrix.compose(stripePosition, stripeQuaternion, stripeScale);
+          stripes.setMatrixAt(stripeInstance, stripeMatrix);
+          stripeColor.setHex(stripeIndex % 2 === 0 ? 0xc83d37 : 0xf4eee0);
+          stripes.setColorAt(stripeInstance, stripeColor);
+          stripeInstance += 1;
         }
       }
+
+      stripes.instanceMatrix.needsUpdate = true;
+      if (stripes.instanceColor) stripes.instanceColor.needsUpdate = true;
+      stripes.computeBoundingSphere();
+      group.add(stripes);
 
       for (const x of [-8.4, 8.4]) {
         const pillar = new THREE.Mesh(
@@ -710,8 +882,14 @@ export class Renderer3D {
     return guard;
   }
 
+  ensureGarageScene() {
+    if (this.garageGroup) return this.garageGroup;
+    this.buildGarageScene();
+    return this.garageGroup;
+  }
+
   setLifeScene(sceneName) {
-    if (!this.ready || !this.player || !this.garageGroup) return;
+    if (!this.ready || !this.player) return;
 
     const valid = new Set([
       'road',
@@ -726,6 +904,12 @@ export class Renderer3D {
 
     const nextScene = valid.has(sceneName) ? sceneName : 'road';
 
+    if (nextScene === 'garage') {
+      this.ensureGarageScene();
+    } else if (nextScene !== 'road') {
+      this.buildLifeDioramas(nextScene);
+    }
+
     this.lifeScene = nextScene;
 
     if (nextScene === 'road') {
@@ -738,11 +922,13 @@ export class Renderer3D {
       this.player.position.set(0, 0, 2);
       this.player.rotation.set(0, this.driveFacingY, 0);
 
-      this.garageGroup.visible = false;
+      if (this.garageGroup) this.garageGroup.visible = false;
 
-      if (this.lifeDioramaRoot) {
-        this.lifeDioramaRoot.visible = false;
-      }
+      mountActiveLifeDiorama(
+        this.lifeDioramaRoot,
+        this.lifeSceneGroups,
+        null,
+      );
 
       this.world.visible = true;
 
@@ -762,9 +948,11 @@ export class Renderer3D {
 
       this.world.visible = false;
 
-      if (this.lifeDioramaRoot) {
-        this.lifeDioramaRoot.visible = false;
-      }
+      mountActiveLifeDiorama(
+        this.lifeDioramaRoot,
+        this.lifeSceneGroups,
+        null,
+      );
 
       this.garageGroup.visible = true;
 
@@ -785,15 +973,13 @@ export class Renderer3D {
     this.player.visible = false;
 
     this.world.visible = false;
-    this.garageGroup.visible = false;
+    if (this.garageGroup) this.garageGroup.visible = false;
 
-    if (this.lifeDioramaRoot) {
-      this.lifeDioramaRoot.visible = true;
-    }
-
-    for (const [name, group] of this.lifeSceneGroups) {
-      group.visible = name === nextScene;
-    }
+    mountActiveLifeDiorama(
+      this.lifeDioramaRoot,
+      this.lifeSceneGroups,
+      nextScene,
+    );
 
     this.upgradeLifeSceneAssets();
 
@@ -896,12 +1082,21 @@ export class Renderer3D {
     return slot;
   }
 
-  buildLifeDioramas() {
-    const root = new THREE.Group();
+  buildLifeDioramas(sceneName) {
+    const validScenes = [
+      'bedroom', 'household', 'street', 'breakfast', 'walk', 'school',
+    ];
+    if (!validScenes.includes(sceneName)) return null;
 
-    root.visible = false;
-    this.scene.add(root);
-    this.lifeDioramaRoot = root;
+    const existing = this.lifeSceneGroups.get(sceneName);
+    if (existing) return existing;
+
+    if (!this.lifeDioramaRoot) {
+      const root = new THREE.Group();
+      root.visible = false;
+      this.scene.add(root);
+      this.lifeDioramaRoot = root;
+    }
 
     const floorFor = (group, color, size = [22, 22]) => {
       const floor = new THREE.Mesh(
@@ -931,12 +1126,14 @@ export class Renderer3D {
       color,
       materialOptions = {},
     ) => {
-      const material = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.9,
-        side: THREE.DoubleSide,
-        ...materialOptions,
-      });
+      // Life-scene prop boxes are procedural scenery too. Use the tier-aware
+      // material factory instead of forcing expensive, double-sided Standard
+      // shaders for every box on phones. Desktop keeps the former Standard path.
+      const material = this.material(color, materialOptions.roughness ?? 0.9);
+      for (const [key, value] of Object.entries(materialOptions)) {
+        if (key === 'color') material.color.set(value);
+        else material[key] = value;
+      }
 
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(...dimensions),
@@ -949,31 +1146,21 @@ export class Renderer3D {
       return mesh;
     };
 
-    for (const name of [
-      'bedroom',
-      'household',
-      'street',
-      'breakfast',
-      'walk',
-      'school',
-    ]) {
-      const group = new THREE.Group();
+    const group = new THREE.Group();
+    group.visible = false;
+    this.lifeDioramaRoot.add(group);
+    this.lifeSceneGroups.set(sceneName, group);
 
-      group.visible = false;
-      root.add(group);
-      this.lifeSceneGroups.set(name, group);
+    floorFor(
+      group,
+      ['bedroom', 'household'].includes(sceneName)
+        ? 0x9d7e5e
+        : 0xb7a17b,
+      [24, 24],
+    );
 
-      floorFor(
-        group,
-        ['bedroom', 'household'].includes(name)
-          ? 0x9d7e5e
-          : 0xb7a17b,
-        [24, 24],
-      );
-    }
-
-    {
-      const g = this.lifeSceneGroups.get('bedroom');
+    if (sceneName === 'bedroom') {
+      const g = group;
 
       box(g, [18, 4.8, 0.28], [0, 2.35, -7.4], 0xd1b68a);
       box(g, [0.28, 4.8, 13.8], [-8.9, 2.35, -0.3], 0xc8aa7f);
@@ -995,8 +1182,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('household');
+    if (sceneName === 'household') {
+      const g = group;
 
       localWall(g, -4.7, -6.0, 0xb99c71);
       localWall(g, 3.5, -6.3, 0xd2b98b);
@@ -1045,8 +1232,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('street');
+    if (sceneName === 'street') {
+      const g = group;
 
       box(g, [24, 0.12, 7.5], [0, 0, -1.6], 0x555957);
       box(g, [24, 0.08, 8.5], [0, -0.04, 6.5], 0xb3a07e);
@@ -1094,8 +1281,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('breakfast');
+    if (sceneName === 'breakfast') {
+      const g = group;
 
       localWall(g, -6.8, -6.2, 0xc6a57a);
 
@@ -1158,8 +1345,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('walk');
+    if (sceneName === 'walk') {
+      const g = group;
 
       box(g, [10.5, 0.08, 22], [-5.6, 0, -0.3], 0xc5b18d);
       box(g, [8.2, 0.12, 22], [5.2, -0.01, -0.3], 0x535957);
@@ -1197,8 +1384,8 @@ export class Renderer3D {
       );
     }
 
-    {
-      const g = this.lifeSceneGroups.get('school');
+    if (sceneName === 'school') {
+      const g = group;
 
       box(g, [19, 3.6, 0.34], [0, 1.8, -7.6], 0xc7b18a);
       box(g, [4.3, 2.5, 0.18], [-0.3, 1.3, -7.34], 0x765536);
@@ -1234,12 +1421,22 @@ export class Renderer3D {
         { scale: 0.78, fallback: 'vehicle' },
       );
     }
+
+    return group;
   }
 
   upgradeLifeSceneAssets() {
     if (!this.models || !this.lifeAssetSlots.length) return;
 
+    // Only the currently displayed diorama can affect the screen. Once scene
+    // assets have been visited, skip scanning all previously built scenes on
+    // every frame. Phones also throttle model-promotion checks to 3.3 Hz.
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    if (this.mobile && now < this._nextLifeSceneAssetUpgradeAt) return;
+    if (this.mobile) this._nextLifeSceneAssetUpgradeAt = now + 300;
+
     for (const slot of this.lifeAssetSlots) {
+      if (slot.sceneName !== this.lifeScene) continue;
       if (slot.replaced || !this.models.cache.has(slot.key)) continue;
 
       const model = this.models.getInstance(slot.key);
@@ -1400,11 +1597,118 @@ export class Renderer3D {
     this.world.add(sign);
   }
 
-  buildSidewalkLife() {
-    const count = this.mobile ? 8 : 22;
+  /**
+   * Merge the static parts of a procedural phone pedestrian into one mesh.
+   * Arms stay as separate pivoted meshes so the existing walking animation
+   * still works. This is intentionally mobile-only; desktop detail is intact.
+   *
+   * The source parts are procedural, opaque, untextured meshes that already
+   * use this renderer's mobile Lambert material path. Vertex colours preserve
+   * each part's original material colour after the parts share one draw call.
+   */
+  mergeMobilePedestrianStaticParts(group) {
+    if (!this.mobile || !group?.children?.length) return;
 
-    this.pedestrianLoopDistance =
-      count * (this.mobile ? 23 : 12);
+    const staticParts = group.children.filter((child) =>
+      child.isMesh && child.geometry?.getAttribute?.('position') && child.material,
+    );
+    if (staticParts.length < 2) return;
+
+    const positions = [];
+    const normals = [];
+    const colors = [];
+    const oldMaterials = new Set();
+    const retainedMaterials = new Set();
+    const staticPartSet = new Set(staticParts);
+
+    // Arm pivots survive as children of the actor. Keep their shared clothing
+    // materials alive while disposing materials used only by merged parts.
+    for (const child of group.children) {
+      if (staticPartSet.has(child)) continue;
+      child.traverse?.((object) => {
+        const list = Array.isArray(object.material)
+          ? object.material
+          : object.material
+            ? [object.material]
+            : [];
+        for (const material of list) {
+          if (material) retainedMaterials.add(material);
+        }
+      });
+    }
+
+    for (const part of staticParts) {
+      part.updateMatrix();
+      const sourceGeometry = part.geometry.index
+        ? part.geometry.toNonIndexed()
+        : part.geometry.clone();
+      sourceGeometry.applyMatrix4(part.matrix);
+
+      let position = sourceGeometry.getAttribute('position');
+      let normal = sourceGeometry.getAttribute('normal');
+      if (!normal) {
+        sourceGeometry.computeVertexNormals();
+        normal = sourceGeometry.getAttribute('normal');
+      }
+
+      const partMaterial = Array.isArray(part.material)
+        ? part.material[0]
+        : part.material;
+      const color = partMaterial?.color || new THREE.Color(0xffffff);
+
+      for (let index = 0; index < position.count; index += 1) {
+        positions.push(position.getX(index), position.getY(index), position.getZ(index));
+        normals.push(normal.getX(index), normal.getY(index), normal.getZ(index));
+        colors.push(color.r, color.g, color.b);
+      }
+
+      const materialList = Array.isArray(part.material)
+        ? part.material
+        : [part.material];
+      for (const material of materialList) {
+        if (material) oldMaterials.add(material);
+      }
+
+      // The original geometries are owned by these freshly constructed
+      // procedural pedestrians, not by the shared GLB cache.
+      part.geometry.dispose();
+      group.remove(part);
+      sourceGeometry.dispose();
+    }
+
+    if (!positions.length) return;
+
+    const mergedGeometry = new THREE.BufferGeometry();
+    mergedGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    mergedGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    mergedGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    mergedGeometry.computeBoundingBox();
+    mergedGeometry.computeBoundingSphere();
+
+    const mergedMaterial = new THREE.MeshLambertMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      side: THREE.FrontSide,
+    });
+    const mergedMesh = new THREE.Mesh(mergedGeometry, mergedMaterial);
+    mergedMesh.name = 'KANO_MOBILE_PEDESTRIAN_STATIC_PARTS';
+    mergedMesh.frustumCulled = true;
+    group.add(mergedMesh);
+
+    for (const material of oldMaterials) {
+      if (!retainedMaterials.has(material)) material.dispose?.();
+    }
+  }
+
+  buildSidewalkLife() {
+    const count = this.mobile
+      ? (this.mobileTier === 'low' ? 10 : 12)
+      : 22;
+    const pedestrianSpacing = this.mobile
+      ? (this.mobileTier === 'low' ? 19 : 16)
+      : 12;
+
+    this.pedestrianLoopDistance = count * pedestrianSpacing;
 
     const clothes = [
       0xf1e7ce,
@@ -1521,9 +1825,14 @@ export class Renderer3D {
         group.add(basket);
       }
 
+      // Static clothing/body/accessory parts become a single vertex-coloured
+      // mesh on phones. The two animated arm pivots remain independent, reducing
+      // each procedural pedestrian from roughly 5–8 draw calls to three.
+      this.mergeMobilePedestrianStaticParts(group);
+
       group.scale.setScalar(index % 3 === 0 ? 0.94 : 0.82);
 
-      const z = -5 - index * (this.mobile ? 23 : 12);
+      const z = -5 - index * pedestrianSpacing;
 
       group.position.set(
         side * (7.0 + (index % 3) * 0.45),
@@ -1594,7 +1903,7 @@ export class Renderer3D {
       'stopSign',
     ];
 
-    const count = this.mobile ? 8 : 16;
+    const count = this.mobile ? 5 : 10;
 
     const colors = [
       0x168c70,
@@ -1615,9 +1924,9 @@ export class Renderer3D {
       );
 
       const z =
-        -18 -
+        -35 -
         Math.floor(index / 2) *
-          (this.mobile ? 61 : 30.5);
+          (this.mobile ? 75 : 44);
 
       const group = new THREE.Group();
       const postMaterial = this.material(0x554637);
@@ -1805,11 +2114,6 @@ export class Renderer3D {
     }
   }
 
-  /**
-   * Adds the Kano roadside cues visible in the reference set: neem shade trees
-   * and black/white concrete edge dividers. These are scenery, not collision
-   * objects, and stay outside the three-lane driving corridor.
-   */
   buildKanoRoadsideSet() {
     const treeCountPerSide = this.mobile ? 5 : 9;
     const treeSpacing = this.mobile ? 46 : 26;
@@ -2138,8 +2442,20 @@ export class Renderer3D {
     group.userData.kanoVehicleFallback = 'policePickup';
   }
 
+  shouldRunMobilePromotionCheck(kind, now = (globalThis.performance?.now?.() ?? Date.now())) {
+    if (!this.mobile) return true;
+
+    const deadlineField = kind === 'pedestrians'
+      ? '_nextMobilePedestrianUpgradeAt'
+      : '_nextMobileWorldAssetUpgradeAt';
+
+    if (now < this[deadlineField]) return false;
+    this[deadlineField] = now + 300;
+    return true;
+  }
+
   upgradeWorldAssets() {
-    if (!this.models) return;
+    if (!this.models || !this.shouldRunMobilePromotionCheck('world')) return;
 
     const activeBuildingSlots = this.mobile
       ? this.buildingSlots.slice(0, 2)
@@ -2176,7 +2492,7 @@ export class Renderer3D {
       slot.replaced = true;
     }
 
-    if (this.models.cache.has('flyover')) {
+    if (!this.mobile && this.models.cache.has('flyover')) {
       for (let index = 0; index < this.flyovers.length; index += 1) {
         const fallback = this.flyovers[index];
 
@@ -2265,6 +2581,7 @@ export class Renderer3D {
     }
 
     for (const slot of this.roadProps) {
+      if (this.mobile && !['marketStall', 'busStop'].includes(slot.key)) continue;
       if (slot.replaced || !this.models.cache.has(slot.key)) continue;
 
       const model = this.models.getInstance(slot.key);
@@ -2291,7 +2608,11 @@ export class Renderer3D {
   }
 
   upgradePedestrians() {
-    if (!this.models || !this.pedestrians.length) return;
+    if (
+      !this.models ||
+      !this.pedestrians.length ||
+      !this.shouldRunMobilePromotionCheck('pedestrians')
+    ) return;
 
     const characterKeys = [
       'pedestrianWoman',
@@ -2301,8 +2622,19 @@ export class Renderer3D {
       'passenger',
     ];
 
+    // Full GLB walkers are limited because KanoInteractionReliability also
+    // upgrades crowd actors. Most roadside walkers remain animated procedural
+    // characters, avoiding a large pile of duplicated skinned meshes on phones.
+    let mobileModelledCount = this.mobile
+      ? this.pedestrians.reduce((count, pedestrian) => count + (pedestrian.usingModel ? 1 : 0), 0)
+      : 0;
+    const mobilePedestrianBudget = this.mobile
+      ? (this.mobileTier === 'high' ? 3 : this.mobileTier === 'mid' ? 2 : 1)
+      : Infinity;
+
     for (const pedestrian of this.pedestrians) {
       if (pedestrian.usingModel) continue;
+      if (this.mobile && mobileModelledCount >= mobilePedestrianBudget) continue;
 
       const modelKey =
         characterKeys[pedestrian.index % characterKeys.length];
@@ -2325,6 +2657,7 @@ export class Renderer3D {
 
       pedestrian.actor = model;
       pedestrian.usingModel = true;
+      if (this.mobile) mobileModelledCount += 1;
     }
   }
 
@@ -2792,36 +3125,430 @@ export class Renderer3D {
     this.camera.updateProjectionMatrix();
   }
 
-  makeTrafficActor(vehicle) {
+  /**
+   * Lightweight traffic-only Adaidaita Sahu. The player keeps the full keke;
+   * this fallback uses shared low-poly geometry so a busy road does not create
+   * dozens of separately tessellated meshes for every background keke.
+   */
+  makeTrafficKeke() {
+    // Background mobile keke traffic is procedural, so combine its small body
+    // parts into one vertex-coloured geometry. The previous version produced
+    // twelve separate Mesh objects (and therefore up to twelve draw calls) for
+    // every fallback keke. Keep the shape and colours, but render it as one Mesh.
+    if (!this._mobileTrafficKekeGeometry?.merged) {
+      const parts = [
+        { geometry: new THREE.BoxGeometry(1.12, 0.48, 1.55), color: 0xf1c52f, position: [0, 0.67, 0.05] },
+        { geometry: new THREE.BoxGeometry(0.82, 0.25, 0.38), color: 0xdba91f, position: [0, 0.68, -0.83] },
+        { geometry: new THREE.BoxGeometry(1.12, 0.10, 1.18), color: 0x205b40, position: [0, 1.48, 0.08] },
+        { geometry: new THREE.BoxGeometry(0.78, 0.42, 0.035), color: 0x8cc9d4, position: [0, 1.15, -0.49] },
+        { geometry: new THREE.BoxGeometry(0.82, 0.07, 0.08), color: 0x333b3d, position: [0, 0.43, -1.02] },
+      ];
+
+      for (const x of [-0.49, 0.49]) {
+        for (const z of [-0.46, 0.59]) {
+          parts.push({
+            geometry: new THREE.BoxGeometry(0.055, 0.66, 0.055),
+            color: 0x183b30,
+            position: [x, 1.10, z],
+          });
+        }
+      }
+
+      for (const [x, z] of [[0, -0.68], [-0.55, 0.48], [0.55, 0.48]]) {
+        parts.push({
+          geometry: new THREE.CylinderGeometry(0.19, 0.19, 0.11, 8),
+          color: 0x15191b,
+          position: [x, 0.20, z],
+          rotation: [0, 0, Math.PI / 2],
+        });
+      }
+
+      const positions = [];
+      const normals = [];
+      const colors = [];
+      const translation = new THREE.Vector3();
+      const rotation = new THREE.Euler();
+      const scale = new THREE.Vector3(1, 1, 1);
+      const quaternion = new THREE.Quaternion();
+      const matrix = new THREE.Matrix4();
+
+      for (const part of parts) {
+        const original = part.geometry;
+        const geometry = original.index ? original.toNonIndexed() : original;
+        translation.set(...part.position);
+        rotation.set(...(part.rotation || [0, 0, 0]));
+        quaternion.setFromEuler(rotation);
+        matrix.compose(translation, quaternion, scale);
+        geometry.applyMatrix4(matrix);
+
+        if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+        const positionAttribute = geometry.getAttribute('position');
+        const normalAttribute = geometry.getAttribute('normal');
+        const color = new THREE.Color(part.color);
+
+        for (let index = 0; index < positionAttribute.count; index += 1) {
+          positions.push(
+            positionAttribute.getX(index),
+            positionAttribute.getY(index),
+            positionAttribute.getZ(index),
+          );
+          normals.push(
+            normalAttribute.getX(index),
+            normalAttribute.getY(index),
+            normalAttribute.getZ(index),
+          );
+          colors.push(color.r, color.g, color.b);
+        }
+
+        if (geometry !== original) geometry.dispose();
+        original.dispose();
+      }
+
+      const merged = new THREE.BufferGeometry();
+      merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      merged.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      merged.computeBoundingSphere();
+      this._mobileTrafficKekeGeometry = { merged };
+    }
+
+    const keke = new THREE.Mesh(
+      this._mobileTrafficKekeGeometry.merged,
+      new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+    );
+    keke.name = 'KANO_LIGHTWEIGHT_TRAFFIC_KEKE';
+    keke.castShadow = false;
+    keke.receiveShadow = false;
+    // disposeSceneTree skips renderer-shared geometry but still disposes this
+    // actor's per-instance material when the traffic vehicle leaves the road.
+    keke.userData.sharedGeometry = true;
+    keke.userData.simplifiedTrafficKeke = true;
+    return keke;
+  }
+
+  /**
+   * Compact one-mesh mobile fallback for background traffic.
+   *
+   * The detailed desktop fallback below remains untouched. On phones, non-GLB
+   * cars, buses, trucks, emergency vehicles and motorcycles use a small cached
+   * vertex-coloured mesh. Each moving vehicle therefore uses one draw call
+   * rather than a dozen separately-materialed primitive meshes. Gameplay
+   * traffic, lane positions and collision state remain owned by game.js.
+   */
+  makeMobileLiteTrafficVehicle(type) {
+    const cache = this._mobileTrafficVehicleGeometry;
+    let geometry = cache.get(type);
+
+    if (!geometry) {
+      const parts = [];
+      const add = (shape, color, position, rotation = [0, 0, 0], scale = [1, 1, 1]) => {
+        parts.push({ shape, color, position, rotation, scale });
+      };
+      const box = (size, color, position, rotation, scale) =>
+        add(new THREE.BoxGeometry(...size), color, position, rotation, scale);
+      const sphere = (radius, color, position, scale = [1, 1, 1], segments = [10, 7]) =>
+        add(new THREE.SphereGeometry(radius, segments[0], segments[1]), color, position, [0, 0, 0], scale);
+      const wheel = (x, z, radius = 0.22, y = 0.27) => {
+        add(
+          new THREE.CylinderGeometry(radius, radius, 0.12, 8),
+          0x15191b,
+          [x, y, z],
+          [0, 0, Math.PI / 2],
+        );
+        add(
+          new THREE.CylinderGeometry(radius * 0.38, radius * 0.38, 0.135, 8),
+          0x9aa3a5,
+          [x, y, z],
+          [0, 0, Math.PI / 2],
+        );
+      };
+      const lamp = (x, y, z, color, sx = 0.12, sy = 0.075, sz = 0.055) =>
+        sphere(1, color, [x, y, z], [sx, sy, sz], [6, 5]);
+
+      const bodyColors = {
+        car: 0x8f9fa7,
+        taxi: 0xe8c64b,
+        suv: 0x37465a,
+        motorcycle: 0xc84a3b,
+        police: 0xe8edf3,
+        karota: 0x328ac2,
+        truck: 0x9e5544,
+        bus: 0xd4ad46,
+        ambulance: 0xe8eceb,
+      };
+      const bodyColor = bodyColors[type] || 0xd6dce1;
+      const glass = 0x5e8490;
+      const rubber = 0x15191b;
+      const trim = 0x39434a;
+      const frontLight = 0xf6e6a9;
+      const rearLight = 0xb93631;
+
+      if (type === 'motorcycle') {
+        // Side-profile wheels and frame keep the motorcycle silhouette visible
+        // at mobile scale without a torus, axle, tank, rider and helmet mesh each.
+        wheel(0, -0.50, 0.215, 0.25);
+        wheel(0, 0.50, 0.215, 0.25);
+        add(new THREE.CylinderGeometry(0.045, 0.055, 0.78, 6), bodyColor, [0, 0.49, 0.00], [Math.PI / 2.9, 0, 0]);
+        sphere(0.25, bodyColor, [0, 0.66, -0.08], [0.72, 0.58, 1.08], [8, 6]);
+        box([0.25, 0.09, 0.42], 0x1d272c, [0, 0.71, 0.29]);
+        box([0.28, 0.42, 0.24], 0x2b5141, [0, 1.02, 0.22], [-0.18, 0, 0]);
+        sphere(0.15, 0x2d363b, [0, 1.36, -0.04], [1, 0.96, 0.96], [8, 6]);
+        // Rear passenger gives the mobile one-mesh bike the two-rider achaba silhouette.
+        box([0.26, 0.35, 0.22], 0x84513a, [0, 0.97, 0.48], [-0.13, 0, 0]);
+        sphere(0.125, 0x74462f, [0, 1.25, 0.47], [1, 1, 1], [8, 6]);
+        sphere(0.13, 0xdbcba5, [0, 1.35, 0.47], [1, 0.28, 1], [8, 5]);
+        box([0.48, 0.045, 0.06], trim, [0, 0.87, -0.43]);
+        lamp(0, 0.76, -0.54, frontLight, 0.09, 0.08, 0.06);
+      } else if (type === 'police') {
+        // Single-mesh Kano police pickup: open bed, cab, side stripe and lightbar.
+        const white = 0xe7edf0;
+        const policeBlue = 0x1269a7;
+        box([1.70, 0.45, 3.45], bodyColor, [0, 0.55, 0.02]);
+        box([1.62, 0.22, 0.86], white, [0, 0.82, -1.15]);
+        box([1.52, 0.78, 1.42], white, [0, 1.02, -0.39]);
+        box([1.24, 0.34, 0.035], glass, [0, 1.18, -1.115]);
+        for (const side of [-1, 1]) {
+          box([0.035, 0.34, 0.52], glass, [side * 0.785, 1.18, -0.38]);
+          box([0.055, 0.20, 1.33], policeBlue, [side * 0.86, 0.70, 0.03]);
+          box([0.10, 0.35, 1.06], white, [side * 0.77, 0.86, 1.02]);
+        }
+        box([1.43, 0.10, 1.08], trim, [0, 0.73, 1.00]);
+        box([0.72, 0.08, 0.18], trim, [0, 1.43, -0.37]);
+        box([0.26, 0.11, 0.15], 0x227bff, [-0.22, 1.50, -0.37]);
+        box([0.26, 0.11, 0.15], 0xff3939, [0.22, 1.50, -0.37]);
+        for (const x of [-0.84, 0.84]) {
+          for (const z of [-1.16, 1.16]) wheel(x, z, 0.30, 0.28);
+        }
+        lamp(-0.48, 0.72, -1.58, frontLight, 0.10, 0.07, 0.05);
+        lamp(0.48, 0.72, -1.58, frontLight, 0.10, 0.07, 0.05);
+        lamp(-0.62, 0.67, 1.77, rearLight, 0.08, 0.07, 0.05);
+        lamp(0.62, 0.67, 1.77, rearLight, 0.08, 0.07, 0.05);
+      } else if (['truck', 'bus', 'karota', 'ambulance'].includes(type)) {
+
+        const truck = type === 'truck';
+        const bus = type === 'bus';
+        const width = truck ? 1.86 : bus ? 1.72 : 1.56;
+        const length = truck ? 4.0 : bus ? 3.45 : type === 'ambulance' ? 3.05 : 2.85;
+        const height = truck ? 1.10 : bus ? 1.32 : 1.05;
+
+        if (truck) {
+          box([width, 0.44, length * 0.9], bodyColor, [0, 0.52, 0.05]);
+          box([width * 0.93, 1.12, length * 0.53], 0xb7a18a, [0, 1.30, 0.47]);
+          box([width * 0.90, 0.78, 0.88], bodyColor, [0, 0.88, -1.28]);
+          box([width * 0.73, 0.31, 0.035], glass, [0, 1.02, -1.73]);
+          for (const x of [-width * 0.5, width * 0.5]) {
+            for (const z of [-1.38, -0.48, 1.35]) wheel(x, z, 0.27, 0.29);
+          }
+        } else {
+          box([width, height, length], bodyColor, [0, 0.88, 0.02]);
+          const windowY = bus ? 1.10 : 0.98;
+          const windowH = bus ? 0.42 : 0.30;
+          for (const x of [-width * 0.505, width * 0.505]) {
+            if (bus) {
+              for (let windowIndex = 0; windowIndex < 4; windowIndex += 1) {
+                const windowZ = -0.72 + windowIndex * 0.48;
+                box([0.035, 0.39, 0.40], glass, [x, windowY, windowZ]);
+                box([0.045, 0.45, 0.055], 0xe8d9ae, [x + Math.sign(x) * 0.012, windowY, windowZ + 0.23]);
+              }
+              box([0.045, 0.15, length * 0.82], 0x188354, [x + Math.sign(x) * 0.012, 0.63, 0.02]);
+            } else {
+              box([0.035, windowH, length * 0.60], glass, [x, windowY, 0.02]);
+            }
+          }
+          if (bus) box([width * 0.94, 0.08, length * 0.82], 0xe8d9ae, [0, 1.58, 0.12]);
+          box([width * 0.74, bus ? 0.37 : 0.31, 0.035], glass, [0, windowY, -length * 0.505]);
+          box([width * 0.70, 0.24, 0.035], glass, [0, windowY, length * 0.505]);
+          if (type === 'ambulance') {
+            box([0.055, 0.25, length * 0.48], 0xc83e37, [width * 0.51, 0.82, 0.02]);
+            box([0.055, 0.25, length * 0.48], 0xc83e37, [-width * 0.51, 0.82, 0.02]);
+            box([0.06, 0.28, 0.06], 0xc83e37, [0, 1.38, 0.02]);
+            box([0.19, 0.06, 0.06], 0xc83e37, [0, 1.38, 0.02]);
+          }
+          const wheelZ = bus ? [-1.08, 1.06] : [-0.95, 0.95];
+          for (const x of [-width * 0.49, width * 0.49]) {
+            for (const z of wheelZ) wheel(x, z, 0.245, 0.28);
+          }
+        }
+        if (type === 'karota') {
+          box([width * 0.90, 0.12, length * 0.66], 0x195d97, [0, 0.82, 0.02]);
+        }
+        if (type === 'bus') {
+          box([width * 0.86, 0.10, length * 0.68], 0x8c6c25, [0, 0.46, 0.02]);
+        }
+        if (type === 'truck') {
+          box([width * 0.86, 0.07, 0.12], 0xbfc2c0, [0, 0.30, -length * 0.48]);
+        }
+        lamp(-width * 0.31, 0.64, -length * 0.51, frontLight);
+        lamp(width * 0.31, 0.64, -length * 0.51, frontLight);
+        lamp(-width * 0.32, 0.63, length * 0.51, rearLight);
+        lamp(width * 0.32, 0.63, length * 0.51, rearLight);
+      } else {
+        const suv = type === 'suv';
+        const width = suv ? 1.72 : 1.52;
+        const length = suv ? 3.02 : 2.72;
+        const height = suv ? 0.53 : 0.40;
+        box([width, height, length * 0.89], bodyColor, [0, 0.50, 0.05]);
+        box([width * 0.90, 0.18, length * 0.25], bodyColor, [0, 0.63, -length * 0.31]);
+        box([width * 0.71, suv ? 0.49 : 0.41, length * 0.45], bodyColor, [0, suv ? 0.89 : 0.82, 0.01]);
+        box([width * 0.64, suv ? 0.27 : 0.23, 0.035], glass, [0, suv ? 0.95 : 0.87, -length * 0.22]);
+        box([width * 0.62, suv ? 0.24 : 0.21, 0.035], glass, [0, suv ? 0.94 : 0.86, length * 0.24]);
+        for (const x of [-width * 0.365, width * 0.365]) {
+          box([0.035, 0.22, length * 0.29], glass, [x, suv ? 0.92 : 0.84, 0.03]);
+        }
+        for (const x of [-width * 0.47, width * 0.47]) {
+          for (const z of [-length * 0.29, length * 0.29]) wheel(x, z, suv ? 0.27 : 0.235, 0.27);
+        }
+        box([width * 0.92, 0.10, 0.13], 0x9aa3a5, [0, 0.31, -length * 0.49]);
+        box([width * 0.92, 0.10, 0.13], 0x9aa3a5, [0, 0.31, length * 0.49]);
+        lamp(-width * 0.34, 0.55, -length * 0.47, frontLight);
+        lamp(width * 0.34, 0.55, -length * 0.47, frontLight);
+        lamp(-width * 0.34, 0.55, length * 0.47, rearLight);
+        lamp(width * 0.34, 0.55, length * 0.47, rearLight);
+        if (type === 'taxi') {
+          box([0.36, 0.12, 0.22], 0xf1e4bd, [0, 1.13, -0.02]);
+        }
+        if (type === 'police') {
+          box([width * 0.035, 0.10, length * 0.70], 0x2c68ad, [width * 0.51, 0.53, 0.02]);
+          box([width * 0.035, 0.10, length * 0.70], 0x2c68ad, [-width * 0.51, 0.53, 0.02]);
+          box([0.28, 0.07, 0.12], 0x3b78c1, [0, 1.15, 0.01]);
+        }
+      }
+
+      const positions = [];
+      const colors = [];
+      const translation = new THREE.Vector3();
+      const rotation = new THREE.Euler();
+      const scale = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const matrix = new THREE.Matrix4();
+
+      for (const part of parts) {
+        const original = part.shape;
+        const transformed = original.index ? original.toNonIndexed() : original;
+        translation.set(...part.position);
+        rotation.set(...part.rotation);
+        scale.set(...part.scale);
+        quaternion.setFromEuler(rotation);
+        matrix.compose(translation, quaternion, scale);
+        transformed.applyMatrix4(matrix);
+        transformed.computeVertexNormals();
+
+        const positionAttribute = transformed.getAttribute('position');
+        const color = new THREE.Color(part.color);
+        for (let index = 0; index < positionAttribute.count; index += 1) {
+          positions.push(
+            positionAttribute.getX(index),
+            positionAttribute.getY(index),
+            positionAttribute.getZ(index),
+          );
+          colors.push(color.r, color.g, color.b);
+        }
+
+        transformed.dispose();
+        if (transformed !== original) original.dispose();
+      }
+
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
+      cache.set(type, geometry);
+    }
+
+    const actor = new THREE.Mesh(
+      geometry,
+      new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+    );
+    actor.name = `KANO_LITE_TRAFFIC_${String(type).toUpperCase()}`;
+    actor.castShadow = false;
+    actor.receiveShadow = false;
+    actor.userData.sharedGeometry = true;
+    actor.userData.simplifiedTrafficVehicle = true;
+    actor.userData.vehicleType = type;
+    actor.userData.fallback = true;
+    return actor;
+  }
+
+  /**
+   * Return one InstancedMesh for a mobile fallback traffic type.
+   * Geometry is shared with the existing lightweight procedural vehicle
+   * builder; each visible vehicle is represented by one instance matrix rather
+   * than a separate Three.js Object3D and draw call.
+   */
+  getMobileTrafficBatch(type, requiredCount = 1) {
+    const existing = this._mobileTrafficBatches.get(type);
+    if (existing && existing.capacity >= requiredCount) return existing;
+
+    let geometry = existing?.mesh.geometry;
+    let material = existing?.mesh.material;
+
+    if (existing) {
+      existing.mesh.parent?.remove(existing.mesh);
+      existing.mesh.dispose?.();
+    } else {
+      // Calling the established builders creates or retrieves the canonical
+      // cached geometry and its compatible vertex-colour material.
+      const sample = type === 'keke'
+        ? this.makeTrafficKeke()
+        : this.makeMobileLiteTrafficVehicle(type);
+      geometry = sample.geometry;
+      material = sample.material;
+    }
+
+    const capacity = Math.max(
+      16,
+      requiredCount,
+      existing ? existing.capacity * 2 : 0,
+    );
+    const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+    mesh.name = `KANO_MOBILE_TRAFFIC_BATCH_${String(type).toUpperCase()}`;
+    mesh.count = 0;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    // This batch is populated only with nearby traffic. Disable aggregate
+    // frustum culling because per-instance matrices change every driving tick.
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.userData.sharedGeometry = true;
+    mesh.userData.mobileTrafficBatch = true;
+    mesh.userData.vehicleType = type;
+    this.world.add(mesh);
+
+    const batch = { mesh, capacity };
+    this._mobileTrafficBatches.set(type, batch);
+    return batch;
+  }
+
+  makeTrafficActor(vehicle, { allowGLB = true } = {}) {
     const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
-    // Inspect the cached template before cloning. Disposing a rejected clone can
-    // also dispose shared GLB geometry used by the model cache.
+    // Inspect the cached template before cloning; rejected clones can share GLB resources.
     const cachedModelPath = String(
       this.models?.cache?.get(key)?.userData?.modelPath || '',
     ).toLowerCase();
-    const forceKanoPolicePickup =
-      vehicle.type === 'police' &&
-      cachedModelPath &&
+    const forceKanoPolicePickup = vehicle.type === 'police' && cachedModelPath &&
       !/hilux|pickup|ram_2500/.test(cachedModelPath);
-    const forceKanoHiaceFallback =
-      vehicle.type === 'bus' &&
-      cachedModelPath &&
+    const forceKanoHiaceFallback = vehicle.type === 'bus' && cachedModelPath &&
       !/hiace|minibus|van/.test(cachedModelPath);
-    const model = forceKanoPolicePickup || forceKanoHiaceFallback
-      ? null
-      : this.models?.getInstance(key);
-    const modelPath = String(model?.userData?.modelPath || '').toLowerCase();
+    const model = allowGLB && !forceKanoPolicePickup && !forceKanoHiaceFallback
+      ? this.models?.getInstance(key)
+      : null;
 
     if (model) {
       model.userData.fallback = false;
-      model.userData.vehicleType = vehicle.type;
       return model;
     }
 
     if (vehicle.type === 'keke') {
-      const keke = this.makeKeke();
+      const keke = this.mobile ? this.makeTrafficKeke() : this.makeKeke();
       keke.userData.fallback = true;
       return keke;
+    }
+
+    // Background traffic on phones gets a one-mesh representation. Desktop
+    // retains the multi-part detailed procedural models below.
+    if (this.mobile) {
+      return this.makeMobileLiteTrafficVehicle(vehicle.type);
     }
 
     const group = new THREE.Group();
@@ -2949,6 +3676,7 @@ export class Renderer3D {
         new THREE.CapsuleGeometry(0.19, 0.47, 4, 8),
         this.material(0x2b5141),
       );
+      rider.name = 'ACHABA_FRONT_RIDER_BODY';
 
       rider.position.set(0, 1.13, 0.22);
       rider.rotation.x = -0.18;
@@ -2959,6 +3687,7 @@ export class Renderer3D {
         this.material(0x2d363b),
       );
 
+      helmet.name = 'ACHABA_FRONT_RIDER_HELMET';
       helmet.position.set(0, 1.48, -0.05);
       group.add(helmet);
 
@@ -3202,7 +3931,6 @@ export class Renderer3D {
 
     group.userData.fallback = true;
     group.userData.vehicleType = vehicle.type;
-    if (vehicle.type === 'motorcycle') group.userData.kanoSingleRider = true;
     if (vehicle.type === 'police') group.userData.kanoVehicleFallback = 'policePickup';
     if (vehicle.type === 'bus') group.userData.kanoVehicleFallback = 'hiaceBus';
 
@@ -3293,7 +4021,8 @@ export class Renderer3D {
   }
 
   syncZones(state) {
-    const activeIds = new Set();
+    const activeIds = this._activeZoneIds;
+    activeIds.clear();
 
     for (const zone of state.zones || []) {
       activeIds.add(zone.id);
@@ -3318,14 +4047,20 @@ export class Renderer3D {
               ? 0.68
               : 0.98;
 
+          // General Checkpoint is a long loading bay for group passengers;
+          // ordinary roadside stops keep their compact circular marker.
+          const checkpointBay = Boolean(zone.hub) && zone.type === 'pickup';
+          const padMaterial = this.material(
+            colors[zone.type] || 0x353b42,
+          );
+          padMaterial.transparent = true;
+          padMaterial.opacity = 0.78;
+
           const pad = new THREE.Mesh(
-            new THREE.CylinderGeometry(radius, radius, 0.04, 20),
-            new THREE.MeshStandardMaterial({
-              color: colors[zone.type] || 0x353b42,
-              side: THREE.DoubleSide,
-              transparent: true,
-              opacity: 0.78,
-            }),
+            checkpointBay
+              ? new THREE.BoxGeometry(2.6, 0.04, 5.2)
+              : new THREE.CylinderGeometry(radius, radius, 0.04, 20),
+            padMaterial,
           );
 
           pad.position.y = 0.035;
@@ -3500,7 +4235,7 @@ export class Renderer3D {
       const markerX =
         zone.type === 'pothole'
           ? (zone.lane - 1) * 3
-          : (zone.side || (zone.lane === 0 ? -1 : 1)) * 6.7;
+          : (zone.side || (zone.lane === 0 ? -1 : 1)) * 4.55;
 
       // Zone depth remains controlled by game.js.
       // In reverse gear, zone.depth must increase in game.js as
@@ -3522,71 +4257,184 @@ export class Renderer3D {
   }
 
   syncTraffic(state) {
-    const activeIds = new Set();
+    const traffic = Array.isArray(state.traffic) ? state.traffic : [];
+    const activeIds = this._activeTrafficIds;
+    activeIds.clear();
+    for (const vehicle of traffic) activeIds.add(vehicle.id);
 
-    for (const vehicle of state.traffic || []) {
-      activeIds.add(vehicle.id);
+    // Reuse the same small arrays while driving to avoid one collection per
+    // vehicle on every frame. Non-instanced GLB actors remain keyed by ID.
+    const fallbackByType = this._mobileFallbackTrafficByType;
+    for (const list of fallbackByType.values()) list.length = 0;
+
+    let mobileGlbIds = null;
+    if (this.mobile) {
+      for (const id of this._mobileGlbTrafficIds) {
+        if (!activeIds.has(id)) this._mobileGlbTrafficIds.delete(id);
+      }
+      const budget = getMobileTrafficModelBudget(this.mobileTier);
+      let freeSlots = Math.max(0, budget - this._mobileGlbTrafficIds.size);
+      if (freeSlots > 0 && this.models?.cache?.size) {
+        // Avoid filter/filter/sort chains that allocate two temporary arrays
+        // on each driving frame while the model budget has free slots.
+        const candidates = this._mobileTrafficCandidateScratch;
+        candidates.length = 0;
+        for (const vehicle of traffic) {
+          if (this._mobileGlbTrafficIds.has(vehicle.id)) continue;
+          const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
+          if (!this.models.cache.has(key)) continue;
+          candidates.push(vehicle);
+        }
+        candidates.sort((a, b) =>
+          Math.abs(Number(a.depth) || 0) - Math.abs(Number(b.depth) || 0),
+        );
+        for (const vehicle of candidates) {
+          if (freeSlots <= 0) break;
+          this._mobileGlbTrafficIds.add(vehicle.id);
+          freeSlots -= 1;
+        }
+      }
+      mobileGlbIds = this._mobileGlbTrafficIds;
+    }
+
+    for (const vehicle of traffic) {
+      const type = VEHICLE_MODEL_KEY[vehicle.type] ? vehicle.type : 'car';
+      const allowGLB = !this.mobile || mobileGlbIds.has(vehicle.id);
+      const depth = Math.abs(Number(vehicle.depth) || 0);
+      const visible = !this.mobile || depth <= 1.35;
+
+      // On phones, every unmodelled procedural traffic vehicle goes into a
+      // type-specific InstancedMesh. Its simulated vehicle remains in game.js;
+      // only the renderer's visual representation is batched.
+      if (this.mobile && !allowGLB) {
+        if (visible) {
+          let list = fallbackByType.get(type);
+          if (!list) {
+            list = [];
+            fallbackByType.set(type, list);
+          }
+          list.push(vehicle);
+        }
+
+        const obsolete = this.trafficActors.get(vehicle.id);
+        if (obsolete?.userData?.fallback) {
+          this.world.remove(obsolete);
+          disposeSceneTree(obsolete);
+          this.trafficActors.delete(vehicle.id);
+        }
+        continue;
+      }
 
       let actor = this.trafficActors.get(vehicle.id);
-
       if (!actor) {
-        actor = this.makeTrafficActor(vehicle);
+        actor = this.makeTrafficActor(vehicle, { allowGLB });
         actor.userData.vehicleType = vehicle.type;
+
+        // A selected GLB can be in the model cache before an instance is
+        // available. In that case keep rendering through the fallback batch.
+        if (this.mobile && actor.userData.fallback) {
+          if (visible) {
+            let list = fallbackByType.get(type);
+            if (!list) {
+              list = [];
+              fallbackByType.set(type, list);
+            }
+            list.push(vehicle);
+          }
+          disposeSceneTree(actor);
+          continue;
+        }
 
         this.world.add(actor);
         this.trafficActors.set(vehicle.id, actor);
       }
 
       const key = VEHICLE_MODEL_KEY[vehicle.type] || 'car';
-
-      if (actor.userData.fallback) {
+      if (allowGLB && actor.userData.fallback) {
         const cachedModelPath = String(
           this.models?.cache?.get(key)?.userData?.modelPath || '',
         ).toLowerCase();
-        const preservePolicePickupFallback =
-          vehicle.type === 'police' &&
+        const preservePolicePickupFallback = vehicle.type === 'police' &&
           actor.userData.kanoVehicleFallback === 'policePickup' &&
           !/hilux|pickup|ram_2500/.test(cachedModelPath);
-        const preserveKanoHiaceFallback =
-          vehicle.type === 'bus' &&
+        const preserveKanoHiaceFallback = vehicle.type === 'bus' &&
           actor.userData.kanoVehicleFallback === 'hiaceBus' &&
           !/hiace|minibus|van/.test(cachedModelPath);
         const model = preservePolicePickupFallback || preserveKanoHiaceFallback
           ? null
           : this.models?.getInstance(key);
-
         if (model) {
           model.userData.fallback = false;
           model.userData.vehicleType = vehicle.type;
-
           model.position.copy(actor.position);
           model.rotation.copy(actor.rotation);
-
           this.world.remove(actor);
           disposeSceneTree(actor);
           this.world.add(model);
-
           this.trafficActors.set(vehicle.id, model);
           actor = model;
+        } else if (this.mobile) {
+          this.world.remove(actor);
+          disposeSceneTree(actor);
+          this.trafficActors.delete(vehicle.id);
+          if (visible) {
+            let list = fallbackByType.get(type);
+            if (!list) {
+              list = [];
+              fallbackByType.set(type, list);
+            }
+            list.push(vehicle);
+          }
+          continue;
         }
       }
 
-      if (vehicle.type === 'motorcycle') {
-        this.ensureAchabaRiders(actor);
-      }
-
+      actor.visible = visible;
       actor.position.set(
-        (vehicle.lane - 1) * 3,
+        (vehicle.lane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
         0,
         -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
       );
-
       actor.rotation.y = vehicle.direction === -1 ? Math.PI : 0;
+      if (vehicle.type === 'motorcycle') this.ensureAchabaRiders(actor);
+    }
+
+    if (this.mobile) {
+      // One instanced draw per fallback type. Batches remain allocated for
+      // reuse, but their count drops to zero when that type leaves the view.
+      const typeKeys = this._mobileTrafficTypeScratch;
+      typeKeys.clear();
+      for (const type of this._mobileTrafficBatches.keys()) typeKeys.add(type);
+      for (const type of fallbackByType.keys()) typeKeys.add(type);
+      for (const type of typeKeys) {
+        const vehicles = fallbackByType.get(type) || [];
+        const existing = this._mobileTrafficBatches.get(type);
+        if (!vehicles.length) {
+          if (existing) existing.mesh.count = 0;
+          continue;
+        }
+
+        const batch = this.getMobileTrafficBatch(type, vehicles.length);
+        batch.mesh.count = vehicles.length;
+        const transform = this._mobileTrafficInstanceTransform;
+        for (let index = 0; index < vehicles.length; index += 1) {
+          const vehicle = vehicles[index];
+          transform.position.set(
+            (vehicle.lane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
+            0,
+            -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
+          );
+          transform.rotation.set(0, vehicle.direction === -1 ? Math.PI : 0, 0);
+          transform.scale.set(1, 1, 1);
+          transform.updateMatrix();
+          batch.mesh.setMatrixAt(index, transform.matrix);
+        }
+        batch.mesh.instanceMatrix.needsUpdate = true;
+      }
     }
 
     for (const [id, actor] of this.trafficActors) {
       if (activeIds.has(id)) continue;
-
       this.world.remove(actor);
       disposeSceneTree(actor);
       this.trafficActors.delete(id);
@@ -3695,6 +4543,52 @@ export class Renderer3D {
   }
 
   // ==========================================================
+  // MOBILE FOG-HORIZON CULLING
+  // ==========================================================
+
+  /**
+   * Hide roadside decoration already blended almost completely into fog.
+   * This only affects rendering; actors continue moving and game.js keeps
+   * owning traffic, passenger, collision and mission simulation. Visibility
+   * is recalculated during each road frame so recycled actors reappear.
+   */
+  updateMobileDistanceCulling() {
+    if (!this.mobile || !this.camera || !this.scene?.fog) return;
+
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    if (now < this._nextMobileDistanceCullAt) return;
+    // Ten passes per second are sufficient for scenery visibility; movement,
+    // physics, collisions and the actual render loop continue at their normal
+    // cadence. This avoids scanning every scenery collection on every frame.
+    this._nextMobileDistanceCullAt = now + 100;
+
+    const cameraZ = Number(this.camera.position.z) || 0;
+    const fogFar = Math.max(65, Number(this.scene.fog.far) || 105);
+    // At this point the fog has concealed most detail. Cutting hidden objects
+    // here avoids drawing far scenery without shortening the visible road.
+    const horizon = Math.min(100, fogFar * 0.90);
+    const pedestrianHorizon = horizon * 0.76;
+
+    for (const slot of this.buildingSlots) {
+      updateMobileActorDistanceVisibility(slot.actor, horizon, cameraZ);
+    }
+    for (const pedestrian of this.pedestrians) {
+      updateMobileActorDistanceVisibility(pedestrian.actor, pedestrianHorizon, cameraZ);
+    }
+    for (const pole of this.streetLights) {
+      updateMobileActorDistanceVisibility(pole, horizon, cameraZ);
+    }
+    for (const slot of this.roadProps) {
+      updateMobileActorDistanceVisibility(slot.actor, horizon, cameraZ);
+    }
+    // Flyovers are distinctive landmarks; retain them slightly farther than
+    // other scenery, but never beyond the actual mobile fog horizon.
+    for (const flyover of this.flyovers) {
+      updateMobileActorDistanceVisibility(flyover, Math.min(110, fogFar), cameraZ);
+    }
+  }
+
+  // ==========================================================
   // MAIN RENDER
   // ==========================================================
 
@@ -3708,6 +4602,7 @@ export class Renderer3D {
     );
 
     if (this.lifeScene === 'garage') {
+      this.ensureGarageScene();
       this.upgradeGarageAssets();
       this.upgradeGarageVehicles();
       this.applyPlayerPaint(state.paint);
@@ -3721,13 +4616,18 @@ export class Renderer3D {
     }
 
     if (this.lifeScene !== 'road') {
-      this.upgradeLifeSceneAssets();
-
-      this.lifeDioramaRoot.visible = true;
-
-      for (const [name, group] of this.lifeSceneGroups) {
-        group.visible = name === this.lifeScene;
+      if (
+        this.lifeScene !== 'garage' &&
+        !this.lifeSceneGroups.has(this.lifeScene)
+      ) {
+        this.buildLifeDioramas(this.lifeScene);
       }
+      mountActiveLifeDiorama(
+        this.lifeDioramaRoot,
+        this.lifeSceneGroups,
+        this.lifeScene,
+      );
+      this.upgradeLifeSceneAssets();
 
       this.camera.position.set(0, 4.15, 14.2);
       this.camera.lookAt(0, 1.35, -0.4);
@@ -3737,9 +4637,13 @@ export class Renderer3D {
       return;
     }
 
-    this.lifeDioramaRoot.visible = false;
+    mountActiveLifeDiorama(
+      this.lifeDioramaRoot,
+      this.lifeSceneGroups,
+      null,
+    );
     this.world.visible = true;
-    this.garageGroup.visible = false;
+    if (this.garageGroup) this.garageGroup.visible = false;
 
     this.syncZones(state);
     this.syncTraffic(state);
@@ -3757,44 +4661,54 @@ export class Renderer3D {
       signedSpeed < -0.05;
 
     const scroll = signedSpeed * dt * 0.28;
+    this.updateKanoRoadsideSet(scroll);
 
     // --------------------------------------------------------
     // ENVIRONMENT
     // --------------------------------------------------------
 
     const sky = state.night
-      ? 0x37465a
+      ? 0x26334a
       : state.environment === 'harmattan'
-        ? 0xbdb9aa
+        ? 0xb5b2a3
         : 0x8ccde5;
 
     this.scene.background.set(sky);
 
     this.scene.fog.color.set(
       state.night
-        ? 0x47566a
+        ? 0x374256
         : state.environment === 'harmattan'
-          ? 0xbdb9aa
+          ? 0xb5b2a3
           : 0x8ccde5,
     );
 
-    this.scene.fog.near =
-      state.environment === 'harmattan' ? 18 : 48;
+    this.scene.fog.near = this.mobile
+      ? (state.environment === 'harmattan' ? 14 : 24)
+      : (state.environment === 'harmattan' ? 18 : 48);
 
-    this.scene.fog.far =
-      state.environment === 'harmattan' ? 100 : 195;
+    this.scene.fog.far = this.mobile
+      ? (state.environment === 'harmattan' ? 70 : 105)
+      : (state.environment === 'harmattan' ? 100 : 195);
 
     // --------------------------------------------------------
     // PLAYER POSITION AND STEERING
     // --------------------------------------------------------
 
-    const laneX =
-      (state.steer || 0) * 3 +
-      (state.pullOverSide || 0) * 2.35;
+    // Keep the keke body safely inside the painted kerbs. The earlier ±4.5
+    // visual range let half the vehicle leave the road and clip on narrow phones.
+    const laneX = Math.max(
+      -3.45,
+      Math.min(
+        3.45,
+        (state.steer || 0) * 3 +
+          (state.pullOverSide || 0) * 2.35,
+      ),
+    );
 
     this.player.position.x +=
       (laneX - this.player.position.x) *
-      Math.min(1, dt * 5.4);
+      Math.min(1, dt * 5.8);
 
     // Steering rotates the vehicle slightly, not 180 degrees.
     // Reverse gear moves it backwards without making it face forward.
@@ -3857,7 +4771,10 @@ export class Renderer3D {
         pedestrian.actor.position.z += this.pedestrianLoopDistance;
       }
 
-      if (!pedestrian.usingModel && pedestrian.arms) {
+      const animateArms =
+        !this.mobile ||
+        Math.abs(pedestrian.actor.position.z - this.camera.position.z) <= 48;
+      if (animateArms && !pedestrian.usingModel && pedestrian.arms) {
         const phase =
           this.driverAnimationTime + pedestrian.phase;
 
@@ -3900,35 +4817,54 @@ export class Renderer3D {
     // LANE MARKINGS
     // --------------------------------------------------------
 
-    for (const dash of this.laneDashes) {
-      dash.position.z += scroll;
-
-      if (dash.position.z > 8) {
-        dash.position.z -= 250;
-      } else if (dash.position.z < -250) {
-        dash.position.z += 250;
-      }
+    if (this.curbInstanced) {
+      advanceInstancedRoadPattern({
+        mesh: this.curbInstanced,
+        records: this.curbRecords,
+        scroll,
+        scratch: this.curbObject,
+        y: 0.08,
+        rotationX: 0,
+      });
     }
 
-    // Dense Kano roadside details are instanced and recycled independently.
-    this.updateKanoRoadsideSet(scroll);
+    if (this.laneDashInstanced) {
+      advanceInstancedRoadPattern({
+        mesh: this.laneDashInstanced,
+        records: this.laneDashRecords,
+        scroll,
+        scratch: this.laneDashObject,
+        y: 0.028,
+        rotationX: -Math.PI / 2,
+      });
+    } else {
+      for (const dash of this.laneDashes) {
+        dash.position.z += scroll;
+        if (dash.position.z > 8) dash.position.z -= 250;
+        else if (dash.position.z < -250) dash.position.z += 250;
+      }
+    }
 
     // --------------------------------------------------------
     // CAMERA
     // --------------------------------------------------------
 
-    const targetX = this.player.position.x * 0.45;
     const driverView = state.camera === 'driver';
+    const cameraFollow = driverView ? 0.72 : 0.92;
+    // Keep enough lateral framing margin that the keke remains visible during
+    // hard steering. The previous 0.72 driver-view follow left the vehicle too
+    // far from centre when combined with the narrow phone viewport.
+    const lateralCameraTracking = driverView ? 0.94 : 0.98;
+    const targetX = this.player.position.x * Math.max(cameraFollow, lateralCameraTracking);
 
     this.camera.position.x += (
-      (driverView
-        ? this.player.position.x * 0.25
-        : this.player.position.x * 0.45) -
-      this.camera.position.x
-    ) * Math.min(1, dt * 2.2);
+      targetX - this.camera.position.x
+    ) * Math.min(1, dt * 6.0);
 
-    this.camera.position.y = driverView ? 1.65 : 3.35;
-    this.camera.position.z = driverView ? 4.7 : 8.6;
+    // Raise and pull the driver camera behind the keke canopy. The old low,
+    // close position looked through the bodywork and could fill the viewport.
+    this.camera.position.y = driverView ? 2.9 : 3.35;
+    this.camera.position.z = driverView ? 7.2 : 8.6;
 
     const shake = Math.max(
       0,
@@ -3949,10 +4885,11 @@ export class Renderer3D {
 
     this.camera.lookAt(
       targetX,
-      driverView ? 1.2 : 0.72,
+      driverView ? 1.6 : 0.72,
       cameraTargetZ,
     );
 
+    this.updateMobileDistanceCulling();
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -3970,10 +4907,24 @@ export class Renderer3D {
       disposeTextures: true,
     });
 
+    // Traffic keke actors share these low-poly geometries between instances;
+    // they are intentionally skipped by disposeSceneTree and released here.
+    for (const geometry of Object.values(this._mobileTrafficKekeGeometry || {})) {
+      geometry?.dispose?.();
+    }
+    this._mobileTrafficKekeGeometry = null;
+    this._mobileTrafficBatches?.clear?.();
+    this._mobileFallbackTrafficByType?.clear?.();
+
+    for (const geometry of this._mobileTrafficVehicleGeometry?.values?.() || []) {
+      geometry?.dispose?.();
+    }
+    this._mobileTrafficVehicleGeometry?.clear?.();
+
     this.models?.dispose?.();
 
     for (const geometry of this.achabaGeometries.values()) {
-      try { geometry.dispose(); } catch { /* shared rider geometry cleanup */ }
+      try { geometry.dispose(); } catch { /* shared Achaba geometry cleanup */ }
     }
     this.achabaGeometries.clear();
 

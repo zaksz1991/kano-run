@@ -17,14 +17,14 @@ test('mobile pedestrian static body and clothing parts are merged into one verte
 
 test('pedestrian merging is restricted to mobile and leaves desktop detail untouched', () => {
   assert.match(renderer, /if \(!this\.mobile \|\| !group\?\.children\?\.length\) return/);
-  assert.match(renderer, /const count = this\.mobile \? 8 : 22/);
+  assert.match(renderer, /this\.mobileTier === 'low' \? 10 : 12/);
 });
 
 test('animated arm pivots remain separate after static pedestrian parts are merged', () => {
   assert.match(renderer, /const arms = \[\]/);
   assert.match(renderer, /arms\.push\(armPivot\)/);
   assert.match(renderer, /this\.mergeMobilePedestrianStaticParts\(group\)/);
-  assert.match(renderer, /const arms = pedestrian\.arms;[\s\S]*?arms\[index\]\.rotation\.z/);
+  assert.match(renderer, /for \(const \[index, arm\] of pedestrian\.arms\.entries\(\)\)/);
 });
 
 test('merged source geometries are disposed and obsolete materials still used by arms are retained', () => {

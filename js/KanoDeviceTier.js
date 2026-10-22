@@ -10,25 +10,27 @@ export function getMobileTier(hardware = {}) {
   return 'low';
 }
 
-/** Resolution budgets relative to CSS pixels. Lower startup/minimum values
- * deliberately reserve GPU headroom for GLB characters, traffic and markets. */
+/** Capability ratios relative to CSS pixels. The adaptive controller may step
+ * down from the startup value when sustained frame timings require it. */
 export function getMobileRatios(tier) {
-  if (tier === 'high') return { max: 1.75, start: 1.4, min: 0.9 };
-  if (tier === 'mid') return { max: 1.5, start: 1.2, min: 0.82 };
-  return { max: 1.2, start: 0.95, min: 0.7 };
+  if (tier === 'high') return { max: 1.45, start: 1.40, min: 0.72 };
+  if (tier === 'mid') return { max: 1.25, start: 1.15, min: 0.62 };
+  return { max: 1.10, start: 0.92, min: 0.58 };
 }
 
 /**
- * Mobile rendering scale measured against CSS pixels, not the phone's full
- * hardware DPR. The former 0.34–0.48 settings rendered fewer pixels than the
- * CSS layout and made the entire game visibly soft. These values keep a clear
- * baseline while allowing the adaptive controller to reduce detail/LOD first.
+ * Startup target matches the phone sharpness audit. Adaptive quality can lower
+ * resolution in response to measured frame time, instead of forcing every phone
+ * to render at a blurry sub-CSS-pixel ratio from the beginning.
  */
 export function getMobileRenderBudget(tier) {
-  if (tier === 'high') return { max: 1.6, start: 1.35, min: 0.9 };
-  if (tier === 'mid') return { max: 1.4, start: 1.15, min: 0.8 };
-  return { max: 1.1, start: 0.92, min: 0.7 };
+  // Start with sharper Kano street rendering; the existing adaptive controller
+  // lowers these ratios only when sustained frame-time measurements require it.
+  if (tier === 'high') return { max: 1.45, start: 1.40, min: 0.72 };
+  if (tier === 'mid') return { max: 1.25, start: 1.15, min: 0.62 };
+  return { max: 1.10, start: 0.92, min: 0.58 };
 }
+
 
 /** Maximum number of simultaneous imported traffic GLBs during mobile road play.
  * Nearby traffic remains detailed; the remaining vehicles use light procedural

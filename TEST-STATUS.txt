@@ -1,16 +1,13 @@
-STEP 27 VALIDATION
+KANO LIFE / KANO RUN — STEP 28 TEST STATUS
 
-PASS: node --check js/KanoCulturalStreetEventsUpgrade.js
-PASS: focused cultural-event + goat-fallback tests: 13/13
-PASS: ZIP integrity checked after packaging
+Passed:
+- Focused regression tests: 20/20
+- JavaScript syntax: js/renderer3d.js, js/KanoDeviceTier.js, js/KanoInstancedRoadScroll.js
+- ZIP archive integrity: checked after packaging
 
-SCOPE
-- Tests confirm real GLB loading remains preferred.
-- Tests cover fallback triggers for missing inventory, failed GLB loading and
-  unavailable asset inventory.
-- Tests assert goat anatomy, fallback leg animation, existing crossing timing,
-  and lifecycle cleanup.
+Coverage includes mobile sharpness/adaptive budget values, mobile traffic instancing, cached lazy life scenes, mesh-merged pedestrian fallback, tier-aware pedestrian/model budgets, instanced Kano roadside trees/dividers, two-rider Achaba traffic, police pickup/Hiace fallback guards, texture paths, phone fog horizon, and resource cleanup.
 
-NOT VERIFIED
-- Full repository test suite was not run for this update.
-- No browser render, screenshot comparison or physical-phone performance test.
+Not claimed as completed:
+- No live browser render or screenshot comparison was performed.
+- No full Vite build was run because the source package dependencies were not installed in this workspace.
+- No physical-phone FPS or thermal test was performed.

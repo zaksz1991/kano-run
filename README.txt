@@ -1,40 +1,32 @@
-KANO LIFE / KANO RUN — STEP 27
-GLB-first goat crossing fallback
+KANO LIFE / KANO RUN — STEP 28
+Consolidated mobile renderer + Kano roadside merge
 
 PURPOSE
-The cultural events module previously created a goat crossing only when the
-asset inventory contained a valid goat GLB. The current inventory does not
-list a goat model, so the event can be absent from the road scene. This update
-keeps the real-GLB path as the preferred option and adds an articulated,
-procedural goat only when the model inventory is empty/unavailable or the GLB
-fails to load or has invalid bounds.
+The last roadside update replaced renderer3d.js with a pre-mobile-optimization copy. That silently dropped several performance safeguards already introduced in the mobile rendering series. Step 28 restores those safeguards and integrates the Kano-specific additions into one complete renderer file.
 
 WHAT CHANGED
-- Keeps existing real-goat GLB discovery and loading as the first choice.
-- Adds a recognizable low-poly goat fallback with torso, raised neck, head,
-  muzzle, eyes, ears, horns, tail, four legs and hooves.
-- Animates the fallback leg pivots during the existing goat crossing event.
-- Keeps the existing crossing timing, roadside travel, cultural events,
-  passenger/fare logic, vehicle collision rules and other game systems intact.
-- Adds diagnostics that distinguish GLB-loaded and procedural-fallback states.
-- Cleans up fallback geometry and materials when the scene upgrade is disposed.
+- Restores mobile pedestrian mesh merging, tier-aware scene-asset promotion cadence, distance culling, cached lazy life-scene construction, instanced lane/curb scrolling, and one-InstancedMesh-per-type fallback traffic.
+- Keeps the Kano neem-tree line and repeating black/white concrete roadside dividers as instanced scenery that recycles with world movement.
+- Corrects asphalt and market-stall texture paths to /assets/models/environment/ground/.
+- Increases procedural roadside pedestrians from 8 to 10 on low-tier phones and 12 on mid/high-tier phones. Stronger phones may promote 2 or 3 nearby pedestrians to real GLB models; low-tier phones retain a one-GLB limit. Other fallback people keep their static parts merged.
+- Restores sharpness targets of 1.40 for high-tier phones, 1.15 for mid-tier phones, and 0.92 for low-tier phones. The existing adaptive controller can step down if measured frame times require it.
+- Adds two-rider achaba silhouettes to batched mobile motorcycles without adding a separate draw call per rider; desktop/modelled motorcycles also receive a passenger where the source model only has one rider.
+- Keeps detailed procedural Kano police-pickup and Hiace-style bus fallbacks when no suitable specialized GLB is available. Mobile fallback versions remain merged into traffic batches.
+- Preserves the mobile fog horizon and adds cleanup for shared rider geometry.
+
+FILES
+  js/renderer3d.js                       Complete replacement renderer
+  js/KanoDeviceTier.js                   Complete replacement render-budget helper
+  js/KanoInstancedRoadScroll.js          Compatible instanced-road scrolling helper
+  tests/KanoStep28RendererMerge.test.mjs New focused regression tests
+  tests/KanoLazySceneBuild.test.mjs      Retained lazy-scene regression tests
+  tests/KanoMobilePedestrianMeshMerge.test.mjs Retained mesh-merge tests, updated for the tier-aware crowd count
+  TEST-STATUS.txt                        Validation summary
 
 INSTALLATION
-1. Extract this ZIP into the root of your existing kano-run project folder.
-2. Allow js/KanoCulturalStreetEventsUpgrade.js to be overwritten with the
-   complete replacement file.
-3. Keep tests/kano-cultural-street-events.test.mjs (updated existing test) and
-   tests/kano-goat-fallback.test.mjs (new regression test).
-4. No other runtime files need to be replaced for this update. Do not replace
-   main.js, game.js, renderer3d.js, KanoSceneUpgrade.js, or CSS for Step 27.
+Extract this ZIP into the root of the existing Kano Run project. Allow the three files under js/ to be replaced. Keep the existing main.js, game.js, CSS, asset files, Step 26 KanoSceneUpgrade.js, and Step 27 KanoCulturalStreetEventsUpgrade.js unchanged.
 
-BEHAVIOR
-The goat crossing still starts after the existing in-game delay and only while
-playing the road scene. If a valid real GLB exists, it is used instead of the
-fallback. The fallback is not an external asset and is not claimed to be a
-photorealistic scanned model.
+This is a complete file replacement. It does not require inserting code snippets or replacing individual sections.
 
-LIMITATIONS
-- JavaScript syntax and focused source-level regression tests pass.
-- No browser screenshot or physical-phone render was available in this run.
-  The goat's appearance and phone frame-time impact still require visual review.
+VALIDATION AND LIMITATIONS
+The focused source-level test group and JavaScript syntax checks pass. Browser rendering, full-project build, and real-phone frame timing have not been verified in this run. The police pickup, Hiace, and Achaba rider additions are procedural fallbacks; existing suitable GLB models remain preferred.
