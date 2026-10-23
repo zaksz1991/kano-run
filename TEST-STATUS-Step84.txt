@@ -1,0 +1,24 @@
+KANO LIFE — STEP 84 VALIDATION STATUS
+
+Automated tests
+- Command: node --test tests/*.test.mjs
+- Result: 501 passed, 0 failed.
+- Includes 27 new asset regression checks covering all unique first-choice model paths, GLB v2 chunks, embedded geometry/materials, normals, bounds, draw-call mesh budgets, and total model-pack size.
+
+JavaScript syntax
+- Command: node scripts/check-syntax.mjs
+- Result: 221 JavaScript/MJS files passed.
+
+Release structure
+- Command: node scripts/verify-release.mjs
+- Result: 13 checks passed; 0 warnings; 0 failures.
+
+GLB validation
+- 24 files, 24 unique first-choice paths.
+- Each asset round-tripped using Trimesh's GLB reader and was then structurally checked by the Node test suite.
+- Total GLB payload approximately 1.5 MB; per-model mesh count capped by test at 14.
+
+Build limitation
+- `npm run build` was attempted but could not start: `vite: not found` because this workspace has no node_modules installation.
+- Package installation did not complete in the available run window; no successful Vite build is claimed.
+- No live Vercel or interactive browser test was completed.
