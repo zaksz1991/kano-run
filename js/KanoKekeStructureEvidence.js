@@ -53,3 +53,20 @@ export function classifyKekeMeshEvidence({
     (shortSide > 0 ? longSide / shortSide >= 1.08 : false);
   return { looksLikeCharacter, vehicleCore, namedWheel, broadLowBody };
 }
+
+/**
+ * Return true when a node is connected to the supplied root through visible
+ * descendants. The root's own visibility is deliberately ignored because GLB
+ * cache roots may be hidden until a validated model is installed in the scene.
+ * Every candidate node below the root must remain visible, however; otherwise
+ * an invisible driver/helper must not suppress the seated-driver fallback.
+ */
+export function hasVisiblePathWithinRoot(node, root) {
+  if (!node || !root) return false;
+  let current = node;
+  while (current && current !== root) {
+    if (current.visible === false) return false;
+    current = current.parent;
+  }
+  return current === root;
+}

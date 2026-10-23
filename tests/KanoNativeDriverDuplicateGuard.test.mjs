@@ -23,7 +23,8 @@ test('a native driver must have a role-bearing name, visible meshes and renderab
   assert.match(detector, /driver\|rider\|chauffeur\|human\|person/);
   assert.match(detector, /helperName\.test\(namedNode\.name\)/);
   assert.match(detector, /node\?\.isMesh/);
-  assert.match(detector, /ancestor\.visible === false/);
+  assert.match(detector, /hasVisiblePathWithinRoot\(namedNode, object\)/);
+  assert.match(detector, /hasVisiblePathWithinRoot\(node, namedNode\)/);
   assert.match(detector, /material\.visible !== false/);
   assert.match(detector, /Number\(material\.opacity \?\? 1\) > 0\.025/);
 });

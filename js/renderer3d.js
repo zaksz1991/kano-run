@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
 import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
-import { buildKekeEvidenceNamePaths, classifyKekeMeshEvidence } from './KanoKekeStructureEvidence.js';
+import { buildKekeEvidenceNamePaths, classifyKekeMeshEvidence, hasVisiblePathWithinRoot } from './KanoKekeStructureEvidence.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -2968,17 +2968,17 @@ export class Renderer3D {
     object.traverse((namedNode) => {
       if (result || !namedNode?.name || !driverName.test(namedNode.name)) return;
       if (helperName.test(namedNode.name)) return;
+      // GLB roots can be hidden while they are cached, so ignore the root's
+      // own visibility but reject a hidden driver node or any hidden group
+      // between that node and the vehicle root. Otherwise an invisible native
+      // driver can suppress the visible procedural seated-driver fallback.
+      if (!hasVisiblePathWithinRoot(namedNode, object)) return;
 
       const candidateBounds = new THREE.Box3();
       namedNode.traverse((node) => {
         if (!node?.isMesh || !node.geometry) return;
 
-        let ancestor = node;
-        while (ancestor && ancestor !== namedNode) {
-          if (ancestor.visible === false) return;
-          ancestor = ancestor.parent;
-        }
-        if (ancestor !== namedNode) return;
+        if (!hasVisiblePathWithinRoot(node, namedNode)) return;
 
         const materials = Array.isArray(node.material)
           ? node.material
