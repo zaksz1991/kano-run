@@ -277,4 +277,5 @@ console.info(`[Kano Life] GLB visual quality pass registered for world/, environ
 // Keep the existing presentation, game, and persistence hooks as the app entry.
 await import('./KanoNorthernDriverLifeSimulationUpgrade.js');
 await import('./KanoNorthernDriverRealLifeUpgrade.js');
+await import('./KanoNorthernDriverPassengerRelationshipsUpgrade.js');
 await import('./KanoGameplayPresentationRepair.js');

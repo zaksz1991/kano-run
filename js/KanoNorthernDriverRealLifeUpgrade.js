@@ -286,6 +286,7 @@ function install() {
       getDailyEvent: () => { const ctx = context(); return social.getDailyEvent(ctx.day, ctx.minutes, ctx.profile); },
       setRoutineStyle: style => social.setRoutineStyle(style),
       recordRoutine: () => { const ctx = context(); const result = social.recordRoutine(ctx); refreshSocialPanel(); return result; },
+      recordPassengerService: details => { const result = social.recordPassengerService(details); refreshSocialPanel(); return result; },
       export: () => JSON.stringify(social.getSnapshot(), null, 2),
       refresh: refreshSocialPanel,
     };

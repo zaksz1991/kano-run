@@ -283,6 +283,25 @@ export class KanoNorthernDriverRealLife {
     return { ok: true, slot: { ...status.current }, status: this.getRoutineStatus(day, minute), snapshot: this.getSnapshot() };
   }
 
+  recordPassengerService({ name = '', matched = false, safeTrip = false, day = 1, fareEarned = 0 } = {}) {
+    const didMatch = Boolean(matched);
+    const didDriveSafely = Boolean(safeTrip);
+    const trustDelta = didMatch && didDriveSafely ? 3 : didMatch ? -2 : didDriveSafely ? -2 : -5;
+    this.state.meters.passengerRespect = clamp(this.state.meters.passengerRespect + trustDelta, 0, 100);
+    const details = {
+      name: String(name ?? '').replace(/[<>\u0000-\u001f]/g, '').trim().slice(0, 60),
+      day: dayNumber(day),
+      matched: didMatch,
+      safeTrip: didDriveSafely,
+      trustDelta,
+      passengerRespect: this.state.meters.passengerRespect,
+      fareEarned: money(fareEarned),
+    };
+    this._record('passenger_service', 0, details);
+    this.save();
+    return { ok: true, ...details };
+  }
+
   getSnapshot() {
     return {
       routineStyle: this.state.routineStyle,

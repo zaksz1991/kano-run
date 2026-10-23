@@ -1,12 +1,16 @@
-STEP 46 VALIDATION STATUS
+STEP 47 VALIDATION STATUS
 =========================
-- Included node:test suite: 33/33 passed (Step 45 career tests, Step 45 integration-contract tests, Step 46 social-life unit tests, and Step 46 integration-contract tests).
-- JavaScript syntax checks: 5/5 passed for all JavaScript files supplied in this update.
-- ZIP integrity: checked after packaging.
-- Vite production build: not run; node_modules were not available in the supplied source snapshot.
-- Browser interaction, display layout, WebGL rendering and physical-phone behavior: not verified.
+Focused Step 47 automated tests: PASS — 21/21
+JavaScript syntax checks for included runtime modules: PASS — 7/7
+ZIP integrity check: PASS
+Full existing suite: 97 passed / 100 total / 3 failed
 
-LIMITATIONS
-- Routine windows are simplified, fixed in-game roleplay windows. They are not authoritative real-world prayer-time calculations.
-- Vehicle-care readiness is a persistent roleplay meter; paying for a choice does not directly repair the underlying vehicle condition value in the driving engine.
-- Event prices and incidental fare values are game balancing values, not current real-world market prices.
+Unrelated remaining full-suite failures:
+1. tests/glb-catalog-sync.test.mjs requests a named export missing from scripts/glb-catalog-sync.mjs.
+2. tests/kano-world-performance-upgrade.test.mjs expects a performance-instancing script tag in index.html that is absent from the supplied source snapshot.
+3. tests/root-cause-repair.test.mjs expects a model-fitting implementation pattern not found in the supplied KanoLifeRootCauseRepair.js.
+
+Production build: NOT RUN
+Live browser/UI test: NOT RUN
+WebGL visual verification: NOT RUN
+Physical-phone test: NOT RUN
