@@ -1,3 +1,4 @@
+import './KanoNorthernDriverHouseholdWaterUpgrade.js';
 /** Step 60 runtime panel: household NEPA reality and backup generator management. */
 import { save, persist } from './storage.js';
 import {
