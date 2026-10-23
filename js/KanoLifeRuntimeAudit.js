@@ -7,13 +7,18 @@
 const INSTALL_KEY = '__KANO_LIFE_RUNTIME_AUDIT_INSTALLED__';
 const MAX_EVENTS = 80;
 const MAX_LONG_TASKS = 30;
+const MAX_LONG_ANIMATION_FRAMES = 30;
+const MAX_SCRIPT_ATTRIBUTION_PER_FRAME = 8;
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window[INSTALL_KEY]) {
   Object.defineProperty(window, INSTALL_KEY, { value: true });
 
   const events = [];
   const longTasks = [];
+  const longAnimationFrames = [];
   const moduleStates = new Map();
+  let supportsLongTasks = false;
+  let supportsLongAnimationFrames = false;
   let sequence = 0;
 
   const text = (value, limit = 240) => String(value ?? '')
@@ -90,16 +95,25 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window[
         pending: modules.filter(item => item.status === 'pending').length,
         failed: modules.filter(item => item.status === 'failed').length,
       },
+      performanceCapabilities: {
+        longTasks: supportsLongTasks,
+        longAnimationFrames: supportsLongAnimationFrames,
+      },
       modules,
       issueSummary: {
         total: issues.length,
         errors: issues.filter(item => item.severity === 'error').length,
         warnings: issues.filter(item => item.severity === 'warning').length,
         longTasks: longTasks.length,
+        longAnimationFrames: longAnimationFrames.length,
       },
       issues,
       longTasks: longTasks.map(item => ({ ...item })),
-      privacy: 'Local diagnostic only. Does not export localStorage, wallet balances, personal profile values, cookies, or URL query parameters. Nothing is sent to a server.',
+      longAnimationFrames: longAnimationFrames.map(item => ({
+        ...item,
+        scripts: item.scripts.map(script => ({ ...script })),
+      })),
+      privacy: 'Local diagnostic only. Does not export localStorage, wallet balances, personal profile values, cookies, or URL query parameters. Frame attribution keeps only script paths, function/invoker labels and timings; it omits query strings. Nothing is sent to a server.',
     };
   }
 
@@ -175,28 +189,88 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window[
   });
 
   if (typeof PerformanceObserver !== 'undefined') {
+    const supportsEntryType = (type) => {
+      const types = PerformanceObserver.supportedEntryTypes;
+      return !Array.isArray(types) || types.includes(type);
+    };
+    const roundMs = value => Math.round((Number(value) || 0) * 10) / 10;
+
     try {
-      const observer = new PerformanceObserver(list => {
-        for (const entry of list.getEntries()) {
-          const durationMs = Number(entry.duration) || 0;
-          if (durationMs < 250) continue;
-          const item = {
-            at: new Date().toISOString(),
-            durationMs: Math.round(durationMs * 10) / 10,
-            startTimeMs: Math.round((Number(entry.startTime) || 0) * 10) / 10,
-            source: text(entry.name || 'main-thread task', 80),
-          };
-          longTasks.push(item);
-          if (longTasks.length > MAX_LONG_TASKS) longTasks.splice(0, longTasks.length - MAX_LONG_TASKS);
-          record('warning', 'long-main-thread-task', {
-            message: `Main-thread task lasted ${item.durationMs} ms.`,
-            durationMs,
-            file: item.source,
-          });
-        }
-      });
-      observer.observe({ type: 'longtask', buffered: true });
+      if (supportsEntryType('longtask')) {
+        const observer = new PerformanceObserver(list => {
+          for (const entry of list.getEntries()) {
+            const durationMs = Number(entry.duration) || 0;
+            if (durationMs < 250) continue;
+            const item = {
+              at: new Date().toISOString(),
+              durationMs: roundMs(durationMs),
+              startTimeMs: roundMs(entry.startTime),
+              source: text(entry.name || 'main-thread task', 80),
+            };
+            longTasks.push(item);
+            if (longTasks.length > MAX_LONG_TASKS) longTasks.splice(0, longTasks.length - MAX_LONG_TASKS);
+            record('warning', 'long-main-thread-task', {
+              message: `Main-thread task lasted ${item.durationMs} ms.`,
+              durationMs,
+              file: item.source,
+            });
+          }
+        });
+        observer.observe({ type: 'longtask', buffered: true });
+        supportsLongTasks = true;
+      }
     } catch { /* Long Task API is optional; diagnostics still work without it. */ }
+
+    // The Long Animation Frames API can attribute a blocked frame to the
+    // script entrypoint/invoker. It is feature-detected and never required.
+    try {
+      if (supportsEntryType('long-animation-frame')) {
+        const observer = new PerformanceObserver(list => {
+          for (const entry of list.getEntries()) {
+            const durationMs = Number(entry.duration) || 0;
+            // Capture visibly delayed frames without filling the report with
+            // ordinary small frame overruns. The API itself begins at 50 ms.
+            if (durationMs < 100) continue;
+            const rawScripts = Array.isArray(entry.scripts) ? entry.scripts : [];
+            const scripts = rawScripts
+              .slice(0, MAX_SCRIPT_ATTRIBUTION_PER_FRAME)
+              .map(script => ({
+                source: script.sourceURL ? modulePath(script.sourceURL) : '',
+                functionName: text(script.sourceFunctionName || '', 100),
+                invoker: text(script.invoker || script.name || '', 120),
+                invokerType: text(script.invokerType || '', 48),
+                durationMs: roundMs(script.duration),
+                forcedStyleAndLayoutMs: roundMs(script.forcedStyleAndLayoutDuration),
+                pauseMs: roundMs(script.pauseDuration),
+                sourceCharPosition: Number.isFinite(Number(script.sourceCharPosition))
+                  ? Number(script.sourceCharPosition) : -1,
+              }));
+            const item = {
+              at: new Date().toISOString(),
+              durationMs: roundMs(durationMs),
+              startTimeMs: roundMs(entry.startTime),
+              blockingDurationMs: roundMs(entry.blockingDuration),
+              renderStartMs: roundMs(entry.renderStart),
+              styleAndLayoutStartMs: roundMs(entry.styleAndLayoutStart),
+              attributedScriptCount: rawScripts.length,
+              scripts,
+            };
+            longAnimationFrames.push(item);
+            if (longAnimationFrames.length > MAX_LONG_ANIMATION_FRAMES) {
+              longAnimationFrames.splice(0, longAnimationFrames.length - MAX_LONG_ANIMATION_FRAMES);
+            }
+            const first = scripts.find(script => script.source || script.functionName || script.invoker);
+            record('warning', 'long-animation-frame', {
+              message: `Rendering frame lasted ${item.durationMs} ms; ${rawScripts.length} script attribution record(s) reported.`,
+              durationMs,
+              file: first?.source || first?.functionName || 'rendering/layout',
+            });
+          }
+        });
+        observer.observe({ type: 'long-animation-frame', buffered: true });
+        supportsLongAnimationFrames = true;
+      }
+    } catch { /* LoAF support varies by browser and may be disabled. */ }
   }
 
   document.addEventListener('click', event => {
