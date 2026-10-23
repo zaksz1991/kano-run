@@ -1,7 +1,7 @@
-KANO LIFE / KANO RUN — STEP 36 VALIDATION
+KANO LIFE / KANO RUN — STEP 37 VALIDATION
 
-Focused Node test suite: 48/48 passed.
-JavaScript syntax checks: passed for renderer3d.js, KanoDeviceTier.js, and KanoInstancedRoadScroll.js.
-ZIP integrity: checked after packaging.
+Focused Node test suite: 55/55 passed.
+JavaScript syntax checks: passed for renderer3d.js, KanoKekeStructureEvidence.js, KanoDeviceTier.js and KanoInstancedRoadScroll.js.
+ZIP integrity check: passed after packaging.
 
-Not verified: actual GLB candidate models in Three.js, browser screenshot comparison, Vite production build, exact driver-to-seat alignment, or physical-phone performance. Tests are mainly source-level checks; they do not replace an in-game visual run.
+Not verified: browser screenshot comparison, actual imported GLB asset rendering, Vite production build, or physical-phone frame rate. This change targets a source-level root-name contamination in vehicle structure evidence; visual confirmation in the running game remains necessary.

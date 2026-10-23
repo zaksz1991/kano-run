@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
 import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
+import { buildKekeEvidenceNamePaths, classifyKekeMeshEvidence } from './KanoKekeStructureEvidence.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -3151,7 +3152,10 @@ export class Renderer3D {
     let broadLowBodyEvidence = false;
     const vehicleCoreName = /vehicle|keke|chassis|bodywork|carbody|body[_ .-]?panel|roof|cabin|bumper|windshield|handlebar|headlight|mudguard|fork|axle|fender|engine|motor|fairing|door|bonnet|hood|grille|grill|dashboard|steering|headlamp/i;
     const wheelPartName = /wheel|tire|tyre/i;
-    const characterName = /pedestrian|character|human|person|driver|rider|passenger|crowd|woman|man|female|male|npc|skeleton|armature/i;
+    // Do not use generic root names (for example the cache key "keke") as
+    // evidence that a child mesh is vehicle geometry. Character labels remain
+    // available through the complete path so mislabeled crowd assets are rejected.
+    const characterName = /pedestrian|character|human|person|driver|rider|passenger|crowd|woman|man|female|male|npc/i;
 
     object.traverse((node) => {
       if (!node?.isMesh || !node.geometry) return;
@@ -3190,31 +3194,40 @@ export class Renderer3D {
       const meshSize = meshBounds.getSize(new THREE.Vector3());
       if (![meshSize.x, meshSize.y, meshSize.z].every(Number.isFinite)) return;
 
-      // Overall dimensions alone are not enough: a wrongly mapped crowd or
-      // character GLB can span the width of a keke and be mistaken for the
-      // player's vehicle. Require actual vehicle-part evidence or a broad,
-      // low chassis/body-like mesh before accepting a replacement.
-      const names = [];
+      // Root/cache names are not structural proof. ModelManager and fallback
+      // code commonly rename the GLB root to "keke"; including that name in
+      // every descendant path made any wrongly mapped crowd model look like a
+      // vehicle. Inspect descendant part names separately from the full path.
+      const descendantNames = [];
       let namedAncestor = node;
-      while (namedAncestor) {
-        if (namedAncestor.name) names.push(String(namedAncestor.name));
-        if (namedAncestor === object) break;
+      while (namedAncestor && namedAncestor !== object) {
+        if (namedAncestor.name) descendantNames.push(String(namedAncestor.name));
         namedAncestor = namedAncestor.parent;
       }
-      const namePath = names.join(' ');
-      const looksLikeCharacter = characterName.test(namePath);
-      if (looksLikeCharacter) characterEvidence += 1;
-      if (!looksLikeCharacter && vehicleCoreName.test(namePath)) vehicleCoreEvidence += 1;
-      if (!looksLikeCharacter && wheelPartName.test(namePath)) namedWheelEvidence += 1;
-
-      const meshCentre = meshBounds.getCenter(new THREE.Vector3());
-      if (
-        meshSize.x >= 0.72 && meshSize.z >= 0.42 &&
-        meshSize.y >= 0.12 && meshSize.y <= 1.45 &&
-        meshCentre.y >= -0.30 && meshCentre.y <= 1.60
-      ) {
-        broadLowBodyEvidence = true;
+      // When the root itself is a mesh, its name can be a real part label.
+      if (node === object && node.isMesh && node.name) {
+        descendantNames.push(String(node.name));
       }
+      const { structuralNamePath, completeNamePath } = buildKekeEvidenceNamePaths(
+        descendantNames,
+        object.name || '',
+      );
+      const meshCentre = meshBounds.getCenter(new THREE.Vector3());
+      const evidence = classifyKekeMeshEvidence({
+        structuralNamePath,
+        completeNamePath,
+        width: meshSize.x,
+        height: meshSize.y,
+        depth: meshSize.z,
+        centerY: meshCentre.y,
+        vehicleCoreName,
+        wheelPartName,
+        characterName,
+      });
+      if (evidence.looksLikeCharacter) characterEvidence += 1;
+      if (evidence.vehicleCore) vehicleCoreEvidence += 1;
+      if (evidence.namedWheel) namedWheelEvidence += 1;
+      if (evidence.broadLowBody) broadLowBodyEvidence = true;
 
       bounds.union(meshBounds);
       meshCount += 1;

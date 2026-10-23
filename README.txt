@@ -1,24 +1,25 @@
-KANO LIFE / KANO RUN — STEP 36
-PLAYER KEKE VEHICLE-STRUCTURE GATE
+KANO LIFE / KANO RUN — STEP 37
+KEKE ROOT-NAME CONTAMINATION FIX
 
-PURPOSE
-The latest phone screenshot shows a group of character-like meshes occupying the player's position while the keke body is missing. The previous player-model guard checked visible mesh bounds and overall dimensions, but a wrongly mapped crowd/character GLB could span a vehicle-sized footprint and pass that test.
+WHY THIS UPDATE
+The Step 36 screenshot still shows character-like GLB meshes occupying the player position without a keke body. The previous structure gate searched every mesh's full ancestor name path. If ModelManager names the root object `keke`, that generic root label was inherited by every child and automatically counted as vehicle-part evidence. The guard could therefore accept an incorrectly mapped crowd/character GLB.
 
 CHANGES
-- Adds structural evidence checks to player-keke candidate validation instead of relying on overall bounds alone.
-- Looks for vehicle-specific part/group names, wheel/tire evidence, or a broad low body/chassis-like mesh.
-- Recognizes character-oriented node names and rejects a character-only candidate when it has no vehicle-structure evidence.
-- Records the evidence counts and measured bounds in `userData.kanoKekeVisualValidation` for browser-side diagnostics.
-- Keeps the existing procedural keke and seated driver active when a candidate fails the new structure gate.
-- Preserves Step 33 visibility protection, Step 34 independent seated-driver fallback geometry/materials, Step 35 native driver detection, mobile rendering, traffic batching, roadside scenery, and pedestrian spacing.
+- Excludes generic model/container/root names (including `keke`, `vehicle`, `Scene`, and `Root`) from structural evidence.
+- Retains the complete name path only for identifying character/pedestrian assets that should be rejected.
+- Counts named vehicle parts and wheel parts only from specific descendant/mesh names.
+- Tightens the unnamed-geometry fallback to require a genuinely broad, low chassis close to ground level.
+- Adds a standalone, Three.js-independent classifier and behavioural regression tests for the exact root-name contamination case.
+- Preserves the player-keke guard, seated-driver fallback, native-driver detection, mobile rendering helpers, traffic batching, roadside scenery and sidewalk spacing from Step 36.
 
 INSTALLATION
-1. Extract this ZIP into the Kano Run project root (the folder containing `index.html` and `package.json`).
-2. Replace `js/renderer3d.js` with the complete replacement file included here.
-3. Keep `js/KanoDeviceTier.js` and `js/KanoInstancedRoadScroll.js` alongside it. They are included unchanged as direct imports.
-4. Copy `tests/*.test.mjs` into the existing `tests` folder (or use the included files to refresh the focused renderer test set).
+1. Extract this ZIP into the existing Kano Run project root (the folder containing `index.html` and `package.json`).
+2. Replace `js/renderer3d.js` with the complete file included here.
+3. Add `js/KanoKekeStructureEvidence.js` at the same relative path; `renderer3d.js` imports it directly.
+4. Copy the included `tests/*.test.mjs` files into the existing `tests` directory.
+5. Keep `js/KanoDeviceTier.js` and `js/KanoInstancedRoadScroll.js` unchanged and in place.
 
-Do not replace `main.js`, `game.js`, `ModelManager.js`, `index.html`, CSS, assets, saved game data, traffic-mix modules, or day-cycle files for this update.
+Do not replace `main.js`, `game.js`, `ModelManager.js`, `index.html`, CSS, assets, saved game data, traffic-mix modules, or day-cycle files.
 
 VALIDATION LIMITS
-The included 48 tests are source-level regression tests. Node syntax checks and ZIP integrity checks passed during packaging. Actual GLB assets were not available for a Three.js browser-render test, and no browser screenshot or physical-phone performance test was run. Asset-specific names vary, so the new structural gate intentionally retains a low-body geometry fallback for vehicles whose mesh names are generic; inspect the validation diagnostics if a genuine keke GLB is rejected.
+The direct classifier tests exercise the previous root-name contamination case. Source-level renderer regression tests, syntax checks and ZIP integrity are also run before packaging. The real GLB assets and browser/WebGL runtime are not available for an in-game render verification, so physical-phone visuals and frame rate remain unverified.
