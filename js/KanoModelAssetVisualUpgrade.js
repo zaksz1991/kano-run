@@ -290,3 +290,6 @@ await import('./KanoGameplayPresentationRepair.js');
 
 // Step 100: balance live traffic and preload real vehicle GLBs.
 await import('./KanoTrafficCompositionUpgrade.js');
+
+// Step 101: connect bundled GLB vehicles to the existing traffic pool and add visible same/oncoming flow.
+await import('./KanoTrafficRuntimeIntegrationUpgrade.js');
