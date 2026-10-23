@@ -159,3 +159,7 @@ if (typeof window !== 'undefined') {
 }
 
 console.info('[Kano Life] Passenger demand follows the in-game clock; existing fares and wallet remain authoritative.');
+
+// Step 51: provide a persistent, report-only end-of-day statement after the
+// existing career, passenger, park, and street-rhythm integrations are loaded.
+await import('./KanoNorthernDriverDaySettlementUpgrade.js');
