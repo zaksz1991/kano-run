@@ -154,6 +154,14 @@ function ensurePanel() {
   return section;
 }
 
+function initializePanel(section) {
+  if (!section || section.dataset.kvmInitialized === '1') return;
+  section.dataset.kvmInitialized = '1';
+  section.querySelector('#kvm-inspect')?.addEventListener('click', inspectFromForm);
+  section.querySelector('#kvm-pay-service')?.addEventListener('click', performService);
+  section.querySelector('#kvm-export')?.addEventListener('click', exportLog);
+}
+
 function notify(message, type = 'success') {
   const section = document.getElementById('kano-vehicle-maintenance-panel');
   const node = section?.querySelector('#kvm-notice');

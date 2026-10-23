@@ -1,1 +1,1 @@
-Replace js/main.js and tests/KanoLifeSimSoak.test.mjs (the latter replaces the one from kano-next-upgrade.zip). Adds a toast at each day period: Fajr, morning rush, Zuhr, evening rush, Maghrib, night.
+Replace js/KanoNorthernDriverVehicleMaintenanceUpgrade.js (fixes missing initializePanel: the mechanic panel threw and its Inspect / Pay service / Export buttons were never wired) and add tests/KanoLifeSimStackSoak.test.mjs.
