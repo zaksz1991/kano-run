@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
 import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
 import { buildKekeEvidenceNamePaths, classifyKekeMeshEvidence, hasVisiblePathWithinRoot } from './KanoKekeStructureEvidence.js';
+import { inspectPlayerKekeRenderability } from './KanoPlayerKekeRuntimeGuard.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -191,6 +192,9 @@ export class Renderer3D {
     this.flyoverLoopDistance = mobile ? 260 : 306;
 
     this.lifeScene = 'road';
+    // Runtime recovery checks are throttled; never scan the full GLB tree every frame.
+    this._nextPlayerKekeRuntimeCheckAt = 0;
+    this._playerKekeRuntimeRecoveryCount = 0;
     this.garageGroup = null;
     this.securityActor = null;
     this.securityUsingModel = false;
@@ -5010,11 +5014,135 @@ export class Renderer3D {
   }
 
   // ==========================================================
+  // PLAYER KEKE RUNTIME VISIBILITY GUARD
+  // ==========================================================
+
+  /**
+   * Recover from runtime cases that pass asset loading but leave the active
+   * player vehicle with no drawable mesh or an invalid vehicle structure.
+   * Checks are throttled because traversing a GLB hierarchy every frame is
+   * unnecessary. Cached GLB resources are detached, not disposed, because
+   * ModelManager may share their geometry and materials with other actors.
+   */
+  ensurePlayerKekeRuntimeVisibility(now = Date.now()) {
+    if (!this.ready || this.disposed || !this.player?.isObject3D) {
+      return { ok: false, reason: 'renderer-or-player-unavailable' };
+    }
+    if (this.lifeScene !== 'road' && this.lifeScene !== 'garage') {
+      return { ok: true, skipped: true, reason: 'player-hidden-by-life-scene-design' };
+    }
+    if (now < this._nextPlayerKekeRuntimeCheckAt) {
+      return { ok: true, throttled: true, reason: 'check-throttled' };
+    }
+    this._nextPlayerKekeRuntimeCheckAt = now + (this.mobile ? 1100 : 1700);
+
+    const activePlayer = this.player;
+    const targetParent = this.lifeScene === 'garage'
+      ? this.ensureGarageScene()
+      : this.scene;
+
+    // The root itself is sometimes hidden while a cached model is waiting for
+    // promotion. In road/garage scenes it must be active. If a child or parent
+    // mesh remains hidden, the renderability scan below will detect the gap.
+    if (activePlayer.visible === false) activePlayer.visible = true;
+    if (targetParent && activePlayer.parent !== targetParent) {
+      activePlayer.parent?.remove(activePlayer);
+      targetParent.add(activePlayer);
+    }
+    if (this.lifeScene === 'garage' && this.garageGroup) {
+      this.garageGroup.visible = true;
+    }
+
+    let renderability = inspectPlayerKekeRenderability(activePlayer);
+    let structural = { ok: true, reason: 'procedural-fallback' };
+    if (activePlayer.userData?.fallback !== true) {
+      try {
+        structural = this.validateKekeModelCandidate(activePlayer);
+      } catch (error) {
+        structural = { ok: false, reason: 'runtime-validation-threw', error: String(error) };
+      }
+    }
+
+    if (renderability.ok && structural.ok) {
+      activePlayer.userData.kanoRuntimeKekeHealth = {
+        ok: true,
+        checkedAt: now,
+        renderability,
+        structural,
+      };
+      return { ok: true, renderability, structural };
+    }
+
+    const reason = !renderability.ok
+      ? renderability.reason
+      : (structural.reason || 'vehicle-structure-invalid');
+    const failedModelName = activePlayer.userData?.modelPath || activePlayer.userData?.modelKey || activePlayer.name || 'active-player-keke';
+    activePlayer.userData.kanoRuntimeKekeHealth = {
+      ok: false,
+      checkedAt: now,
+      reason,
+      renderability,
+      structural,
+    };
+
+    // Do not dispose the rejected subtree: its GLB resources may be shared by
+    // the model cache. It is removed from the active scene and retained only as
+    // a detached object so its shared buffers remain valid for other instances.
+    activePlayer.visible = false;
+    activePlayer.userData.kanoRuntimeKekeRejected = {
+      reason,
+      checkedAt: now,
+      model: failedModelName,
+    };
+    activePlayer.parent?.remove(activePlayer);
+
+    const fallback = this.makeKeke();
+    fallback.visible = true;
+    fallback.scale.set(1, 1, 1);
+    if (this.lifeScene === 'garage') {
+      fallback.position.set(0.7, 0, 1.45);
+      fallback.rotation.set(0, Math.PI, 0);
+    } else {
+      fallback.position.set(0, 0, 2);
+      fallback.rotation.set(0, this.driveFacingY, 0);
+    }
+    fallback.userData.kanoRuntimeRecoveredFallback = true;
+    fallback.userData.kanoRuntimeKekeHealth = {
+      ok: true,
+      checkedAt: now,
+      reason: 'procedural-keke-restored-after-runtime-validation-failure',
+      rejectedModel: failedModelName,
+    };
+
+    (targetParent || this.scene).add(fallback);
+    this.player = fallback;
+    this.lastPaint = null;
+    this.applyPlayerPaint(this.currentPaint || '#f5c542');
+    this._playerKekeRuntimeRecoveryCount += 1;
+
+    console.warn(
+      `[Kano Life] Restored procedural player keke after runtime visibility check (${reason}).`,
+      { model: failedModelName, renderability, structural },
+    );
+
+    return {
+      ok: true,
+      recovered: true,
+      reason,
+      rejectedModel: failedModelName,
+      renderability,
+      structural,
+    };
+  }
+
+  // ==========================================================
   // MAIN RENDER
   // ==========================================================
 
   draw(state, deltaSeconds) {
     if (!this.ready || this.disposed) return;
+
+    this.ensurePlayerKekeRuntimeVisibility();
 
     const dt = THREE.MathUtils.clamp(
       Number(deltaSeconds) || 0,

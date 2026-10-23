@@ -1,23 +1,24 @@
-KANO LIFE / KANO RUN — STEP 38
-NATIVE DRIVER VISIBILITY GUARD
+KANO LIFE — STEP 39
+PLAYER KEKE RUNTIME VISIBILITY WATCHDOG
 
-WHY THIS UPDATE
-The player-keke validator has become more strict, but the native-driver detector could still treat a named driver mesh as valid when that mesh or one of its child groups was hidden. A hidden native driver could suppress the procedural seated-driver fallback, leaving an otherwise accepted keke with no visible person.
+Purpose
+- Checks the active player's keke at a throttled interval while the game is in road or garage mode.
+- Detects when the active player has no visible renderable meshes or fails the existing keke-structure validator.
+- Restores the built-in procedural keke with a seated driver rather than leaving the player standing in the road with no vehicle.
+- Does not dispose a rejected imported model, because ModelManager may share its GLB geometry/materials with the asset cache.
+- Stores a runtime health report on userData.kanoRuntimeKekeHealth and logs only when recovery is necessary.
 
-CHANGES
-- Checks the visibility path of a native driver from its own node to the vehicle root.
-- Ignores the vehicle root's own visibility because cached GLB roots can be hidden before promotion into the live scene.
-- Rejects hidden driver nodes and hidden intermediate groups so they do not suppress the fallback driver.
-- Reuses the same visible-path helper for the driver's renderable descendant meshes.
-- Retains all Step 37 vehicle-structure checks, player-keke fallback protection, mobile rendering helpers, road instancing, traffic and roadside code.
+Installation
+1. Extract this ZIP into the existing Kano Run project folder containing index.html and package.json.
+2. Replace js/renderer3d.js with the complete file included here.
+3. Add js/KanoPlayerKekeRuntimeGuard.js.
+4. Keep KanoKekeStructureEvidence.js, KanoDeviceTier.js and KanoInstancedRoadScroll.js beside renderer3d.js. They are included unchanged for convenience.
+5. Copy the included tests into the existing tests folder.
 
-INSTALLATION
-1. Extract this ZIP into the existing Kano Run project root (the folder containing index.html and package.json).
-2. Replace js/renderer3d.js and js/KanoKekeStructureEvidence.js with the complete files included here.
-3. Copy the included tests/*.test.mjs files into the existing tests directory.
-4. Keep js/KanoDeviceTier.js and js/KanoInstancedRoadScroll.js unchanged and in place.
+Do not replace main.js, game.js, index.html, CSS, the day-cycle system, traffic modules or any models/assets for this update.
 
-Do not replace main.js, game.js, ModelManager.js, index.html, CSS, assets, saved game data, traffic-mix modules, or day-cycle files.
-
-VALIDATION LIMITS
-The new tests cover visible/hidden driver hierarchies and the renderer integration at source level. Browser/WebGL rendering and physical-phone performance are not available in this validation run; actual GLB placement and appearance must still be checked in the game.
+Validation
+- Focused runtime visibility tests included; run with: node --test tests/KanoPlayerKekeRuntimeGuard.test.mjs
+- The remaining included tests are carried forward from Step 38.
+- Syntax checks and focused tests were executed in the package build environment.
+- Browser/WebGL rendering and real-phone frame rate have not been measured in this build environment.
