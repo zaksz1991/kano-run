@@ -1,0 +1,20 @@
+KANO LIFE — STEP 100 CHANGE MANIFEST
+
+Cumulative support files from prior delivered Steps 92–99 are retained in js/ for continuity.
+New files:
+  js/KanoTrafficCompositionRules.mjs
+    Dependency-free shuffled 10-vehicle composition bag (4 keke, 3 motorcycle, 3 car).
+  js/KanoTrafficCompositionUpgrade.js
+    Additive Game.spawnTraffic hook, early vehicle-model preload, runtime audit.
+  tests/KanoTrafficCompositionUpgrade.test.mjs
+    Eight targeted checks for composition, idempotence, assets, and audit behavior.
+Newly bundled model assets:
+  public/assets/models/vehicles/special/okada.glb
+  public/assets/models/vehicles/cars/quaternius_cc0-normal-car-1190.glb
+Existing from Step 99:
+  public/assets/models/vehicles/keke/keke-3.glb
+Replaced bootstrap:
+  js/KanoModelAssetVisualUpgrade.js
+    Adds the Step 100 import after KanoGameplayPresentationRepair.js.
+
+No core game/renderer/storage/UI files are replaced. Runtime distribution changes only vehicle.type for newly spawned traffic. Existing traffic fields such as lane, depth, speed, and identifiers are left intact.
