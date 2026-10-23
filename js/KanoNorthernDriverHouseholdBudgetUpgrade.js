@@ -252,3 +252,6 @@ console.info('[Kano Life] Household budget planner ready; calculations never alt
 
 // Step 53: attach the mechanic/roadworthiness layer after the career wallet API exists.
 await import('./KanoNorthernDriverVehicleMaintenanceUpgrade.js');
+
+// Step 54: add prepaid fuel and daily fuel-price pressure after the wallet and maintenance APIs exist.
+await import('./KanoNorthernDriverFuelMarketUpgrade.js');

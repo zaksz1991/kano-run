@@ -135,7 +135,13 @@ export class KanoNorthernDriverLifeSimulation {
       mode,
       startedAt: runStartedAt,
       day: safeDay(dayNumber),
+      // fuel is the billable starting baseline. The fuel-market integration may
+      // lower it by fuel units already purchased in advance, without changing the
+      // actual tank gauge stored separately below.
       fuel: clamp(Number(gameState.fuel) || 0, 0, 100),
+      fuelGaugeAtShiftStart: clamp(Number(gameState.fuel) || 0, 0, 100),
+      prepaidFuelAtStart: 0,
+      fuelPriceMultiplier: 1,
       condition: clamp(Number(gameState.condition) || 0, 0, 100),
       engine: clamp(Number(gameState.engine) || 0, 0, 100),
       tyres: clamp(Number(gameState.tyres) || 0, 0, 100),
@@ -169,7 +175,13 @@ export class KanoNorthernDriverLifeSimulation {
     const conditionEnd = clamp(Number(gameState.condition) || 0, 0, 100);
     const engineEnd = clamp(Number(gameState.engine) || 0, 0, 100);
     const tyresEnd = clamp(Number(gameState.tyres) || 0, 0, 100);
-    const fuelUsed = Math.max(0, active.fuel - fuelEnd);
+    // The active.fuel baseline may exclude fuel units purchased before this
+    // shift, so those units are not charged again at settlement.
+    const billableFuelUsed = Math.max(0, active.fuel - fuelEnd);
+    const actualFuelStart = clamp(Number(active.fuelGaugeAtShiftStart ?? active.fuel), 0, 100);
+    const fuelUsed = Math.max(0, actualFuelStart - fuelEnd);
+    const prepaidFuelUsed = Math.min(Math.max(0, Number(active.prepaidFuelAtStart) || 0), fuelUsed);
+    const fuelPriceMultiplier = clamp(Number(active.fuelPriceMultiplier) || 1, 0.75, 1.75);
     const conditionWear = Math.max(0, active.condition - conditionEnd);
     const engineWear = Math.max(0, active.engine - engineEnd);
     const tyreWear = Math.max(0, active.tyres - tyresEnd);
@@ -178,7 +190,7 @@ export class KanoNorthernDriverLifeSimulation {
 
     // Conservative game-balance costs; the existing arcade payout banks only a
     // fraction of in-run fare/score, so costs are intentionally scaled down.
-    const fuelDue = money(fuelUsed * 8);
+    const fuelDue = money(billableFuelUsed * 8 * fuelPriceMultiplier);
     const maintenanceDue = money(conditionWear * 7 + engineWear * 7 + tyreWear * 5);
     let vehicleDue = 0;
     if (this.state.lastVehicleChargeDay !== day) {
@@ -216,7 +228,12 @@ export class KanoNorthernDriverLifeSimulation {
     const totalDue = fuel.due + maintenance.due + vehicle.due + household.due;
     const totalPaid = fuel.paid + maintenance.paid + vehicle.paid + household.paid;
     const report = {
-      day, mode, runId, gross, fuelUsed: Number(fuelUsed.toFixed(2)), fuelCost: fuel,
+      day, mode, runId, gross,
+      fuelUsed: Number(fuelUsed.toFixed(2)),
+      fuelBilledUnits: Number(billableFuelUsed.toFixed(2)),
+      prepaidFuelUnitsUsed: Number(prepaidFuelUsed.toFixed(2)),
+      fuelPriceMultiplier: Number(fuelPriceMultiplier.toFixed(3)),
+      fuelCost: fuel,
       conditionWear: Number(conditionWear.toFixed(2)), engineWear: Number(engineWear.toFixed(2)), tyreWear: Number(tyreWear.toFixed(2)),
       maintenanceCost: maintenance, vehicleCost: vehicle, householdCost: household,
       totalDue, totalPaid, netAfterPaidCosts: gross - totalPaid, walletBeforeExpenses: money(wallet), walletAfterExpenses: available,
