@@ -1,4 +1,5 @@
 /** Kano Life — persistent fuel market, station choice and fuel-price complaints. */
+import './KanoNorthernDriverFuelEconomyUpgrade.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
 import { save } from './storage.js';
