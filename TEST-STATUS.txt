@@ -1,10 +1,9 @@
-STEP 41 VALIDATION RESULTS
+STEP 42 VALIDATION RESULTS
 
-- Complete included Node test suite: 76 passed, 0 failed.
-- New diagnostic tests: 4 passed, 0 failed.
-- JavaScript syntax: node --check passed for all included js/*.js files.
-- ZIP archive integrity: checked after packaging.
-- The diagnostics overlay is disabled unless the current URL includes ?debugKeke=1.
-- Vite production build: not run; dependencies are not installed in this work directory.
-- Browser/WebGL screenshot verification: not performed.
-- Physical-phone rendering and frame rate: not measured.
+- Complete included Node test suite: 79 passed, 0 failed.
+- New diagnostic export/UI coverage: report contents, query-flag gating, throttled updates, clipboard copy, plain-text download, touch-button pointer handling and cleanup.
+- JavaScript syntax: node --check passed for all 7 included js/*.js files.
+- ZIP integrity: checked after packaging.
+- Diagnostic export is enabled only with ?debugKeke=1.
+- Browser permission and download behavior remain browser-dependent and have not been verified in a real browser.
+- Physical-phone rendering and frame rate are unmeasured.
