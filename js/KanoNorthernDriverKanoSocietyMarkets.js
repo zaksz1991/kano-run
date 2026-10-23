@@ -2,6 +2,7 @@
  * Kano Life Step 58: civic, markets, street commerce and cost-of-living systems.
  * Prices are fictional balancing values, not current market quotations.
  */
+import { seasonalMarketMultiplier } from './KanoNorthernDriverFestivalEconomy.js';
 export const SOCIETY_STORAGE_KEY = 'kano-life-society-markets-v1';
 
 export const KANO_MARKETS = Object.freeze([
@@ -161,12 +162,13 @@ export function marketPriceIndex(day = 1) {
   return Math.max(0.88, Math.min(1.18, Math.round(wave * seasonal * 1000) / 1000));
 }
 
-export function marketGoodPrice(goodId, day = 1, type = 'buy') {
+export function marketGoodPrice(goodId, day = 1, type = 'buy', faithPreference = 'private') {
   const good = MARKET_GOODS.find(item => item.id === goodId);
   if (!good) return null;
   const base = type === 'sell' ? good.sell : good.buy;
   const demandWave = type === 'sell' ? [0.96, 1.00, 1.06, 1.02, 1.10, 0.94, 1.00][(Math.max(1, Math.floor(Number(day) || 1)) - 1) % 7] : 1;
-  return Math.max(1, Math.round(base * marketPriceIndex(day) * demandWave));
+  const seasonalDemand = seasonalMarketMultiplier(good.group, day, type, faithPreference);
+  return Math.max(1, Math.round(base * marketPriceIndex(day) * demandWave * seasonalDemand));
 }
 
 export function createDefaultSocietyState() {
@@ -263,7 +265,7 @@ export function buyMarketStock(rawState, { goodId, qty = 1, day = 1, wallet = 0,
   if (marketId && marketId !== good.market) return result(false, 'wrong_market', state, cash, { good });
   const business = TRADING_BUSINESSES.find(x => x.id === state.tradingBusiness) || TRADING_BUSINESSES[0];
   if (!business.eligibleGroups.includes(good.group)) return result(false, 'wrong_business', state, cash, { good, business });
-  const unitCost = marketGoodPrice(good.id, day, 'buy'); const total = unitCost * quantity;
+  const unitCost = marketGoodPrice(good.id, day, 'buy', state.faithPreference); const total = unitCost * quantity;
   if (cash < total) return result(false, 'insufficient_wallet', state, cash, { required: total, unitCost });
   const existing = state.stockLots.find(lot => lot.goodId === good.id && lot.unitCost === unitCost);
   if (existing) existing.qty = Math.min(500, existing.qty + quantity);
@@ -287,7 +289,7 @@ export function sellMarketStock(rawState, { goodId, qty = 1, day = 1, wallet = 0
     const take = Math.min(remain, lot.qty); costBasis += take * lot.unitCost; lot.qty -= take; remain -= take;
   }
   state.stockLots = state.stockLots.filter(lot => lot.qty > 0);
-  const unitSale = marketGoodPrice(good.id, day, 'sell'); const revenue = unitSale * quantity;
+  const unitSale = marketGoodPrice(good.id, day, 'sell', state.faithPreference); const revenue = unitSale * quantity;
   const profit = revenue - costBasis;
   log(state, day, 'stock_sale', `Sold ${quantity} unit(s) of ${good.name}; ${profit >= 0 ? 'simulated margin' : 'simulated loss'} ${Math.abs(profit)}.`, revenue);
   state.marketTrust = bounded(state.marketTrust + 1, 0, 100, 50);
@@ -299,7 +301,7 @@ export function buyPantryGoods(rawState, { goodId, qty = 1, day = 1, wallet = 0,
   if (!good) return result(false, 'unknown_good', state, cash);
   if (activeShift) return result(false, 'shift_active', state, cash);
   if (marketId && marketId !== good.market) return result(false, 'wrong_market', state, cash, { good });
-  const unitCost = marketGoodPrice(good.id, day, 'buy'); const total = unitCost * quantity;
+  const unitCost = marketGoodPrice(good.id, day, 'buy', state.faithPreference); const total = unitCost * quantity;
   if (cash < total) return result(false, 'insufficient_wallet', state, cash, { required: total, unitCost });
   state.pantry[good.id] = Math.min(999, (Number(state.pantry[good.id]) || 0) + quantity);
   log(state, day, 'pantry_purchase', `Bought ${quantity} household unit(s) of ${good.name}.`, -total);

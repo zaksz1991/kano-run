@@ -1,0 +1,4 @@
+STEP 59 IMPLEMENTATION NOTES
+- Uses the existing Step 58 simulated market categories, marketGoodPrice function, faith preference and society UI integration.
+- Does not assert current real-world market prices or actual festival dates. All seasonal modifiers are explicitly fictional and deterministic for repeatable gameplay/testing.
+- No outside factual claims are encoded; named events are illustrative player-configured roleplay context.

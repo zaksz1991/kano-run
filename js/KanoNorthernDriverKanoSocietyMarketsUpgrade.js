@@ -1,3 +1,4 @@
+import './KanoNorthernDriverFestivalEconomyUpgrade.js';
 /** Runtime UI and wallet integration for Kano civic, market and street-commerce life. */
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
@@ -116,7 +117,7 @@ function renderGoodsOptions() {
   const ctx = context(); const marketId = element('knsm-market')?.value || state.selectedMarket;
   state.selectedMarket = KANO_MARKETS.some(x => x.id === marketId) ? marketId : 'dawanau';
   const filtered = MARKET_GOODS.filter(good => good.market === state.selectedMarket);
-  fillSelect(element('knsm-good'), filtered, x => x.id, x => `${x.name} · buy ${money(marketGoodPrice(x.id, ctx.day, 'buy'))} / sale ${money(marketGoodPrice(x.id, ctx.day, 'sell'))}`, element('knsm-good')?.value);
+  fillSelect(element('knsm-good'), filtered, x => x.id, x => `${x.name} · buy ${money(marketGoodPrice(x.id, ctx.day, 'buy', state.faithPreference))} / sale ${money(marketGoodPrice(x.id, ctx.day, 'sell', state.faithPreference))}`, element('knsm-good')?.value);
   const market = KANO_MARKETS.find(x => x.id === state.selectedMarket);
   const marketInfo = element('knsm-market-info');
   if (marketInfo && market) marketInfo.textContent = `${market.specialty}. Typical goods: ${market.goods.join(', ')}. ${market.note}`;
