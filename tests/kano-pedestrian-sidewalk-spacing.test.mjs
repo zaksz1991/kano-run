@@ -26,7 +26,7 @@ test('desktop pedestrian spacing is unchanged by the mobile row fix', () => {
 });
 
 test('denser mobile sidewalk layout does not add pedestrian actors or GLB promotions', () => {
-  assert.match(sidewalk, /this\.mobileTier === 'low' \? 10 : 12/);
+  assert.match(sidewalk, /this\.mobileTier === 'low' \? 10 : this\.mobileTier === 'mid' \? 14 : 16/);
   assert.match(source, /this\.mobileTier === 'high' \? 3 : this\.mobileTier === 'mid' \? 2 : 1/);
   assert.match(sidewalk, /this\.mergeMobilePedestrianStaticParts\(group\)/);
 });

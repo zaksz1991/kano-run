@@ -36,8 +36,8 @@ test('roadside neem trees and black-white median dividers use instanced meshes a
 });
 
 test('sidewalk density grows by phone tier while fallback pedestrians stay draw-call merged', () => {
-  assert.match(renderer, /this\.mobileTier === 'low' \? 10 : 12/);
-  assert.match(renderer, /this\.mobileTier === 'low' \? 19 : 16/);
+  assert.match(renderer, /this\.mobileTier === 'low' \? 10 : this\.mobileTier === 'mid' \? 14 : 16/);
+  assert.match(renderer, /this\.mobileTier === 'low' \? 19 : this\.mobileTier === 'mid' \? 15 : 13/);
   assert.match(renderer, /this\.mergeMobilePedestrianStaticParts\(group\)/);
   assert.match(renderer, /this\.mobileTier === 'high' \? 3 : this\.mobileTier === 'mid' \? 2 : 1/);
 });

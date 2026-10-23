@@ -1722,10 +1722,10 @@ export class Renderer3D {
 
   buildSidewalkLife() {
     const count = this.mobile
-      ? (this.mobileTier === 'low' ? 10 : 12)
+      ? (this.mobileTier === 'low' ? 10 : this.mobileTier === 'mid' ? 14 : 16)
       : 22;
     const pedestrianSpacing = this.mobile
-      ? (this.mobileTier === 'low' ? 19 : 16)
+      ? (this.mobileTier === 'low' ? 19 : this.mobileTier === 'mid' ? 15 : 13)
       : 12;
 
     // On phones, each pair is one row: one walker on each sidewalk at the

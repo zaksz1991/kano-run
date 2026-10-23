@@ -17,7 +17,7 @@ test('mobile pedestrian static body and clothing parts are merged into one verte
 
 test('pedestrian merging is restricted to mobile and leaves desktop detail untouched', () => {
   assert.match(renderer, /if \(!this\.mobile \|\| !group\?\.children\?\.length\) return/);
-  assert.match(renderer, /this\.mobileTier === 'low' \? 10 : 12/);
+  assert.match(renderer, /this\.mobileTier === 'low' \? 10 : this\.mobileTier === 'mid' \? 14 : 16/);
 });
 
 test('animated arm pivots remain separate after static pedestrian parts are merged', () => {
