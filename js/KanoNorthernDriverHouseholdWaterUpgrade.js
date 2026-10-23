@@ -2,7 +2,7 @@ import './KanoNorthernDriverFamilyResponsibilitiesUpgrade.js';
 /** Step 61 UI: household water access, hygiene routines and sanitation. */
 import { save, persist } from './storage.js';
 import {
-  HOUSEHOLD_WATER_STORAGE_KEY, MAX_HOUSEHOLD_WATER_LITRES, WATER_ACCESS_MODES, WATER_BUNDLES, HOUSEHOLD_WATER_TASKS,
+  HOUSEHOLD_WATER_STORAGE_KEY, WATER_ACCESS_MODES, WATER_BUNDLES, HOUSEHOLD_WATER_TASKS,
   createDefaultHouseholdWaterState, normalizeHouseholdWaterState, householdWaterReport,
   setHouseholdWaterAccess, collectHouseholdWater, buyHouseholdWater,
   completeHouseholdWaterTask, recordHouseholdWaterShortage, exportHouseholdWaterReport,
@@ -177,6 +177,12 @@ function render() {
   const section = el(SECTION_ID); if (!section) return;
   const ctx = context(); state = normalizeHouseholdWaterState(state);
   const report = householdWaterReport(state, ctx.day);
+  // The data model owns the capacity. Keep the UI independent of a separate
+  // imported constant so a stale/mismatched UI bundle cannot hit a free-variable
+  // ReferenceError while rendering the purchase controls.
+  const maxLitres = Number.isFinite(Number(report.maxLitres)) && Number(report.maxLitres) > 0
+    ? Number(report.maxLitres)
+    : 500;
   if (el('khw-access')) { el('khw-access').value = state.accessMode; el('khw-access').disabled = ctx.activeShift; }
   if (el('khw-reserve')) el('khw-reserve').textContent = `${report.waterLitres} / ${report.maxLitres} litres stored`;
   if (el('khw-status')) el('khw-status').textContent = report.status === 'low' ? 'Reserve is low: fewer than 20 L remain.' : report.status === 'watch' ? 'Reserve needs attention: fewer than 60 L remain.' : 'Reserve is currently adequate for some household tasks.';
@@ -189,7 +195,7 @@ function render() {
   if (el('khw-wallet')) el('khw-wallet').textContent = `Existing wallet: ${money(ctx.wallet)}. Water purchases use this wallet and do not touch savings.`;
   for (const button of section.querySelectorAll('[data-khw-buy]')) {
     const bundle = WATER_BUNDLES.find(x => x.id === button.dataset.khwBuy);
-    button.disabled = ctx.activeShift || !bundle || ctx.wallet < bundle.cost || state.waterLitres + (bundle?.litres || 0) > MAX_HOUSEHOLD_WATER_LITRES;
+    button.disabled = ctx.activeShift || !bundle || ctx.wallet < bundle.cost || state.waterLitres + (bundle?.litres || 0) > maxLitres;
   }
   const taskGrid = el('khw-task-grid');
   if (taskGrid) {

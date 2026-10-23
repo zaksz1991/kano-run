@@ -7,11 +7,13 @@ import path from 'node:path';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relativePath) => readFile(path.join(ROOT, relativePath), 'utf8');
 
-test('household water UI imports its capacity limit from the authoritative model', async () => {
+test('household water UI uses the model report capacity and has no free reference to the limit constant', async () => {
   const ui = await read('js/KanoNorthernDriverHouseholdWaterUpgrade.js');
   const model = await import('../js/KanoNorthernDriverHouseholdWater.js');
-  assert.match(ui, /MAX_HOUSEHOLD_WATER_LITRES/);
-  assert.match(ui, /import\s*\{[\s\S]*?MAX_HOUSEHOLD_WATER_LITRES[\s\S]*?\}\s*from\s*['"]\.\/KanoNorthernDriverHouseholdWater\.js['"]/);
+  assert.doesNotMatch(ui, /\bMAX_HOUSEHOLD_WATER_LITRES\b/);
+  assert.match(ui, /const report = householdWaterReport\(state, ctx\.day\)/);
+  assert.match(ui, /const maxLitres = Number\.isFinite\(Number\(report\.maxLitres\)\)/);
+  assert.match(ui, /state\.waterLitres \+ \(bundle\?\.litres \|\| 0\) > maxLitres/);
   assert.equal(model.MAX_HOUSEHOLD_WATER_LITRES, 500);
 });
 

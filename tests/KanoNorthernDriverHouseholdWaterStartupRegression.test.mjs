@@ -7,13 +7,12 @@ const modelPath = new URL('../js/KanoNorthernDriverHouseholdWater.js', import.me
 const uiCode = await readFile(uiPath, 'utf8');
 const modelCode = await readFile(modelPath, 'utf8');
 
-test('household-water UI explicitly imports the reserve capacity it reads during render', () => {
+test('household-water UI uses the model report capacity without a free constant reference', () => {
   assert.match(modelCode, /export const MAX_HOUSEHOLD_WATER_LITRES\s*=\s*500\s*;/);
-  assert.match(
-    uiCode,
-    /import\s*\{[^}]*\bMAX_HOUSEHOLD_WATER_LITRES\b[^}]*\}\s*from\s*['"]\.\/KanoNorthernDriverHouseholdWater\.js['"]/s,
-  );
-  assert.match(uiCode, /state\.waterLitres\s*\+\s*\(bundle\?\.litres\s*\|\|\s*0\)\s*>\s*MAX_HOUSEHOLD_WATER_LITRES/);
+  assert.doesNotMatch(uiCode, /\bMAX_HOUSEHOLD_WATER_LITRES\b/);
+  assert.match(uiCode, /const report = householdWaterReport\(state, ctx\.day\)/);
+  assert.match(uiCode, /const maxLitres = Number\.isFinite\(Number\(report\.maxLitres\)\)/);
+  assert.match(uiCode, /state\.waterLitres\s*\+\s*\(bundle\?\.litres\s*\|\|\s*0\)\s*>\s*maxLitres/);
 });
 
 test('household-water UI dependency graph imports without browser globals', async () => {
