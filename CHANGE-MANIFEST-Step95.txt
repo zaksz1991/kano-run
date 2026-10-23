@@ -1,0 +1,24 @@
+KANO LIFE STEP 95 — CHANGE MANIFEST
+
+Purpose: restore visible reverse gear and add directional arcade route guidance.
+
+New file:
+  js/KanoRoadNavigationUpgrade.js
+
+Complete replacement file:
+  js/KanoModelAssetVisualUpgrade.js
+
+Complete support files carried forward unchanged from Steps 92–94:
+  js/KanoStreetLifeMotionUpgrade.js
+  js/KanoWorldInfrastructureUpgrade.js
+  js/KanoFlyoverRoundaboutUpgrade.js
+
+Regression tests:
+  tests/KanoRoadNavigationUpgrade.test.mjs
+
+Documentation:
+  docs/INSTANTMESH-ASSET-PIPELINE-Step95.md
+  docs/INSTANTMESH-ASSET-PIPELINE-Step92.md
+  docs/INSTANTMESH-ASSET-PIPELINE-Step94.md
+
+Core game engine, UI, controls, renderer files, storage, root HTML, Vercel config, and assets are not replaced by this package.
