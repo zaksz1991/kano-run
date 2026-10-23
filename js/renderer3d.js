@@ -4,6 +4,7 @@ import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
 import { buildKekeEvidenceNamePaths, classifyKekeMeshEvidence, hasVisiblePathWithinRoot } from './KanoKekeStructureEvidence.js';
 import { inspectPlayerKekeRenderability } from './KanoPlayerKekeRuntimeGuard.js';
 import { capturePlayerKekeRecoveryPose } from './KanoPlayerKekeRecoveryTransform.js';
+import { createKekeRuntimeDiagnostics } from './KanoKekeRuntimeDiagnostics.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -196,6 +197,8 @@ export class Renderer3D {
     // Runtime recovery checks are throttled; never scan the full GLB tree every frame.
     this._nextPlayerKekeRuntimeCheckAt = 0;
     this._playerKekeRuntimeRecoveryCount = 0;
+    this._lastKekeRuntimeDiagnostic = { phase: 'renderer-startup', reason: 'player-created', at: 'not checked' };
+    this._kekeRuntimeDiagnostics = null;
     this.garageGroup = null;
     this.securityActor = null;
     this.securityUsingModel = false;
@@ -223,6 +226,10 @@ export class Renderer3D {
     this._nextLifeSceneAssetUpgradeAt = 0;
 
     this.ready = true;
+    // No on-screen UI is created unless the URL explicitly contains
+    // ?debugKeke=1. The opt-in panel helps capture real runtime evidence.
+    this._kekeRuntimeDiagnostics = createKekeRuntimeDiagnostics();
+    this.updatePlayerKekeDiagnostics(true);
   }
 
   material(color, roughness = 1) {
@@ -5018,6 +5025,75 @@ export class Renderer3D {
   // PLAYER KEKE RUNTIME VISIBILITY GUARD
   // ==========================================================
 
+  /** Update the opt-in, low-frequency report without traversing the model tree. */
+  updatePlayerKekeDiagnostics(force = false) {
+    if (!this._kekeRuntimeDiagnostics?.enabled) return;
+
+    const player = this.player;
+    const health = player?.userData?.kanoRuntimeKekeHealth || {};
+    const renderability = health.renderability || {};
+    const structural = health.structural || {};
+    const position = player?.position || null;
+    const scale = player?.scale || null;
+    let worldPosition = null;
+    try {
+      if (player?.getWorldPosition) {
+        worldPosition = player.getWorldPosition(new THREE.Vector3());
+      }
+    } catch {
+      worldPosition = null;
+    }
+
+    const parent = player?.parent || null;
+    const parentName = parent === this.scene
+      ? 'scene'
+      : parent === this.garageGroup
+        ? 'garageGroup'
+        : (parent?.name || (parent ? parent.type || 'unnamed-parent' : 'detached'));
+    const canvas = this.canvas;
+    const cssWidth = Number(canvas?.clientWidth) || 0;
+    const cssHeight = Number(canvas?.clientHeight) || 0;
+    let pixelRatio = 1;
+    try { pixelRatio = this.renderer?.getPixelRatio?.() || 1; } catch { /* diagnostics only */ }
+
+    this._kekeRuntimeDiagnostics.update({
+      scene: this.lifeScene,
+      renderer: {
+        mobile: this.mobile,
+        tier: this.mobileTier,
+        canvasSize: `${Number(canvas?.width) || 0}x${Number(canvas?.height) || 0} (${cssWidth}x${cssHeight} CSS)`,
+        pixelRatio,
+      },
+      player: {
+        name: player?.name || '(unnamed)',
+        model: player?.userData?.modelPath || player?.userData?.modelKey || player?.name || 'procedural-keke',
+        fallback: Boolean(player?.userData?.fallback || player?.userData?.kanoRuntimeRecoveredFallback),
+        visible: player?.visible !== false,
+        visiblePath: player ? this.isPlayerKekeVisibleThroughAncestors(player) : false,
+        parent: parentName,
+        position,
+        worldPosition,
+        scale,
+      },
+      health,
+      renderability,
+      structural,
+      recoveryCount: this._playerKekeRuntimeRecoveryCount,
+      lastEvent: this._lastKekeRuntimeDiagnostic,
+    }, force);
+  }
+
+  /** Root visibility is allowed to change during cache promotion; ancestors are not. */
+  isPlayerKekeVisibleThroughAncestors(player) {
+    let node = player;
+    while (node) {
+      if (node !== player && node.visible === false) return false;
+      if (node === this.scene) return player.visible !== false;
+      node = node.parent;
+    }
+    return false;
+  }
+
   /**
    * Recover from runtime cases that pass asset loading but leave the active
    * player vehicle with no drawable mesh or an invalid vehicle structure.
@@ -5029,6 +5105,7 @@ export class Renderer3D {
     if (!this.ready || this.disposed || !this.player?.isObject3D) {
       return { ok: false, reason: 'renderer-or-player-unavailable' };
     }
+    this.updatePlayerKekeDiagnostics();
     if (this.lifeScene !== 'road' && this.lifeScene !== 'garage') {
       return { ok: true, skipped: true, reason: 'player-hidden-by-life-scene-design' };
     }
@@ -5086,6 +5163,12 @@ export class Renderer3D {
         renderability,
         structural,
       };
+      this._lastKekeRuntimeDiagnostic = {
+        phase: 'runtime-validation',
+        reason: 'player-keke-healthy',
+        at: new Date(now).toISOString(),
+      };
+      this.updatePlayerKekeDiagnostics(true);
       return { ok: true, renderability, structural };
     }
 
@@ -5143,6 +5226,13 @@ export class Renderer3D {
     this.lastPaint = null;
     this.applyPlayerPaint(this.currentPaint || '#f5c542');
     this._playerKekeRuntimeRecoveryCount += 1;
+    this._lastKekeRuntimeDiagnostic = {
+      phase: 'runtime-recovery',
+      reason,
+      rejectedModel: failedModelName,
+      at: new Date(now).toISOString(),
+    };
+    this.updatePlayerKekeDiagnostics(true);
 
     console.warn(
       `[Kano Life] Restored procedural player keke after runtime visibility check (${reason}).`,
@@ -5475,6 +5565,8 @@ export class Renderer3D {
 
     this.disposed = true;
     this.ready = false;
+    this._kekeRuntimeDiagnostics?.dispose?.();
+    this._kekeRuntimeDiagnostics = null;
 
     disposeSceneTree(this.scene, {
       disposeTextures: true,
