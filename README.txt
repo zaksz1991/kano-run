@@ -1,27 +1,37 @@
-KANO LIFE — STEP 44
-PLAYER KEKE RENDER-STATE DIAGNOSTICS
+KANO LIFE — STEP 45: NORTHERN DRIVER LIFE SIMULATION
+====================================================
 
-Purpose
-- Extends the opt-in ?debugKeke=1 report with read-only checks for mesh and material state.
-- Reports mesh counts, hidden hierarchy nodes, missing geometry/position attributes, empty draw ranges, missing or non-drawable materials, zero-opacity materials, disabled color writes, frustum-culling flags, and camera-layer mismatches.
-- Includes small samples of meshes that pass basic render-state checks and meshes with notable issues.
-- Does not change any visibility, layer masks, transforms, materials, geometry, camera values, or renderer state.
-- Runs only inside the existing opt-in diagnostic path. The renderer reuses the same 900 ms throttle as the camera/bounds scan.
-- Complements (does not replace) the camera-frustum check. Passing these checks does not prove GPU drawing succeeds or that a mesh is not occluded.
+PURPOSE
+This update begins an additive, persistent life-and-career simulation layer for a young northern Nigerian keke driver. It is built around existing morning-routine scenes, world-day state, career payouts, the existing wallet and driver presets. It does not replace the driving renderer or existing gameplay systems.
 
-Installation
-1. Extract this ZIP into the existing Kano Run project root.
-2. Replace the complete js/renderer3d.js and js/KanoKekeRuntimeDiagnostics.js files.
-3. Add js/KanoKekeRenderStateDiagnostics.js at the exact same js/ path.
-4. The archive also carries forward the Step 43 diagnostic helper dependencies unchanged; keep them in the js/ folder.
-5. Copy the included tests into the project's tests/ folder.
-6. Open the game with ?debugKeke=1 and use Copy report or Save report .txt if the player's keke is missing.
+PLAYER PROFILE
+- Choose a young man or young woman (ages 18–35) and set the driver's name.
+- Choose a family compound, single room, shared flat or married household.
+- Choose whether the driver is mostly self-supporting, contributes to family, or is the primary provider.
+- Choose owned keke, daily hire, or hire-purchase.
+- Select a long-term goal: keke ownership, education, a small business, or home improvement.
 
-This is a diagnostics-only update. It does not add a vehicle recovery rule or force any material/layer values.
-Do not replace main.js, game.js, index.html, CSS, model assets, traffic/day-cycle modules, or saved game data.
+PERSISTENT SIMULATION
+- Records completed Career and Free roam shifts using the game's existing banked transaction.
+- Tracks paid income, fuel, wear/maintenance, vehicle fees, household contributions, meals, passenger drops, distance and shift count.
+- Maintains personal savings separately from spendable cash, with explicit wallet-to-savings deposits and arrears repayment.
+- Charges daily hire and household contributions once per in-game world day, not on every completed run.
+- Uses the existing banked wallet as the sole spendable wallet. It does not create a second spendable-money balance.
+- Adds a life ledger and persistent goal progress. Costs are deliberately game-scaled for playability and are not claims about current Nigerian market prices.
+- Does not apply the new shift-cost accounting to Time Attack, Fuel Gauge Challenge, Match Drop or Potholes Challenge.
 
-Validation
-- Included Node suite: 93 passed, 0 failed.
-- node --check passed for every included js/*.js file.
-- ZIP integrity checked after packaging.
-- Production Vite build, real-browser/WebGL rendering, and physical-phone performance were not verified in this environment.
+INSTALLATION
+1. Extract this ZIP into the root of the existing kano-run project (the folder containing index.html and package.json).
+2. Replace js/KanoModelAssetVisualUpgrade.js with the full version in this ZIP. The only entry change is that it imports the life-simulation integration before the existing gameplay-presentation bootstrap.
+3. Add js/KanoNorthernDriverLifeSimulation.js and js/KanoNorthernDriverLifeSimulationUpgrade.js.
+4. Copy the included tests/*.test.mjs files into the existing tests folder.
+5. Keep all other files and previous updates, especially renderer3d.js, game.js, ui.js, index.html, CSS, models, traffic updates, day-cycle updates and keke diagnostics.
+
+IN-GAME USE
+A LIFE & CAREER button is added to the start screen and menu. Save the profile, then use Career or Free roam. At the end of a banked shift, the ledger calculates game-scaled fuel, maintenance, vehicle and household costs. The profile and ledger persist in this browser. Driver identity text is shown in the HUD; gender selection chooses the existing Mama or RuffNeck gameplay preset by default, and the existing driver selector can still be used afterward.
+
+PERSISTENCE NOTE
+The life ledger uses browser storage. Clearing this browser's site data clears that profile/ledger. The game's banked wallet remains managed by the existing game storage module.
+
+VALIDATION
+See TEST-STATUS.txt. Focused unit tests and static integration tests are included. Production build, browser rendering and physical-phone behavior have not been verified in this environment.
