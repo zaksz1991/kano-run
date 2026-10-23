@@ -44,3 +44,9 @@ test('mechanic panel defines initializePanel and wires its three buttons', () =>
   assert.match(src, /function initializePanel\(section\)/);
   for (const id of ['kvm-inspect', 'kvm-pay-service', 'kvm-export']) assert.match(src, new RegExp(`querySelector\\('#${id}'\\)\\?\\.addEventListener`));
 });
+
+test('every Northern Driver UI module imports the constants it uses from its model', () => {
+  const src = fs.readFileSync(new URL('../js/KanoNorthernDriverHouseholdWaterUpgrade.js', import.meta.url), 'utf8');
+  const header = src.slice(0, src.indexOf("from './KanoNorthernDriverHouseholdWater.js'"));
+  assert.match(header, /MAX_HOUSEHOLD_WATER_LITRES/);
+});

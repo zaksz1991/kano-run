@@ -1,1 +1,1 @@
-Replace js/KanoNorthernDriverVehicleMaintenanceUpgrade.js (fixes missing initializePanel: the mechanic panel threw and its Inspect / Pay service / Export buttons were never wired) and add tests/KanoLifeSimStackSoak.test.mjs.
+Replace js/KanoNorthernDriverHouseholdWaterUpgrade.js (missing MAX_HOUSEHOLD_WATER_LITRES import crashed the water panel) and tests/KanoLifeSimStackSoak.test.mjs (replaces earlier copy).
