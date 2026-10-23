@@ -1,0 +1,15 @@
+PASS js/KanoFlyoverRoundaboutUpgrade.js
+PASS js/KanoGameplayPresentationRepair.js
+PASS js/KanoInfrastructureWorldAnchorsUpgrade.js
+PASS js/KanoModelAssetVisualUpgrade.js
+PASS js/KanoPlayerKekeGLBUpgrade.js
+PASS js/KanoRealKekePassengerPoseUpgrade.js
+PASS js/KanoRoadNavigationUpgrade.js
+PASS js/KanoRoadPathContinuityUpgrade.js
+PASS js/KanoRoadWorldCoordinatesUpgrade.js
+PASS js/KanoStreetLifeMotionUpgrade.js
+PASS js/KanoTrafficCompositionUpgrade.js
+PASS js/KanoTrafficRuntimeIntegrationUpgrade.js
+PASS js/KanoWorldInfrastructureUpgrade.js
+PASS js/KanoTrafficCompositionRules.mjs
+PASS js/KanoTrafficFlowRules.mjs

@@ -47,11 +47,13 @@ test('prototype patches are idempotent and additive', () => {
   assert.match(upgrade, /originalSpawnTraffic\.apply\(this, args\)/);
 });
 
-test('actual Keke, okada, and sedan GLBs are preloaded before later traffic spawns', async () => {
+test('actual Keke, okada, and sedan GLBs are preloaded before main.js creates the live renderer', async () => {
   assert.match(upgrade, /\['keke', 'motorcycle', 'car'\]/);
   assert.match(upgrade, /manager\.load\(key\)/);
   assert.match(bootstrap, /KanoTrafficCompositionUpgrade\.js/);
-  assert.ok(bootstrap.indexOf('KanoGameplayPresentationRepair.js') < bootstrap.indexOf('KanoTrafficCompositionUpgrade.js'));
+  assert.ok(bootstrap.indexOf('KanoTrafficCompositionUpgrade.js') < bootstrap.indexOf('KanoGameplayPresentationRepair.js'));
+  assert.ok(bootstrap.indexOf('KanoTrafficRuntimeIntegrationUpgrade.js') < bootstrap.indexOf('KanoGameplayPresentationRepair.js'));
+  assert.ok(bootstrap.indexOf('KanoPlayerKekeGLBUpgrade.js') < bootstrap.indexOf('KanoGameplayPresentationRepair.js'));
   for (const path of [
     'public/assets/models/vehicles/keke/keke-3.glb',
     'public/assets/models/vehicles/special/okada.glb',

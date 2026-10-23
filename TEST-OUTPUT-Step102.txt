@@ -1,0 +1,286 @@
+TAP version 13
+# Subtest: Step 98 is loaded after the signed road-distance foundation and before game bootstrap
+ok 1 - Step 98 is loaded after the signed road-distance foundation and before game bootstrap
+  ---
+  duration_ms: 0.873853
+  type: 'test'
+  ...
+# Subtest: persistent anchor synchronization also works when the renderer omits a scene label
+ok 2 - persistent anchor synchronization also works when the renderer omits a scene label
+  ---
+  duration_ms: 0.105939
+  type: 'test'
+  ...
+# Subtest: fuel-station and checkpoint-parking visual groups are promoted from recycled zone actors
+ok 3 - fuel-station and checkpoint-parking visual groups are promoted from recycled zone actors
+  ---
+  duration_ms: 0.159389
+  type: 'test'
+  ...
+# Subtest: checkpoint passenger queue is detached as its own world group
+ok 4 - checkpoint passenger queue is detached as its own world group
+  ---
+  duration_ms: 0.117487
+  type: 'test'
+  ...
+# Subtest: world anchor conversion round-trips the initial local depth
+ok 5 - world anchor conversion round-trips the initial local depth
+  ---
+  duration_ms: 0.21337
+  type: 'test'
+  ...
+# Subtest: station approaches, passes the player, and can reappear during reverse travel
+ok 6 - station approaches, passes the player, and can reappear during reverse travel
+  ---
+  duration_ms: 0.163446
+  type: 'test'
+  ...
+# Subtest: sidewalk pedestrians keep a bounded walking offset while following the signed road coordinate
+ok 7 - sidewalk pedestrians keep a bounded walking offset while following the signed road coordinate
+  ---
+  duration_ms: 0.225959
+  type: 'test'
+  ...
+# Subtest: passenger idle animation continues after the zone actor is recycled
+ok 8 - passenger idle animation continues after the zone actor is recycled
+  ---
+  duration_ms: 0.151868
+  type: 'test'
+  ...
+# Subtest: new runs rebase walkers and remove prior-run persistent stop visuals
+ok 9 - new runs rebase walkers and remove prior-run persistent stop visuals
+  ---
+  duration_ms: 0.301113
+  type: 'test'
+  ...
+# Subtest: persistent visual pool is bounded and audit checks player-parenting
+ok 10 - persistent visual pool is bounded and audit checks player-parenting
+  ---
+  duration_ms: 0.337888
+  type: 'test'
+  ...
+# Subtest: Step 100, 101, and 102 hooks load before the nested main.js application bootstrap
+ok 11 - Step 100, 101, and 102 hooks load before the nested main.js application bootstrap
+  ---
+  duration_ms: 0.743537
+  type: 'test'
+  ...
+# Subtest: player keeps the existing root and receives a clone of the real keke GLB
+ok 12 - player keeps the existing root and receives a clone of the real keke GLB
+  ---
+  duration_ms: 0.280231
+  type: 'test'
+  ...
+# Subtest: the seated driver rig is checked inside the actual keke model, not as a roadside actor
+ok 13 - the seated driver rig is checked inside the actual keke model, not as a roadside actor
+  ---
+  duration_ms: 0.111919
+  type: 'test'
+  ...
+# Subtest: procedural fallback stays active until the model loads and when loading fails
+ok 14 - procedural fallback stays active until the model loads and when loading fails
+  ---
+  duration_ms: 0.103355
+  type: 'test'
+  ...
+# Subtest: replacement only removes old local geometry and releases manager-owned clones safely
+ok 15 - replacement only removes old local geometry and releases manager-owned clones safely
+  ---
+  duration_ms: 0.165138
+  type: 'test'
+  ...
+# Subtest: existing traffic GLB hooks are now installed before the live renderer is constructed
+ok 16 - existing traffic GLB hooks are now installed before the live renderer is constructed
+  ---
+  duration_ms: 0.154281
+  type: 'test'
+  ...
+# Subtest: player model keeps paint selections and exposes a focused runtime diagnostic
+ok 17 - player model keeps paint selections and exposes a focused runtime diagnostic
+  ---
+  duration_ms: 0.160311
+  type: 'test'
+  ...
+# Subtest: bundled real player keke asset remains present and non-empty
+ok 18 - bundled real player keke asset remains present and non-empty
+  ---
+  duration_ms: 4.834162
+  type: 'test'
+  ...
+# Subtest: Step 99 is bootstrapped after world-anchor support and before game startup
+ok 19 - Step 99 is bootstrapped after world-anchor support and before game startup
+  ---
+  duration_ms: 0.95218
+  type: 'test'
+  ...
+# Subtest: Step 92 exports the arm-down custom character factory for reuse
+ok 20 - Step 92 exports the arm-down custom character factory for reuse
+  ---
+  duration_ms: 0.118348
+  type: 'test'
+  ...
+# Subtest: unrigged street GLBs are not used as a source of animated walk cycles
+ok 21 - unrigged street GLBs are not used as a source of animated walk cycles
+  ---
+  duration_ms: 0.179069
+  type: 'test'
+  ...
+# Subtest: renderer retries sidewalk creation when no live articulated walkers exist
+ok 22 - renderer retries sidewalk creation when no live articulated walkers exist
+  ---
+  duration_ms: 0.107251
+  type: 'test'
+  ...
+# Subtest: ordinary non-hub pickup actors replace the legacy outstretched-arm passenger model
+ok 23 - ordinary non-hub pickup actors replace the legacy outstretched-arm passenger model
+  ---
+  duration_ms: 0.101482
+  type: 'test'
+  ...
+# Subtest: real parked kekes come from the ModelManager keke asset when loaded
+ok 24 - real parked kekes come from the ModelManager keke asset when loaded
+  ---
+  duration_ms: 0.110025
+  type: 'test'
+  ...
+# Subtest: checkpoint keke replacement preserves position, orientation and scene parent
+ok 25 - checkpoint keke replacement preserves position, orientation and scene parent
+  ---
+  duration_ms: 0.088413
+  type: 'test'
+  ...
+# Subtest: Step 99 includes a runtime audit for real assets, crowd counts, and walkers
+ok 26 - Step 99 includes a runtime audit for real assets, crowd counts, and walkers
+  ---
+  duration_ms: 0.098508
+  type: 'test'
+  ...
+# Subtest: Step 92 allows its gait to run when the renderer has no explicit scene label
+ok 27 - Step 92 allows its gait to run when the renderer has no explicit scene label
+  ---
+  duration_ms: 0.251608
+  type: 'test'
+  ...
+# Subtest: the project keke GLB required for real checkpoint vehicles is bundled
+ok 28 - the project keke GLB required for real checkpoint vehicles is bundled
+  ---
+  duration_ms: 5.990309
+  type: 'test'
+  ...
+# Subtest: one shuffled batch has exact 40/30/30 category counts
+ok 29 - one shuffled batch has exact 40/30/30 category counts
+  ---
+  duration_ms: 0.819921
+  type: 'test'
+  ...
+# Subtest: each successive full batch remains exactly balanced
+ok 30 - each successive full batch remains exactly balanced
+  ---
+  duration_ms: 0.368985
+  type: 'test'
+  ...
+# Subtest: traffic hook only reassigns newly created vehicles
+ok 31 - traffic hook only reassigns newly created vehicles
+  ---
+  duration_ms: 0.169875
+  type: 'test'
+  ...
+# Subtest: traffic mix rules do not change the vehicle's physical fields or collision code
+ok 32 - traffic mix rules do not change the vehicle's physical fields or collision code
+  ---
+  duration_ms: 0.180571
+  type: 'test'
+  ...
+# Subtest: prototype patches are idempotent and additive
+ok 33 - prototype patches are idempotent and additive
+  ---
+  duration_ms: 0.223686
+  type: 'test'
+  ...
+# Subtest: actual Keke, okada, and sedan GLBs are preloaded before main.js creates the live renderer
+ok 34 - actual Keke, okada, and sedan GLBs are preloaded before main.js creates the live renderer
+  ---
+  duration_ms: 4.854842
+  type: 'test'
+  ...
+# Subtest: audit reports composition targets and the actual loaded asset path
+ok 35 - audit reports composition targets and the actual loaded asset path
+  ---
+  duration_ms: 0.236556
+  type: 'test'
+  ...
+# Subtest: pure balancing rules remain dependency-free and use shuffled ten-vehicle bags
+ok 36 - pure balancing rules remain dependency-free and use shuffled ten-vehicle bags
+  ---
+  duration_ms: 0.134141
+  type: 'test'
+  ...
+# Subtest: left lane is oncoming and right/centre lanes follow the player direction
+ok 37 - left lane is oncoming and right/centre lanes follow the player direction
+  ---
+  duration_ms: 0.759901
+  type: 'test'
+  ...
+# Subtest: same-direction traffic closes slower than oncoming traffic
+ok 38 - same-direction traffic closes slower than oncoming traffic
+  ---
+  duration_ms: 0.200421
+  type: 'test'
+  ...
+# Subtest: relative screen-space motion clamps invalid input to finite values
+ok 39 - relative screen-space motion clamps invalid input to finite values
+  ---
+  duration_ms: 0.167602
+  type: 'test'
+  ...
+# Subtest: GLB categories resolve only for the actual Step 100 traffic assets
+ok 40 - GLB categories resolve only for the actual Step 100 traffic assets
+  ---
+  duration_ms: 0.18631
+  type: 'test'
+  ...
+# Subtest: runtime adapter handles both obs and newer traffic state shapes
+ok 41 - runtime adapter handles both obs and newer traffic state shapes
+  ---
+  duration_ms: 0.187071
+  type: 'test'
+  ...
+# Subtest: legacy runner adjusts relative motion without changing its existing collision methods
+ok 42 - legacy runner adjusts relative motion without changing its existing collision methods
+  ---
+  duration_ms: 0.210757
+  type: 'test'
+  ...
+# Subtest: the current renderer pool mounts cached GLBs and leaves fallbacks when unavailable
+ok 43 - the current renderer pool mounts cached GLBs and leaves fallbacks when unavailable
+  ---
+  duration_ms: 0.166269
+  type: 'test'
+  ...
+# Subtest: oncoming traffic receives opposite yaw in the rendered pool
+ok 44 - oncoming traffic receives opposite yaw in the rendered pool
+  ---
+  duration_ms: 0.086731
+  type: 'test'
+  ...
+# Subtest: Step 101 adapter is loaded after the Step 100 composition module
+ok 45 - Step 101 adapter is loaded after the Step 100 composition module
+  ---
+  duration_ms: 0.238608
+  type: 'test'
+  ...
+# Subtest: bundled keke, okada and sedan GLBs remain present and non-empty
+ok 46 - bundled keke, okada and sedan GLBs remain present and non-empty
+  ---
+  duration_ms: 9.287662
+  type: 'test'
+  ...
+1..46
+# tests 46
+# suites 0
+# pass 46
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 264.776098
