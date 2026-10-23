@@ -366,7 +366,7 @@ function updateNavigationHUD(game, force) {
   if (!force && nav && now - nav.lastHudUpdate < 120) return;
   if (nav) nav.lastHudUpdate = now;
 
-  const onRoad = game.state === 'PLAY' && Boolean(state) && !state.event && !state.runEnded;
+  const onRoad = game.state === 'PLAY' && Boolean(state) && !state.event && !state.runEnded && !state.reverse;
   const remaining = nav ? nav.nextJunctionAt - (Number(state?.distance) || 0) : Infinity;
   const visible = onRoad && (Boolean(nav?.turn) || remaining <= JUNCTION_PREVIEW_KM);
   panel.hidden = !visible;

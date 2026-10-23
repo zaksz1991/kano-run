@@ -279,6 +279,7 @@ await import('./KanoStreetLifeMotionUpgrade.js');
 await import('./KanoWorldInfrastructureUpgrade.js');
 await import('./KanoFlyoverRoundaboutUpgrade.js');
 await import('./KanoRoadNavigationUpgrade.js');
+await import('./KanoRoadWorldCoordinatesUpgrade.js');
 
 // The model pipeline must be patched before main.js creates ModelManager.
 // Keep the existing presentation, game, and persistence hooks as the app entry.

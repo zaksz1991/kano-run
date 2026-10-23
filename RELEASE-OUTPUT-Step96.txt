@@ -1,0 +1,6 @@
+Step 96 release checks
+- Focused tests: 21/21 passed.
+- Included JavaScript files: 6 syntax checked successfully.
+- Module bootstrap contains the Step 96 world-coordinate import between navigation and main.js startup.
+- InstantMesh plan retained; no inference assets claimed.
+- Production Vite build and interactive live browser test not performed.
