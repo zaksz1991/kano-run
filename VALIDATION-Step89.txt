@@ -1,0 +1,13 @@
+KANO LIFE STEP 89 VALIDATION
+
+PASS: import map JSON parses
+PASS: Three.js import mappings from Step 88 retained
+PASS: native CSS module specifier maps to JS shim
+PASS: responsive CSS is linked through a normal stylesheet link
+PASS: existing core screen/button IDs retained in complete index.html
+PASS: direct main.js and model-visual-upgrade module entrypoints retained
+PASS: shim JavaScript syntax (node --check)
+PASS: automated regression tests (3 passed, 0 failed)
+
+NOT RUN: production Vite build, production deployment, or live-site browser validation.
+Interactive Chromium verification was blocked because this environment rejected navigation to its local test server.
