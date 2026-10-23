@@ -1,30 +1,45 @@
-# Kano Life Step 65 — Community Skills and Career Pathways
+# Kano Life Step 66 — Employment Market, Applications & Interviews
 
-## Source baseline
+## Built against current public GitHub main
 
-This update was prepared against the public `main` source checked directly during this build, not by starting from one of the previous Step ZIPs. The current entrypoint was reviewed at:
+This package was prepared after checking the current public raw GitHub `main` entrypoint (`index.html`) and its Step 65 skills/career pathway modules on 2026-10-23. It is an additive feature package—not a replacement project ZIP. The existing PWA manifest and Apple touch-icon links, the four pre-existing registration modules, and the Step 65 `KanoNorthernDriverSkillsPathwaysUpgrade.js` registration remain in the supplied current-main-derived `index.html`; Step 66 is loaded immediately after Step 65.
 
-- https://raw.githubusercontent.com/zaksz1991/kano-run/main/index.html
-- https://raw.githubusercontent.com/zaksz1991/kano-run/main/js/KanoModelAssetVisualUpgrade.js
-- https://raw.githubusercontent.com/zaksz1991/kano-run/main/js/KanoNorthernDriverLifeSimulationUpgrade.js
-- https://raw.githubusercontent.com/zaksz1991/kano-run/main/js/KanoNorthernDriverDigitalLifeUpgrade.js
+The package also carries forward the specific Step 64 JavaScript quote fix that addresses the Vercel parse error in `KanoNorthernDriverDigitalLifeUpgrade.js`.
 
-The public `main` digital-life module still contains the invalid single-quoted `Today's` message from the supplied Vercel error. This package includes a complete corrected copy of that module, changing only the problematic string quoting. The ZIP also replaces the current-main `index.html` to add one Step 65 script while preserving existing PWA links and startup modules, and adds the two new Step 65 modules and tests. `main.js`, `game.js`, `renderer3d.js`, `storage.js`, service-worker, manifest, CSS, GLB assets, and the current model/traffic repair files are not included as replacements.
+## Install
 
-## Feature
+Extract into the current Kano Run project root (the folder containing `index.html` and `package.json`). Allow these complete files to be replaced:
 
-The LIFE & CAREER panel gains **Skills, Certificates & Career Pathways**. It offers free, fictional community learning tracks in keke safety, market bookkeeping, digital sales, customer care, and workplace readiness. Enrollment and attendance are blocked during active driving. A course may have at most two active enrollments; one session can be attended per in-game day, beginning no earlier than the day after enrollment. Completing a course creates a persistent certificate. Certificates can qualify the driver for simulated career pathways and the player can save/remove personal career interests.
+- `index.html` — current-main-derived entrypoint with the Step 66 module registered after Step 65.
+- `js/KanoNorthernDriverDigitalLifeUpgrade.js` — preserves Step 64 behaviour and fixes the invalid single-quoted `Today's` string from the supplied build log.
 
-This is a career-planning simulation, not a claim of real qualifications or real job offers. It does not award wages, deduct money, change driving physics, or replace the existing wallet. State is saved under `kano-life-skills-pathways-v1` in browser storage and can be exported as JSON from the panel.
+Add these files:
 
-## Installation
+- `js/KanoNorthernDriverEmploymentMarket.js`
+- `js/KanoNorthernDriverEmploymentMarketUpgrade.js`
 
-Extract at the project root (the folder containing `index.html` and `package.json`). Replace `index.html` with the supplied complete file; add both new files under `js/`; copy the two `KanoNorthernDriverSkillsPathways*.test.mjs` files into the existing `tests/` folder. Keep all other files unchanged.
+Copy the included two `KanoNorthernDriverEmploymentMarket*.test.mjs` files to the existing `tests/` folder.
 
-## Checks performed here
+Do not replace `main.js`, `game.js`, `renderer3d.js`, `storage.js`, the service worker, manifest, CSS or assets. The package intentionally does not include `package.json`.
 
-- Focused skills-pathways unit tests: 14/14 passed.
-- Entrypoint/integration checks: 2/2 passed.
-- Step 64 build-hotfix regression tests: 2/2 passed.
-- JavaScript syntax checks: passed for all three shipped modules (skills logic, skills UI, corrected Step 64 UI).
-- Full Vite build and visual/browser testing: not run against the full current checkout in this environment.
+## Feature behaviour
+
+- Seven fictional Kano job listings tied to the current Step 65 training certificate IDs.
+- Three active applications maximum; application fees are never charged.
+- Interviews open two in-game days after applying, with three scenario-based answers.
+- Results appear on the next in-game day. Outcomes are based on interview choices and a simulated readiness threshold, not randomness.
+- Offers stay open for three days and can be accepted or declined off-shift.
+- Acceptance records a simulated role but does not pay wages, deduct money, stop keke driving or guarantee employment in the real world.
+- Application history, interviews, offers and active employment record persist in browser local storage; export produces JSON.
+- Career actions are disabled while a driving shift is active.
+
+Employer names, salary ranges, vacancies, readiness scores and selection outcomes are fictional gameplay content—not live job listings or current wage claims.
+
+## Validation performed
+
+- Included Node tests: 15/15 passed.
+- JavaScript syntax checks: passed for all included `.js` and `.mjs` files.
+- HTML integration checks: passed.
+- ZIP integrity: passed.
+- Full Vercel production build against the complete live repository: not run in this environment.
+- Browser visual testing and physical-phone testing: not performed.

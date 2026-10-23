@@ -1,12 +1,12 @@
-# Source baseline for Step 65
+# Source baseline and preservation notes
 
-This update was prepared against the public GitHub `main` files checked directly on 2026-10-23, rather than using an older Step ZIP as the project baseline:
+Checked current public GitHub `main` source on 2026-10-23:
 
 - https://raw.githubusercontent.com/zaksz1991/kano-run/main/index.html
-- https://raw.githubusercontent.com/zaksz1991/kano-run/main/js/KanoModelAssetVisualUpgrade.js
-- https://raw.githubusercontent.com/zaksz1991/kano-run/main/js/KanoNorthernDriverLifeSimulationUpgrade.js
+- https://raw.githubusercontent.com/zaksz1991/kano-run/main/js/KanoNorthernDriverSkillsPathways.js
+- https://raw.githubusercontent.com/zaksz1991/kano-run/main/js/KanoNorthernDriverSkillsPathwaysUpgrade.js
 - https://raw.githubusercontent.com/zaksz1991/kano-run/main/js/KanoNorthernDriverDigitalLifeUpgrade.js
 
-The current public `main` digital-life module still contained the exact parse defect shown in the supplied Vercel log: the string `Today's decision...` was wrapped in single quotes. The package therefore includes a complete corrected copy of `js/KanoNorthernDriverDigitalLifeUpgrade.js`, changing that string to double quotes while preserving its UI and behavior. This is a targeted build repair, not a rewrite of the game's core logic.
+The current-main entrypoint carries the PWA links, the four existing startup registrations, and Step 65's career-pathways registration. `index.html` in this package is derived from that current-main entrypoint with one Step 66 module tag appended after Step 65.
 
-The supplied `index.html` is reconstructed from the current raw GitHub `main` entrypoint, with the existing PWA links and all four startup module tags preserved and one Step 65 script tag added after them. `main.js`, `game.js`, `renderer3d.js`, `storage.js`, service worker, manifest, CSS, GLB assets, and model/traffic repair files are not supplied as replacements.
+The current-main digital-life upgrade still showed the quote syntax defect from the supplied Vercel log; `js/KanoNorthernDriverDigitalLifeUpgrade.js` in this package retains the full Step 65-reviewed module behaviour and corrects that exact string to double quotes. No older `main.js`, `game.js`, renderer, CSS, service worker, manifest, or assets are included as replacements.
