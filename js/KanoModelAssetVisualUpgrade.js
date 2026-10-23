@@ -279,4 +279,8 @@ await import('./KanoNorthernDriverLifeSimulationUpgrade.js');
 await import('./KanoNorthernDriverRealLifeUpgrade.js');
 await import('./KanoNorthernDriverPassengerRelationshipsUpgrade.js');
 await import('./KanoNorthernDriverParkOperationsUpgrade.js');
+// Register the additive street-rhythm layer before the gameplay bootstrap.
+// It only changes the background traffic pool size; collision and rendering
+// implementations remain the versions supplied by the current project.
+await import('./KanoStreetRhythmUpgrade.js');
 await import('./KanoGameplayPresentationRepair.js');
