@@ -1,1 +1,1 @@
-Replace js/renderer3d.js and the 3 tests. Phone sidewalk crowd: high 16 walkers, mid 14, low 10 (was 12/12/10). Walkers are draw-call merged so cost is small. If phone FPS drops, tell me.
+Replace js/main.js and tests/KanoLifeSimSoak.test.mjs (the latter replaces the one from kano-next-upgrade.zip). Adds a toast at each day period: Fajr, morning rush, Zuhr, evening rush, Maghrib, night.

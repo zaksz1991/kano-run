@@ -56,3 +56,9 @@ test('every Northern Driver sim module is reachable from index.html through the 
   const orphans = sim.filter((f) => !seen.has('js/' + f) && !/Model\.js$|Data\.js$/.test(f));
   assert.deepEqual(orphans, [], `unreachable sim modules: ${orphans.join(', ')}`);
 });
+
+test('day-period changes show a street-life toast cue', () => {
+  const main = fs.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /type === 'period_change'/);
+  for (const id of ['fajr', 'morning', 'zuhr', 'asr', 'maghrib', 'isha']) assert.match(main, new RegExp(`${id}: '`));
+});

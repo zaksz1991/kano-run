@@ -972,6 +972,19 @@ function boot() {
 
         if (messages[type]) ui.toast?.(messages[type]);
 
+        // Street-life cue when the day moves into a new period.
+        if (type === 'period_change') {
+          const periodMessages = {
+            fajr: 'Fajr · the city is waking, roads are quiet',
+            morning: 'Morning rush · workers and traders need rides',
+            zuhr: 'Zuhr · prayer time, traffic eases',
+            asr: 'Evening rush · fares are up, roads are packed',
+            maghrib: 'Maghrib · dusk, light is going',
+            isha: 'Night has come · drive carefully',
+          };
+          if (periodMessages[detail?.period]) ui.toast?.(periodMessages[detail.period]);
+        }
+
         // Offer a real food or rest stop when the driver needs one.
         if (type === 'hunger_high' || type === 'hunger_critical') {
           game.offerBreak?.('mealBreak');
