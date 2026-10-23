@@ -1,45 +1,47 @@
-KANO LIFE / KANO RUN — STEP 47
-PASSENGER TRUST, REPEAT CUSTOMERS & SERVICE REPUTATION
-================================================================
+KANO LIFE / KANO RUN — STEP 48
+KEKE PARK OPERATIONS & DAILY DISPATCH
+============================================================
 
 PURPOSE
-This upgrade deepens the persistent life simulation for a young Northern Nigerian keke NAPEP driver. Completed gameplay trips now shape the driver's relationships with recurring named passenger characters and the existing passenger-respect meter in LIFE & CAREER.
+This step adds a persistent workday layer for a young Northern Nigerian man or woman earning a living with an Adaidaita Sahu keke NAPEP. It connects the selected operating stand and work style to actual Career/Free roam shifts, passenger boarding events, and completed passenger journeys.
 
-WHAT CHANGES IN GAMEPLAY
-- The integration hooks the existing Game.pickup() and Game.drop() methods without replacing game.js or its fare logic.
-- Only a real successful boarding is recorded. Failed pickups and full-keke rejection do not create passenger records.
-- Only a successful drop-off that increments the game's drop counter settles a passenger trip.
-- Correct, incident-free trips grow that passenger's trust and the driver's overall service reputation.
-- Rough journeys or dropping at the wrong stop reduce trust and reputation.
-- The existing passenger-respect meter is updated from actual trips: +3 for correct and safe, -2 for a trip that is either correct or safe but not both, and -5 when both the destination and safety outcome are poor. Values remain clamped from 0 to 100.
-- A returning passenger with trust of 75 or more can offer a fare 3% above the base fare. A returning passenger with trust of 25 or less can negotiate a fare 3% lower. Other repeat encounters use the normal fare. This adjustment changes the ordinary in-game trip fare only; it does not mint cash or add a second wallet.
-- LIFE & CAREER gains a passenger relationship section showing service reputation, completed trips, safe journeys, correct stops, repeat rides, familiar passengers and recent trip history.
-- The system is persistent across refreshes using a dedicated local-storage record. It does not alter the keke renderer, collision physics, scene models, world-clock or mobile performance systems.
-
-The game's existing name pool is used to represent recurring NPC passengers. Relationship and fare percentages are gameplay mechanics, not claims about real-world fares in Kano. No real market-price data is introduced.
+WHAT CHANGES
+- Adds eight selectable operating bases matching existing in-game route names: Sabon Gari, Farm Centre, Hotoro, Kofar Ruwa, BUK Gate, Kofar Wambai, Kofar Mata, and Yankaba Market.
+- Adds three work styles: organised park queue, roadside loading, and independent roaming.
+- Records workday entry, opening queue position, shift starts, successful boardings, completed trips, safe trips, correct drops, fare totals, distance, and park standing.
+- Park standing rises after safe and correctly matched trips and falls when a trip is both rough and mismatched, or fails one of those service checks.
+- Adds an optional daily park token for organised-queue work. The ₦40 amount is a balance-tuned game value, not a statement about real-world Kano park tariffs. The player must explicitly press the payment button; it cannot charge automatically, charge twice on the same simulated day, or spend more than the existing banked wallet contains.
+- The selected stand can be explicitly saved as the next start route. This updates the game's existing route selection and does not teleport an active run.
+- The new ledger records fare totals as reporting only. It does not pay extra money, create a second wallet, or alter the existing fare calculation.
+- Work plans, queue records, standing, and the bounded activity ledger persist in local storage.
 
 INSTALLATION
-1. Extract the ZIP into the existing Kano Run project root — the folder containing index.html, package.json, and the js/ and tests/ folders.
-2. Replace these complete files:
-   - js/KanoModelAssetVisualUpgrade.js
-   - js/KanoNorthernDriverRealLife.js
-   - js/KanoNorthernDriverRealLifeUpgrade.js
-3. Add these new files:
-   - js/KanoNorthernDriverPassengerRelationships.js
-   - js/KanoNorthernDriverPassengerRelationshipsUpgrade.js
-4. The ZIP includes unchanged copies of the Step 45 career modules as dependencies. Keep the same modules if they are already installed:
-   - js/KanoNorthernDriverLifeSimulation.js
-   - js/KanoNorthernDriverLifeSimulationUpgrade.js
-5. Copy the three included new *.test.mjs files into the existing tests/ folder.
+1. Extract this ZIP into the existing Kano Run project root — the folder containing index.html, package.json, js/, and tests/.
+2. Replace js/KanoModelAssetVisualUpgrade.js with the supplied complete file. It now imports js/KanoNorthernDriverParkOperationsUpgrade.js after the existing Step 45–47 life and passenger modules.
+3. Add js/KanoNorthernDriverParkOperations.js and js/KanoNorthernDriverParkOperationsUpgrade.js.
+4. The ZIP includes unchanged Step 45–47 support copies of the life-simulation, social-life, and passenger-relationship modules. They match the preceding Step 47 bundle. They may remain unchanged if those versions are already installed.
+5. Copy all included tests/*.test.mjs files into the existing tests/ folder.
 
-Do not replace main.js, game.js, ui.js, index.html, CSS, renderer3d.js, model assets or saved game data. The complete replacement files supplied here preserve the prior Step 45/46 hooks and add the passenger relationship integration to the existing visual-upgrade bootstrap.
+KEEP UNCHANGED
+Do not replace main.js, game.js, ui.js, storage.js, index.html, css/, renderer3d.js, GLB assets, the day-cycle code, the keke visibility/diagnostic modules, or KanoGameplayPresentationRepair.js. Those are existing project files and are not part of the Step 48 edit.
 
-DIAGNOSTICS / API
-The browser exposes window.kanoNorthernDriverPassengerRelationships with snapshot(), getPassenger(name), exportReport(), and refresh() helpers. It also emits kano:passenger-relationship-updated after boarding and completed trips.
+HOW IT WORKS
+- Open LIFE & CAREER from the start screen or paused menu.
+- Choose a stand and work style, then select SAVE WORK PLAN.
+- Use USE STAND FOR NEXT START only when you want the selected stand to become the game's next route.
+- JOIN TODAY'S DUTY records the selected shift plan.
+- The optional PAY DAILY PARK TOKEN button only applies to an active organised-queue workday. It debits the existing banked wallet and records a once-per-day token.
+- Career and Free roam shift starts are recorded automatically. Successful boardings and completed journeys feed the work ledger from the existing passenger-relationship event system.
+
+EXPOSED DIAGNOSTIC API
+window.kanoNorthernDriverParkOperations.snapshot()
+window.kanoNorthernDriverParkOperations.setWorkPlan({ standId, workStyle })
+window.kanoNorthernDriverParkOperations.startWorkday()
+window.kanoNorthernDriverParkOperations.payDailyToken()
+window.kanoNorthernDriverParkOperations.exportReport()
 
 VALIDATION
-- Step 47 focused tests: 21/21 passed.
-- JavaScript syntax checks for seven included runtime modules: 7/7 passed.
-- Full existing test suite after this change: 97 passed, 3 failed. The remaining failures are unrelated existing test/source mismatches in glb-catalog-sync.test.mjs (missing named export), the HTML world-performance module-order assertion (the base index.html does not register that script), and root-cause-repair.test.mjs (an outdated model-fitting source expectation). Step 47 does not change those files.
+- Combined included regression suite: 45/45 passed.
+- JavaScript syntax checks for included runtime modules: passed.
 - ZIP integrity: passed.
-- Vite production build, live browser behavior, WebGL rendering and physical-phone performance were not verified in this environment.
+- Vite production build, browser interaction, WebGL rendering, and physical-phone performance were not verified in this environment.
