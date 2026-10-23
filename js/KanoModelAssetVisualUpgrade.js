@@ -276,6 +276,7 @@ console.info(`[Kano Life] GLB visual quality pass registered for world/, environ
 // Install the articulated street-person and checkpoint queue layer before
 // GameplayPresentationRepair imports main.js and constructs Renderer3D.
 await import('./KanoStreetLifeMotionUpgrade.js');
+await import('./KanoWorldInfrastructureUpgrade.js');
 
 // The model pipeline must be patched before main.js creates ModelManager.
 // Keep the existing presentation, game, and persistence hooks as the app entry.

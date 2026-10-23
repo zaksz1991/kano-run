@@ -1,0 +1,21 @@
+KANO LIFE STEP 93 — CHANGE MANIFEST
+
+REPLACE
+- js/KanoModelAssetVisualUpgrade.js (complete replacement; imports the Step 93 module before main/bootstrap)
+- js/KanoStreetLifeMotionUpgrade.js (complete Step 92 cumulative replacement; retains articulated walkers and 4–6 person passenger crowds)
+
+ADD
+- js/KanoWorldInfrastructureUpgrade.js (forecourt / checkpoint parked-keke visuals and local audit function)
+- tests/KanoWorldInfrastructureUpgrade.test.mjs
+- tests/KanoStreetLifeMotionUpgrade.test.mjs
+- docs/INSTANTMESH-ASSET-PIPELINE-Step92.md
+- docs/TEST-OUTPUT-Step93.txt
+- docs/SYNTAX-OUTPUT-Step93.txt
+- docs/RELEASE-OUTPUT-Step93.txt
+- README-Step93.md
+
+NOT MODIFIED
+- index.html, vercel.json, package.json, js/main.js, js/game.js, js/ui.js, js/renderer3d.js, storage, collision physics, payout rules, user saves, and existing model/image/audio assets.
+
+LIMITATION
+This is an additive visual upgrade to zone-linked props. The existing endless-road background still recycles distant scenery; a fixed-coordinate navigable world requires a separate engine-coordinate refactor. InstantMesh inference was not run.
