@@ -19,6 +19,10 @@ test('Step 98 is loaded after the signed road-distance foundation and before gam
   assert.ok(bootstrap.indexOf('KanoInfrastructureWorldAnchorsUpgrade.js') < bootstrap.indexOf('KanoGameplayPresentationRepair.js'));
 });
 
+test('persistent anchor synchronization also works when the renderer omits a scene label', () => {
+  assert.match(source, /\(this\.lifeScene && this\.lifeScene !== 'road'\)/);
+});
+
 test('fuel-station and checkpoint-parking visual groups are promoted from recycled zone actors', () => {
   assert.match(source, /kanoFuelStationGeometry === true/);
   assert.match(source, /kanoCheckpointKeke === true/);

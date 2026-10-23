@@ -378,7 +378,7 @@ function installRendererPatches() {
       }
       anchorSidewalkPedestrians(this, worldDistanceKm(this, state));
 
-      if (this.lifeScene !== 'road' || !this.world || !this.renderer?.render) {
+      if ((this.lifeScene && this.lifeScene !== 'road') || !this.world || !this.renderer?.render) {
         return ORIGINAL.draw.call(this, state, ...args);
       }
 

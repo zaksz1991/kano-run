@@ -1,0 +1,130 @@
+TAP version 13
+# Subtest: Step 98 is loaded after the signed road-distance foundation and before game bootstrap
+ok 1 - Step 98 is loaded after the signed road-distance foundation and before game bootstrap
+  ---
+  duration_ms: 0.916646
+  type: 'test'
+  ...
+# Subtest: persistent anchor synchronization also works when the renderer omits a scene label
+ok 2 - persistent anchor synchronization also works when the renderer omits a scene label
+  ---
+  duration_ms: 0.106329
+  type: 'test'
+  ...
+# Subtest: fuel-station and checkpoint-parking visual groups are promoted from recycled zone actors
+ok 3 - fuel-station and checkpoint-parking visual groups are promoted from recycled zone actors
+  ---
+  duration_ms: 0.16655
+  type: 'test'
+  ...
+# Subtest: checkpoint passenger queue is detached as its own world group
+ok 4 - checkpoint passenger queue is detached as its own world group
+  ---
+  duration_ms: 0.117487
+  type: 'test'
+  ...
+# Subtest: world anchor conversion round-trips the initial local depth
+ok 5 - world anchor conversion round-trips the initial local depth
+  ---
+  duration_ms: 0.231027
+  type: 'test'
+  ...
+# Subtest: station approaches, passes the player, and can reappear during reverse travel
+ok 6 - station approaches, passes the player, and can reappear during reverse travel
+  ---
+  duration_ms: 0.101513
+  type: 'test'
+  ...
+# Subtest: sidewalk pedestrians keep a bounded walking offset while following the signed road coordinate
+ok 7 - sidewalk pedestrians keep a bounded walking offset while following the signed road coordinate
+  ---
+  duration_ms: 0.151517
+  type: 'test'
+  ...
+# Subtest: passenger idle animation continues after the zone actor is recycled
+ok 8 - passenger idle animation continues after the zone actor is recycled
+  ---
+  duration_ms: 0.325188
+  type: 'test'
+  ...
+# Subtest: new runs rebase walkers and remove prior-run persistent stop visuals
+ok 9 - new runs rebase walkers and remove prior-run persistent stop visuals
+  ---
+  duration_ms: 0.377427
+  type: 'test'
+  ...
+# Subtest: persistent visual pool is bounded and audit checks player-parenting
+ok 10 - persistent visual pool is bounded and audit checks player-parenting
+  ---
+  duration_ms: 0.485459
+  type: 'test'
+  ...
+# Subtest: Step 99 is bootstrapped after world-anchor support and before game startup
+ok 11 - Step 99 is bootstrapped after world-anchor support and before game startup
+  ---
+  duration_ms: 0.848024
+  type: 'test'
+  ...
+# Subtest: Step 92 exports the arm-down custom character factory for reuse
+ok 12 - Step 92 exports the arm-down custom character factory for reuse
+  ---
+  duration_ms: 0.151597
+  type: 'test'
+  ...
+# Subtest: unrigged street GLBs are not used as a source of animated walk cycles
+ok 13 - unrigged street GLBs are not used as a source of animated walk cycles
+  ---
+  duration_ms: 0.150115
+  type: 'test'
+  ...
+# Subtest: renderer retries sidewalk creation when no live articulated walkers exist
+ok 14 - renderer retries sidewalk creation when no live articulated walkers exist
+  ---
+  duration_ms: 0.100631
+  type: 'test'
+  ...
+# Subtest: ordinary non-hub pickup actors replace the legacy outstretched-arm passenger model
+ok 15 - ordinary non-hub pickup actors replace the legacy outstretched-arm passenger model
+  ---
+  duration_ms: 0.110066
+  type: 'test'
+  ...
+# Subtest: real parked kekes come from the ModelManager keke asset when loaded
+ok 16 - real parked kekes come from the ModelManager keke asset when loaded
+  ---
+  duration_ms: 0.108824
+  type: 'test'
+  ...
+# Subtest: checkpoint keke replacement preserves position, orientation and scene parent
+ok 17 - checkpoint keke replacement preserves position, orientation and scene parent
+  ---
+  duration_ms: 0.088673
+  type: 'test'
+  ...
+# Subtest: Step 99 includes a runtime audit for real assets, crowd counts, and walkers
+ok 18 - Step 99 includes a runtime audit for real assets, crowd counts, and walkers
+  ---
+  duration_ms: 0.098628
+  type: 'test'
+  ...
+# Subtest: Step 92 allows its gait to run when the renderer has no explicit scene label
+ok 19 - Step 92 allows its gait to run when the renderer has no explicit scene label
+  ---
+  duration_ms: 0.2395
+  type: 'test'
+  ...
+# Subtest: the project keke GLB required for real checkpoint vehicles is bundled
+ok 20 - the project keke GLB required for real checkpoint vehicles is bundled
+  ---
+  duration_ms: 6.202443
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 114.738369

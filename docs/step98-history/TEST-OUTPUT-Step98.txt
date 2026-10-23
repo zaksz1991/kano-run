@@ -1,0 +1,64 @@
+TAP version 13
+# Subtest: Step 98 is loaded after the signed road-distance foundation and before game bootstrap
+ok 1 - Step 98 is loaded after the signed road-distance foundation and before game bootstrap
+  ---
+  duration_ms: 1.052497
+  type: 'test'
+  ...
+# Subtest: fuel-station and checkpoint-parking visual groups are promoted from recycled zone actors
+ok 2 - fuel-station and checkpoint-parking visual groups are promoted from recycled zone actors
+  ---
+  duration_ms: 0.203178
+  type: 'test'
+  ...
+# Subtest: checkpoint passenger queue is detached as its own world group
+ok 3 - checkpoint passenger queue is detached as its own world group
+  ---
+  duration_ms: 0.110238
+  type: 'test'
+  ...
+# Subtest: world anchor conversion round-trips the initial local depth
+ok 4 - world anchor conversion round-trips the initial local depth
+  ---
+  duration_ms: 0.185462
+  type: 'test'
+  ...
+# Subtest: station approaches, passes the player, and can reappear during reverse travel
+ok 5 - station approaches, passes the player, and can reappear during reverse travel
+  ---
+  duration_ms: 0.194294
+  type: 'test'
+  ...
+# Subtest: sidewalk pedestrians keep a bounded walking offset while following the signed road coordinate
+ok 6 - sidewalk pedestrians keep a bounded walking offset while following the signed road coordinate
+  ---
+  duration_ms: 0.102055
+  type: 'test'
+  ...
+# Subtest: passenger idle animation continues after the zone actor is recycled
+ok 7 - passenger idle animation continues after the zone actor is recycled
+  ---
+  duration_ms: 0.168616
+  type: 'test'
+  ...
+# Subtest: new runs rebase walkers and remove prior-run persistent stop visuals
+ok 8 - new runs rebase walkers and remove prior-run persistent stop visuals
+  ---
+  duration_ms: 0.110097
+  type: 'test'
+  ...
+# Subtest: persistent visual pool is bounded and audit checks player-parenting
+ok 9 - persistent visual pool is bounded and audit checks player-parenting
+  ---
+  duration_ms: 0.385725
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 59.013694

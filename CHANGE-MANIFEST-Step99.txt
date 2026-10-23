@@ -1,0 +1,15 @@
+KANO LIFE — STEP 99 CHANGE MANIFEST
+
+REPLACED
+- js/KanoStreetLifeMotionUpgrade.js: exposes the pose-safe character factory and enables gait when lifeScene is omitted.
+- js/KanoModelAssetVisualUpgrade.js: loads the new Step 99 renderer hooks after the Step 98 world-anchor layer and before game startup.
+- js/KanoInfrastructureWorldAnchorsUpgrade.js: allows persistent world-anchor synchronization if the renderer has no explicit scene label.
+
+ADDED
+- js/KanoRealKekePassengerPoseUpgrade.js: restores sidewalk walker initialization, repairs single pickup passenger poses, uses real cached keke GLBs for parked checkpoint vehicles, and publishes a runtime audit.
+- public/assets/models/vehicles/keke/keke-3.glb: bundled real keke GLB used by ModelManager.
+- tests/KanoRealKekePassengerPoseUpgrade.test.mjs: Step 99 regression checks.
+- README-Step99.md and Step 99 validation records.
+
+CORE FILES NOT REPLACED
+- index.html, main.js, game.js, ui.js, renderer3d.js, ModelManager.js, storage, and asset files.

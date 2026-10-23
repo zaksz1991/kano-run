@@ -132,6 +132,11 @@ function makeStreetPerson(variant, { waiting = false } = {}) {
   return root;
 }
 
+/** Public factory for the pose-safe Kano street/passenger character used by Step 99. */
+export function createKanoStreetPerson(variant, options = {}) {
+  return makeStreetPerson(variant, options);
+}
+
 function disposeRemovedTree(root) {
   if (!root) return;
   const geometries = new Set();
@@ -230,7 +235,7 @@ function addCheckpointPassengerCrowd(renderer, zone, actor) {
 }
 
 function animateStreetLife(renderer, dt) {
-  if (renderer.lifeScene !== 'road') return;
+  if (renderer.lifeScene && renderer.lifeScene !== 'road') return;
   renderer.kanoStreetClock = (renderer.kanoStreetClock || 0) + dt;
   const time = renderer.kanoStreetClock;
 
