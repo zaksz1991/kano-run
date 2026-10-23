@@ -44,7 +44,15 @@ function patchUIReferences() {
 
 function fillSelectIfEmpty(id, records, { valueKey = 'id', labelFor = item => item.name, disabledFor = () => false } = {}) {
   const select = document.getElementById(id);
-  if (!select || select.options.length) return;
+  if (!select) return;
+  const staticFallback = select.dataset.kanoStaticFallback === 'true';
+  if (select.options.length && !staticFallback) return;
+  if (staticFallback) {
+    // Keep the safe HTML choice if a partially loaded configuration has no data.
+    if (!Array.isArray(records) || records.length === 0) return;
+    select.replaceChildren();
+    delete select.dataset.kanoStaticFallback;
+  }
   for (const record of records || []) {
     const option = document.createElement('option');
     option.value = String(record?.[valueKey] ?? '');
@@ -126,12 +134,33 @@ async function loadMain() {
   return mainPromise;
 }
 
+function scheduleStartProgressCheck() {
+  window.setTimeout(() => {
+    const start = document.getElementById('start-screen');
+    const routine = document.getElementById('life-routine-screen');
+    const game = window.__KANO_ACTIVE_GAME__ || window.__KANO_ACTIVE_UI__?.game || null;
+    const startVisible = Boolean(start && !start.classList.contains('hidden'));
+    const routineVisible = Boolean(routine && !routine.classList.contains('hidden'));
+    const state = String(game?.state || 'INTRO');
+    const progressed = !startVisible || routineVisible || state === 'PLAY' || state === 'EVENT';
+    if (startVisible && !progressed) {
+      showBootAlert(new Error('Start Driving was clicked, but the game stayed on the start page. The main game state did not advance.'));
+    } else {
+      hideBootAlert();
+    }
+  }, 1800);
+}
+
 function bindStartRecovery() {
   const button = document.getElementById('start-btn');
   if (!button || button.dataset.kanoLaunchRecovery === '1') return;
   button.dataset.kanoLaunchRecovery = '1';
   button.addEventListener('click', async event => {
-    if (window.__KANO_UI_BOUND__ && window.__KANO_ACTIVE_GAME__) return;
+    ensureSelectsHaveOptions();
+    if (window.__KANO_UI_BOUND__ && window.__KANO_ACTIVE_GAME__) {
+      scheduleStartProgressCheck();
+      return;
+    }
     event.preventDefault();
     event.stopImmediatePropagation();
     try {

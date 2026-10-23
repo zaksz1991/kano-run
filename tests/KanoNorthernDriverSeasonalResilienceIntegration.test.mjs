@@ -24,6 +24,7 @@ test('launch recovery precedes the seasonal bridge, while all core patch modules
     '/js/KanoNorthernDriverAdashiSupportUpgrade.js',
     '/js/KanoNorthernDriverCivicProjectsUpgrade.js',
     '/js/KanoNorthernDriverSocialDramaUpgrade.js',
+    '/js/KanoNorthernDriverSocialNetworkUpgrade.js',
     '/js/KanoModelAssetVisualUpgrade.js',
     '/js/main.js',
   ];
@@ -48,6 +49,7 @@ test('all previously delivered relationship and family modules remain reachable 
     'KanoNorthernDriverSeasonalResilienceUpgrade.js',
     'KanoNorthernDriverAdashiSupportUpgrade.js',
     'KanoNorthernDriverCivicProjectsUpgrade.js',
+    'KanoNorthernDriverSocialNetworkUpgrade.js',
   ]) assert.equal(sources.filter(source => source === `/js/${file}`).length, 1, `${file} must be loaded exactly once`);
   for (const protectedPart of ['href="/manifest.webmanifest"', 'href="/icons/apple-touch-icon.png"', 'href="/css/styles.css"', 'id="game-canvas"', 'id="passenger-list"', 'id="drive-controls"']) assert.ok(html.includes(protectedPart), `Missing preserved base UI/PWA fragment ${protectedPart}`);
 });
@@ -56,6 +58,9 @@ test('the generated Keke hero image replaces the flat illustration and social li
   assert.ok(html.includes('src="/assets/kano-life-keke-hero.webp"'));
   assert.ok(html.includes('id="kano-social-drama-btn"'));
   assert.ok(html.includes('href="/css/kano-life-step74-upgrade.css"'));
+  assert.ok(html.includes('href="/css/kano-life-step75-social-network.css"'));
+  assert.ok(html.includes('id="route-select" data-kano-static-fallback="true"'));
+  assert.ok(html.includes('id="driver-select" data-kano-static-fallback="true"'));
 });
 
 test('the seasonal installer imports existing systems and leaves the season change opt-in', () => {

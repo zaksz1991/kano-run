@@ -1,0 +1,40 @@
+/* Kano Life Step 75 — persistent NPC relationships and start-page fallback */
+#ksn-card { border-color: rgba(245,197,66,.28); }
+#ksn-card .ksn-lead { color: #b8c8d9; font-size: 12px; line-height: 1.6; }
+#ksn-card .ksn-toggle { width: 100%; min-height: 48px; margin-top: 8px; border-color: #f5c54263; background: linear-gradient(135deg,#1a2b40,#152237); color: #f6d66c; font-weight: 900; }
+#ksn-workspace { margin-top: 14px; }
+#ksn-workspace[hidden] { display: none !important; }
+#ksn-workspace .ksn-inner { margin-top: 13px; padding: 12px; border: 1px solid #ffffff17; border-radius: 13px; background: #07142170; }
+#ksn-workspace .ksn-inner h4 { margin: 4px 0 10px; }
+#ksn-roster { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+.ksn-person { min-width: 0; border: 1px solid #ffffff17; border-radius: 11px; padding: 10px; background: #101e2e; }
+.ksn-person-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
+.ksn-person-heading strong { color: #f4f7fb; font-size: 11px; line-height: 1.35; }
+.ksn-person-count { flex: 0 0 auto; color: #9fb0c3; font-size: 9px; }
+.ksn-name-label { display: grid; gap: 5px; color: #9fb0c3; font-size: 9px; font-weight: 900; letter-spacing: .07em; }
+.ksn-name-input { width: 100%; min-width: 0; min-height: 40px; padding: 8px 9px; color: #f7f9fc; background: #081522; border: 1px solid #ffffff26; border-radius: 8px; font: inherit; font-size: 12px; }
+.ksn-person-bars { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; margin-top: 9px; }
+.ksn-bar { min-width: 0; }
+.ksn-bar-head { display: flex; justify-content: space-between; gap: 4px; margin-bottom: 4px; color: #9faec0; font-size: 9px; }
+.ksn-bar-head strong { color: #f5d26a; font-size: 9px; }
+.ksn-bar-track { height: 4px; overflow: hidden; border-radius: 99px; background: #ffffff16; }
+.ksn-bar-track i { display: block; height: 100%; border-radius: inherit; background: #39c5a1; }
+.ksn-bar-track i.is-negative { background: #df9b77; }
+#ksn-safety[data-active="true"] { border-color: #e9a08d; color: #ffe4dc; }
+#ksn-scene-copy { white-space: pre-line; }
+.ksn-choice { min-height: 65px; }
+.ksn-skip { width: 100%; margin-top: 9px; min-height: 43px; }
+.ksn-history { display: grid; gap: 8px; }
+.ksn-history-entry { padding: 10px; border: 1px solid #ffffff14; border-radius: 9px; background: #0a1724; }
+.ksn-history-entry strong { color: #eef4fb; font-size: 11px; }
+.ksn-history-entry p { margin: 4px 0 0; color: #b1c0d0; font-size: 11px; line-height: 1.5; }
+#ksn-notice[data-state="error"] { border-color: #e98d86; background: #a1322c22; color: #ffe5e2; }
+#ksn-workspace button:disabled, #ksn-workspace input:disabled { opacity: .48; cursor: not-allowed; }
+.kano-launch-recovery-alert { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  #ksn-roster { grid-template-columns: 1fr; }
+  #ksn-workspace .ksn-inner { padding: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ksn-bar-track i { transition: none !important; }
+}

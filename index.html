@@ -11,6 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="/css/styles.css" />
   <link rel="stylesheet" href="/css/kano-life-step74-upgrade.css" />
+  <link rel="stylesheet" href="/css/kano-life-step75-social-network.css" />
 </head>
 <body>
   <main id="app">
@@ -39,7 +40,7 @@
         <div class="start-card"><div class="brand-mark">KL<span>+</span></div><p class="eyebrow">NORTHERN NIGERIA · STREET LIFE</p><h1>KANO <em>LIFE</em></h1><p class="subtitle">Drive. Load. Negotiate.<br />Survive.</p><div class="kano-keke-hero" aria-label="A realistic 3D-style yellow Kano Adaidaita Sahu keke">
             <img src="/assets/kano-life-keke-hero.webp" alt="Yellow three-wheeled Adaidaita Sahu keke with a black canopy, rendered in a realistic 3D style" width="1200" height="804" fetchpriority="high" decoding="async" />
           </div>
-          <div class="start-fields"><label>ROUTE<select id="route-select"></select></label><label>DRIVER<select id="driver-select"></select></label><label>MODE<select id="mode-select"><option value="career">Career</option><option value="timeAttack">Time Attack</option><option value="fuel">Fuel Gauge Challenge</option><option value="matchDrop">Match Drop</option><option value="potholes">Potholes Challenge</option><option value="freeRoam">Free roam</option></select></label></div>
+          <div class="start-fields"><label>ROUTE<select id="route-select" data-kano-static-fallback="true"><option value="route-7">Zoo Road · starter route</option></select></label><label>DRIVER<select id="driver-select" data-kano-static-fallback="true"><option value="ruffneck">Ruffneck · starter driver</option></select></label><label>MODE<select id="mode-select"><option value="career">Career</option><option value="timeAttack">Time Attack</option><option value="fuel">Fuel Gauge Challenge</option><option value="matchDrop">Match Drop</option><option value="potholes">Potholes Challenge</option><option value="freeRoam">Free roam</option></select></label></div>
           <div class="start-actions"><button class="primary" id="start-btn">START DRIVING</button><button class="secondary" id="help-btn">HOW TO PLAY</button></div><div class="start-meta"><span>BANKED FUNDS <b id="wallet-balance">₦1,200</b></span><span id="daily-streak">Current streak: 0 day(s)</span></div><div class="start-extra"><button class="secondary" id="garage-btn">GARAGE · DRIVERS &amp; PAINT</button><button class="secondary" id="daily-login-btn">CLAIM DAILY LOGIN</button></div><button class="secondary kds-launch-button" id="kano-social-drama-btn" type="button">PEOPLE · RELATIONSHIPS &amp; SOCIAL LIFE</button><div class="credit">Game Developer: <b>Hassan Zakariya</b></div><div class="promo"><a href="https://ruffneck-entertainment.vercel.app" target="_blank" rel="noopener">RUFFNECK ENTERTAINMENT</a><span>·</span><a href="https://ruffneck-lms.vercel.app" target="_blank" rel="noopener">RUFFNECK LEARN</a></div>
         </div>
       </section>
@@ -70,6 +71,7 @@
   <script type="module" src="/js/KanoNorthernDriverAdashiSupportUpgrade.js"></script>
   <script type="module" src="/js/KanoNorthernDriverCivicProjectsUpgrade.js"></script>
   <script type="module" src="/js/KanoNorthernDriverSocialDramaUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverSocialNetworkUpgrade.js"></script>
 
   <!-- This wrapper installs visual repair hooks and imports main.js. A separate direct entry below is intentional: ES module caching prevents a second game instance and recovers if this optional wrapper fails. -->
   <script type="module" src="/js/KanoModelAssetVisualUpgrade.js"></script>
