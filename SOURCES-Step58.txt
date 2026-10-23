@@ -1,9 +1,0 @@
-SOURCE NOTES FOR MARKET NAMES AND BROAD SPECIALTIES
-
-Market specialization in the feature data is grounded in published descriptions, including:
-- OECD, Intra-regional Food Trade in West Africa, Dawanau market profile: https://www.oecd.org/en/publications/intra-regional-food-trade-in-west-africa_3f5fd54a-en/full-report/component-7.html
-- Profile of selected markets, International Institute of Tropical Agriculture (IITA), Kano State sections describing Yankaba, Sabon Gari and Dawanau: https://biblio.iita.org/documents/U04ManKormawaLocalNothomNodev.pdf-3c31c8f36ca1d4da425d7dff2770530d.pdf
-- Kano specialized market summary covering grains, fruit, vegetables, textiles and groceries: https://ueaeprints.uea.ac.uk/id/eprint/29901/1/statefinal.pdf
-- Trust Radio, “More malls, no parking spaces as Kano business environs expand” (market overview): https://trustradio.com.ng/en/more-malls-no-parking-spaces-as-kano-business-environs-expand
-
-The game does not claim all listed market specialties are exclusive. All prices, bill values and profit margins remain fictional gameplay values. Streetfront density is the user's requested scene-design target, not a measured statistical claim about every Kano building.

@@ -1,7 +1,0 @@
-STEP 51 VALIDATION
-- Day-settlement unit tests: 5/5 passed.
-- JavaScript syntax checks for the two new modules and the changed Step 50 integration: passed.
-- ZIP integrity: passed after packaging.
-- No replacements for main.js, game.js, renderer3d.js, index.html, service worker, manifest, CSS or model assets are included.
-- Full current Claude-repaired project suite: not run because the exact repaired archive was not available in the working environment.
-- Production build, browser rendering, and physical-phone testing: not performed.

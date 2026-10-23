@@ -1,1 +1,0 @@
-Code-only snapshot of kano-run main. Binary assets under public/assets/ are NOT included; ASSET-MANIFEST.csv lists every asset path and byte size. GIT-LOG-15.txt is git log --oneline -15. Entry: index.html.

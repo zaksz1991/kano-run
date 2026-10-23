@@ -1,8 +1,0 @@
-Kano Life Animation Director Upgrade
-Files:
-- js/KanoAnimationDirector.js
-- js/KanoCharacterAnimation.js
-- js/KanoVehicleVisualAnimator.js
-- INTEGRATION.md
-- README.md
-This package includes copies of the two previous animation modules for convenience.

@@ -1,1 +1,0 @@
-Step 61 has no external factual-data dependency. Water volumes, prices, supply cadence and roleplay-meter changes are fictional in-game mechanics. Household water actions are explicitly triggered by the player; no water deduction is inferred from elapsed time.

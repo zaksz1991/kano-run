@@ -1,7 +1,0 @@
-STEP 54 VALIDATION
-Focused tests: 13 passed, 0 failed.
-Cross-check suite in the isolated validation workspace: 43 passed, 0 failed.
-JavaScript syntax checks (6 changed files): passed.
-ZIP integrity: passed.
-Not run: full current repository test suite, production build, browser/WebGL visual testing, physical phone performance.
-Fuel prices are fictional game values and fuel units are gauge percentage points, not litres.
