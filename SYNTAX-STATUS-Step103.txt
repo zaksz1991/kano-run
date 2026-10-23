@@ -1,0 +1,23 @@
+PASS js/KanoRoadPathContinuityUpgrade.js
+PASS js/KanoGameplayPresentationRepair.js
+PASS js/KanoWorldInfrastructureUpgrade.js
+PASS js/KanoStreetLifeMotionUpgrade.js
+PASS js/KanoTrafficRuntimeIntegrationUpgrade.js
+PASS js/KanoRealKekePassengerPoseUpgrade.js
+PASS js/KanoInfrastructureWorldAnchorsUpgrade.js
+PASS js/KanoTrafficCompositionRules.mjs
+PASS js/KanoRoadWorldCoordinatesUpgrade.js
+PASS js/KanoTrafficCompositionUpgrade.js
+PASS js/KanoFlyoverRoundaboutUpgrade.js
+PASS js/KanoModelAssetVisualUpgrade.js
+PASS js/KanoRoadNavigationUpgrade.js
+PASS js/KanoTrafficFlowRules.mjs
+PASS js/KanoSeatedDriverMotionUpgrade.js
+PASS js/KanoPlayerKekeGLBUpgrade.js
+PASS tests/KanoInfrastructureWorldAnchorsUpgrade.test.mjs
+PASS tests/KanoSeatedDriverMotionUpgrade.test.mjs
+PASS tests/KanoTrafficRuntimeIntegrationUpgrade.test.mjs
+PASS tests/KanoRealKekePassengerPoseUpgrade.test.mjs
+PASS tests/KanoTrafficCompositionUpgrade.test.mjs
+PASS tests/KanoPlayerKekeGLBUpgrade.test.mjs
+All 22 JavaScript ES-module files passed syntax checks.

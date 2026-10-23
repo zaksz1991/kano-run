@@ -291,6 +291,7 @@ await import('./KanoRealKekePassengerPoseUpgrade.js');
 await import('./KanoTrafficCompositionUpgrade.js');
 await import('./KanoTrafficRuntimeIntegrationUpgrade.js');
 await import('./KanoPlayerKekeGLBUpgrade.js');
+await import('./KanoSeatedDriverMotionUpgrade.js');
 
 // Keep this as the final bootstrap step: the presentation module imports
 // main.js, which constructs the game's live Game/Renderer3D/UI instances.
