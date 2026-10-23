@@ -15,14 +15,16 @@ test('startup loads root-cause patch before the existing GLB pipeline', () => {
   assert.ok(repairAt >= 0 && visualAt > repairAt);
 });
 
-test('keke fit records measured bounds and applies only explicit per-model calibration', () => {
+test('keke fitting records whole-model bounds and preserves the calibrated asset orientation', () => {
   assert.match(source, /function fitKekeTemplate\(template\)/);
-  assert.match(source, /getKekeCalibrationForPath\(modelPath\)/);
-  assert.match(source, /automaticAxisRotation: false/);
-  assert.match(source, /orientationPolicy: 'preserve-ModelManager-normalization; apply only exact-path calibration'/);
+  assert.match(source, /const before = getModelBounds\(template\)/);
+  assert.match(source, /const after = getModelBounds\(template\)/);
   assert.match(source, /boundsBefore/);
   assert.match(source, /boundsAfter/);
-  assert.doesNotMatch(source, /before\.width > before\.depth/);
+  assert.match(source, /automaticAxisRotation: false/);
+  assert.match(source, /internalChildTransformChanged: false/);
+  assert.match(source, /orientationPolicy: 'preserve-ModelManager-normalization; apply only exact-path calibration'/);
+  assert.match(source, /template\.rotation\.y = THREE\.MathUtils\.degToRad\(calibration\.yawDeg\)/);
 });
 
 test('mobile shadow optimization excludes the player keke', () => {
