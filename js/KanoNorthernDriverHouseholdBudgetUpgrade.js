@@ -249,3 +249,6 @@ function readPlanFromPanel() {
 
 install();
 console.info('[Kano Life] Household budget planner ready; calculations never alter the wallet.');
+
+// Step 53: attach the mechanic/roadworthiness layer after the career wallet API exists.
+await import('./KanoNorthernDriverVehicleMaintenanceUpgrade.js');

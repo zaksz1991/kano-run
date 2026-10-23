@@ -391,6 +391,45 @@ function install() {
       snapshot: () => life.getSnapshot(save.money || 0),
       export: () => JSON.stringify(life.getSnapshot(save.money || 0), null, 2),
       refresh: () => document.getElementById('kano-life-career-screen')?.classList.contains('hidden') ? null : window.__KANO_ACTIVE_UI__?.__kanoLifeCareerRefresh?.(),
+      // Authoritative wallet transaction for roleplay services. Savings are not spendable here.
+      chargeExpense: ({ amount: requested, category = 'maintenance', serviceId = '', description = 'Vehicle maintenance', day = 1 } = {}) => {
+        const cost = money(requested);
+        if (!cost || category !== 'maintenance' || !['tyres', 'engine', 'condition', 'full'].includes(String(serviceId))) {
+          return { ok: false, reason: 'invalid_maintenance_transaction', wallet: money(save.money || 0) };
+        }
+        if (life.state.activeShift) return { ok: false, reason: 'shift_active', wallet: money(save.money || 0) };
+        const wallet = money(save.money || 0);
+        if (cost > wallet) return { ok: false, reason: 'insufficient_wallet', wallet, required: cost };
+        save.money = wallet - cost;
+        life.state.totals.paidExpenses = money(life.state.totals.paidExpenses + cost);
+        life.state.totals.maintenance = money(life.state.totals.maintenance + cost);
+        life._record('vehicle_service', -cost, {
+          category: 'maintenance', serviceId: String(serviceId), description: safeText(description, 100),
+          day: Math.max(1, Math.floor(Number(day) || 1)), paid: cost, walletAfter: save.money,
+        });
+        life.save();
+        persist();
+        const ui = window.__KANO_ACTIVE_UI__;
+        ui?.refreshWallet?.();
+        ui?.__kanoLifeCareerRefresh?.();
+        const detail = { amount: cost, wallet: save.money, category: 'maintenance', serviceId: String(serviceId), day: Math.max(1, Math.floor(Number(day) || 1)) };
+        window.dispatchEvent(new CustomEvent('kano:life-maintenance-expense', { detail }));
+        return { ok: true, amount: cost, wallet: save.money, transaction: detail };
+      },
+      // Vehicle Maintenance applies stored game condition after Game.start(); update the
+      // already-created shift baseline so ordinary settlement only charges actual wear.
+      syncActiveShiftStart: (gameState = {}) => {
+        const active = life.state.activeShift;
+        if (!active || !gameState || typeof gameState !== 'object') return false;
+        for (const key of ['fuel', 'condition', 'engine', 'tyres']) {
+          if (Number.isFinite(Number(gameState[key]))) active[key] = clamp(gameState[key], 0, 100);
+        }
+        for (const key of ['distance', 'drops', 'collisions']) {
+          if (Number.isFinite(Number(gameState[key]))) active[key] = Math.max(0, Number(gameState[key]));
+        }
+        life.save();
+        return true;
+      },
     };
     window.addEventListener('kano:daily-day-change', () => {
       window.__KANO_ACTIVE_UI__?.__kanoLifeCareerRefresh?.();
