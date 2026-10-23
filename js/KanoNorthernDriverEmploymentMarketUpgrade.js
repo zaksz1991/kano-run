@@ -274,9 +274,8 @@ function exportReport() {
 function install() {
   if (typeof window === 'undefined' || typeof document === 'undefined' || window[INSTALL_KEY]) return;
   window[INSTALL_KEY] = true; installStyles(); render();
-  const observer = typeof MutationObserver !== 'undefined' && document.documentElement
-    ? new MutationObserver(() => { if (document.querySelector('#kano-life-career-screen .klc-panel')) render(); }) : null;
-  observer?.observe(document.documentElement, { childList: true, subtree: true });
+  // The career host is in the static HTML shell. Event-driven rendering below
+  // is sufficient; a document-wide observer re-enters render() on its own DOM writes.
   for (const eventName of [
     'kano:daily-day-change', 'kano:life-shift-settled', 'kano:day-settlement-closed',
     'kano:skills-pathways-updated', 'kano:digital-life-updated', 'kano:relationship-status-updated',

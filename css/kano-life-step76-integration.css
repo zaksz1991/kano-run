@@ -1,0 +1,84 @@
+/* KANO LIFE STEP 76 — Life & Career shell, settings and integration status. */
+#life-career-btn,
+#life-career-menu-btn,
+#klc-open-social-from-career { width: 100%; }
+#life-career-btn { margin-top: 8px; border-color: rgba(245,197,66,.48); }
+#life-career-menu-btn { border-color: rgba(245,197,66,.46); }
+.menu-settings-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(245,197,66,.22);
+  background: rgba(245,197,66,.055);
+  color: #b9c7d7;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.klc-screen { align-items: flex-start; }
+#kano-life-career-screen .klc-panel {
+  position: relative;
+  width: min(100%, 1100px);
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  padding: clamp(14px, 3vw, 26px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  text-align: left;
+  color: #f3f7fb;
+  background: linear-gradient(150deg, rgba(23,40,59,.99), rgba(10,22,36,.99));
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 20px;
+  box-shadow: 0 25px 100px #0009;
+}
+#kano-life-career-screen .klc-panel > .close-x {
+  position: sticky;
+  float: right;
+  top: 0;
+  z-index: 5;
+  margin: -5px -4px 4px 10px;
+  min-width: 42px;
+  min-height: 42px;
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 10px;
+  background: #0c1a2b;
+  color: #fff;
+}
+#kano-life-career-screen h2 { margin: 0 0 8px; font-size: clamp(25px, 5vw, 36px); line-height: 1.05; }
+.klc-hub-intro { max-width: 800px; margin: 0 0 16px; color: #becbd9; font-size: 13px; line-height: 1.55; }
+.klc-hub-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 12px; align-items: start; }
+.klc-hub-card, .klc-hub-overview {
+  min-width: 0;
+  padding: clamp(12px, 2.5vw, 18px);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 14px;
+  background: rgba(255,255,255,.035);
+}
+.klc-hub-card h3, .klc-hub-overview h3 { margin: 0 0 7px; color: #f5c542; font-size: 13px; letter-spacing: .07em; }
+.klc-hub-note { margin: 0 0 10px; color: #9fb0c2; font-size: 11px; line-height: 1.55; }
+#klc-settings-body .setting-row { gap: 10px; align-items: center; font-size: 11px; }
+#klc-settings-body .setting-row label { flex: 1 1 42%; min-width: 0; }
+#klc-settings-body .setting-row select { flex: 0 1 58%; width: 58%; min-height: 42px; font-size: 13px; }
+#klc-sim-status { overflow-wrap: anywhere; }
+.klc-status-summary { margin: 0 0 8px; color: #f4d777; font-size: 12px; font-weight: 800; line-height: 1.5; }
+.klc-hub-overview { margin-top: 12px; }
+.klc-hub-overview > p { color: #b8c6d6; font-size: 12px; line-height: 1.55; }
+.klc-sim-module-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.klc-module-chip { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 9px 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: #0b1928; color: #dce5ee; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.klc-module-dot { flex: 0 0 8px; width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: #28c4a5; box-shadow: 0 0 0 3px rgba(40,196,165,.12); }
+.klc-empty-state { color: #ffcfad; font-size: 12px; line-height: 1.5; }
+#kano-life-career-screen button:focus-visible,
+#kano-life-career-screen select:focus-visible,
+#start-screen #life-career-btn:focus-visible,
+#menu-screen #life-career-menu-btn:focus-visible { outline: 2px solid #f5c542; outline-offset: 3px; }
+@media (max-width: 700px) {
+  #kano-life-career-screen { padding: 8px; }
+  #kano-life-career-screen .klc-panel { max-height: calc(100dvh - 12px); border-radius: 15px; }
+  .klc-hub-grid { grid-template-columns: minmax(0, 1fr); }
+  .klc-sim-module-list { grid-template-columns: minmax(0, 1fr); }
+  #klc-settings-body .setting-row { align-items: flex-start; }
+  #klc-settings-body .setting-row label { padding-top: 7px; }
+  #klc-settings-body .setting-row select { flex-basis: 61%; width: 61%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #kano-life-career-screen *, #kano-life-career-screen *::before, #kano-life-career-screen *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
+}

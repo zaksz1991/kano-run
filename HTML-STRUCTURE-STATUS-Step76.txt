@@ -1,0 +1,14 @@
+doctype_count: 1
+html_count: 1
+body_count: 1
+duplicate_ids: {}
+main_js_entry_count: 1
+life-career-btn_count: 1
+life-career-menu-btn_count: 1
+kano-life-career-screen_count: 1
+klc-settings-body_count: 1
+dialect-select_count: 1
+camera-select_count: 1
+road-select_count: 1
+mute-select_count: 1
+quality-select_count: 1

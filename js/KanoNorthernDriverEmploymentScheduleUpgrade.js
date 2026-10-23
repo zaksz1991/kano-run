@@ -255,10 +255,8 @@ function exportReport() {
 function install() {
   if (typeof window === 'undefined' || typeof document === 'undefined' || window[INSTALL_KEY]) return;
   window[INSTALL_KEY] = true; installStyles(); render();
-  if (typeof MutationObserver !== 'undefined' && document.documentElement) {
-    const observer = new MutationObserver(() => { if (document.querySelector('#kano-life-career-screen .klc-panel')) render(); });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-  }
+  // The career host is static before module execution; update from game events
+  // and the bounded visible-screen refresh below rather than observing the whole DOM.
   for (const type of ['kano:daily-day-change', 'kano:employment-market-updated', 'kano:skills-pathways-updated', 'kano:employment-schedule-updated', 'kano:life-shift-settled']) window.addEventListener(type, render);
   window.kanoNorthernDriverEmploymentSchedule = {
     version: 1,

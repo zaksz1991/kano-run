@@ -268,11 +268,9 @@ function install() {
   window[INSTALL_KEY] = true;
   installStyles();
   render();
-  const retry = () => { if (document.querySelector('#kano-life-career-screen .klc-panel')) render(); };
-  if (document.documentElement && typeof MutationObserver !== 'undefined') {
-    const observer = new MutationObserver(retry);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-  }
+  // The Life & Career host is part of index.html before this module executes.
+  // Do not observe document.documentElement here: render() mutates the panel,
+  // so an unconditional document-wide observer creates a self-triggering loop.
   for (const type of [
     'kano:daily-day-change', 'kano:life-shift-settled', 'kano:day-settlement-closed',
     'kano:phone-life-updated', 'kano:relationship-status-updated', 'kano:family-responsibilities-updated',
