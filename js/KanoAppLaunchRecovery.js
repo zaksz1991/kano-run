@@ -1,3 +1,4 @@
+import './KanoEconomyClarityUpgrade.js';
 // ============================================================
 // KANO LIFE — START-PAGE / APP-BOOT RECOVERY
 // The primary main.js remains the only game engine. This module only ensures

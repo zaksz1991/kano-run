@@ -8,7 +8,7 @@ class MemoryStorage {
 
 globalThis.localStorage = new MemoryStorage();
 const storage = await import('./storage.js');
-const { save, persist, normaliseSave, submitTribe, bankRun } = storage;
+const { save, persist, normaliseSave, submitTribe, bankRun, calculateRunPayout } = storage;
 
 save.activeRunCheckpoint = {
   version: 1,
@@ -39,9 +39,15 @@ assert.deepEqual(save.tribes.hausa.map((row) => row.score), [300, 200, 100]);
 
 const before = save.money;
 const earned = bankRun({ score: 1000, fares: 2000, distance: 2, driver: 'Test', mode: 'career' });
-assert.equal(earned, Math.floor(2000 * 0.2) + Math.floor(1000 * 0.08));
+assert.equal(earned, Math.floor(2000 * 0.65) + Math.min(Math.floor(1000 * 0.01), Math.floor(2000 * 0.05), 3000));
+const examplePayout = calculateRunPayout({ score: 176274, fares: 90863 });
+assert.deepEqual(examplePayout, { score: 176274, grossFares: 90863, operatingReserve: 31803, farePayout: 59060, scoreBonus: 1762, earned: 60822, ruleVersion: 2 });
+assert.equal(calculateRunPayout({ score: 500000, fares: 0 }).earned, 0, 'score-only activity cannot mint wallet cash without fares');
 assert.equal(save.money, before + earned);
 const stored = normaliseSave(JSON.parse(localStorage.getItem('kano-life-save-v4')));
 assert.equal(stored.money, save.money);
 assert.equal(stored.highScore, 1000);
+assert.equal(stored.banking.transactions[0].payoutRuleVersion, 2);
+assert.equal(stored.banking.transactions[0].grossFares, 2000);
+assert.equal(stored.banking.transactions[0].operatingReserve, 700);
 console.log('storage-smoke: checkpoint round-trip, top-three board, banked wallet passed');

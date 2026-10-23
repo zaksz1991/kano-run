@@ -61,8 +61,15 @@ function normalizeBanking(value, fallback) {
       .map((entry) => ({
         id: typeof entry.id === 'string' ? entry.id.slice(0, 100) : '',
         earned: nonNegativeInteger(entry.earned),
+        // Older entries used `fares` and `score` for their banked components.
+        // Preserve them, while new entries include a complete v2 breakdown.
         fares: nonNegativeInteger(entry.fares),
         score: nonNegativeInteger(entry.score),
+        grossFares: nonNegativeInteger(entry.grossFares, nonNegativeInteger(entry.fares)),
+        operatingReserve: nonNegativeInteger(entry.operatingReserve),
+        farePayout: nonNegativeInteger(entry.farePayout, nonNegativeInteger(entry.fares)),
+        scoreBonus: nonNegativeInteger(entry.scoreBonus, nonNegativeInteger(entry.score)),
+        payoutRuleVersion: entry.payoutRuleVersion === 2 ? 2 : 1,
         mode: typeof entry.mode === 'string' ? entry.mode.slice(0, 30) : 'career',
         timestamp: Number.isFinite(entry.timestamp) ? entry.timestamp : Date.now(),
       }))
@@ -333,17 +340,43 @@ function newTransactionId() {
 }
 
 /**
- * Bank the current completed run and persist its balance + transaction entry.
- * Returns the amount successfully banked, preserving the original API.
+ * Transparent take-home estimate for a completed run.
+ * 65% of gross passenger fares becomes take-home fare income. The remaining
+ * 35% is a simulated running-cost reserve for fuel, park levies, and upkeep.
+ * A separate score bonus is 1% of score points, capped by 5% of gross fares
+ * and ₦3,000. Score points are never presented as currency in the HUD.
+ */
+export function calculateRunPayout(run = {}) {
+  const score = nonNegativeInteger(run.score);
+  const grossFares = nonNegativeInteger(run.fares);
+  const farePayout = Math.floor(grossFares * 0.65);
+  const operatingReserve = grossFares - farePayout;
+  const scoreBonus = Math.min(
+    Math.floor(score * 0.01),
+    Math.floor(grossFares * 0.05),
+    3000,
+  );
+  return {
+    score,
+    grossFares,
+    operatingReserve,
+    farePayout,
+    scoreBonus,
+    earned: farePayout + scoreBonus,
+    ruleVersion: 2,
+  };
+}
+
+/**
+ * Bank a permanently completed run and persist its wallet transaction.
+ * An unfinished/continuable run must not call this function.
  */
 export function bankRun(run = {}) {
-  const score = nonNegativeInteger(run.score);
-  const fares = nonNegativeInteger(run.fares);
+  const payout = calculateRunPayout(run);
+  const { score, grossFares, farePayout, operatingReserve, scoreBonus } = payout;
   const distance = Number.isFinite(run.distance) && run.distance >= 0
     ? Number(run.distance.toFixed(3)) : 0;
-  const fareBank = Math.floor(fares * 0.20);
-  const scoreBank = Math.floor(score * 0.08);
-  const earned = fareBank + scoreBank;
+  const earned = payout.earned;
   const before = JSON.parse(JSON.stringify(save));
 
   save.money = nonNegativeInteger(save.money) + earned;
@@ -362,8 +395,14 @@ export function bankRun(run = {}) {
     {
       id: newTransactionId(),
       earned,
-      fares: fareBank,
-      score: scoreBank,
+      // `fares` remains the take-home fare component for compatibility.
+      fares: farePayout,
+      score: scoreBonus,
+      grossFares,
+      operatingReserve,
+      farePayout,
+      scoreBonus,
+      payoutRuleVersion: 2,
       mode: typeof run.mode === 'string' ? run.mode.slice(0, 30) : 'career',
       timestamp: Date.now(),
     },
