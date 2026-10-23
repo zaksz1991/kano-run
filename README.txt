@@ -1,25 +1,24 @@
-KANO LIFE / KANO RUN — STEP 34
-SEATED DRIVER FALLBACK PRESERVATION
+KANO LIFE / KANO RUN — STEP 35
+NATIVE DRIVER DETECTION AND DUPLICATE GUARD
 
 PURPOSE
-Step 33 prevents an invisible/collapsed keke GLB from displacing the visible fallback vehicle. Step 34 closes a related gap: when a candidate vehicle passes validation but has no recognized seated-driver rig, the renderer previously logged a warning and still removed the procedural keke that contained the visible fallback driver.
+The previous fallback logic checked for Kano's animation pivot name but did not check for a valid native driver mesh inside an imported GLB. ModelManager can skip adding a procedural driver when it finds a named driver, even if that model uses a different naming convention. In that case, Step 34 could attach a second person on top of the existing driver.
 
 CHANGES
-- Keeps Step 33's visible-mesh, transform and vehicle-bound validation.
-- Detects a named driver pivot on the accepted model before applying a fallback.
-- If there is no usable driver pivot, clones the old procedural driver's pivot into the accepted keke before the old vehicle is removed.
-- Deep-clones the fallback driver's geometries and materials so disposal of the old procedural keke cannot dispose the new driver's render resources.
-- Sets up driverPivot/arm references for the existing driver animation path.
-- Places the fallback driver using clamped ratios of the accepted vehicle's measured height/depth.
-- Does not create a second driver when the incoming model already has a recognized driver rig.
-- Carries forward Step 33's mobile renderer, roadside instancing, texture corrections, crowd spacing, device-tier helpers and pedestrian draw-call merge.
+- Detects native driver/rider/person objects using role-bearing object names.
+- Measures candidate visible meshes in vehicle-root coordinates.
+- Requires plausible human-sized dimensions and a location inside the keke footprint.
+- Ignores seat/cockpit/wheel/rig/marker helper nodes as proof of a human driver.
+- Preserves a plausible native GLB driver rather than adding a procedural duplicate.
+- Still adds the independent procedural seated-driver fallback when no plausible native driver exists.
+- Keeps the Step 33 keke integrity guard, Step 34 independent geometry/material clones, mobile-render helpers, crowd spacing and roadside renderer.
 
 INSTALLATION
-1. Extract this ZIP into the existing Kano Run project root (the folder with index.html and package.json).
-2. Replace js/renderer3d.js with the included complete file.
-3. The included js/KanoDeviceTier.js and js/KanoInstancedRoadScroll.js are the complete helper dependencies that accompany the renderer; they are carried forward unchanged from Step 33.
-4. Copy the included tests/*.test.mjs into the existing tests folder.
-5. Keep main.js, game.js, ModelManager.js, index.html, CSS, model assets, traffic mix, day-cycle files, and all unrelated features unchanged.
+1. Extract this ZIP into the Kano Run project root (the folder containing index.html and package.json).
+2. Replace js/renderer3d.js with the complete file included here.
+3. Keep js/KanoDeviceTier.js and js/KanoInstancedRoadScroll.js alongside it.
+4. Copy tests/*.test.mjs into the existing tests folder.
+5. Keep ModelManager.js, main.js, game.js, index.html, CSS, GLB assets, traffic and day-cycle files unchanged.
 
 VALIDATION LIMITS
-The included focused source-level suite passes. JavaScript syntax checks pass. Three.js/browser rendering, real imported GLB placement, production build, and physical-phone performance were not run in this environment. The fallback driver's position is dimension-aware but remains a generic procedural seating placement; an asset-specific cabin offset may still be needed for individual GLBs.
+The included source-level suite and JavaScript syntax checks are run during packaging. The actual GLBs are not bundled in the project source archive, and no browser/phone render was performed. Names and geometry dimensions are evidence of a likely visible driver, but an asset-specific model review is still needed to prove seat alignment.

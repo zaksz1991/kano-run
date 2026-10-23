@@ -2936,6 +2936,106 @@ export class Renderer3D {
   // ==========================================================
 
   /**
+   * Detect a real, renderable driver already included in a GLB even when it
+   * does not use Kano's animation-pivot names. ModelManager intentionally
+   * skips adding a procedural driver when it finds a named driver object.
+   * Without this check, applyModel() could add a second procedural person.
+   *
+   * A name alone is not enough: seat/cockpit helpers and collapsed/invisible
+   * objects must not suppress the fallback. Candidate bounds are measured in
+   * the vehicle-root coordinate space so the result is independent of the
+   * vehicle's eventual world placement.
+   */
+  hasPlausibleNativeDriver(object, vehicleBounds = {}) {
+    if (!object?.isObject3D) return false;
+
+    object.updateMatrixWorld(true);
+    const rootMatrix = object.matrixWorld.clone();
+    const determinant = rootMatrix.determinant();
+    if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-10) {
+      return false;
+    }
+    const inverseRoot = rootMatrix.invert();
+
+    const vehicleWidth = Number(vehicleBounds.width) || 1.1;
+    const vehicleHeight = Number(vehicleBounds.height) || 1.85;
+    const vehicleDepth = Number(vehicleBounds.depth) || 1.5;
+    const driverName = /(^|[\s_.-])(driver|rider|chauffeur|human|person)([\s_.-]|$)/i;
+    const helperName = /seat|saddle|cockpit|handle|wheel|rig|skeleton|bone|locator|marker|dummy|proxy|helper|placeholder/i;
+    let result = null;
+
+    object.traverse((namedNode) => {
+      if (result || !namedNode?.name || !driverName.test(namedNode.name)) return;
+      if (helperName.test(namedNode.name)) return;
+
+      const candidateBounds = new THREE.Box3();
+      namedNode.traverse((node) => {
+        if (!node?.isMesh || !node.geometry) return;
+
+        let ancestor = node;
+        while (ancestor && ancestor !== namedNode) {
+          if (ancestor.visible === false) return;
+          ancestor = ancestor.parent;
+        }
+        if (ancestor !== namedNode) return;
+
+        const materials = Array.isArray(node.material)
+          ? node.material
+          : [node.material];
+        const canRender = materials.some((material) =>
+          material && material.visible !== false &&
+          Number(material.opacity ?? 1) > 0.025
+        );
+        if (!canRender) return;
+
+        if (!node.geometry.boundingBox) {
+          try { node.geometry.computeBoundingBox(); } catch { return; }
+        }
+        if (!node.geometry.boundingBox || node.geometry.boundingBox.isEmpty()) return;
+
+        const relativeMatrix = new THREE.Matrix4().multiplyMatrices(
+          inverseRoot,
+          node.matrixWorld,
+        );
+        const meshBounds = node.geometry.boundingBox.clone().applyMatrix4(relativeMatrix);
+        if (meshBounds.isEmpty()) return;
+        const meshSize = meshBounds.getSize(new THREE.Vector3());
+        if (![meshSize.x, meshSize.y, meshSize.z].every(Number.isFinite)) return;
+        candidateBounds.union(meshBounds);
+      });
+
+      if (candidateBounds.isEmpty()) return;
+      const size = candidateBounds.getSize(new THREE.Vector3());
+      const center = candidateBounds.getCenter(new THREE.Vector3());
+      const plausible =
+        size.x >= 0.12 && size.x <= Math.max(1.35, vehicleWidth * 1.2) &&
+        size.y >= 0.58 && size.y <= 2.45 &&
+        size.z >= 0.08 && size.z <= Math.max(1.05, vehicleDepth * 0.9) &&
+        candidateBounds.min.y >= -0.15 &&
+        candidateBounds.max.y <= vehicleHeight + 0.45 &&
+        Math.abs(center.x) <= vehicleWidth * 0.62 + 0.12 &&
+        Math.abs(center.z) <= vehicleDepth * 0.72 + 0.12;
+
+      if (plausible) {
+        result = {
+          name: namedNode.name,
+          bounds: {
+            width: Number(size.x.toFixed(3)),
+            height: Number(size.y.toFixed(3)),
+            depth: Number(size.z.toFixed(3)),
+          },
+        };
+      }
+    });
+
+    if (result) {
+      object.userData.kanoNativeDriverVisual = result;
+      return result;
+    }
+    return false;
+  }
+
+  /**
    * Preserve the visible seated driver when an otherwise valid imported
    * keke does not contain a driver rig. ModelManager normally adds its own
    * named rig; this path is a last-resort safeguard for directly supplied
@@ -3201,7 +3301,23 @@ export class Renderer3D {
     }
 
     if (!object.userData.driverAnimationParts?.driverPivot) {
-      this.attachFallbackDriverToKeke(object, old, visualCheck);
+      const nativeDriver = this.hasPlausibleNativeDriver(
+        object,
+        visualCheck.bounds,
+      );
+
+      if (nativeDriver) {
+        // Keep the GLB's own driver. Adding a fallback in this case would
+        // create two visible people in the same cabin. A native rig without
+        // Kano pivot names is preserved visually even if it cannot use the
+        // procedural arm/head animation hooks.
+        console.info(
+          `[Kano Life] Existing GLB driver preserved (${nativeDriver.name}).`,
+          nativeDriver.bounds,
+        );
+      } else {
+        this.attachFallbackDriverToKeke(object, old, visualCheck);
+      }
     }
 
     if (old?.parent) {
