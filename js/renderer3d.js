@@ -3145,6 +3145,13 @@ export class Renderer3D {
     const inverseRoot = rootMatrix.invert();
     const bounds = new THREE.Box3();
     let meshCount = 0;
+    let vehicleCoreEvidence = 0;
+    let namedWheelEvidence = 0;
+    let characterEvidence = 0;
+    let broadLowBodyEvidence = false;
+    const vehicleCoreName = /vehicle|keke|chassis|bodywork|carbody|body[_ .-]?panel|roof|cabin|bumper|windshield|handlebar|headlight|mudguard|fork|axle|fender|engine|motor|fairing|door|bonnet|hood|grille|grill|dashboard|steering|headlamp/i;
+    const wheelPartName = /wheel|tire|tyre/i;
+    const characterName = /pedestrian|character|human|person|driver|rider|passenger|crowd|woman|man|female|male|npc|skeleton|armature/i;
 
     object.traverse((node) => {
       if (!node?.isMesh || !node.geometry) return;
@@ -3183,6 +3190,32 @@ export class Renderer3D {
       const meshSize = meshBounds.getSize(new THREE.Vector3());
       if (![meshSize.x, meshSize.y, meshSize.z].every(Number.isFinite)) return;
 
+      // Overall dimensions alone are not enough: a wrongly mapped crowd or
+      // character GLB can span the width of a keke and be mistaken for the
+      // player's vehicle. Require actual vehicle-part evidence or a broad,
+      // low chassis/body-like mesh before accepting a replacement.
+      const names = [];
+      let namedAncestor = node;
+      while (namedAncestor) {
+        if (namedAncestor.name) names.push(String(namedAncestor.name));
+        if (namedAncestor === object) break;
+        namedAncestor = namedAncestor.parent;
+      }
+      const namePath = names.join(' ');
+      const looksLikeCharacter = characterName.test(namePath);
+      if (looksLikeCharacter) characterEvidence += 1;
+      if (!looksLikeCharacter && vehicleCoreName.test(namePath)) vehicleCoreEvidence += 1;
+      if (!looksLikeCharacter && wheelPartName.test(namePath)) namedWheelEvidence += 1;
+
+      const meshCentre = meshBounds.getCenter(new THREE.Vector3());
+      if (
+        meshSize.x >= 0.72 && meshSize.z >= 0.42 &&
+        meshSize.y >= 0.12 && meshSize.y <= 1.45 &&
+        meshCentre.y >= -0.30 && meshCentre.y <= 1.60
+      ) {
+        broadLowBodyEvidence = true;
+      }
+
       bounds.union(meshBounds);
       meshCount += 1;
     });
@@ -3196,10 +3229,33 @@ export class Renderer3D {
     const longSide = Math.max(size.x, size.z);
     const shortSide = Math.min(size.x, size.z);
     const finite = [size.x, size.y, size.z, footprint].every(Number.isFinite);
+    const hasVehicleStructure = vehicleCoreEvidence > 0 || broadLowBodyEvidence || namedWheelEvidence >= 2;
 
     if (!finite) {
       return { ok: false, reason: 'non-finite-bounds', meshCount };
     }
+    if (!hasVehicleStructure) {
+      return {
+        ok: false,
+        reason: characterEvidence > 0
+          ? 'character-only-model-no-vehicle-structure'
+          : 'missing-vehicle-structure-evidence',
+        meshCount,
+        evidence: {
+          vehicleCoreMeshes: vehicleCoreEvidence,
+          wheelPartMeshes: namedWheelEvidence,
+          characterMeshes: characterEvidence,
+          broadLowBodyEvidence,
+        },
+        bounds: {
+          width: Number(size.x.toFixed(3)),
+          height: Number(size.y.toFixed(3)),
+          depth: Number(size.z.toFixed(3)),
+          footprint: Number(footprint.toFixed(3)),
+        },
+      };
+    }
+
     if (
       size.y < 0.55 || size.y > 4.25 ||
       longSide < 0.82 || longSide > 7.5 ||
@@ -3227,6 +3283,12 @@ export class Renderer3D {
         height: Number(size.y.toFixed(3)),
         depth: Number(size.z.toFixed(3)),
         footprint: Number(footprint.toFixed(3)),
+      },
+      evidence: {
+        vehicleCoreMeshes: vehicleCoreEvidence,
+        wheelPartMeshes: namedWheelEvidence,
+        characterMeshes: characterEvidence,
+        broadLowBodyEvidence,
       },
     };
   }

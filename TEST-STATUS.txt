@@ -1,7 +1,7 @@
-KANO LIFE / KANO RUN — STEP 35 VALIDATION
+KANO LIFE / KANO RUN — STEP 36 VALIDATION
 
-Automated tests: all tests in tests/*.test.mjs passed.
-JavaScript syntax: renderer3d.js, KanoDeviceTier.js and KanoInstancedRoadScroll.js passed node --check.
+Focused Node test suite: 48/48 passed.
+JavaScript syntax checks: passed for renderer3d.js, KanoDeviceTier.js, and KanoInstancedRoadScroll.js.
 ZIP integrity: checked after packaging.
 
-Not verified: Vite production build, actual GLB rendering, browser screenshot comparison, exact driver-to-seat alignment, and physical-phone frame rate. The test suite is primarily source-level and does not claim to replace runtime visual verification.
+Not verified: actual GLB candidate models in Three.js, browser screenshot comparison, Vite production build, exact driver-to-seat alignment, or physical-phone performance. Tests are mainly source-level checks; they do not replace an in-game visual run.

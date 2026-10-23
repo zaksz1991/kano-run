@@ -1,24 +1,24 @@
-KANO LIFE / KANO RUN — STEP 35
-NATIVE DRIVER DETECTION AND DUPLICATE GUARD
+KANO LIFE / KANO RUN — STEP 36
+PLAYER KEKE VEHICLE-STRUCTURE GATE
 
 PURPOSE
-The previous fallback logic checked for Kano's animation pivot name but did not check for a valid native driver mesh inside an imported GLB. ModelManager can skip adding a procedural driver when it finds a named driver, even if that model uses a different naming convention. In that case, Step 34 could attach a second person on top of the existing driver.
+The latest phone screenshot shows a group of character-like meshes occupying the player's position while the keke body is missing. The previous player-model guard checked visible mesh bounds and overall dimensions, but a wrongly mapped crowd/character GLB could span a vehicle-sized footprint and pass that test.
 
 CHANGES
-- Detects native driver/rider/person objects using role-bearing object names.
-- Measures candidate visible meshes in vehicle-root coordinates.
-- Requires plausible human-sized dimensions and a location inside the keke footprint.
-- Ignores seat/cockpit/wheel/rig/marker helper nodes as proof of a human driver.
-- Preserves a plausible native GLB driver rather than adding a procedural duplicate.
-- Still adds the independent procedural seated-driver fallback when no plausible native driver exists.
-- Keeps the Step 33 keke integrity guard, Step 34 independent geometry/material clones, mobile-render helpers, crowd spacing and roadside renderer.
+- Adds structural evidence checks to player-keke candidate validation instead of relying on overall bounds alone.
+- Looks for vehicle-specific part/group names, wheel/tire evidence, or a broad low body/chassis-like mesh.
+- Recognizes character-oriented node names and rejects a character-only candidate when it has no vehicle-structure evidence.
+- Records the evidence counts and measured bounds in `userData.kanoKekeVisualValidation` for browser-side diagnostics.
+- Keeps the existing procedural keke and seated driver active when a candidate fails the new structure gate.
+- Preserves Step 33 visibility protection, Step 34 independent seated-driver fallback geometry/materials, Step 35 native driver detection, mobile rendering, traffic batching, roadside scenery, and pedestrian spacing.
 
 INSTALLATION
-1. Extract this ZIP into the Kano Run project root (the folder containing index.html and package.json).
-2. Replace js/renderer3d.js with the complete file included here.
-3. Keep js/KanoDeviceTier.js and js/KanoInstancedRoadScroll.js alongside it.
-4. Copy tests/*.test.mjs into the existing tests folder.
-5. Keep ModelManager.js, main.js, game.js, index.html, CSS, GLB assets, traffic and day-cycle files unchanged.
+1. Extract this ZIP into the Kano Run project root (the folder containing `index.html` and `package.json`).
+2. Replace `js/renderer3d.js` with the complete replacement file included here.
+3. Keep `js/KanoDeviceTier.js` and `js/KanoInstancedRoadScroll.js` alongside it. They are included unchanged as direct imports.
+4. Copy `tests/*.test.mjs` into the existing `tests` folder (or use the included files to refresh the focused renderer test set).
+
+Do not replace `main.js`, `game.js`, `ModelManager.js`, `index.html`, CSS, assets, saved game data, traffic-mix modules, or day-cycle files for this update.
 
 VALIDATION LIMITS
-The included source-level suite and JavaScript syntax checks are run during packaging. The actual GLBs are not bundled in the project source archive, and no browser/phone render was performed. Names and geometry dimensions are evidence of a likely visible driver, but an asset-specific model review is still needed to prove seat alignment.
+The included 48 tests are source-level regression tests. Node syntax checks and ZIP integrity checks passed during packaging. Actual GLB assets were not available for a Three.js browser-render test, and no browser screenshot or physical-phone performance test was run. Asset-specific names vary, so the new structural gate intentionally retains a low-body geometry fallback for vehicles whose mesh names are generic; inspect the validation diagnostics if a genuine keke GLB is rejected.
