@@ -211,3 +211,6 @@ function install() {
 
 install();
 console.info('[Kano Life] Persistent daily settlement statement registered; no additional financial deductions are applied.');
+
+// Step 52: add a planning-only budget panel beside the persistent daily statement.
+await import('./KanoNorthernDriverHouseholdBudgetUpgrade.js');
