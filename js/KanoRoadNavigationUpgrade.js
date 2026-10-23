@@ -87,6 +87,76 @@ function routeIndex(route) {
   return index >= 0 ? index : 0;
 }
 
+// Step 97: use the same signed world coordinate as scenery anchors. The
+// simulation's official distance is intentionally forward-only, so it cannot
+// locate the nearest junction after a reverse manoeuvre.
+function navigationWorldDistance(game) {
+  const worldDistance = Number(game?.kanoWorldDistanceKm);
+  if (Number.isFinite(worldDistance)) return worldDistance;
+  return Number(game?.s?.distance) || 0;
+}
+
+function forwardJunctionAtOrAhead(worldKm) {
+  const index = Math.floor((worldKm - FIRST_JUNCTION_KM) / JUNCTION_INTERVAL_KM);
+  if (index < 0) return FIRST_JUNCTION_KM;
+  const candidate = FIRST_JUNCTION_KM + index * JUNCTION_INTERVAL_KM;
+  // Retain the current junction throughout the same 45 m pass band used by
+  // the forward choice window; this matters when switching out of reverse.
+  return worldKm <= candidate + CHOICE_WINDOW_AFTER_KM + 1e-6
+    ? candidate
+    : candidate + JUNCTION_INTERVAL_KM;
+}
+
+function reverseJunctionAtOrBehind(worldKm) {
+  const index = Math.floor((worldKm - FIRST_JUNCTION_KM + 1e-6) / JUNCTION_INTERVAL_KM);
+  if (index < 0) return null;
+  return FIRST_JUNCTION_KM + index * JUNCTION_INTERVAL_KM;
+}
+
+function syncJunctionTargetForTravel(game, nav) {
+  const worldKm = navigationWorldDistance(game);
+  const state = game?.s;
+  const reverse = Boolean(state?.reverse) || Number(state?.signedSpeed) < -0.05;
+  const direction = reverse ? 'reverse' : 'forward';
+
+  if (nav.lastTravelDirection !== direction) {
+    nav.lastTravelDirection = direction;
+    nav.nextJunctionAt = reverse
+      ? reverseJunctionAtOrBehind(worldKm)
+      : forwardJunctionAtOrAhead(worldKm);
+    nav.windowOpen = false;
+    if (Number.isFinite(nav.nextJunctionAt)) {
+      nav.junctionIndex = Math.max(0, Math.round((nav.nextJunctionAt - FIRST_JUNCTION_KM) / JUNCTION_INTERVAL_KM));
+    }
+  }
+
+  if (reverse) {
+    // Keep the junction being backed past as the target until the vehicle has
+    // moved safely beyond its 45 m interaction band, then select the prior one.
+    while (Number.isFinite(nav.nextJunctionAt)
+      && worldKm < nav.nextJunctionAt - CHOICE_WINDOW_AFTER_KM) {
+      nav.nextJunctionAt -= JUNCTION_INTERVAL_KM;
+      if (nav.nextJunctionAt < FIRST_JUNCTION_KM - 1e-6) {
+        nav.nextJunctionAt = null;
+        break;
+      }
+      nav.junctionIndex = Math.max(0, nav.junctionIndex - 1);
+    }
+    nav.windowOpen = false;
+    return { worldKm, reverse, direction };
+  }
+
+  if (!Number.isFinite(nav.nextJunctionAt)) nav.nextJunctionAt = forwardJunctionAtOrAhead(worldKm);
+  // Re-arm a missed junction only after the approach window has been passed.
+  while (Number.isFinite(nav.nextJunctionAt)
+    && worldKm > nav.nextJunctionAt + CHOICE_WINDOW_AFTER_KM) {
+    nav.nextJunctionAt += JUNCTION_INTERVAL_KM;
+    nav.junctionIndex += 1;
+    nav.missedJunctions += 1;
+  }
+  return { worldKm, reverse, direction };
+}
+
 function branchTarget(game, direction) {
   const index = routeIndex(game.route);
   const configured = BRANCH_LINKS[game.route?.name];
@@ -100,11 +170,12 @@ function branchTarget(game, direction) {
 }
 
 function makeNavigationState(game) {
+  const worldKm = navigationWorldDistance(game);
   return {
     heading: 0,
     turn: null,
-    nextJunctionAt: FIRST_JUNCTION_KM,
-    junctionIndex: 0,
+    nextJunctionAt: forwardJunctionAtOrAhead(worldKm),
+    junctionIndex: Math.max(0, Math.round((forwardJunctionAtOrAhead(worldKm) - FIRST_JUNCTION_KM) / JUNCTION_INTERVAL_KM)),
     turnsTaken: 0,
     uTurns: 0,
     missedJunctions: 0,
@@ -113,6 +184,7 @@ function makeNavigationState(game) {
     windowOpen: false,
     lastHudUpdate: 0,
     lastRouteId: game.route?.id || ROUTES[0]?.id,
+    lastTravelDirection: 'forward',
   };
 }
 
@@ -220,11 +292,12 @@ function setCurrentRoute(game, route) {
 }
 
 function getWindowState(game, nav) {
-  const distance = Math.max(0, Number(game.s?.distance) || 0);
-  const remaining = nav.nextJunctionAt - distance;
+  const distance = navigationWorldDistance(game);
+  const remaining = Number.isFinite(nav.nextJunctionAt) ? nav.nextJunctionAt - distance : Infinity;
+  const reverse = Boolean(game.s?.reverse) || Number(game.s?.signedSpeed) < -0.05;
   return {
     remaining,
-    windowOpen: remaining <= CHOICE_WINDOW_BEFORE_KM && remaining >= -CHOICE_WINDOW_AFTER_KM,
+    windowOpen: !reverse && remaining <= CHOICE_WINDOW_BEFORE_KM && remaining >= -CHOICE_WINDOW_AFTER_KM,
   };
 }
 
@@ -285,6 +358,9 @@ function selectTurn(game, direction) {
     nav.turnsTaken += 1;
     nav.junctionIndex += 1;
     nav.nextJunctionAt += JUNCTION_INTERVAL_KM;
+    nav.lastTravelDirection = 'forward';
+    state.kanoLastNavigation = 'straight';
+    state.kanoRoadTurn = null;
     nav.windowOpen = false;
     game.ui?.toast?.(`Straight ahead · ${oldRoute.name}`);
     updateNavigationHUD(game, true);
@@ -339,15 +415,14 @@ function updateNavigation(game, dt) {
   } else {
     state.kanoRoadHeading = nav.heading;
     state.kanoRoadTurn = null;
-    while (state.distance > nav.nextJunctionAt + CHOICE_WINDOW_AFTER_KM) {
-      nav.nextJunctionAt += JUNCTION_INTERVAL_KM;
-      nav.junctionIndex += 1;
-      nav.missedJunctions += 1;
+    const travel = syncJunctionTargetForTravel(game, nav);
+    if (travel.reverse) {
       nav.windowOpen = false;
+    } else {
+      const status = getWindowState(game, nav);
+      nav.windowOpen = status.windowOpen;
+      if (status.windowOpen) getOptions(game, nav);
     }
-    const status = getWindowState(game, nav);
-    nav.windowOpen = status.windowOpen;
-    if (status.windowOpen) getOptions(game, nav);
   }
   updateNavigationHUD(game, false);
 }
@@ -367,7 +442,9 @@ function updateNavigationHUD(game, force) {
   if (nav) nav.lastHudUpdate = now;
 
   const onRoad = game.state === 'PLAY' && Boolean(state) && !state.event && !state.runEnded && !state.reverse;
-  const remaining = nav ? nav.nextJunctionAt - (Number(state?.distance) || 0) : Infinity;
+  const remaining = nav && Number.isFinite(nav.nextJunctionAt)
+    ? nav.nextJunctionAt - navigationWorldDistance(game)
+    : Infinity;
   const visible = onRoad && (Boolean(nav?.turn) || remaining <= JUNCTION_PREVIEW_KM);
   panel.hidden = !visible;
   if (!visible) return;
@@ -560,7 +637,10 @@ function publishAudit() {
     const game = activeGame();
     const nav = game?.kanoNavigationState;
     const state = game?.s;
-    const remaining = nav && state ? Math.max(0, Math.round((nav.nextJunctionAt - (Number(state.distance) || 0)) * 1000)) : null;
+    const worldKm = navigationWorldDistance(game);
+    const remaining = nav && Number.isFinite(nav.nextJunctionAt)
+      ? Math.round((nav.nextJunctionAt - worldKm) * 1000)
+      : null;
     return {
       version: 1,
       installed: Boolean(Game.prototype[PATCH_KEY] && Renderer3D.prototype[PATCH_KEY] && Renderer2D.prototype[PATCH_KEY]),
@@ -568,6 +648,10 @@ function publishAudit() {
       gameState: game?.state || 'NOT_CREATED',
       currentRoute: game?.route?.name || null,
       nextJunctionInMetres: remaining,
+      signedWorldDistanceKm: Number(worldKm.toFixed(5)),
+      junctionTargetKm: Number.isFinite(nav?.nextJunctionAt) ? Number(nav.nextJunctionAt.toFixed(5)) : null,
+      travelDirection: nav?.lastTravelDirection || (state?.reverse ? 'reverse' : 'forward'),
+      signedCoordinateDrivesJunctions: true,
       choiceWindowOpen: Boolean(nav?.windowOpen),
       turnsTaken: nav?.turnsTaken || 0,
       uTurns: nav?.uTurns || 0,
