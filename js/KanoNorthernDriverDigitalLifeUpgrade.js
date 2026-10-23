@@ -150,7 +150,7 @@ function renderScenario(ctx) {
     }
     row.append(actions);
   } else {
-    const p = document.createElement('p'); p.className = 'kdl-note'; p.textContent = state.currentScenarioStatus === 'resolved' ? 'Today's decision has been recorded. A new situation becomes available when the simulated day advances.' : 'This situation has expired. No automatic wallet penalty was applied.'; row.append(p);
+    const p = document.createElement('p'); p.className = 'kdl-note'; p.textContent = state.currentScenarioStatus === 'resolved' ? "Today's decision has been recorded. A new situation becomes available when the simulated day advances." : 'This situation has expired. No automatic wallet penalty was applied.'; row.append(p);
   }
   host.append(row);
 }
