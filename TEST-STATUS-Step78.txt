@@ -1,0 +1,32 @@
+KANO LIFE — STEP 78 TEST STATUS
+
+Confirmed bug: MAX_HOUSEHOLD_WATER_LITRES was used in KanoNorthernDriverHouseholdWaterUpgrade.js without being imported. The model module exports it as 500.
+
+PASS — Focused regression tests
+  Household water integration and startup regression tests: 5 passed, 0 failed.
+
+PASS — Merged offline source test suite
+  Command: node --test tests/*.test.mjs
+  Tests: 463
+  Passed: 463
+  Failed: 0
+  Skipped: 0
+  Runtime: Node.js v22.16.0
+
+PASS — JavaScript syntax checks
+  Command: node scripts/check-syntax.mjs
+  JavaScript files checked: 217
+  Syntax failures: 0
+
+PASS — Release structure and import checks
+  Command: node scripts/verify-release.mjs
+  Checks passed: 13
+  Warnings: 0
+  Failures: 0
+  Local relative imports checked: 145 modules
+
+NOT VERIFIED
+  Vite production build: not run because node_modules was absent from the offline working tree.
+  Desktop/mobile post-fix browser startup: not performed.
+  Live Vercel deployment: not changed.
+  The long-main-thread-task warnings in the submitted diagnostic require fresh post-fix profiling; this patch does not claim to resolve their cause.

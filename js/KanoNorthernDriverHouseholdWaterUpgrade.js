@@ -2,7 +2,7 @@ import './KanoNorthernDriverFamilyResponsibilitiesUpgrade.js';
 /** Step 61 UI: household water access, hygiene routines and sanitation. */
 import { save, persist } from './storage.js';
 import {
-  HOUSEHOLD_WATER_STORAGE_KEY, WATER_ACCESS_MODES, WATER_BUNDLES, HOUSEHOLD_WATER_TASKS,
+  HOUSEHOLD_WATER_STORAGE_KEY, MAX_HOUSEHOLD_WATER_LITRES, WATER_ACCESS_MODES, WATER_BUNDLES, HOUSEHOLD_WATER_TASKS,
   createDefaultHouseholdWaterState, normalizeHouseholdWaterState, householdWaterReport,
   setHouseholdWaterAccess, collectHouseholdWater, buyHouseholdWater,
   completeHouseholdWaterTask, recordHouseholdWaterShortage, exportHouseholdWaterReport,
