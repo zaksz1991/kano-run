@@ -1,0 +1,19 @@
+KANO LIFE / KANO RUN — STEP 98 CHANGE MANIFEST
+
+Changed:
+- js/KanoInfrastructureWorldAnchorsUpgrade.js (new)
+- js/KanoModelAssetVisualUpgrade.js (complete replacement; registers Step 98 before gameplay bootstrap)
+
+Included current support modules for a cumulative source update:
+- js/KanoStreetLifeMotionUpgrade.js
+- js/KanoWorldInfrastructureUpgrade.js
+- js/KanoFlyoverRoundaboutUpgrade.js
+- js/KanoRoadNavigationUpgrade.js
+- js/KanoRoadWorldCoordinatesUpgrade.js
+- js/KanoRoadPathContinuityUpgrade.js
+- js/KanoGameplayPresentationRepair.js
+
+Tests:
+- tests/KanoInfrastructureWorldAnchorsUpgrade.test.mjs
+
+The main engine, index.html, UI, storage/save schema, model assets, and game rules are not replaced.
