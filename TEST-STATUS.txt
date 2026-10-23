@@ -1,9 +1,10 @@
-STEP 42 VALIDATION RESULTS
+STEP 43 VALIDATION RESULTS
 
-- Complete included Node test suite: 79 passed, 0 failed.
-- New diagnostic export/UI coverage: report contents, query-flag gating, throttled updates, clipboard copy, plain-text download, touch-button pointer handling and cleanup.
-- JavaScript syntax: node --check passed for all 7 included js/*.js files.
-- ZIP integrity: checked after packaging.
-- Diagnostic export is enabled only with ?debugKeke=1.
-- Browser permission and download behavior remain browser-dependent and have not been verified in a real browser.
-- Physical-phone rendering and frame rate are unmeasured.
+- Node suite in this step's included test folder: 84 passed, 0 failed.
+- New camera-diagnostics tests: 5 passed.
+- Updated diagnostic report test confirms mesh samples, bounds, camera position and frustum status are exported.
+- JavaScript syntax checks passed for all included js/*.js files.
+- ZIP archive integrity passed.
+- The bounds/frustum traversal runs only when ?debugKeke=1 is enabled and is throttled to a 900 ms diagnostic interval.
+- Production Vite build was not run because the supplied validation environment has no installed local dependencies.
+- Real-browser/WebGL rendering, camera-frustum accuracy in the full live scene, clipboard/download behavior, and physical-phone performance remain unverified.

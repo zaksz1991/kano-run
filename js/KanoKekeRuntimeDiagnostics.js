@@ -34,7 +34,19 @@ export function formatKekeRuntimeDiagnosticText(snapshot = {}) {
   const renderability = snapshot.renderability || health.renderability || {};
   const structural = snapshot.structural || health.structural || {};
   const renderer = snapshot.renderer || {};
+  const camera = snapshot.camera || {};
   const event = snapshot.lastEvent || {};
+  const cameraView = camera.inFrustum === true
+    ? 'inside frustum'
+    : camera.inFrustum === false
+      ? 'outside frustum'
+      : 'unknown';
+  const bounds = camera.boundsValid === true ? tupleText(camera.boundsSize) : 'unavailable';
+  const boundsCenter = camera.boundsValid === true ? tupleText(camera.boundsCenter) : '—';
+  const cameraPosition = camera.available === true ? tupleText(camera.cameraWorldPosition) : '—';
+  const meshNames = Array.isArray(renderability.meshNames) && renderability.meshNames.length
+    ? renderability.meshNames.map((name) => clean(name, '')).filter(Boolean).slice(0, 8).join(', ')
+    : 'none reported';
   const lines = [
     'KANO LIFE | PLAYER KEKE DIAGNOSTICS',
     `Scene: ${clean(snapshot.scene, 'unknown')} | Device: ${renderer.mobile ? clean(renderer.tier, 'mobile') : 'desktop'}`,
@@ -43,11 +55,16 @@ export function formatKekeRuntimeDiagnosticText(snapshot = {}) {
     `Visible path: ${player.visiblePath === false ? 'no' : player.visiblePath === true ? 'yes' : 'unknown'} | Parent: ${clean(player.parent, 'none')}`,
     `Local position: ${tupleText(player.position)} | World position: ${tupleText(player.worldPosition)}`,
     `Scale: ${tupleText(player.scale)} | Renderable meshes: ${Number.isFinite(Number(renderability.renderableMeshCount)) ? Number(renderability.renderableMeshCount) : '—'}`,
+    `Mesh samples: ${meshNames}`,
+    `Camera frustum: ${cameraView} | Distance to vehicle bounds centre: ${numberText(camera.distanceToCenter, 2)}`,
+    `Vehicle world bounds W/H/D: ${bounds} | Bounds centre: ${boundsCenter}`,
+    `Camera world position: ${cameraPosition} | Measurement: ${clean(camera.reason, 'not measured')}`,
     `Vehicle structure: ${structural.ok === true ? 'OK' : structural.ok === false ? `FAIL (${clean(structural.reason, 'unspecified')})` : 'not checked'}`,
     `Health: ${health.ok === true ? 'OK' : health.ok === false ? `FAIL (${clean(health.reason, 'unspecified')})` : 'not checked'} | Recoveries: ${Number(snapshot.recoveryCount) || 0}`,
     `Last event: ${clean(event.phase, 'none')} | ${clean(event.reason, 'no error recorded')}`,
     `Rejected model: ${clean(event.rejectedModel, 'none')} | Last check: ${clean(event.at, 'not checked')}`,
     `Canvas: ${clean(renderer.canvasSize, 'unknown')} | Pixel ratio: ${numberText(renderer.pixelRatio, 2)}`,
+    'Frustum is a geometric camera check; it does not detect occlusion or shader failures.',
     'Enable with ?debugKeke=1. This panel does not change gameplay.',
   ];
   return lines.join('\n');

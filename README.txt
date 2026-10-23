@@ -1,26 +1,24 @@
-KANO LIFE — STEP 42
-TOUCH-FRIENDLY KEKE DIAGNOSTIC EXPORT
+KANO LIFE — STEP 43
+PLAYER KEKE CAMERA / FRUSTUM DIAGNOSTICS
 
 Purpose
-- Extends Step 41's opt-in ?debugKeke=1 diagnostics panel with buttons for Copy report and Save report .txt.
-- Captures the latest already-computed diagnostic snapshot without running additional scene-tree traversals.
-- Uses the Clipboard API when available and attempts a document selection fallback when clipboard permission is unavailable.
-- Saves a plain-text report through a temporary object URL where browser download APIs are supported.
-- Clearly reports copy/download success or failure in the panel.
-- Keeps diagnostic overlay disabled during normal gameplay. The overlay is pointer-transparent except for its two accessible, touch-friendly action buttons.
-- Does not change game physics, player transforms, vehicle replacement logic, render cadence or scene traversal.
+- Adds debug-only measurements of the player keke's world-space bounds and the active camera frustum.
+- Reports bounds dimensions, bounds centre, camera world position, distance to the bounds centre, and whether the vehicle bounds intersect the camera frustum.
+- Adds sample renderable mesh names to the plain-text diagnostic report.
+- Measurements are gated behind ?debugKeke=1 and throttled to once per 900 ms; normal gameplay does not run the extra full model-bounds traversal.
+- The probe synchronizes transform matrices but does not change vehicle/camera transforms, visibility, materials, physics, model selection or recovery behavior.
+- Frustum results are geometric only: they do not detect occlusion, depth-buffer effects, transparent shader problems or actual GPU draw failures.
 
 Installation
-1. Extract this ZIP into the existing Kano Run project folder containing index.html and package.json.
-2. Replace js/KanoKekeRuntimeDiagnostics.js with the complete replacement file included here.
-3. Copy tests/KanoKekeRuntimeDiagnostics.test.mjs into the existing tests folder, replacing the previous Step 41 test of the same filename.
-4. Keep the Step 41 renderer and its support modules installed; this update deliberately changes only the diagnostics module, its focused test and documentation.
-5. Open the game with ?debugKeke=1 to show the diagnostic panel. Tap Copy report or Save report .txt. Remove the query parameter to return to normal UI.
+1. Extract this ZIP into the existing Kano Run project root.
+2. Allow the included js/ helper files to overwrite existing copies; the helpers carried forward from Step 42 are included to preserve the tested dependency set.
+3. Copy the included focused tests into the existing tests folder. The diagnostic report test is updated and the new camera-diagnostics test is added.
+4. Open the game with ?debugKeke=1. Use Copy report or Save report .txt. Remove the query parameter to disable the panel.
 
-Do not replace main.js, game.js, renderer3d.js, index.html, CSS, vehicle assets, traffic modules or day-cycle modules for this update.
+Do not replace main.js, game.js, index.html, CSS, model assets, traffic/day-cycle modules or saved game data.
 
 Validation
-- Run: node --test tests/*.test.mjs
-- Syntax-check js/KanoKekeRuntimeDiagnostics.js with node --check.
-- The Node suite tests both the diagnostics feature and the existing Step 41 safeguards.
-- No browser download behavior, WebGL screenshot, or physical-phone rendering has been verified in this package builder.
+- Included Node suite: 84 passed, 0 failed.
+- Syntax: node --check passed for the included JavaScript files.
+- ZIP integrity checked after packaging.
+- The Vite production build, browser/WebGL screenshot and physical-phone test were not performed here.

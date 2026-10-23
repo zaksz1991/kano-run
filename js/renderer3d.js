@@ -5,6 +5,7 @@ import { buildKekeEvidenceNamePaths, classifyKekeMeshEvidence, hasVisiblePathWit
 import { inspectPlayerKekeRenderability } from './KanoPlayerKekeRuntimeGuard.js';
 import { capturePlayerKekeRecoveryPose } from './KanoPlayerKekeRecoveryTransform.js';
 import { createKekeRuntimeDiagnostics } from './KanoKekeRuntimeDiagnostics.js';
+import { measureKekeCameraDiagnostics } from './KanoKekeCameraDiagnostics.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -199,6 +200,8 @@ export class Renderer3D {
     this._playerKekeRuntimeRecoveryCount = 0;
     this._lastKekeRuntimeDiagnostic = { phase: 'renderer-startup', reason: 'player-created', at: 'not checked' };
     this._kekeRuntimeDiagnostics = null;
+    this._nextKekeCameraDiagnosticsAt = 0;
+    this._cachedKekeCameraDiagnostics = null;
     this.garageGroup = null;
     this.securityActor = null;
     this.securityUsingModel = false;
@@ -5050,6 +5053,12 @@ export class Renderer3D {
       : parent === this.garageGroup
         ? 'garageGroup'
         : (parent?.name || (parent ? parent.type || 'unnamed-parent' : 'detached'));
+    const diagnosticsNow = globalThis.performance?.now?.() ?? Date.now();
+    if (force || !this._cachedKekeCameraDiagnostics || diagnosticsNow >= this._nextKekeCameraDiagnosticsAt) {
+      this._nextKekeCameraDiagnosticsAt = diagnosticsNow + 900;
+      this._cachedKekeCameraDiagnostics = measureKekeCameraDiagnostics(player, this.camera, THREE);
+    }
+
     const canvas = this.canvas;
     const cssWidth = Number(canvas?.clientWidth) || 0;
     const cssHeight = Number(canvas?.clientHeight) || 0;
@@ -5078,6 +5087,7 @@ export class Renderer3D {
       health,
       renderability,
       structural,
+      camera: this._cachedKekeCameraDiagnostics,
       recoveryCount: this._playerKekeRuntimeRecoveryCount,
       lastEvent: this._lastKekeRuntimeDiagnostic,
     }, force);

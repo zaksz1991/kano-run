@@ -39,9 +39,16 @@ const sampleSnapshot = {
     visiblePath: true, parent: 'scene', position: { x: 0, y: 0, z: 2 },
     worldPosition: { x: 0, y: 0, z: 2 }, scale: { x: 1, y: 1, z: 1 },
   },
-  health: { ok: true, reason: 'healthy', renderability: { renderableMeshCount: 7 }, structural: { ok: true } },
-  renderability: { renderableMeshCount: 7 },
+  health: { ok: true, reason: 'healthy', renderability: { renderableMeshCount: 7, meshNames: ['chassis_mesh', 'wheel_front'] }, structural: { ok: true } },
+  renderability: { renderableMeshCount: 7, meshNames: ['chassis_mesh', 'wheel_front'] },
   structural: { ok: true },
+  camera: {
+    available: true, boundsValid: true, inFrustum: true,
+    boundsSize: { x: 1.8, y: 1.7, z: 3.5 },
+    boundsCenter: { x: 0, y: 0.8, z: 2 },
+    cameraWorldPosition: { x: 0, y: 2, z: 8 },
+    distanceToCenter: 6.12, reason: 'bounds-intersect-camera-frustum',
+  },
   recoveryCount: 1,
   lastEvent: { phase: 'runtime-recovery', reason: 'no-visible-renderable-meshes', rejectedModel: 'pedestrian.glb', at: '2026-10-23T00:00:00.000Z' },
 };
@@ -60,6 +67,10 @@ test('diagnostic report includes vehicle, visibility, structure, transform and r
   assert.match(report, /Model: assets\/keke\.glb/);
   assert.match(report, /Visible path: yes/);
   assert.match(report, /Renderable meshes: 7/);
+  assert.match(report, /Mesh samples: chassis_mesh, wheel_front/);
+  assert.match(report, /Camera frustum: inside frustum/);
+  assert.match(report, /Vehicle world bounds W\/H\/D: 1\.80, 1\.70, 3\.50/);
+  assert.match(report, /Camera world position: 0\.00, 2\.00, 8\.00/);
   assert.match(report, /Vehicle structure: OK/);
   assert.match(report, /Recoveries: 1/);
   assert.match(report, /Rejected model: pedestrian\.glb/);
