@@ -377,8 +377,11 @@ function install() {
   const ensure = () => { installStyles(); ensureSection(); render(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensure, { once: true }); else ensure();
   for (const id of ['life-career-btn', 'life-career-menu-btn']) el(id)?.addEventListener('click', () => queueMicrotask(ensure));
-  if (!observer && document.documentElement && typeof MutationObserver !== 'undefined') {
-    observer = new MutationObserver(() => { if (document.querySelector('#kano-life-career-screen .klc-panel') && !el(SECTION_ID)) ensure(); });
+  if (!el(SECTION_ID) && !observer && document.documentElement && typeof MutationObserver !== 'undefined') {
+    observer = new MutationObserver(() => {
+      if (document.querySelector('#kano-life-career-screen .klc-panel') && !el(SECTION_ID)) ensure();
+      if (el(SECTION_ID)) { observer?.disconnect(); observer = null; }
+    });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
   for (const type of ['kano:daily-day-change', 'kano:relationship-status-updated', 'kano:aure-journey-updated', 'kano:family-responsibilities-updated', 'kano:life-shift-settled', 'kano:day-settlement-closed', 'kano:lefe-updated']) window.addEventListener(type, render);

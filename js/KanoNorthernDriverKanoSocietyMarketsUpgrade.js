@@ -446,8 +446,11 @@ function install() {
   const ensure = () => { installStyles(); createSection(); render(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensure, { once: true }); else ensure();
   for (const id of ['life-career-btn', 'life-career-menu-btn']) element(id)?.addEventListener('click', () => queueMicrotask(ensure));
-  if (!observer && document.documentElement && typeof MutationObserver !== 'undefined') {
-    observer = new MutationObserver(() => { if (document.querySelector('#kano-life-career-screen .klc-panel') && !element(SECTION_ID)) ensure(); });
+  if (!element(SECTION_ID) && !observer && document.documentElement && typeof MutationObserver !== 'undefined') {
+    observer = new MutationObserver(() => {
+      if (document.querySelector('#kano-life-career-screen .klc-panel') && !element(SECTION_ID)) ensure();
+      if (element(SECTION_ID)) { observer?.disconnect(); observer = null; }
+    });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
   for (const type of ['kano:daily-day-change', 'kano:life-shift-settled', 'kano:day-settlement-closed', 'kano:fuel-market-updated', 'kano:driver-compliance-updated']) window.addEventListener(type, render);

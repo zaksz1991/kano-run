@@ -365,8 +365,10 @@ function install() {
     console.info('[Kano Life] Step 75 social network and relationship memory registered.');
     return true;
   };
-  if (!attach() && typeof MutationObserver !== 'undefined') {
-    observer = new MutationObserver(() => { attach(); });
+  if (!attach() && typeof MutationObserver !== 'undefined' && document.documentElement) {
+    observer = new MutationObserver(() => {
+      if (attach()) { observer?.disconnect(); observer = null; }
+    });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 }

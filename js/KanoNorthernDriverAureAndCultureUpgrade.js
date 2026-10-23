@@ -382,8 +382,11 @@ function install() {
   }
   const ensureSoon = () => { ensureStyles(); fillOptions(); ensureSection(); refreshPanel(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensureSoon, { once: true }); else ensureSoon();
-  if (!observer && document.documentElement && typeof MutationObserver !== 'undefined') {
-    observer = new MutationObserver(() => { if (!el('kano-aure-culture') && document.querySelector('#kano-life-career-screen .klc-panel')) ensureSoon(); });
+  if (!el(SECTION_ID) && !observer && document.documentElement && typeof MutationObserver !== 'undefined') {
+    observer = new MutationObserver(() => {
+      if (!el(SECTION_ID) && document.querySelector('#kano-life-career-screen .klc-panel')) ensureSoon();
+      if (el(SECTION_ID)) { observer?.disconnect(); observer = null; }
+    });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
   for (const id of ['life-career-btn', 'life-career-menu-btn']) document.getElementById(id)?.addEventListener('click', () => queueMicrotask(ensureSoon));

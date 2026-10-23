@@ -204,9 +204,10 @@ function install() {
   const ensure = () => { installStyles(); createSection(); render(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensure, { once: true }); else ensure();
   for (const id of ['life-career-btn', 'life-career-menu-btn']) el(id)?.addEventListener('click', () => queueMicrotask(ensure));
-  if (document.documentElement && typeof MutationObserver !== 'undefined') {
+  if (!el(SECTION_ID) && document.documentElement && typeof MutationObserver !== 'undefined') {
     observer = new MutationObserver(() => {
       if (el('kano-society-markets') && !el(SECTION_ID)) ensure();
+      if (el(SECTION_ID)) { observer?.disconnect(); observer = null; }
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }

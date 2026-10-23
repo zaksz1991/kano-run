@@ -199,8 +199,11 @@ function install() {
   const ensure = () => { installStyles(); createSection(); render(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensure, { once: true }); else ensure();
   for (const id of ['life-career-btn', 'life-career-menu-btn']) el(id)?.addEventListener('click', () => queueMicrotask(ensure));
-  if (document.documentElement && typeof MutationObserver !== 'undefined') {
-    observer = new MutationObserver(() => { if ((el('kano-festival-economy') || el('kano-society-markets')) && !el(SECTION_ID)) ensure(); });
+  if (!el(SECTION_ID) && document.documentElement && typeof MutationObserver !== 'undefined') {
+    observer = new MutationObserver(() => {
+      if ((el('kano-festival-economy') || el('kano-society-markets')) && !el(SECTION_ID)) ensure();
+      if (el(SECTION_ID)) { observer?.disconnect(); observer = null; }
+    });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
   for (const type of ['kano:daily-day-change', 'kano:life-shift-settled', 'kano:day-settlement-closed', 'kano:fuel-market-updated', 'kano:driver-compliance-updated', 'kano:festival-calendar-updated']) window.addEventListener(type, render);

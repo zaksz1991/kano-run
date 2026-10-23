@@ -568,10 +568,10 @@ function install() {
     'kano:family-responsibilities-updated', 'kano:parenthood-updated',
     'kano:social-drama-updated', 'kano:wallet-updated', 'kano:app-ui-ready',
   ]) window.addEventListener(eventName, render);
-  if (document.documentElement && typeof MutationObserver !== 'undefined') {
-    careerObserver = new MutationObserver(() => ensureMenuButton());
-    careerObserver.observe(document.documentElement, { childList: true, subtree: true });
-  }
+  // The start and pause-menu hosts are present in index.html. ensureMenuButton() above
+  // installs the menu control once; do not watch every DOM mutation for this static host.
+  careerObserver?.disconnect();
+  careerObserver = null;
   window.kanoNorthernDriverSocialDrama = {
     version: 1,
     snapshot: () => getSocialDramaSnapshot(readState(), { day: context().day, relationshipStatus: context().relationshipStatus }),

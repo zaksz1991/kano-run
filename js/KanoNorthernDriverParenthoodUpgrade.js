@@ -287,9 +287,10 @@ function install() {
   window[INSTALL_KEY] = true;
   const ensure = () => { ensureStyles(); ensureSection(); render(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensure, { once: true }); else ensure();
-  if (!observer && document.documentElement && typeof MutationObserver !== 'undefined') {
+  if (!el(SECTION_ID) && !observer && document.documentElement && typeof MutationObserver !== 'undefined') {
     observer = new MutationObserver(() => {
       if (!el(SECTION_ID) && document.querySelector('#kano-life-career-screen .klc-panel')) ensure();
+      if (el(SECTION_ID)) { observer?.disconnect(); observer = null; }
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
