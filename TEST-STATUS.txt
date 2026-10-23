@@ -1,10 +1,12 @@
-STEP 45 VALIDATION STATUS
+STEP 46 VALIDATION STATUS
 =========================
-- Life simulation unit tests: 10/10 passed.
-- Static integration contract tests: 5/5 passed.
-- JavaScript syntax checks: 3/3 passed for the two new modules and the full patched model-visual wrapper.
+- Included node:test suite: 33/33 passed (Step 45 career tests, Step 45 integration-contract tests, Step 46 social-life unit tests, and Step 46 integration-contract tests).
+- JavaScript syntax checks: 5/5 passed for all JavaScript files supplied in this update.
 - ZIP integrity: checked after packaging.
-- Full Vite production build: not run; node_modules were not available in the source snapshot.
-- Browser/WebGL rendering and actual-phone performance: not verified.
+- Vite production build: not run; node_modules were not available in the supplied source snapshot.
+- Browser interaction, display layout, WebGL rendering and physical-phone behavior: not verified.
 
-These results establish unit-level and source-contract checks only. They do not claim that visual behavior has been checked in a live browser.
+LIMITATIONS
+- Routine windows are simplified, fixed in-game roleplay windows. They are not authoritative real-world prayer-time calculations.
+- Vehicle-care readiness is a persistent roleplay meter; paying for a choice does not directly repair the underlying vehicle condition value in the driving engine.
+- Event prices and incidental fare values are game balancing values, not current real-world market prices.

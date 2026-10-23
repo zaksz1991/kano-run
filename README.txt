@@ -1,37 +1,45 @@
-KANO LIFE — STEP 45: NORTHERN DRIVER LIFE SIMULATION
-====================================================
+KANO LIFE — STEP 46: NORTHERN DRIVER DAILY LIFE & SOCIAL CHOICES
+================================================================
 
 PURPOSE
-This update begins an additive, persistent life-and-career simulation layer for a young northern Nigerian keke driver. It is built around existing morning-routine scenes, world-day state, career payouts, the existing wallet and driver presets. It does not replace the driving renderer or existing gameplay systems.
+This additive update expands the Step 45 Life & Career layer with persistent daily decisions that reflect the balancing act of a young Northern Nigerian keke driver. Choices affect a single existing spendable wallet, relationship and readiness meters, and a social-life ledger. The driving renderer and keke asset pipeline are not replaced by this update.
 
-PLAYER PROFILE
-- Choose a young man or young woman (ages 18–35) and set the driver's name.
-- Choose a family compound, single room, shared flat or married household.
-- Choose whether the driver is mostly self-supporting, contributes to family, or is the primary provider.
-- Choose owned keke, daily hire, or hire-purchase.
-- Select a long-term goal: keke ownership, education, a small business, or home improvement.
+DAILY SITUATIONS
+One choice situation is offered per in-game world day. The deck cycles through:
+- family support and household responsibility;
+- keke-park contributions and standing;
+- passenger fare negotiation and repeat-customer respect;
+- a mechanic's inspection or service advice;
+- helping a neighbour or community member;
+- balancing evening work with family time and rest;
+- preparing for a change in road/weather conditions.
 
-PERSISTENT SIMULATION
-- Records completed Career and Free roam shifts using the game's existing banked transaction.
-- Tracks paid income, fuel, wear/maintenance, vehicle fees, household contributions, meals, passenger drops, distance and shift count.
-- Maintains personal savings separately from spendable cash, with explicit wallet-to-savings deposits and arrears repayment.
-- Charges daily hire and household contributions once per in-game world day, not on every completed run.
-- Uses the existing banked wallet as the sole spendable wallet. It does not create a second spendable-money balance.
-- Adds a life ledger and persistent goal progress. Costs are deliberately game-scaled for playability and are not claims about current Nigerian market prices.
-- Does not apply the new shift-cost accounting to Time Attack, Fuel Gauge Challenge, Match Drop or Potholes Challenge.
+Choices have different costs and relationship effects. The wallet cannot be driven below zero, unaffordable choices are rejected without changing state, and a resolved daily situation cannot be replayed to farm cash or reputation. All prices and positive fare amounts are intentionally simplified game-balance values, not claims about current Nigerian prices.
+
+PERSISTENT METERS
+- Family trust
+- Park standing
+- Passenger respect
+- Community trust
+- Vehicle-care readiness (a roleplay readiness meter, not a direct repair of the underlying keke condition)
+- Wellbeing
+
+ROUTINE PREFERENCES
+The player can select Islamic prayer-time prompts, personal quiet-break reminders, or turn prompts off. The windows are fixed in-game roleplay windows; they are not location/date-based prayer-time calculations or authoritative real-world prayer times. Recording a routine updates the social-life ledger and wellbeing meter but does not force-jump the core game clock while paused.
 
 INSTALLATION
 1. Extract this ZIP into the root of the existing kano-run project (the folder containing index.html and package.json).
-2. Replace js/KanoModelAssetVisualUpgrade.js with the full version in this ZIP. The only entry change is that it imports the life-simulation integration before the existing gameplay-presentation bootstrap.
-3. Add js/KanoNorthernDriverLifeSimulation.js and js/KanoNorthernDriverLifeSimulationUpgrade.js.
-4. Copy the included tests/*.test.mjs files into the existing tests folder.
-5. Keep all other files and previous updates, especially renderer3d.js, game.js, ui.js, index.html, CSS, models, traffic updates, day-cycle updates and keke diagnostics.
+2. Replace js/KanoModelAssetVisualUpgrade.js with the complete file included here. It imports the social-life integration after the Step 45 Life & Career module and before the existing gameplay-presentation bootstrap.
+3. Add js/KanoNorthernDriverRealLife.js and js/KanoNorthernDriverRealLifeUpgrade.js.
+4. The ZIP also includes complete unchanged copies of js/KanoNorthernDriverLifeSimulation.js and js/KanoNorthernDriverLifeSimulationUpgrade.js from Step 45, plus Step 45 tests. Keep/retain these exact dependencies if they are already installed.
+5. Copy the included tests/*.test.mjs files into the existing tests folder.
+6. Keep main.js, game.js, ui.js, storage.js, index.html, CSS, renderer3d.js, model assets, mobile-performance updates, traffic and day-cycle upgrades, and keke diagnostics unchanged.
 
 IN-GAME USE
-A LIFE & CAREER button is added to the start screen and menu. Save the profile, then use Career or Free roam. At the end of a banked shift, the ledger calculates game-scaled fuel, maintenance, vehicle and household costs. The profile and ledger persist in this browser. Driver identity text is shown in the HUD; gender selection chooses the existing Mama or RuffNeck gameplay preset by default, and the existing driver selector can still be used afterward.
+Open LIFE & CAREER from the start screen or menu. The new Daily Life & Social Reputation section displays the meters, routine selector, today's situation, choices and recent social ledger. The daily situation follows the in-game world day; it is not based on the device's real-world date.
 
-PERSISTENCE NOTE
-The life ledger uses browser storage. Clearing this browser's site data clears that profile/ledger. The game's banked wallet remains managed by the existing game storage module.
+PERSISTENCE
+Social relationships, routine preferences, daily choices and the social ledger are stored in browser storage under a separate key. Money changes are written to the game's existing save.money wallet and persisted with the existing storage module. Clearing site data clears browser-persisted social state.
 
 VALIDATION
-See TEST-STATUS.txt. Focused unit tests and static integration tests are included. Production build, browser rendering and physical-phone behavior have not been verified in this environment.
+See TEST-STATUS.txt. Unit, integration-contract and syntax checks are reported there. Vite production build, live browser rendering and physical-phone behavior have not been verified in this environment.

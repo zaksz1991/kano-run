@@ -276,4 +276,5 @@ console.info(`[Kano Life] GLB visual quality pass registered for world/, environ
 // The model pipeline must be patched before main.js creates ModelManager.
 // Keep the existing presentation, game, and persistence hooks as the app entry.
 await import('./KanoNorthernDriverLifeSimulationUpgrade.js');
+await import('./KanoNorthernDriverRealLifeUpgrade.js');
 await import('./KanoGameplayPresentationRepair.js');
