@@ -63,6 +63,11 @@
               <h3 id="klc-sim-status-title">SIMULATION INTEGRATION</h3>
               <p class="klc-hub-note">Status reflects the feature panels registered in this browser session, not remote services.</p>
               <div id="klc-sim-status" role="status" aria-live="polite">Checking installed simulation panels…</div>
+              <p id="klc-runtime-audit-summary" class="klc-runtime-summary" role="status" aria-live="polite">Runtime diagnostics are starting…</p>
+              <div class="klc-diagnostics-actions">
+                <button class="secondary" id="klc-run-runtime-audit" type="button">CHECK STARTUP &amp; SIMS</button>
+                <button class="secondary" id="klc-export-runtime-report" type="button">EXPORT DIAGNOSTIC REPORT</button>
+              </div>
               <button class="secondary" id="klc-open-social-from-career" type="button">PEOPLE · RELATIONSHIPS &amp; SOCIAL LIFE</button>
             </section>
           </div>
@@ -79,7 +84,9 @@
       <nav class="drive-controls" id="drive-controls" aria-label="Driving controls"><button class="control lane" data-action="left" aria-label="Steer left">←</button><button class="control lane" data-action="right" aria-label="Steer right">→</button><button class="control brake" data-action="brake">BRAKE</button><button class="control gas" data-action="gas">GAS</button><button class="control horn" data-action="horn" aria-label="Horn">HORN</button></nav><button class="menu-button" id="menu-btn" aria-label="Open game menu">☰</button>
     </div>
   </main>
-  <!-- Register launch recovery first so missing optional overlays cannot strand the start screen. -->
+  <!-- A dependency-free local audit starts first, before app and simulation modules load. -->
+  <script type="module" src="/js/KanoLifeRuntimeAudit.js"></script>
+  <!-- Launch recovery keeps the existing main.js/Game/UI authoritative. -->
   <script type="module" src="/js/KanoAppLaunchRecovery.js"></script>
 
   <!-- The existing systems are registered before the application entry where possible. -->
@@ -88,6 +95,10 @@
   <script type="module" src="/js/KanoWorldPerformanceInstancingUpgrade.js"></script>
   <script type="module" src="/js/KanoLifeRootCauseRepair.js"></script>
   <script type="module" src="/js/KanoNorthernDriverSkillsPathwaysUpgrade.js"></script>
+  <!-- These are explicit roots for independent screens; shared module URLs are evaluated once by ES module caching. -->
+  <script type="module" src="/js/KanoNorthernDriverEmploymentMarketUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverEmploymentScheduleUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverDigitalLifeUpgrade.js"></script>
   <script type="module" src="/js/KanoNorthernDriverCareerProgressionUpgrade.js"></script>
 
   <!-- Longitudinal social systems register before the renderer bootstrap. -->

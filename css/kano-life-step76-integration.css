@@ -82,3 +82,37 @@
 @media (prefers-reduced-motion: reduce) {
   #kano-life-career-screen *, #kano-life-career-screen *::before, #kano-life-career-screen *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }
+
+/* Step 77 — local runtime diagnostic panel; no telemetry is transmitted. */
+.klc-runtime-summary {
+  margin: 8px 0 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(120, 177, 213, .24);
+  border-radius: 9px;
+  background: rgba(5, 18, 31, .62);
+  color: #d7e6f0;
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.klc-runtime-summary[data-state="error"] {
+  color: #ffd2c9;
+  border-color: rgba(255, 112, 87, .55);
+}
+.klc-runtime-summary[data-state="warning"] {
+  color: #ffe8a6;
+  border-color: rgba(245, 197, 66, .45);
+}
+.klc-diagnostics-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+.klc-diagnostics-actions button { min-width: 0; min-height: 44px; line-height: 1.35; }
+@media (max-width: 420px) {
+  .klc-diagnostics-actions { grid-template-columns: minmax(0, 1fr); }
+}
+
+.kano-launch-recovery-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.kano-launch-recovery-actions button { flex: 1 1 160px; }

@@ -23,7 +23,11 @@ test('Step 67 entrypoint keeps main-branch startup modules and PWA installation 
 test('Step 67 extends Step 66 employment market without replacing game or renderer modules', () => {
   assert.match(upgrade, /import '\.\/KanoNorthernDriverEmploymentMarketUpgrade\.js'/);
   assert.match(upgrade, /from '\.\/storage\.js'/);
-  assert.doesNotMatch(html, /src="\/js\/(main|game|renderer3d)\.js"/);
+  assert.equal((html.match(/src="\/js\/main\.js"/g) || []).length, 1,
+    'the current startup recovery uses exactly one canonical main.js entry');
+  assert.match(html, /src="\/js\/KanoLifeRuntimeAudit\.js"/);
+  assert.match(html, /src="\/js\/KanoNorthernDriverEmploymentMarketUpgrade\.js"/);
+  assert.match(html, /src="\/js\/KanoNorthernDriverEmploymentScheduleUpgrade\.js"/);
 });
 
 test('payroll credit checks the existing storage layer return value and rolls back on failure', () => {

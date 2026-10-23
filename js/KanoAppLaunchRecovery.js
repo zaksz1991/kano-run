@@ -97,7 +97,7 @@ function showBootAlert(error) {
     alert.id = 'kano-launch-recovery-alert';
     alert.className = 'kano-launch-recovery-alert';
     alert.setAttribute('role', 'alert');
-    alert.innerHTML = '<strong>Game startup needs attention.</strong><p id="kano-launch-recovery-message"></p><button type="button" id="kano-launch-retry">RETRY STARTUP</button>';
+    alert.innerHTML = '<strong>Game startup needs attention.</strong><p id="kano-launch-recovery-message"></p><div class="kano-launch-recovery-actions"><button type="button" id="kano-launch-retry">RETRY STARTUP</button><button type="button" id="kano-launch-diagnostics">EXPORT DIAGNOSTICS</button></div>';
     const target = document.querySelector('.start-actions', startCard) || startCard;
     target.insertAdjacentElement('afterend', alert);
   }
@@ -111,6 +111,17 @@ function showBootAlert(error) {
   if (retry && !retryButtonBound) {
     retryButtonBound = true;
     retry.addEventListener('click', () => window.location.reload());
+  }
+  const diagnostics = document.getElementById('kano-launch-diagnostics');
+  if (diagnostics && diagnostics.dataset.kanoBound !== '1') {
+    diagnostics.dataset.kanoBound = '1';
+    diagnostics.addEventListener('click', () => {
+      const result = window.kanoLifeRuntimeAudit?.downloadReport?.();
+      if (!result?.ok) {
+        const message = document.getElementById('kano-launch-recovery-message');
+        if (message) message.textContent = 'Startup did not finish. Diagnostic export is unavailable; retry the page and check the browser console/network panel.';
+      }
+    });
   }
   if (alert) alert.hidden = false;
 }

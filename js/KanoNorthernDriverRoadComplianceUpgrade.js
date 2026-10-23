@@ -1,4 +1,3 @@
-import './KanoNorthernDriverAureAndCultureUpgrade.js';
 /** Additive driver-document and KAROTA-checkpoint layer; core gameplay files are untouched. */
 import { Game } from './game.js';
 import { UI } from './ui.js';

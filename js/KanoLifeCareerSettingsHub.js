@@ -119,6 +119,30 @@ function refreshIntegrationStatus() {
     : 'No career panels have mounted. Check the on-screen startup error and the browser console; this screen will remain available for recovery.';
   status.append(detail);
 
+  const runtimeStatus = $('#klc-runtime-audit-summary');
+  const audit = window.kanoLifeRuntimeAudit;
+  if (runtimeStatus) {
+    if (typeof audit?.snapshot !== 'function') {
+      runtimeStatus.textContent = 'Runtime audit unavailable. The game may still run, but module loading errors cannot be collected in this session.';
+      runtimeStatus.dataset.state = 'warning';
+    } else {
+      try {
+        const report = audit.snapshot();
+        const modules = report.moduleSummary || {};
+        const issues = report.issueSummary || {};
+        const failed = Number(modules.failed) || 0;
+        const errors = Number(issues.errors) || 0;
+        const warnings = Number(issues.warnings) || 0;
+        const longTasks = Number(issues.longTasks) || 0;
+        runtimeStatus.textContent = `Engine ${report.app?.uiBound ? 'bound' : 'not confirmed'} · modules ${modules.loaded || 0}/${modules.total || 0} loaded · ${failed} entrypoint failure(s) · ${errors} runtime error(s) · ${warnings} warning(s) · ${longTasks} long task(s). Diagnostic data stays in this browser.`;
+        runtimeStatus.dataset.state = failed || errors ? 'error' : warnings || longTasks || !report.app?.uiBound ? 'warning' : 'ok';
+      } catch {
+        runtimeStatus.textContent = 'Runtime report could not be read. Reload and retry the diagnostic check.';
+        runtimeStatus.dataset.state = 'warning';
+      }
+    }
+  }
+
   list.replaceChildren();
   if (!sections.length) {
     const empty = document.createElement('p');
@@ -201,6 +225,37 @@ function install() {
   $('#life-career-menu-btn')?.addEventListener('click', openCareer);
   $('#life-career-close')?.addEventListener('click', closeCareer);
   $('#klc-open-social-from-career')?.addEventListener('click', openSocialFromCareer);
+  $('#klc-run-runtime-audit')?.addEventListener('click', () => {
+    try {
+      window.dispatchEvent(new CustomEvent('kano:runtime-audit-requested'));
+      refreshSimulationPanels();
+      refreshIntegrationStatus();
+      const report = window.kanoLifeRuntimeAudit?.snapshot?.();
+      const summary = $('#klc-runtime-audit-summary');
+      if (summary && report) {
+        summary.textContent += ` Last check: ${new Date().toLocaleTimeString()}. Start the game once to check the start flow; this button does not alter the run.`;
+      }
+    } catch (error) {
+      console.warn('[Kano Life] runtime audit could not complete', error);
+    }
+  });
+  $('#klc-export-runtime-report')?.addEventListener('click', () => {
+    const audit = window.kanoLifeRuntimeAudit;
+    if (typeof audit?.downloadReport !== 'function') {
+      const summary = $('#klc-runtime-audit-summary');
+      if (summary) {
+        summary.textContent = 'The runtime audit module is unavailable. No diagnostic report was exported.';
+        summary.dataset.state = 'warning';
+      }
+      return;
+    }
+    const result = audit.downloadReport();
+    if (result?.ok) refreshIntegrationStatus();
+  });
+
+  window.addEventListener('kano:runtime-audit-updated', () => {
+    if (isVisible(careerScreen)) refreshIntegrationStatus();
+  });
 
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || !isVisible(careerScreen)) return;

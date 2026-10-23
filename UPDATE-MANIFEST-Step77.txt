@@ -1,0 +1,30 @@
+KANO LIFE — STEP 77 UPDATE MANIFEST
+
+Main entry / UI
+- index.html: cumulative entry page with runtime audit first, launch recovery second, one canonical /js/main.js entry, existing game and PWA assets retained.
+- css/kano-life-step76-integration.css: audited current integration screen styles.
+- js/KanoAppLaunchRecovery.js: startup state tracking, stable selectors, retry, and local diagnostic export.
+- js/KanoLifeCareerSettingsHub.js: shared Life & Career host, original setting controls, panel summary, and diagnostic actions.
+- js/KanoLifeRuntimeAudit.js: new local-only runtime audit.
+- js/KanoNorthernDriverDigitalLifeUpgrade.js: current corrected module preserved in the overlay.
+- js/KanoNorthernDriverFuelEconomy.js: restored local dependency required by KanoNorthernDriverFuelEconomyUpgrade.js.
+
+Tests
+- tests/KanoLifeStep77RuntimeAudit.test.mjs: new diagnostic, entrypoint, local privacy and simulation-host checks.
+- tests/KanoNorthernDriverAureAndCultureIntegration.test.mjs: refreshed current relationship module contract.
+- tests/KanoNorthernDriverPhoneLifeIntegration.test.mjs: refreshed current entrypoint/import contract.
+- tests/KanoNorthernDriverSeasonalResilienceIntegration.test.mjs: refreshed current entrypoint contract.
+- tests/KanoNorthernDriverSkillsPathwaysIntegration.test.mjs: refreshed current import-graph contract.
+- tests/KanoStep67EntryPointIntegration.test.mjs: refreshed current canonical-entry contract.
+- The archive also carries forward the Steps 64–76 life-simulation overlay modules, styles, tests, generated Keke hero asset and prior reports.
+
+Documents
+- docs/Kano-Life-Step77-Runtime-Audit-and-Simulation-Integration.md
+- README-Step77.md
+- TEST-STATUS-Step77.txt
+- TEST-OUTPUT-Step77.txt
+- SYNTAX-OUTPUT-Step77.txt
+- RELEASE-OUTPUT-Step77.txt
+
+Preserve existing project files
+Do not replace js/main.js, js/game.js, js/ui.js, js/config.js, js/storage.js, js/renderer2d.js, js/renderer3d.js, package.json, package-lock.json, service worker, manifest, core CSS or original 3D assets. This is a cumulative overlay, not the full repository backup.

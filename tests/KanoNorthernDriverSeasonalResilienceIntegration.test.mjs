@@ -8,14 +8,18 @@ const bridge = readFileSync(new URL('js/KanoNorthernDriverSeasonalEnvironmentBri
 const core = readFileSync(new URL('js/KanoNorthernDriverSeasonalBridgeCore.js', root), 'utf8');
 const sources = [...html.matchAll(/<script\s+type="module"\s+src="([^"]+)"\s*><\/script>/g)].map(match => match[1]);
 
-test('launch recovery precedes the seasonal bridge, while all core patch modules precede the direct main entry', () => {
-  assert.equal(sources[0], '/js/KanoAppLaunchRecovery.js');
-  assert.equal(sources[1], '/js/KanoNorthernDriverSeasonalEnvironmentBridge.js');
+test('runtime audit and launch recovery precede the seasonal bridge, while core patches precede the direct main entry', () => {
+  assert.equal(sources[0], '/js/KanoLifeRuntimeAudit.js');
+  assert.equal(sources[1], '/js/KanoAppLaunchRecovery.js');
+  assert.equal(sources[2], '/js/KanoNorthernDriverSeasonalEnvironmentBridge.js');
   const baseline = [
     '/js/KanoCulturalStreetEventsUpgrade.js',
     '/js/KanoWorldPerformanceInstancingUpgrade.js',
     '/js/KanoLifeRootCauseRepair.js',
     '/js/KanoNorthernDriverSkillsPathwaysUpgrade.js',
+    '/js/KanoNorthernDriverEmploymentMarketUpgrade.js',
+    '/js/KanoNorthernDriverEmploymentScheduleUpgrade.js',
+    '/js/KanoNorthernDriverDigitalLifeUpgrade.js',
     '/js/KanoNorthernDriverCareerProgressionUpgrade.js',
     '/js/KanoNorthernDriverAureJourneyUpgrade.js',
     '/js/KanoNorthernDriverLefeNegotiationUpgrade.js',
@@ -25,11 +29,13 @@ test('launch recovery precedes the seasonal bridge, while all core patch modules
     '/js/KanoNorthernDriverCivicProjectsUpgrade.js',
     '/js/KanoNorthernDriverSocialDramaUpgrade.js',
     '/js/KanoNorthernDriverSocialNetworkUpgrade.js',
+    '/js/KanoLifeCareerSettingsHub.js',
     '/js/KanoModelAssetVisualUpgrade.js',
     '/js/main.js',
   ];
-  assert.deepEqual(sources.slice(2), baseline);
+  assert.deepEqual(sources.slice(3), baseline);
   assert.equal(sources.filter(source => source === '/js/main.js').length, 1);
+  assert.equal(sources.filter(source => source === '/js/KanoLifeRuntimeAudit.js').length, 1);
 });
 
 test('the start-page recovery preserves the canonical Game and UI rather than creating a second engine', () => {
