@@ -35,6 +35,7 @@ export function formatKekeRuntimeDiagnosticText(snapshot = {}) {
   const structural = snapshot.structural || health.structural || {};
   const renderer = snapshot.renderer || {};
   const camera = snapshot.camera || {};
+  const renderState = snapshot.renderState || {};
   const event = snapshot.lastEvent || {};
   const cameraView = camera.inFrustum === true
     ? 'inside frustum'
@@ -46,6 +47,12 @@ export function formatKekeRuntimeDiagnosticText(snapshot = {}) {
   const cameraPosition = camera.available === true ? tupleText(camera.cameraWorldPosition) : '—';
   const meshNames = Array.isArray(renderability.meshNames) && renderability.meshNames.length
     ? renderability.meshNames.map((name) => clean(name, '')).filter(Boolean).slice(0, 8).join(', ')
+    : 'none reported';
+  const renderIssues = Array.isArray(renderState.issueSamples) && renderState.issueSamples.length
+    ? renderState.issueSamples.map((item) => clean(item, '')).filter(Boolean).slice(0, 6).join(' | ')
+    : 'none reported';
+  const drawableSamples = Array.isArray(renderState.drawableMeshSamples) && renderState.drawableMeshSamples.length
+    ? renderState.drawableMeshSamples.map((name) => clean(name, '')).filter(Boolean).slice(0, 6).join(', ')
     : 'none reported';
   const lines = [
     'KANO LIFE | PLAYER KEKE DIAGNOSTICS',
@@ -59,6 +66,11 @@ export function formatKekeRuntimeDiagnosticText(snapshot = {}) {
     `Camera frustum: ${cameraView} | Distance to vehicle bounds centre: ${numberText(camera.distanceToCenter, 2)}`,
     `Vehicle world bounds W/H/D: ${bounds} | Bounds centre: ${boundsCenter}`,
     `Camera world position: ${cameraPosition} | Measurement: ${clean(camera.reason, 'not measured')}`,
+    `Render state: ${renderState.available === true ? 'available' : renderState.available === false ? 'unavailable' : 'not checked'} | ${clean(renderState.reason, 'not measured')}`,
+    `Scene nodes: ${Number.isFinite(Number(renderState.nodeCount)) ? Number(renderState.nodeCount) : '—'} | Meshes: ${Number.isFinite(Number(renderState.meshCount)) ? Number(renderState.meshCount) : '—'} | Candidate drawable: ${Number.isFinite(Number(renderState.candidateDrawableMeshCount)) ? Number(renderState.candidateDrawableMeshCount) : '—'}`,
+    `Hidden nodes: ${Number.isFinite(Number(renderState.hiddenNodeCount)) ? Number(renderState.hiddenNodeCount) : '—'} | No geometry: ${Number(renderState.meshWithoutGeometryCount) || 0} | No position attribute: ${Number(renderState.meshWithoutPositionAttributeCount) || 0}`,
+    `Material flags: hidden ${Number(renderState.invisibleMaterialCount) || 0}, zero opacity ${Number(renderState.zeroOpacityMaterialCount) || 0}, color-write off ${Number(renderState.colorWriteDisabledMaterialCount) || 0} | Camera-layer mismatches: ${Number(renderState.cameraLayerMismatchMeshCount) || 0}`,
+    `Drawable mesh samples: ${drawableSamples} | Mesh issue samples: ${renderIssues}`,
     `Vehicle structure: ${structural.ok === true ? 'OK' : structural.ok === false ? `FAIL (${clean(structural.reason, 'unspecified')})` : 'not checked'}`,
     `Health: ${health.ok === true ? 'OK' : health.ok === false ? `FAIL (${clean(health.reason, 'unspecified')})` : 'not checked'} | Recoveries: ${Number(snapshot.recoveryCount) || 0}`,
     `Last event: ${clean(event.phase, 'none')} | ${clean(event.reason, 'no error recorded')}`,

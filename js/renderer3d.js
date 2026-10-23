@@ -6,6 +6,7 @@ import { inspectPlayerKekeRenderability } from './KanoPlayerKekeRuntimeGuard.js'
 import { capturePlayerKekeRecoveryPose } from './KanoPlayerKekeRecoveryTransform.js';
 import { createKekeRuntimeDiagnostics } from './KanoKekeRuntimeDiagnostics.js';
 import { measureKekeCameraDiagnostics } from './KanoKekeCameraDiagnostics.js';
+import { inspectKekeRenderState } from './KanoKekeRenderStateDiagnostics.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -202,6 +203,7 @@ export class Renderer3D {
     this._kekeRuntimeDiagnostics = null;
     this._nextKekeCameraDiagnosticsAt = 0;
     this._cachedKekeCameraDiagnostics = null;
+    this._cachedKekeRenderStateDiagnostics = null;
     this.garageGroup = null;
     this.securityActor = null;
     this.securityUsingModel = false;
@@ -5057,6 +5059,7 @@ export class Renderer3D {
     if (force || !this._cachedKekeCameraDiagnostics || diagnosticsNow >= this._nextKekeCameraDiagnosticsAt) {
       this._nextKekeCameraDiagnosticsAt = diagnosticsNow + 900;
       this._cachedKekeCameraDiagnostics = measureKekeCameraDiagnostics(player, this.camera, THREE);
+      this._cachedKekeRenderStateDiagnostics = inspectKekeRenderState(player, this.camera, { sampleLimit: 8 });
     }
 
     const canvas = this.canvas;
@@ -5088,6 +5091,7 @@ export class Renderer3D {
       renderability,
       structural,
       camera: this._cachedKekeCameraDiagnostics,
+      renderState: this._cachedKekeRenderStateDiagnostics,
       recoveryCount: this._playerKekeRuntimeRecoveryCount,
       lastEvent: this._lastKekeRuntimeDiagnostic,
     }, force);

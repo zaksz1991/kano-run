@@ -1,10 +1,9 @@
-STEP 43 VALIDATION RESULTS
+STEP 44 VALIDATION RESULTS
 
-- Node suite in this step's included test folder: 84 passed, 0 failed.
-- New camera-diagnostics tests: 5 passed.
-- Updated diagnostic report test confirms mesh samples, bounds, camera position and frustum status are exported.
+- Node suite in the included tests folder: 93 passed, 0 failed.
+- New render-state diagnostics tests cover drawable mesh candidates, hidden ancestor visibility, non-drawable material flags, absent geometry/position attributes, empty draw ranges, camera-layer mismatch, traversal guard, report export, and renderer wiring.
 - JavaScript syntax checks passed for all included js/*.js files.
-- ZIP archive integrity passed.
-- The bounds/frustum traversal runs only when ?debugKeke=1 is enabled and is throttled to a 900 ms diagnostic interval.
-- Production Vite build was not run because the supplied validation environment has no installed local dependencies.
-- Real-browser/WebGL rendering, camera-frustum accuracy in the full live scene, clipboard/download behavior, and physical-phone performance remain unverified.
+- ZIP archive integrity passed after packaging.
+- Render-state traversal is called only when ?debugKeke=1 is enabled, along the existing throttled diagnostics path (900 ms cadence).
+- No vehicle state, materials, layer masks, geometry, or camera values are changed by the helper.
+- Production Vite build, live browser/WebGL rendering, and physical-phone performance were not verified.
