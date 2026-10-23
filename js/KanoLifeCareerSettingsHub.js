@@ -92,6 +92,144 @@ function readablePanelName(section) {
     .replace(/\b\w/g, letter => letter.toUpperCase());
 }
 
+function installRuntimeAuditDetailStyles() {
+  if (document.getElementById('klc-runtime-audit-detail-style') || !document.head) return;
+  const style = document.createElement('style');
+  style.id = 'klc-runtime-audit-detail-style';
+  style.textContent = `
+    .klc-runtime-audit-details{margin:10px 0 12px;border:1px solid #315064;border-radius:9px;background:#081723;color:#e8f1f7;overflow:hidden}
+    .klc-runtime-audit-details>summary{padding:11px 12px;cursor:pointer;font-size:11px;font-weight:900;letter-spacing:.035em;line-height:1.45;background:#102536}
+    .klc-runtime-audit-detail-body{display:grid;gap:10px;padding:10px}
+    .klc-runtime-audit-section-title{margin:0 0 6px;font-size:11px;font-weight:900;color:#b7cad8;text-transform:uppercase;letter-spacing:.04em}
+    .klc-runtime-audit-list{display:grid;gap:7px}
+    .klc-runtime-audit-item{min-width:0;padding:9px;border-radius:7px;border:1px solid #385064;background:#0d1d2b;overflow-wrap:anywhere}
+    .klc-runtime-audit-item[data-severity="error"]{border-color:#a94c4c}
+    .klc-runtime-audit-item[data-severity="warning"]{border-color:#8d6a34}
+    .klc-runtime-audit-item-title{margin:0 0 5px;font-size:11px;font-weight:900}
+    .klc-runtime-audit-item-message,.klc-runtime-audit-item-meta{margin:0;font-size:11px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
+    .klc-runtime-audit-item-meta{margin-top:5px;color:#9fb5c5;font-family:ui-monospace,monospace;font-size:10px}
+    .klc-runtime-audit-empty{margin:0;color:#93d9bd;font-size:11px;line-height:1.5}
+  `;
+  document.head.append(style);
+}
+
+function renderRuntimeAuditDetails(report, anchor) {
+  if (!anchor?.parentElement) return;
+  installRuntimeAuditDetailStyles();
+
+  let details = document.getElementById('klc-runtime-audit-details');
+  const created = !details;
+  if (!details) {
+    details = document.createElement('details');
+    details.id = 'klc-runtime-audit-details';
+    details.className = 'klc-runtime-audit-details';
+    anchor.insertAdjacentElement('afterend', details);
+  }
+
+  const issueRows = Array.isArray(report?.issues) ? report.issues : [];
+  const warnings = issueRows.filter(item => item?.severity === 'warning').length;
+  const errors = issueRows.filter(item => item?.severity === 'error').length;
+  const longTasks = Array.isArray(report?.longTasks) ? report.longTasks : [];
+  const frames = Array.isArray(report?.longAnimationFrames) ? report.longAnimationFrames : [];
+  details.replaceChildren();
+
+  const summary = document.createElement('summary');
+  summary.textContent = report
+    ? `WARNING & ERROR DETAILS · ${warnings} warning(s) · ${errors} error(s) · ${longTasks.length} long task(s) · ${frames.length} long frame(s)`
+    : 'WARNING & ERROR DETAILS · Runtime report unavailable';
+  details.append(summary);
+
+  const body = document.createElement('div');
+  body.className = 'klc-runtime-audit-detail-body';
+  details.append(body);
+
+  if (!report) {
+    const message = document.createElement('p');
+    message.className = 'klc-runtime-audit-empty';
+    message.textContent = 'The runtime audit could not provide a snapshot in this session. Reload the game and check again.';
+    body.append(message);
+    return;
+  }
+
+  const addSection = (title, rows, formatRow, severityForRow = () => 'info') => {
+    if (!rows.length) return;
+    const section = document.createElement('section');
+    const heading = document.createElement('h4');
+    heading.className = 'klc-runtime-audit-section-title';
+    heading.textContent = title;
+    const list = document.createElement('div');
+    list.className = 'klc-runtime-audit-list';
+    section.append(heading, list);
+
+    for (const row of rows.slice(-30)) {
+      const formatted = formatRow(row) || {};
+      const card = document.createElement('article');
+      card.className = 'klc-runtime-audit-item';
+      card.dataset.severity = severityForRow(row);
+      const label = document.createElement('p');
+      label.className = 'klc-runtime-audit-item-title';
+      label.textContent = String(formatted.title || 'Diagnostic event');
+      card.append(label);
+      if (formatted.message) {
+        const text = document.createElement('p');
+        text.className = 'klc-runtime-audit-item-message';
+        text.textContent = String(formatted.message);
+        card.append(text);
+      }
+      if (formatted.meta) {
+        const foot = document.createElement('p');
+        foot.className = 'klc-runtime-audit-item-meta';
+        foot.textContent = String(formatted.meta);
+        card.append(foot);
+      }
+      list.append(card);
+    }
+    body.append(section);
+  };
+
+  addSection('Recorded warnings and errors', issueRows, item => {
+    const severity = String(item?.severity || 'info').toUpperCase();
+    const type = String(item?.type || 'event');
+    const message = String(item?.message || 'No message was recorded.');
+    const metaParts = [];
+    if (item?.file) metaParts.push(String(item.file));
+    if (Number(item?.line) > 0) metaParts.push(`line ${Number(item.line)}`);
+    if (Number.isFinite(Number(item?.durationMs))) metaParts.push(`${Number(item.durationMs)} ms`);
+    if (item?.at) metaParts.push(String(item.at));
+    return { title: `${severity} · ${type}`, message, meta: metaParts.join(' · ') };
+  }, item => item?.severity === 'error' ? 'error' : item?.severity === 'warning' ? 'warning' : 'info');
+
+  addSection('Long main-thread tasks', longTasks, item => ({
+    title: `${Number(item?.durationMs) || 0} ms main-thread task`,
+    message: String(item?.source || 'Source not attributed by the browser.'),
+    meta: `Started at ${Number(item?.startTimeMs) || 0} ms${item?.at ? ` · ${item.at}` : ''}`,
+  }), () => 'warning');
+
+  addSection('Long animation frame attribution', frames, frame => {
+    const scripts = Array.isArray(frame?.scripts) ? frame.scripts : [];
+    const attribution = scripts.slice(0, 8).map(script => {
+      const parts = [script?.source, script?.functionName, script?.invoker].filter(Boolean);
+      if (Number(script?.durationMs) > 0) parts.push(`${Number(script.durationMs)} ms`);
+      if (Number(script?.forcedStyleAndLayoutMs) > 0) parts.push(`${Number(script.forcedStyleAndLayoutMs)} ms forced layout`);
+      return parts.join(' · ');
+    });
+    return {
+      title: `${Number(frame?.durationMs) || 0} ms frame · ${Number(frame?.blockingDurationMs) || 0} ms blocking`,
+      message: attribution.length ? attribution.join('\n') : 'The browser recorded a long frame but did not attribute it to a script.',
+      meta: `Frame start ${Number(frame?.startTimeMs) || 0} ms${frame?.at ? ` · ${frame.at}` : ''}`,
+    };
+  }, () => 'warning');
+
+  if (!issueRows.length && !longTasks.length && !frames.length) {
+    const empty = document.createElement('p');
+    empty.className = 'klc-runtime-audit-empty';
+    empty.textContent = 'No warnings, runtime errors, long tasks, or long animation frames have been recorded in this browser session.';
+    body.append(empty);
+  }
+
+  if (created) details.open = warnings > 0 || errors > 0 || longTasks.length > 0 || frames.length > 0;
+}
+
 function refreshIntegrationStatus() {
   const status = $('#klc-sim-status');
   const list = $('#klc-sim-module-list');
@@ -125,6 +263,7 @@ function refreshIntegrationStatus() {
     if (typeof audit?.snapshot !== 'function') {
       runtimeStatus.textContent = 'Runtime audit unavailable. The game may still run, but module loading errors cannot be collected in this session.';
       runtimeStatus.dataset.state = 'warning';
+      renderRuntimeAuditDetails(null, runtimeStatus);
     } else {
       try {
         const report = audit.snapshot();
@@ -136,9 +275,11 @@ function refreshIntegrationStatus() {
         const longTasks = Number(issues.longTasks) || 0;
         runtimeStatus.textContent = `Engine ${report.app?.uiBound ? 'bound' : 'not confirmed'} · modules ${modules.loaded || 0}/${modules.total || 0} loaded · ${failed} entrypoint failure(s) · ${errors} runtime error(s) · ${warnings} warning(s) · ${longTasks} long task(s). Diagnostic data stays in this browser.`;
         runtimeStatus.dataset.state = failed || errors ? 'error' : warnings || longTasks || !report.app?.uiBound ? 'warning' : 'ok';
+        renderRuntimeAuditDetails(report, runtimeStatus);
       } catch {
         runtimeStatus.textContent = 'Runtime report could not be read. Reload and retry the diagnostic check.';
         runtimeStatus.dataset.state = 'warning';
+        renderRuntimeAuditDetails(null, runtimeStatus);
       }
     }
   }
