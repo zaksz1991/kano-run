@@ -1,3 +1,4 @@
+import './KanoNorthernDriverUtilitiesUpgrade.js';
 /** Runtime forecast and festival-budget panel for the existing Kano Society UI. */
 import { save } from './storage.js';
 import {
