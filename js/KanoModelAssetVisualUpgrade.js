@@ -273,6 +273,18 @@ if (typeof window !== 'undefined') {
 
 console.info(`[Kano Life] GLB visual quality pass registered for world/, environment/, and characters/ assets (${isTouchDevice ? 'mobile-safe' : 'desktop'} texture filtering).`);
 
+// The model pipeline must be patched before main.js creates ModelManager.
+// Keep the existing presentation, game, and persistence hooks as the app entry.
+await import('./KanoNorthernDriverLifeSimulationUpgrade.js');
+await import('./KanoLifeCareerBindGuard.js');
+await import('./KanoNorthernDriverRealLifeUpgrade.js');
+await import('./KanoNorthernDriverPassengerRelationshipsUpgrade.js');
+await import('./KanoNorthernDriverParkOperationsUpgrade.js');
+// Register the additive street-rhythm layer before the gameplay bootstrap.
+// It only changes the background traffic pool size; collision and rendering
+// implementations remain the versions supplied by the current project.
+await import('./KanoStreetRhythmUpgrade.js');
+
 // Install the articulated street-person and checkpoint queue layer before
 // GameplayPresentationRepair imports main.js and constructs Renderer3D.
 await import('./KanoStreetLifeMotionUpgrade.js');

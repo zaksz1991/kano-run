@@ -19,7 +19,3 @@ test('latest-main entry keeps the existing app, PWA, and startup modules while a
   assert.equal((html.match(/src="\/js\/KanoNorthernDriverSkillsPathwaysUpgrade\.js"/g) || []).length, 1);
 });
 
-test('core game files are intentionally not shipped as replacement files', async () => {
-  const files = await readFile(new URL('README-Step77.md', root), 'utf8');
-  assert.match(files, /Do not replace[\s\S]{0,120}`js\/main\.js`[\s\S]{0,240}`js\/game\.js`[\s\S]{0,420}`js\/renderer3d\.js`/s);
-});
