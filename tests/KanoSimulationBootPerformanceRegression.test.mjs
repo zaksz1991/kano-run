@@ -56,6 +56,15 @@ test('mount-only observers are guarded and disconnect once a panel mounts', asyn
   assert.deepEqual(failures, []);
 });
 
+
+test('the Aure & Culture mount observer uses a declared section identifier', async () => {
+  const source = await read('js/KanoNorthernDriverAureAndCultureUpgrade.js');
+  assert.match(source, /const SECTION_ID\s*=\s*['"]kano-aure-culture['"]/);
+  assert.match(source, /section\.id\s*=\s*['"]kano-aure-culture['"]/);
+  assert.match(source, /if \(!el\(SECTION_ID\) && !observer/);
+  assert.match(source, /if \(el\(SECTION_ID\)\) \{ observer\?\.disconnect\(\); observer = null; \}/);
+});
+
 test('People & Relationships does not keep a whole-document observer for its static menu button', async () => {
   const source = await read('js/KanoNorthernDriverSocialDramaUpgrade.js');
   assert.doesNotMatch(source, /careerObserver\s*=\s*new MutationObserver/);

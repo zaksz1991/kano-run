@@ -11,6 +11,7 @@ import {
 } from './KanoNorthernDriverAureAndCulture.js';
 
 const STORAGE_KEY = 'kano-life-aure-and-cultural-life-v1';
+const SECTION_ID = 'kano-aure-culture';
 const HOOK = Symbol.for('kano.life.aureCulture.ui.v1');
 const STYLE_ID = 'kac-style';
 let activeUI = null;
