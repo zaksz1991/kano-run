@@ -198,3 +198,7 @@ if (typeof window !== 'undefined') {
 }
 
 console.info('[Kano Life] Day-cycle street rhythm registered (rush hours, quieter late night, and a simplified Friday Jumu’ah window).');
+
+// Step 50: connect time-of-day demand to passenger pickup opportunities and fares.
+// Kept downstream of existing passenger and park wrappers; main.js/game.js remain untouched.
+await import('./KanoPassengerDemandRhythmUpgrade.js');
