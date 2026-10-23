@@ -1,9 +1,9 @@
-STEP 39 VALIDATION RESULTS
+STEP 40 VALIDATION RESULTS
 
-- Complete included Node test suite: 68 passed, 0 failed.
-- Focused runtime visibility guard tests: 7 passed, 0 failed.
-- JavaScript syntax: renderer3d.js and KanoPlayerKekeRuntimeGuard.js passed `node --check`.
+- Complete included Node test suite: 72 passed, 0 failed.
+- Recovery transform helper tests: 4 passed, 0 failed.
+- JavaScript syntax: checked for all included .js files with Node --check.
 - ZIP archive integrity: checked after packaging.
-- Vite production build: not run in this environment.
+- Vite production build: not run; project dependencies are not installed in this work directory.
 - Browser/WebGL screenshot verification: not performed.
 - Physical-phone performance: not measured.

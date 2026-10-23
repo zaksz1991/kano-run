@@ -3,6 +3,7 @@ import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } fro
 import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
 import { buildKekeEvidenceNamePaths, classifyKekeMeshEvidence, hasVisiblePathWithinRoot } from './KanoKekeStructureEvidence.js';
 import { inspectPlayerKekeRenderability } from './KanoPlayerKekeRuntimeGuard.js';
+import { capturePlayerKekeRecoveryPose } from './KanoPlayerKekeRecoveryTransform.js';
 
 const VEHICLE_MODEL_KEY = {
   keke: 'keke',
@@ -5040,14 +5041,29 @@ export class Renderer3D {
     const targetParent = this.lifeScene === 'garage'
       ? this.ensureGarageScene()
       : this.scene;
+    const recoveryParent = targetParent || this.scene;
+
+    // Capture the pose BEFORE any corrective reparenting. Reparenting without
+    // converting local coordinates can move an otherwise-valid vehicle, and a
+    // later fallback must appear where the failed vehicle had been.
+    const recoveryPose = capturePlayerKekeRecoveryPose(
+      activePlayer,
+      recoveryParent,
+      THREE,
+    );
 
     // The root itself is sometimes hidden while a cached model is waiting for
     // promotion. In road/garage scenes it must be active. If a child or parent
     // mesh remains hidden, the renderability scan below will detect the gap.
     if (activePlayer.visible === false) activePlayer.visible = true;
-    if (targetParent && activePlayer.parent !== targetParent) {
+    if (recoveryParent && activePlayer.parent !== recoveryParent) {
       activePlayer.parent?.remove(activePlayer);
-      targetParent.add(activePlayer);
+      recoveryParent.add(activePlayer);
+      if (recoveryPose) {
+        activePlayer.position.copy(recoveryPose.position);
+        activePlayer.quaternion.copy(recoveryPose.quaternion);
+        activePlayer.scale.copy(recoveryPose.scale);
+      }
     }
     if (this.lifeScene === 'garage' && this.garageGroup) {
       this.garageGroup.visible = true;
@@ -5098,14 +5114,22 @@ export class Renderer3D {
 
     const fallback = this.makeKeke();
     fallback.visible = true;
+    // The procedural model has its own known dimensions, so do not inherit an
+    // imported GLB's potentially extreme normalization scale. Preserve its
+    // location and orientation, however, so a recovery does not teleport the
+    // player away from their current lane or garage parking position.
     fallback.scale.set(1, 1, 1);
-    if (this.lifeScene === 'garage') {
+    if (recoveryPose) {
+      fallback.position.copy(recoveryPose.position);
+      fallback.quaternion.copy(recoveryPose.quaternion);
+    } else if (this.lifeScene === 'garage') {
       fallback.position.set(0.7, 0, 1.45);
       fallback.rotation.set(0, Math.PI, 0);
     } else {
       fallback.position.set(0, 0, 2);
       fallback.rotation.set(0, this.driveFacingY, 0);
     }
+    fallback.userData.kanoRuntimeRecoveryPoseSource = recoveryPose?.source || 'safe-default';
     fallback.userData.kanoRuntimeRecoveredFallback = true;
     fallback.userData.kanoRuntimeKekeHealth = {
       ok: true,
@@ -5114,7 +5138,7 @@ export class Renderer3D {
       rejectedModel: failedModelName,
     };
 
-    (targetParent || this.scene).add(fallback);
+    recoveryParent.add(fallback);
     this.player = fallback;
     this.lastPaint = null;
     this.applyPlayerPaint(this.currentPaint || '#f5c542');
