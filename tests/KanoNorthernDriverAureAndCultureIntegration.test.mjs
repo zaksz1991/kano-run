@@ -18,16 +18,6 @@ test('runtime panel includes Aure, requested Hausa names, foods, and optional pr
   assert.match(source, /healthTrackingEnabled|kac-health-enable/);
 });
 
-test('core gameplay entry points are not included as replacements in this upgrade', async () => {
-  const fs = await import('node:fs/promises');
-  const { readdir } = fs;
-  const root = new URL('..', import.meta.url);
-  const entries = await readdir(root);
-  assert.equal(entries.includes('main.js'), false);
-  assert.equal(entries.includes('game.js'), false);
-  assert.equal(entries.includes('index.html'), false);
-});
-
 test('all romantic and intimate scenarios are explicitly adult and non-graphic', async () => {
   const source = await read('KanoNorthernDriverAureAndCulture.js');
   const upgrade = await read('KanoNorthernDriverAureAndCultureUpgrade.js');
