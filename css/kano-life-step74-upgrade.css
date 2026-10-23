@@ -1,0 +1,117 @@
+/* Kano Life Step 74 — hero image, social simulation and launch recovery */
+#start-screen .keke-art,
+#start-screen .keke-art * {
+  display: none !important;
+}
+#start-screen .kano-keke-hero {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100%, 340px);
+  height: clamp(145px, 21vh, 205px);
+  margin: 3px auto 10px;
+  overflow: visible;
+  pointer-events: none;
+}
+#start-screen .kano-keke-hero img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  filter: drop-shadow(0 12px 18px rgba(0,0,0,.35));
+}
+#kano-social-drama-btn,
+#kds-social-menu-btn {
+  width: 100%;
+}
+#kano-social-drama-btn {
+  margin-top: 8px;
+  border-color: rgba(245,197,66,.45);
+}
+.kano-launch-recovery-alert {
+  margin: 10px 0 0;
+  padding: 12px;
+  text-align: left;
+  color: #ffe6e2;
+  background: rgba(124, 32, 38, .24);
+  border: 1px solid rgba(255, 138, 127, .6);
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.kano-launch-recovery-alert p { margin: 5px 0 10px; overflow-wrap: anywhere; }
+.kano-launch-recovery-alert button {
+  width: 100%; min-height: 42px; border: 1px solid #ffc0b8; border-radius: 9px;
+  background: #52252c; color: #fff; font-weight: 900;
+}
+.kds-screen { align-items: flex-start; }
+.kds-panel {
+  width: min(100%, 920px);
+  max-height: calc(100dvh - 20px);
+  margin: auto;
+  padding: clamp(14px, 3.2vw, 26px);
+  text-align: left;
+  overscroll-behavior: contain;
+}
+.kds-panel .close-x { position: sticky; float: right; top: -4px; z-index: 3; margin: -7px -5px 0 8px; }
+.kds-panel h2 { max-width: 85%; margin-bottom: 8px; }
+.kds-panel h3 { margin: 0; font-size: clamp(17px, 3.4vw, 22px); line-height: 1.2; letter-spacing: -.02em; }
+.kds-panel h4 { font-size: clamp(17px, 4vw, 22px); margin: 10px 0 6px; color: #f8fafd; }
+.kds-intro { max-width: 760px; color: #bfcbd8; font-size: 13px; line-height: 1.55; }
+.kds-status-strip { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.kds-status-strip span, .kds-tag { display: inline-flex; align-items: center; padding: 6px 9px; border-radius: 99px; color: #ffe28b; border: 1px solid #f5c54245; background: #f5c54210; font-size: 10px; font-weight: 900; }
+.kds-safety-note { margin: 10px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid #ffffff20; background: #0a1726; color: #c8d5e3; font-size: 12px; line-height: 1.45; }
+.kds-safety-note[data-active="true"] { border-color: #e9a08d; color: #ffe4dc; }
+.kds-card { margin-top: 12px; padding: clamp(12px, 2.8vw, 18px); border-radius: 15px; border: 1px solid #ffffff18; background: rgba(255,255,255,.035); }
+.kds-section-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.kds-section-title .eyebrow { margin-bottom: 5px; }
+.kds-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.kds-fields label { display: grid; gap: 6px; min-width: 0; color: #aebdcd; font-size: 10px; font-weight: 900; letter-spacing: .04em; }
+.kds-fields input, .kds-fields select { width: 100%; min-width: 0; min-height: 42px; padding: 9px 10px; border: 1px solid #ffffff24; border-radius: 9px; background: #091522; color: #f8fafd; font: inherit; font-size: 12px; letter-spacing: 0; }
+.kds-row-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.kds-footnote { margin: 10px 0 0; color: #91a3b8; font-size: 10px; line-height: 1.5; }
+.kds-story-copy { max-width: 780px; color: #d5dfea; font-size: 13px; line-height: 1.65; }
+.kds-choice-list { display: grid; gap: 8px; margin-top: 12px; }
+.kds-choice { display: grid; gap: 6px; width: 100%; text-align: left; padding: 12px; border: 1px solid #ffffff21; border-radius: 11px; color: #f6f8fb; background: #142438; }
+.kds-choice strong { font-size: 12px; line-height: 1.35; }
+.kds-choice span { font-size: 11px; font-weight: 500; color: #aebed0; line-height: 1.45; }
+.kds-choice:disabled, .kds-activity button:disabled { opacity: .45; cursor: not-allowed; }
+.kds-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 8px 0 14px; }
+.kds-metric { min-width: 0; padding: 9px; border: 1px solid #ffffff14; border-radius: 9px; background: #08152299; }
+.kds-metric-heading { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 7px; color: #b8c7d7; font-size: 10px; }
+.kds-metric-heading strong { color: #f7ce52; }
+.kds-metric-track { height: 5px; overflow: hidden; border-radius: 99px; background: #ffffff15; }
+.kds-metric-track i { display: block; height: 100%; border-radius: inherit; background: #32c9a5; transition: width .18s; }
+.kds-metric-track i.is-negative { background: #e6a16f; }
+.kds-activity-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.kds-activity { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 11px; border: 1px solid #ffffff16; border-radius: 11px; background: #101e2e; }
+.kds-activity-copy { min-width: 0; }
+.kds-activity-copy strong { display: block; font-size: 11px; line-height: 1.35; }
+.kds-activity-copy p { margin: 5px 0 0; color: #9eafc1; font-size: 10px; line-height: 1.45; }
+.kds-activity button { flex: 0 0 auto; max-width: 130px; min-height: 38px; padding: 8px 10px; font-size: 9px; }
+.kds-history { display: grid; gap: 8px; }
+.kds-history-entry { padding: 10px 11px; border-radius: 9px; border: 1px solid #ffffff12; background: #09152288; }
+.kds-history-meta { margin-bottom: 4px; color: #f5c542; font-size: 9px; font-weight: 900; letter-spacing: .08em; }
+.kds-history-entry strong { font-size: 11px; }
+.kds-history-entry p { margin: 4px 0 0; color: #b8c6d5; font-size: 11px; line-height: 1.5; }
+.kds-empty { color: #9eafc1; font-size: 12px; }
+.kds-notice { margin-top: 12px; padding: 10px 11px; border: 1px solid #28c4a55c; border-radius: 9px; background: #28c4a510; color: #daf9f0; font-size: 11px; line-height: 1.45; }
+.kds-notice[data-state="error"] { border-color: #e98d86; background: #a1322c22; color: #ffe5e2; }
+.kds-disclaimer { margin: 12px 2px 2px; color: #8ea0b5; font-size: 10px; line-height: 1.5; }
+@media (min-width: 760px) {
+  #start-screen .kano-keke-hero { height: 188px; margin-top: 4px; margin-bottom: 12px; }
+}
+@media (max-width: 600px) {
+  #start-screen .kano-keke-hero { height: clamp(138px, 20vh, 178px); width: min(100%, 300px); margin-bottom: 8px; }
+  .kds-panel { max-height: calc(100dvh - 12px); border-radius: 16px; }
+  .kds-fields { grid-template-columns: 1fr; }
+  .kds-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kds-activity-list { grid-template-columns: 1fr; }
+  .kds-activity { align-items: flex-start; }
+  .kds-row-actions { grid-template-columns: 1fr; }
+  .kds-status-strip { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kds-metric-track i { transition: none; }
+}

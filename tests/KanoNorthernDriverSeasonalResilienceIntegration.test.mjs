@@ -6,20 +6,38 @@ const root = new URL('../', import.meta.url);
 const html = readFileSync(new URL('index.html', root), 'utf8');
 const bridge = readFileSync(new URL('js/KanoNorthernDriverSeasonalEnvironmentBridge.js', root), 'utf8');
 const core = readFileSync(new URL('js/KanoNorthernDriverSeasonalBridgeCore.js', root), 'utf8');
-
 const sources = [...html.matchAll(/<script\s+type="module"\s+src="([^"]+)"\s*><\/script>/g)].map(match => match[1]);
 
-test('the seasonal prototype bridge loads before the unchanged core bootstrap sequence', () => {
-  assert.equal(sources[0], '/js/KanoNorthernDriverSeasonalEnvironmentBridge.js');
+test('launch recovery precedes the seasonal bridge, while all core patch modules precede the direct main entry', () => {
+  assert.equal(sources[0], '/js/KanoAppLaunchRecovery.js');
+  assert.equal(sources[1], '/js/KanoNorthernDriverSeasonalEnvironmentBridge.js');
   const baseline = [
     '/js/KanoCulturalStreetEventsUpgrade.js',
     '/js/KanoWorldPerformanceInstancingUpgrade.js',
     '/js/KanoLifeRootCauseRepair.js',
-    '/js/KanoModelAssetVisualUpgrade.js',
     '/js/KanoNorthernDriverSkillsPathwaysUpgrade.js',
     '/js/KanoNorthernDriverCareerProgressionUpgrade.js',
+    '/js/KanoNorthernDriverAureJourneyUpgrade.js',
+    '/js/KanoNorthernDriverLefeNegotiationUpgrade.js',
+    '/js/KanoNorthernDriverParenthoodUpgrade.js',
+    '/js/KanoNorthernDriverSeasonalResilienceUpgrade.js',
+    '/js/KanoNorthernDriverAdashiSupportUpgrade.js',
+    '/js/KanoNorthernDriverCivicProjectsUpgrade.js',
+    '/js/KanoNorthernDriverSocialDramaUpgrade.js',
+    '/js/KanoModelAssetVisualUpgrade.js',
+    '/js/main.js',
   ];
-  assert.deepEqual(sources.slice(1, 7), baseline);
+  assert.deepEqual(sources.slice(2), baseline);
+  assert.equal(sources.filter(source => source === '/js/main.js').length, 1);
+});
+
+test('the start-page recovery preserves the canonical Game and UI rather than creating a second engine', () => {
+  const recovery = readFileSync(new URL('js/KanoAppLaunchRecovery.js', root), 'utf8');
+  assert.ok(recovery.includes("import('./main.js')"));
+  assert.ok(recovery.includes('window.__KANO_ACTIVE_GAME__'));
+  assert.ok(recovery.includes('fillSelectIfEmpty'));
+  assert.ok(recovery.includes('startup recovery could not load main.js'));
+  assert.ok(!recovery.includes('new Game('));
 });
 
 test('all previously delivered relationship and family modules remain reachable exactly once', () => {
@@ -28,8 +46,16 @@ test('all previously delivered relationship and family modules remain reachable 
     'KanoNorthernDriverLefeNegotiationUpgrade.js',
     'KanoNorthernDriverParenthoodUpgrade.js',
     'KanoNorthernDriverSeasonalResilienceUpgrade.js',
+    'KanoNorthernDriverAdashiSupportUpgrade.js',
+    'KanoNorthernDriverCivicProjectsUpgrade.js',
   ]) assert.equal(sources.filter(source => source === `/js/${file}`).length, 1, `${file} must be loaded exactly once`);
   for (const protectedPart of ['href="/manifest.webmanifest"', 'href="/icons/apple-touch-icon.png"', 'href="/css/styles.css"', 'id="game-canvas"', 'id="passenger-list"', 'id="drive-controls"']) assert.ok(html.includes(protectedPart), `Missing preserved base UI/PWA fragment ${protectedPart}`);
+});
+
+test('the generated Keke hero image replaces the flat illustration and social life has a start-page entry', () => {
+  assert.ok(html.includes('src="/assets/kano-life-keke-hero.webp"'));
+  assert.ok(html.includes('id="kano-social-drama-btn"'));
+  assert.ok(html.includes('href="/css/kano-life-step74-upgrade.css"'));
 });
 
 test('the seasonal installer imports existing systems and leaves the season change opt-in', () => {

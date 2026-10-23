@@ -1,0 +1,23 @@
+STEP 74 UPDATE MANIFEST
+
+Replace:
+- index.html
+
+Add:
+- js/KanoAppLaunchRecovery.js
+- js/KanoNorthernDriverSocialDrama.js
+- js/KanoNorthernDriverSocialDramaUpgrade.js
+- css/kano-life-step74-upgrade.css
+- public/assets/kano-life-keke-hero.webp
+- tests/KanoNorthernDriverSocialDrama.test.mjs
+
+Update an existing test to reflect the new entrypoint order:
+- tests/KanoNorthernDriverSeasonalResilienceIntegration.test.mjs
+
+Documentation:
+- README-Step74.md
+- TEST-STATUS-Step74.txt
+- TEST-OUTPUT-Step74.txt
+- docs/Kano-Life-Step74-Research-People-Relationships-and-Social-Drama.md
+
+This overlay does not replace the project's core engine, wallet, save system, renderers, or GLB assets.

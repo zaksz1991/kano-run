@@ -1,0 +1,1309 @@
+TAP version 13
+# Subtest: periods follow approximate Kano prayer times and wrap at midnight
+ok 1 - periods follow approximate Kano prayer times and wrap at midnight
+  ---
+  duration_ms: 1.653952
+  type: 'test'
+  ...
+# Subtest: clock advances, rolls to a new day and emits new_day once per rollover
+ok 2 - clock advances, rolls to a new day and emits new_day once per rollover
+  ---
+  duration_ms: 1.152326
+  type: 'test'
+  ...
+# Subtest: period_change fires when crossing a boundary
+ok 3 - period_change fires when crossing a boundary
+  ---
+  duration_ms: 0.415266
+  type: 'test'
+  ...
+# Subtest: hunger grows over time; fatigue grows only while moving, faster with a passenger
+ok 4 - hunger grows over time; fatigue grows only while moving, faster with a passenger
+  ---
+  duration_ms: 4.258787
+  type: 'test'
+  ...
+# Subtest: threshold warnings fire once, re-arm only after dropping below the low mark
+ok 5 - threshold warnings fire once, re-arm only after dropping below the low mark
+  ---
+  duration_ms: 1.020818
+  type: 'test'
+  ...
+# Subtest: critical level fires once even if the value jumps past high
+ok 6 - critical level fires once even if the value jumps past high
+  ---
+  duration_ms: 0.563559
+  type: 'test'
+  ...
+# Subtest: eat and rest clamp to 0 and rest skips time without breaking the clock
+ok 7 - eat and rest clamp to 0 and rest skips time without breaking the clock
+  ---
+  duration_ms: 0.275745
+  type: 'test'
+  ...
+# Subtest: modifiers: rush hour pays more, tiredness reduces steering but never below 0.7
+ok 8 - modifiers: rush hour pays more, tiredness reduces steering but never below 0.7
+  ---
+  duration_ms: 0.249486
+  type: 'test'
+  ...
+# Subtest: persistence round-trips and corrupt saved data falls back safely
+ok 9 - persistence round-trips and corrupt saved data falls back safely
+  ---
+  duration_ms: 0.62375
+  type: 'test'
+  ...
+# Subtest: ignores bad dt, survives a throwing event handler, and stops after dispose
+ok 10 - ignores bad dt, survives a throwing event handler, and stops after dispose
+  ---
+  duration_ms: 0.806796
+  type: 'test'
+  ...
+# Subtest: snapshot uses Hausa labels when asked
+ok 11 - snapshot uses Hausa labels when asked
+  ---
+  duration_ms: 0.426212
+  type: 'test'
+  ...
+# Subtest: beginShift: first shift keeps day 1, later shifts advance the day, clock and fatigue reset
+ok 12 - beginShift: first shift keeps day 1, later shifts advance the day, clock and fatigue reset
+  ---
+  duration_ms: 0.207673
+  type: 'test'
+  ...
+# Subtest: beginShift: a bigger breakfast leaves the driver less hungry, skipping it starts hungry
+ok 13 - beginShift: a bigger breakfast leaves the driver less hungry, skipping it starts hungry
+  ---
+  duration_ms: 0.141623
+  type: 'test'
+  ...
+# Subtest: beginShift re-arms warnings so a hungry start can warn again
+ok 14 - beginShift re-arms warnings so a hungry start can warn again
+  ---
+  duration_ms: 0.148664
+  type: 'test'
+  ...
+# Subtest: pickup guidance changes from approach to ready as the zone reaches the stop range
+ok 15 - pickup guidance changes from approach to ready as the zone reaches the stop range
+  ---
+  duration_ms: 0.985845
+  type: 'test'
+  ...
+# Subtest: misaligned lane prompts the driver to align before stopping
+ok 16 - misaligned lane prompts the driver to align before stopping
+  ---
+  duration_ms: 0.193762
+  type: 'test'
+  ...
+# Subtest: high speed prompts braking
+ok 17 - high speed prompts braking
+  ---
+  duration_ms: 0.155514
+  type: 'test'
+  ...
+# Subtest: reverse gear does not advertise a valid roadside interaction
+ok 18 - reverse gear does not advertise a valid roadside interaction
+  ---
+  duration_ms: 0.122524
+  type: 'test'
+  ...
+# Subtest: potholes are reported as hazards, not stop zones
+ok 19 - potholes are reported as hazards, not stop zones
+  ---
+  duration_ms: 0.217638
+  type: 'test'
+  ...
+# Subtest: events and non-playing states suppress interaction guidance
+ok 20 - events and non-playing states suppress interaction guidance
+  ---
+  duration_ms: 0.151639
+  type: 'test'
+  ...
+# Subtest: stationary road interaction receives a temporary speed epsilon and restores the original speed
+ok 21 - stationary road interaction receives a temporary speed epsilon and restores the original speed
+  ---
+  duration_ms: 0.333262
+  type: 'test'
+  ...
+# Subtest: reverse and moving vehicles never receive the stopped-interaction epsilon
+ok 22 - reverse and moving vehicles never receive the stopped-interaction epsilon
+  ---
+  duration_ms: 0.148114
+  type: 'test'
+  ...
+# Subtest: configuration options are bounded and the default has no active circle or wallet
+ok 23 - configuration options are bounded and the default has no active circle or wallet
+  ---
+  duration_ms: 2.021316
+  type: 'test'
+  ...
+# Subtest: creating a circle does not alter or introduce an authoritative wallet
+ok 24 - creating a circle does not alter or introduce an authoritative wallet
+  ---
+  duration_ms: 15.325714
+  type: 'test'
+  ...
+# Subtest: rejects invalid circle configuration and duplicate active circles
+ok 25 - rejects invalid circle configuration and duplicate active circles
+  ---
+  duration_ms: 0.512773
+  type: 'test'
+  ...
+# Subtest: weekly contribution is wallet-gated, paid once, and cannot be pulled ahead of schedule
+ok 26 - weekly contribution is wallet-gated, paid once, and cannot be pulled ahead of schedule
+  ---
+  duration_ms: 1.037734
+  type: 'test'
+  ...
+# Subtest: payout rotates according to the selected position and missed contributions never pay the player
+ok 27 - payout rotates according to the selected position and missed contributions never pay the player
+  ---
+  duration_ms: 0.493123
+  type: 'test'
+  ...
+# Subtest: after the last turn a new cycle begins and schedules the next weekly payment
+ok 28 - after the last turn a new cycle begins and schedules the next weekly payment
+  ---
+  duration_ms: 0.709339
+  type: 'test'
+  ...
+# Subtest: only one social action per in-game day; offered support changes trust without cash
+ok 29 - only one social action per in-game day; offered support changes trust without cash
+  ---
+  duration_ms: 1.212727
+  type: 'test'
+  ...
+# Subtest: trusted contacts can respond narratively and requests do not create wallet proceeds
+ok 30 - trusted contacts can respond narratively and requests do not create wallet proceeds
+  ---
+  duration_ms: 0.453934
+  type: 'test'
+  ...
+# Subtest: normalization rejects corrupt fields and export declares its gameplay-only limits
+ok 31 - normalization rejects corrupt fields and export declares its gameplay-only limits
+  ---
+  duration_ms: 1.056261
+  type: 'test'
+  ...
+# Subtest: payout eligibility is suspended after a missed contribution and restored only after two timely payments
+ok 32 - payout eligibility is suspended after a missed contribution and restored only after two timely payments
+  ---
+  duration_ms: 0.674466
+  type: 'test'
+  ...
+# Subtest: a circle cannot be closed before a complete cycle; closed-cycle history is retained
+ok 33 - a circle cannot be closed before a complete cycle; closed-cycle history is retained
+  ---
+  duration_ms: 0.780356
+  type: 'test'
+  ...
+# Subtest: Step 72 script loads after the Step 69–71 life panels while core startup order stays intact
+ok 34 - Step 72 script loads after the Step 69–71 life panels while core startup order stays intact
+  ---
+  duration_ms: 0.887257
+  type: 'test'
+  ...
+# Subtest: wallet and Adashi ledger are committed through the existing save object and existing persist function
+ok 35 - wallet and Adashi ledger are committed through the existing save object and existing persist function
+  ---
+  duration_ms: 0.258599
+  type: 'test'
+  ...
+# Subtest: the panel is attached to the existing life/career screen and locks actions during driving
+ok 36 - the panel is attached to the existing life/career screen and locks actions during driving
+  ---
+  duration_ms: 0.109695
+  type: 'test'
+  ...
+# Subtest: creates a versioned, isolated default state with no wallet or partner data
+ok 37 - creates a versioned, isolated default state with no wallet or partner data
+  ---
+  duration_ms: 1.165166
+  type: 'test'
+  ...
+# Subtest: normalization clamps metrics and plans and discards injected private fields
+ok 38 - normalization clamps metrics and plans and discards injected private fields
+  ---
+  duration_ms: 0.820336
+  type: 'test'
+  ...
+# Subtest: single status has supportive actions and no default penalty
+ok 39 - single status has supportive actions and no default penalty
+  ---
+  duration_ms: 0.84955
+  type: 'test'
+  ...
+# Subtest: age-related social pressure is descriptive only and does not alter scores
+ok 40 - age-related social pressure is descriptive only and does not alter scores
+  ---
+  duration_ms: 0.532192
+  type: 'test'
+  ...
+# Subtest: relationship action improves bounded metrics and records a milestone
+ok 41 - relationship action improves bounded metrics and records a milestone
+  ---
+  duration_ms: 0.274183
+  type: 'test'
+  ...
+# Subtest: only one progression action can be recorded per in-game day
+ok 42 - only one progression action can be recorded per in-game day
+  ---
+  duration_ms: 0.540615
+  type: 'test'
+  ...
+# Subtest: action is rejected if it does not apply to the selected status
+ok 43 - action is rejected if it does not apply to the selected status
+  ---
+  duration_ms: 0.149044
+  type: 'test'
+  ...
+# Subtest: sync follows the existing Aure profile without changing that profile itself
+ok 44 - sync follows the existing Aure profile without changing that profile itself
+  ---
+  duration_ms: 0.408525
+  type: 'test'
+  ...
+# Subtest: dating and engaged profiles can save a non-binding Aure budget plan
+ok 45 - dating and engaged profiles can save a non-binding Aure budget plan
+  ---
+  duration_ms: 0.478331
+  type: 'test'
+  ...
+# Subtest: single profile cannot save an Aure budget plan
+ok 46 - single profile cannot save an Aure budget plan
+  ---
+  duration_ms: 1.853032
+  type: 'test'
+  ...
+# Subtest: married profile can save a shared-household plan with no money movement
+ok 47 - married profile can save a shared-household plan with no money movement
+  ---
+  duration_ms: 0.261754
+  type: 'test'
+  ...
+# Subtest: separated and divorced profiles receive practical, non-coercive actions
+ok 48 - separated and divorced profiles receive practical, non-coercive actions
+  ---
+  duration_ms: 0.30547
+  type: 'test'
+  ...
+# Subtest: status durations never go negative if a saved clock moves backwards
+ok 49 - status durations never go negative if a saved clock moves backwards
+  ---
+  duration_ms: 0.121964
+  type: 'test'
+  ...
+# Subtest: history stays bounded after repeated transitions and actions
+ok 50 - history stays bounded after repeated transitions and actions
+  ---
+  duration_ms: 15.515866
+  type: 'test'
+  ...
+# Subtest: export omits partner name and private health details
+ok 51 - export omits partner name and private health details
+  ---
+  duration_ms: 1.160529
+  type: 'test'
+  ...
+# Subtest: Step 69 adds one additive module to the current public GitHub-main entrypoint
+ok 52 - Step 69 adds one additive module to the current public GitHub-main entrypoint
+  ---
+  duration_ms: 0.938784
+  type: 'test'
+  ...
+# Subtest: PWA links and original game canvas/HUD IDs remain in the updated entrypoint
+ok 53 - PWA links and original game canvas/HUD IDs remain in the updated entrypoint
+  ---
+  duration_ms: 0.299141
+  type: 'test'
+  ...
+# Subtest: the new integration imports the existing Aure and family/phone life layers
+ok 54 - the new integration imports the existing Aure and family/phone life layers
+  ---
+  duration_ms: 1.356785
+  type: 'test'
+  ...
+# Subtest: default state uses a namespaced save field and bounded public-service indicators
+ok 55 - default state uses a namespaced save field and bounded public-service indicators
+  ---
+  duration_ms: 1.437456
+  type: 'test'
+  ...
+# Subtest: normalizer removes unknown projects, districts, malformed arrays, and out-of-range values
+ok 56 - normalizer removes unknown projects, districts, malformed arrays, and out-of-range values
+  ---
+  duration_ms: 0.554716
+  type: 'test'
+  ...
+# Subtest: starting a project does not deduct wallet money and only one can be active
+ok 57 - starting a project does not deduct wallet money and only one can be active
+  ---
+  duration_ms: 0.348365
+  type: 'test'
+  ...
+# Subtest: player contributions use allowlisted values and never permit an overdraft
+ok 58 - player contributions use allowlisted values and never permit an overdraft
+  ---
+  duration_ms: 14.677237
+  type: 'test'
+  ...
+# Subtest: funded project closes once, updates neighbourhood metrics, and records completion
+ok 59 - funded project closes once, updates neighbourhood metrics, and records completion
+  ---
+  duration_ms: 0.914277
+  type: 'test'
+  ...
+# Subtest: daily simulated neighbourhood matching progresses a project but never changes player cash
+ok 60 - daily simulated neighbourhood matching progresses a project but never changes player cash
+  ---
+  duration_ms: 0.509739
+  type: 'test'
+  ...
+# Subtest: volunteering adds non-cash project value and is limited to one action per day
+ok 61 - volunteering adds non-cash project value and is limited to one action per day
+  ---
+  duration_ms: 0.244569
+  type: 'test'
+  ...
+# Subtest: one report per in-game day and delayed review does not claim a real service response
+ok 62 - one report per in-game day and delayed review does not claim a real service response
+  ---
+  duration_ms: 0.582958
+  type: 'test'
+  ...
+# Subtest: a matching completed project resolves an issue only in the same neighbourhood scenario
+ok 63 - a matching completed project resolves an issue only in the same neighbourhood scenario
+  ---
+  duration_ms: 0.584431
+  type: 'test'
+  ...
+# Subtest: day progression is bounded, deterministic and idempotent
+ok 64 - day progression is bounded, deterministic and idempotent
+  ---
+  duration_ms: 1.283684
+  type: 'test'
+  ...
+# Subtest: JSON report is exportable and clearly labels fictional activity
+ok 65 - JSON report is exportable and clearly labels fictional activity
+  ---
+  duration_ms: 0.35827
+  type: 'test'
+  ...
+# Subtest: civic project module is registered exactly once after Adashi support
+ok 66 - civic project module is registered exactly once after Adashi support
+  ---
+  duration_ms: 1.775035
+  type: 'test'
+  ...
+# Subtest: the integrated entry HTML has one doctype, one html root and one body
+ok 67 - the integrated entry HTML has one doctype, one html root and one body
+  ---
+  duration_ms: 0.458241
+  type: 'test'
+  ...
+# Subtest: all local JavaScript module script paths exist in the merged project tree
+ok 68 - all local JavaScript module script paths exist in the merged project tree
+  ---
+  duration_ms: 0.985465
+  type: 'test'
+  ...
+# Subtest: existing skill-path and career-progression bootstrap references are preserved
+ok 69 - existing skill-path and career-progression bootstrap references are preserved
+  ---
+  duration_ms: 0.110597
+  type: 'test'
+  ...
+# Subtest: civic UI adapter resolves all named imports without touching browser globals
+ok 70 - civic UI adapter resolves all named imports without touching browser globals
+  ---
+  duration_ms: 9.593386
+  type: 'test'
+  ...
+# Subtest: default state uses a customisable list and safe initial metrics
+ok 71 - default state uses a customisable list and safe initial metrics
+  ---
+  duration_ms: 1.661824
+  type: 'test'
+  ...
+# Subtest: normalization clamps quantities, stats, names and purchase counts to the planned scope
+ok 72 - normalization clamps quantities, stats, names and purchase counts to the planned scope
+  ---
+  duration_ms: 0.225159
+  type: 'test'
+  ...
+# Subtest: journey only starts for dating or engaged profiles and while off shift
+ok 73 - journey only starts for dating or engaged profiles and while off shift
+  ---
+  duration_ms: 0.296687
+  type: 'test'
+  ...
+# Subtest: list costs are transparent and changing quantities does not spend money
+ok 74 - list costs are transparent and changing quantities does not spend money
+  ---
+  duration_ms: 0.589679
+  type: 'test'
+  ...
+# Subtest: custom item requires a positive price when its quantity is above zero
+ok 75 - custom item requires a positive price when its quantity is above zero
+  ---
+  duration_ms: 1.216614
+  type: 'test'
+  ...
+# Subtest: a list cannot open if no line items have been selected
+ok 76 - a list cannot open if no line items have been selected
+  ---
+  duration_ms: 0.354695
+  type: 'test'
+  ...
+# Subtest: opening a discussion creates one family list review scenario
+ok 77 - opening a discussion creates one family list review scenario
+  ---
+  duration_ms: 0.849951
+  type: 'test'
+  ...
+# Subtest: asking for a clear breakdown improves communication without changing wallet data
+ok 78 - asking for a clear breakdown improves communication without changing wallet data
+  ---
+  duration_ms: 0.594376
+  type: 'test'
+  ...
+# Subtest: proposing a smaller Lefe reduces optional quantities, not the price of every item
+ok 79 - proposing a smaller Lefe reduces optional quantities, not the price of every item
+  ---
+  duration_ms: 0.53712
+  type: 'test'
+  ...
+# Subtest: clock follows the saved day and a day with no event is recorded monotonically
+ok 80 - clock follows the saved day and a day with no event is recorded monotonically
+  ---
+  duration_ms: 0.49793
+  type: 'test'
+  ...
+# Subtest: an unresolved scenario can still be answered after the player returns on a later in-game day
+ok 81 - an unresolved scenario can still be answered after the player returns on a later in-game day
+  ---
+  duration_ms: 0.393203
+  type: 'test'
+  ...
+# Subtest: the richer-suitor pressure scenario arrives only after two in-game days
+ok 82 - the richer-suitor pressure scenario arrives only after two in-game days
+  ---
+  duration_ms: 0.414755
+  type: 'test'
+  ...
+# Subtest: richer-suitor story copy adapts to a female driver without assuming she must leave transport work
+ok 83 - richer-suitor story copy adapts to a female driver without assuming she must leave transport work
+  ---
+  duration_ms: 0.735509
+  type: 'test'
+  ...
+# Subtest: partner may choose the better-funded proposal; the outcome is recorded without coercion
+ok 84 - partner may choose the better-funded proposal; the outcome is recorded without coercion
+  ---
+  duration_ms: 0.426072
+  type: 'test'
+  ...
+# Subtest: parental delay produces a follow-up negotiation rather than deciding for the partner
+ok 85 - parental delay produces a follow-up negotiation rather than deciding for the partner
+  ---
+  duration_ms: 1.312468
+  type: 'test'
+  ...
+# Subtest: family refusal records parental pressure without assigning the partner a choice
+ok 86 - family refusal records parental pressure without assigning the partner a choice
+  ---
+  duration_ms: 0.376768
+  type: 'test'
+  ...
+# Subtest: mutual partner commitment cannot be recorded without explicit confirmation
+ok 87 - mutual partner commitment cannot be recorded without explicit confirmation
+  ---
+  duration_ms: 0.474064
+  type: 'test'
+  ...
+# Subtest: the list cannot be agreed without engaged status and a recorded partner commitment
+ok 88 - the list cannot be agreed without engaged status and a recorded partner commitment
+  ---
+  duration_ms: 0.509578
+  type: 'test'
+  ...
+# Subtest: agreement is blocked while family position is still refusing or reviewing
+ok 89 - agreement is blocked while family position is still refusing or reviewing
+  ---
+  duration_ms: 0.303588
+  type: 'test'
+  ...
+# Subtest: purchases use the supplied existing wallet and obey shift, engagement and quantity checks
+ok 90 - purchases use the supplied existing wallet and obey shift, engagement and quantity checks
+  ---
+  duration_ms: 0.860247
+  type: 'test'
+  ...
+# Subtest: family-specific item purchase requires valid cost and cannot exceed planned quantity
+ok 91 - family-specific item purchase requires valid cost and cannot exceed planned quantity
+  ---
+  duration_ms: 0.418801
+  type: 'test'
+  ...
+# Subtest: preparation completion requires every agreed quantity, but never changes Aure status
+ok 92 - preparation completion requires every agreed quantity, but never changes Aure status
+  ---
+  duration_ms: 0.458361
+  type: 'test'
+  ...
+# Subtest: pausing and resuming retains the stage without creating a wallet charge
+ok 93 - pausing and resuming retains the stage without creating a wallet charge
+  ---
+  duration_ms: 0.366032
+  type: 'test'
+  ...
+# Subtest: actions are locked if the profile changes to a non-eligible status or the in-game clock rolls back
+ok 94 - actions are locked if the profile changes to a non-eligible status or the in-game clock rolls back
+  ---
+  duration_ms: 0.249806
+  type: 'test'
+  ...
+# Subtest: history stays bounded and the exported report omits partner names and private contacts
+ok 95 - history stays bounded and the exported report omits partner names and private contacts
+  ---
+  duration_ms: 0.439121
+  type: 'test'
+  ...
+# Subtest: entrypoint preserves the current public GitHub-main PWA links and six startup scripts
+ok 96 - entrypoint preserves the current public GitHub-main PWA links and six startup scripts
+  ---
+  duration_ms: 0.72332
+  type: 'test'
+  ...
+# Subtest: Lefe runtime builds on the current Aure journey and existing wallet modules rather than replacing game core
+ok 97 - Lefe runtime builds on the current Aure journey and existing wallet modules rather than replacing game core
+  ---
+  duration_ms: 0.184498
+  type: 'test'
+  ...
+# Subtest: Lefe model requires mutual commitment, caps item quantities, and treats family lists as customised
+ok 98 - Lefe model requires mutual commitment, caps item quantities, and treats family lists as customised
+  ---
+  duration_ms: 0.126952
+  type: 'test'
+  ...
+# Subtest: formal list agreement first saves the currently edited form rather than agreeing to a stale draft
+ok 99 - formal list agreement first saves the currently edited form rather than agreeing to a stale draft
+  ---
+  duration_ms: 0.252851
+  type: 'test'
+  ...
+# Subtest: default state is disabled, empty and does not assume pregnancy or children
+ok 100 - default state is disabled, empty and does not assume pregnancy or children
+  ---
+  duration_ms: 1.330194
+  type: 'test'
+  ...
+# Subtest: tracking must be opted in before a family chapter can start
+ok 101 - tracking must be opted in before a family chapter can start
+  ---
+  duration_ms: 0.314785
+  type: 'test'
+  ...
+# Subtest: family planning is explicit and does not change relationships or wallet state
+ok 102 - family planning is explicit and does not change relationships or wallet state
+  ---
+  duration_ms: 0.586924
+  type: 'test'
+  ...
+# Subtest: one action per in-game day is enforced
+ok 103 - one action per in-game day is enforced
+  ---
+  duration_ms: 0.574045
+  type: 'test'
+  ...
+# Subtest: self pregnancy story requires female profile, enabled existing health tracker and positive simulated test
+ok 104 - self pregnancy story requires female profile, enabled existing health tracker and positive simulated test
+  ---
+  duration_ms: 0.33144
+  type: 'test'
+  ...
+# Subtest: starting a planning chapter and starting an expecting story cannot both happen on the same day
+ok 105 - starting a planning chapter and starting an expecting story cannot both happen on the same day
+  ---
+  duration_ms: 0.141163
+  type: 'test'
+  ...
+# Subtest: an adult partner pregnancy can be recorded only after explicit player confirmation
+ok 106 - an adult partner pregnancy can be recorded only after explicit player confirmation
+  ---
+  duration_ms: 0.180512
+  type: 'test'
+  ...
+# Subtest: expecting story uses compressed narrative stages and exposes no real due date
+ok 107 - expecting story uses compressed narrative stages and exposes no real due date
+  ---
+  duration_ms: 0.679834
+  type: 'test'
+  ...
+# Subtest: birth story remains locked until time, support-plan count and birth preparation are complete
+ok 108 - birth story remains locked until time, support-plan count and birth preparation are complete
+  ---
+  duration_ms: 0.609649
+  type: 'test'
+  ...
+# Subtest: parenting timeline uses clearly named fictional 30-day story months
+ok 109 - parenting timeline uses clearly named fictional 30-day story months
+  ---
+  duration_ms: 0.331009
+  type: 'test'
+  ...
+# Subtest: one-time preparation milestone cannot be repeatedly farmed
+ok 110 - one-time preparation milestone cannot be repeatedly farmed
+  ---
+  duration_ms: 1.00871
+  type: 'test'
+  ...
+# Subtest: birth recording is capped and does not itself award or remove funds
+ok 111 - birth recording is capped and does not itself award or remove funds
+  ---
+  duration_ms: 0.201053
+  type: 'test'
+  ...
+# Subtest: normalization clamps meters, limits history and accepts only supported modes
+ok 112 - normalization clamps meters, limits history and accepts only supported modes
+  ---
+  duration_ms: 0.253802
+  type: 'test'
+  ...
+# Subtest: export deliberately excludes names, partner details and raw health tracker data
+ok 113 - export deliberately excludes names, partner details and raw health tracker data
+  ---
+  duration_ms: 0.685863
+  type: 'test'
+  ...
+# Subtest: disabled tracking retains local chapter but reports tracking disabled
+ok 114 - disabled tracking retains local chapter but reports tracking disabled
+  ---
+  duration_ms: 0.162275
+  type: 'test'
+  ...
+# Subtest: bridge maps calendar season into existing atmosphere and attaches non-invasive context
+ok 115 - bridge maps calendar season into existing atmosphere and attaches non-invasive context
+  ---
+  duration_ms: 2.140996
+  type: 'test'
+  ...
+# Subtest: rainy season adds a modest sampled hazard without permanently changing environment
+ok 116 - rainy season adds a modest sampled hazard without permanently changing environment
+  ---
+  duration_ms: 0.270678
+  type: 'test'
+  ...
+# Subtest: disabled automation preserves manual season and existing clear-road zone generation
+ok 117 - disabled automation preserves manual season and existing clear-road zone generation
+  ---
+  duration_ms: 0.242355
+  type: 'test'
+  ...
+# Subtest: turning automatic seasons off restores the pre-automation manual season
+ok 118 - turning automatic seasons off restores the pre-automation manual season
+  ---
+  duration_ms: 0.392371
+  type: 'test'
+  ...
+# Subtest: prototype wrappers are idempotent
+ok 119 - prototype wrappers are idempotent
+  ---
+  duration_ms: 0.13901
+  type: 'test'
+  ...
+# Subtest: calendar uses approximate Kano seasonal windows and wraps a 365-day year
+ok 120 - calendar uses approximate Kano seasonal windows and wraps a 365-day year
+  ---
+  duration_ms: 0.913827
+  type: 'test'
+  ...
+# Subtest: seasonal snapshot is deterministic and every model index stays within 0–1
+ok 121 - seasonal snapshot is deterministic and every model index stays within 0–1
+  ---
+  duration_ms: 1.272197
+  type: 'test'
+  ...
+# Subtest: readiness can only reduce the relative planning index, not exceed bounds
+ok 122 - readiness can only reduce the relative planning index, not exceed bounds
+  ---
+  duration_ms: 0.252491
+  type: 'test'
+  ...
+# Subtest: action availability prioritizes relevant seasonal tasks
+ok 123 - action availability prioritizes relevant seasonal tasks
+  ---
+  duration_ms: 7.000228
+  type: 'test'
+  ...
+# Subtest: planning is one action per simulated day and does not contain a wallet transaction
+ok 124 - planning is one action per simulated day and does not contain a wallet transaction
+  ---
+  duration_ms: 0.441085
+  type: 'test'
+  ...
+# Subtest: malformed saved state is bounded and report excludes personal profile fields
+ok 125 - malformed saved state is bounded and report excludes personal profile fields
+  ---
+  duration_ms: 0.493494
+  type: 'test'
+  ...
+# Subtest: launch recovery precedes the seasonal bridge, while all core patch modules precede the direct main entry
+ok 126 - launch recovery precedes the seasonal bridge, while all core patch modules precede the direct main entry
+  ---
+  duration_ms: 2.139063
+  type: 'test'
+  ...
+# Subtest: the start-page recovery preserves the canonical Game and UI rather than creating a second engine
+ok 127 - the start-page recovery preserves the canonical Game and UI rather than creating a second engine
+  ---
+  duration_ms: 0.295455
+  type: 'test'
+  ...
+# Subtest: all previously delivered relationship and family modules remain reachable exactly once
+ok 128 - all previously delivered relationship and family modules remain reachable exactly once
+  ---
+  duration_ms: 0.280012
+  type: 'test'
+  ...
+# Subtest: the generated Keke hero image replaces the flat illustration and social life has a start-page entry
+ok 129 - the generated Keke hero image replaces the flat illustration and social life has a start-page entry
+  ---
+  duration_ms: 0.107102
+  type: 'test'
+  ...
+# Subtest: the seasonal installer imports existing systems and leaves the season change opt-in
+ok 130 - the seasonal installer imports existing systems and leaves the season change opt-in
+  ---
+  duration_ms: 0.149325
+  type: 'test'
+  ...
+# Subtest: social state starts with bounded metrics, private identities and realistic preferences
+ok 131 - social state starts with bounded metrics, private identities and realistic preferences
+  ---
+  duration_ms: 0.96255
+  type: 'test'
+  ...
+# Subtest: normalisation prevents markup injection, overlong names, bad metrics and unknown preferences
+ok 132 - normalisation prevents markup injection, overlong names, bad metrics and unknown preferences
+  ---
+  duration_ms: 0.500194
+  type: 'test'
+  ...
+# Subtest: profile update accepts known interests while keeping custom names plain text
+ok 133 - profile update accepts known interests while keeping custom names plain text
+  ---
+  duration_ms: 0.404129
+  type: 'test'
+  ...
+# Subtest: relationship stages include single, dating, engaged, married, separated and divorced
+ok 134 - relationship stages include single, dating, engaged, married, separated and divorced
+  ---
+  duration_ms: 1.273529
+  type: 'test'
+  ...
+# Subtest: social activities reflect relationship stage without changing the stage itself
+ok 135 - social activities reflect relationship stage without changing the stage itself
+  ---
+  duration_ms: 0.195755
+  type: 'test'
+  ...
+# Subtest: wallet-backed kindness contribution cannot overdraft and deducts only the requested amount
+ok 136 - wallet-backed kindness contribution cannot overdraft and deducts only the requested amount
+  ---
+  duration_ms: 0.593184
+  type: 'test'
+  ...
+# Subtest: normal social interaction changes bounded metrics and records an interaction log
+ok 137 - normal social interaction changes bounded metrics and records an interaction log
+  ---
+  duration_ms: 0.297308
+  type: 'test'
+  ...
+# Subtest: stories progress from choice to choice and only accept choices belonging to the current scenario
+ok 138 - stories progress from choice to choice and only accept choices belonging to the current scenario
+  ---
+  duration_ms: 1.435503
+  type: 'test'
+  ...
+# Subtest: female-harassment scenario offers only safety and support choices, never harassment as a reward
+ok 139 - female-harassment scenario offers only safety and support choices, never harassment as a reward
+  ---
+  duration_ms: 0.707737
+  type: 'test'
+  ...
+# Subtest: separation and divorce scenes prioritise boundaries, safety and voluntary mediation
+ok 140 - separation and divorce scenes prioritise boundaries, safety and voluntary mediation
+  ---
+  duration_ms: 0.98224
+  type: 'test'
+  ...
+# Subtest: exports omit all personal names while preserving aggregate progress and preferences
+ok 141 - exports omit all personal names while preserving aggregate progress and preferences
+  ---
+  duration_ms: 0.610921
+  type: 'test'
+  ...
+# Subtest: snapshots include fictional metrics, preferences, current story and recent events
+ok 142 - snapshots include fictional metrics, preferences, current story and recent events
+  ---
+  duration_ms: 0.296316
+  type: 'test'
+  ...
+# Subtest: history is bounded at the documented maximum and schema reports single-wallet safeguards
+ok 143 - history is bounded at the documented maximum and schema reports single-wallet safeguards
+  ---
+  duration_ms: 49.024015
+  type: 'test'
+  ...
+# Subtest: love, anger, resentment, sadness and grief are separately tracked and clamped
+ok 144 - love, anger, resentment, sadness and grief are separately tracked and clamped
+  ---
+  duration_ms: 0.321154
+  type: 'test'
+  ...
+# Subtest: profile names personalise story text without becoming HTML
+ok 145 - profile names personalise story text without becoming HTML
+  ---
+  duration_ms: 0.127903
+  type: 'test'
+  ...
+# Subtest: married stories include optional household fairness without assuming every family is polygynous
+ok 146 - married stories include optional household fairness without assuming every family is polygynous
+  ---
+  duration_ms: 0.352852
+  type: 'test'
+  ...
+# Subtest: entrypoint is based on current GitHub main and keeps PWA links
+ok 147 - entrypoint is based on current GitHub main and keeps PWA links
+  ---
+  duration_ms: 4.294301
+  type: 'test'
+  ...
+# Subtest: parenthood runtime imports the current Aure journey integration rather than copying its state
+ok 148 - parenthood runtime imports the current Aure journey integration rather than copying its state
+  ---
+  duration_ms: 1.568063
+  type: 'test'
+  ...
+# Subtest: parenthood package keeps all story actions off active driving and does not transact the wallet
+ok 149 - parenthood package keeps all story actions off active driving and does not transact the wallet
+  ---
+  duration_ms: 2.251203
+  type: 'test'
+  ...
+# PASS: JavaScript syntax
+# PASS: life-scene activity changes request the matching embedded clip
+# PASS: embedded state transitions crossfade between compatible clips
+# PASS: clip actions are cached per actor to avoid repeated creation
+# PASS: mixer-budget deferrals retry when animation capacity frees
+# PASS: mixer update avoids allocating a full entries array each frame
+# PASS: seated passenger entry eases into the seat without persistent vertical offset
+# PASS: previous keke calibration, goat discovery, vendor, passenger and damage repairs remain in the file
+# Subtest: tests/character-animation-state-machine.test.mjs
+ok 17 - tests/character-animation-state-machine.test.mjs
+  ---
+  duration_ms: 60.972149
+  type: 'test'
+  ...
+# PASS: syntax
+# PASS: cached per-path embedded animation metadata
+# PASS: passenger, seated passenger, life-scene and vendor activation hooks
+# PASS: mixer update loop and mobile/desktop budgets
+# PASS: procedural pose retained when no embedded clip is usable
+# PASS: temporary GLTF resources disposed
+# PASS: previous keke calibration and goat scan repair retained
+# Subtest: tests/embedded-animation-activation.test.mjs
+ok 18 - tests/embedded-animation-activation.test.mjs
+  ---
+  duration_ms: 74.107206
+  type: 'test'
+  ...
+# Subtest: uniqueSorted accepts file records and strings without localeCompare type errors
+ok 152 - uniqueSorted accepts file records and strings without localeCompare type errors
+  ---
+  duration_ms: 10.098968
+  type: 'test'
+  ...
+# Subtest: characters/pedestrians/keke female.glb never enters the player keke category
+ok 153 - characters/pedestrians/keke female.glb never enters the player keke category
+  ---
+  duration_ms: 5.709213
+  type: 'test'
+  ...
+# Subtest: manual category override selects exact existing paths and reports unsafe paths
+ok 154 - manual category override selects exact existing paths and reports unsafe paths
+  ---
+  duration_ms: 2.400467
+  type: 'test'
+  ...
+# Subtest: missing and case-mismatched override paths do not erase working candidates
+ok 155 - missing and case-mismatched override paths do not erase working candidates
+  ---
+  duration_ms: 0.848889
+  type: 'test'
+  ...
+# Subtest: market stalls use only world models and can be manually mapped from real world assets
+ok 156 - market stalls use only world models and can be manually mapped from real world assets
+  ---
+  duration_ms: 1.508283
+  type: 'test'
+  ...
+# Subtest: catalog scan uses exact current GLB paths and asset content hints
+ok 157 - catalog scan uses exact current GLB paths and asset content hints
+  ---
+  duration_ms: 24.74295
+  type: 'test'
+  ...
+# Subtest: catalog safety rules do not reclassify a character as the player keke
+ok 158 - catalog safety rules do not reclassify a character as the player keke
+  ---
+  duration_ms: 5.964868
+  type: 'test'
+  ...
+# Subtest: Vite transform replaces only the stale CATALOG with the current inventory
+ok 159 - Vite transform replaces only the stale CATALOG with the current inventory
+  ---
+  duration_ms: 7.294182
+  type: 'test'
+  ...
+# Subtest: catalog transform leaves game, renderer and unrelated modules untouched
+ok 160 - catalog transform leaves game, renderer and unrelated modules untouched
+  ---
+  duration_ms: 3.698824
+  type: 'test'
+  ...
+# Subtest: manual category override maps a renamed world model to the explicitly chosen category
+ok 161 - manual category override maps a renamed world model to the explicitly chosen category
+  ---
+  duration_ms: 4.429565
+  type: 'test'
+  ...
+# Subtest: case-mismatched override reports the exact mismatch and preserves safe automatic candidates
+ok 162 - case-mismatched override reports the exact mismatch and preserves safe automatic candidates
+  ---
+  duration_ms: 4.951581
+  type: 'test'
+  ...
+# Subtest: valid override paths win when a category mixes found and missing files
+ok 163 - valid override paths win when a category mixes found and missing files
+  ---
+  duration_ms: 3.335617
+  type: 'test'
+  ...
+# Subtest: an empty model inventory leaves the original static model catalogue unchanged
+ok 164 - an empty model inventory leaves the original static model catalogue unchanged
+  ---
+  duration_ms: 2.677054
+  type: 'test'
+  ...
+# Subtest: plugin does not mutate the fixture source object between transforms
+ok 165 - plugin does not mutate the fixture source object between transforms
+  ---
+  duration_ms: 4.967666
+  type: 'test'
+  ...
+# Subtest: initial draft preserves active overrides and exclusions from the generated audit
+ok 166 - initial draft preserves active overrides and exclusions from the generated audit
+  ---
+  duration_ms: 1.410806
+  type: 'test'
+  ...
+# Subtest: adding a visual selection preserves the rest of the category as candidates
+ok 167 - adding a visual selection preserves the rest of the category as candidates
+  ---
+  duration_ms: 10.583959
+  type: 'test'
+  ...
+# Subtest: toggle removes only the selected path and can intentionally leave empty category
+ok 168 - toggle removes only the selected path and can intentionally leave empty category
+  ---
+  duration_ms: 0.33969
+  type: 'test'
+  ...
+# Subtest: model URLs encode spaces and preserve directory segments
+ok 169 - model URLs encode spaces and preserve directory segments
+  ---
+  duration_ms: 0.904597
+  type: 'test'
+  ...
+# Subtest: exported override JSON contains only explicit categories while preserving exclusions
+ok 170 - exported override JSON contains only explicit categories while preserving exclusions
+  ---
+  duration_ms: 0.674492
+  type: 'test'
+  ...
+# Subtest: current assignments read draft categories before catalogue defaults
+ok 171 - current assignments read draft categories before catalogue defaults
+  ---
+  duration_ms: 0.275966
+  type: 'test'
+  ...
+# Subtest: cultural upgrade patches the actual Renderer3D traffic actor path
+ok 172 - cultural upgrade patches the actual Renderer3D traffic actor path
+  ---
+  duration_ms: 1.12019
+  type: 'test'
+  ...
+# Subtest: wedding convoys remain real SUV traffic entities with normal game simulation
+ok 173 - wedding convoys remain real SUV traffic entities with normal game simulation
+  ---
+  duration_ms: 0.262235
+  type: 'test'
+  ...
+# Subtest: roadside children use existing ModelManager character instances
+ok 174 - roadside children use existing ModelManager character instances
+  ---
+  duration_ms: 0.425678
+  type: 'test'
+  ...
+# Subtest: goat is loaded from generated real-asset inventory and no goat placeholder is fabricated
+ok 175 - goat is loaded from generated real-asset inventory and no goat placeholder is fabricated
+  ---
+  duration_ms: 0.178446
+  type: 'test'
+  ...
+# Subtest: goat crossing uses the loaded asset and its available animation clips
+ok 176 - goat crossing uses the loaded asset and its available animation clips
+  ---
+  duration_ms: 0.321166
+  type: 'test'
+  ...
+# Subtest: model cleanup avoids disposing shared GLB clones
+ok 177 - model cleanup avoids disposing shared GLB clones
+  ---
+  duration_ms: 0.173348
+  type: 'test'
+  ...
+# Subtest: index registers cultural hooks before the existing bootstrap chain
+ok 178 - index registers cultural hooks before the existing bootstrap chain
+  ---
+  duration_ms: 0.19389
+  type: 'test'
+  ...
+# Subtest: no external model URLs or additional binary assets are required
+ok 179 - no external model URLs or additional binary assets are required
+  ---
+  duration_ms: 0.358784
+  type: 'test'
+  ...
+# Subtest: world performance module uses InstancedMesh for repeating lane marks
+ok 180 - world performance module uses InstancedMesh for repeating lane marks
+  ---
+  duration_ms: 2.743638
+  type: 'test'
+  ...
+# Subtest: lane positions remain updated through the existing draw loop
+ok 181 - lane positions remain updated through the existing draw loop
+  ---
+  duration_ms: 0.128739
+  type: 'test'
+  ...
+# Subtest: desktop building windows are batched as instanced meshes
+ok 182 - desktop building windows are batched as instanced meshes
+  ---
+  duration_ms: 0.112544
+  type: 'test'
+  ...
+# Subtest: lighting uses a stable profile baseline rather than cumulative multipliers
+ok 183 - lighting uses a stable profile baseline rather than cumulative multipliers
+  ---
+  duration_ms: 0.234092
+  type: 'test'
+  ...
+# Subtest: upgrade registers before root-cause and GLB loader modules
+ok 184 - upgrade registers before root-cause and GLB loader modules
+  ---
+  duration_ms: 0.169852
+  type: 'test'
+  ...
+# Subtest: existing key game HUD and start-screen IDs are preserved
+ok 185 - existing key game HUD and start-screen IDs are preserved
+  ---
+  duration_ms: 0.213309
+  type: 'test'
+  ...
+# Subtest: diagnostics are opt-in and do not force 3D mode
+ok 186 - diagnostics are opt-in and do not force 3D mode
+  ---
+  duration_ms: 0.281365
+  type: 'test'
+  ...
+# Subtest: keke fitting no longer guesses yaw from width/depth
+ok 187 - keke fitting no longer guesses yaw from width/depth
+  ---
+  duration_ms: 0.974115
+  type: 'test'
+  ...
+# Subtest: manual calibration is keyed by exact model path and bounded
+ok 188 - manual calibration is keyed by exact model path and bounded
+  ---
+  duration_ms: 1.014717
+  type: 'test'
+  ...
+# Subtest: calibration applies to the imported root, not just a body child
+ok 189 - calibration applies to the imported root, not just a body child
+  ---
+  duration_ms: 0.205066
+  type: 'test'
+  ...
+# Subtest: audit exposes exact-path calibration only in opt-in audit mode
+ok 190 - audit exposes exact-path calibration only in opt-in audit mode
+  ---
+  duration_ms: 0.215343
+  type: 'test'
+  ...
+# Subtest: goat scene scan is cached while animation mixers still update
+ok 191 - goat scene scan is cached while animation mixers still update
+  ---
+  duration_ms: 0.157573
+  type: 'test'
+  ...
+# Subtest: existing passenger, hawker, goat and collision hooks remain in the module
+ok 192 - existing passenger, hawker, goat and collision hooks remain in the module
+  ---
+  duration_ms: 0.16213
+  type: 'test'
+  ...
+# Subtest: allows an ordinary existing vehicle GLB path
+ok 193 - allows an ordinary existing vehicle GLB path
+  ---
+  duration_ms: 2.702815
+  type: 'test'
+  ...
+# Subtest: rejects a female character named keke as a player vehicle
+ok 194 - rejects a female character named keke as a player vehicle
+  ---
+  duration_ms: 0.157033
+  type: 'test'
+  ...
+# Subtest: rejects human-labelled models misfiled inside the vehicles tree
+ok 195 - rejects human-labelled models misfiled inside the vehicles tree
+  ---
+  duration_ms: 0.273823
+  type: 'test'
+  ...
+# Subtest: rejects non-GLB, traversal, and non-vehicle paths
+ok 196 - rejects non-GLB, traversal, and non-vehicle paths
+  ---
+  duration_ms: 0.227191
+  type: 'test'
+  ...
+# Subtest: sanitizes the transformed generated CATALOG without rewriting unrelated code
+ok 197 - sanitizes the transformed generated CATALOG without rewriting unrelated code
+  ---
+  duration_ms: 0.374298
+  type: 'test'
+  ...
+# Subtest: leaves the original non-transformed catalogue intact when no GLB scan ran
+ok 198 - leaves the original non-transformed catalogue intact when no GLB scan ran
+  ---
+  duration_ms: 0.092273
+  type: 'test'
+  ...
+# Subtest: sanitizes generated audit categories and recomputes unclassified files
+ok 199 - sanitizes generated audit categories and recomputes unclassified files
+  ---
+  duration_ms: 0.943557
+  type: 'test'
+  ...
+# Subtest: chooses an explicit fallback state rather than allowing a human if no vehicle candidate remains
+ok 200 - chooses an explicit fallback state rather than allowing a human if no vehicle candidate remains
+  ---
+  duration_ms: 0.221953
+  type: 'test'
+  ...
+# Subtest: audit is opt-in and does not change renderer mode
+ok 201 - audit is opt-in and does not change renderer mode
+  ---
+  duration_ms: 1.030521
+  type: 'test'
+  ...
+# Subtest: audit reports frame pacing, canvases and WebGL context loss
+ok 202 - audit reports frame pacing, canvases and WebGL context loss
+  ---
+  duration_ms: 0.275316
+  type: 'test'
+  ...
+# Subtest: audit includes a caution against over-interpreting canvas detection
+ok 203 - audit includes a caution against over-interpreting canvas detection
+  ---
+  duration_ms: 0.111652
+  type: 'test'
+  ...
+# Subtest: startup loads root-cause patch before the existing GLB pipeline
+ok 204 - startup loads root-cause patch before the existing GLB pipeline
+  ---
+  duration_ms: 1.140201
+  type: 'test'
+  ...
+# Subtest: keke fitting records whole-model bounds and preserves the calibrated asset orientation
+ok 205 - keke fitting records whole-model bounds and preserves the calibrated asset orientation
+  ---
+  duration_ms: 0.628421
+  type: 'test'
+  ...
+# Subtest: mobile shadow optimization excludes the player keke
+ok 206 - mobile shadow optimization excludes the player keke
+  ---
+  duration_ms: 0.224117
+  type: 'test'
+  ...
+# Subtest: animated-root discovery cache keeps the original update path
+ok 207 - animated-root discovery cache keeps the original update path
+  ---
+  duration_ms: 0.241373
+  type: 'test'
+  ...
+# Subtest: passenger and life actor models use existing ModelManager categories
+ok 208 - passenger and life actor models use existing ModelManager categories
+  ---
+  duration_ms: 0.331793
+  type: 'test'
+  ...
+# Subtest: water seller keeps the existing class logic and upgrades only its visible actor
+ok 209 - water seller keeps the existing class logic and upgrades only its visible actor
+  ---
+  duration_ms: 0.147949
+  type: 'test'
+  ...
+# Subtest: onboard game passengers are represented by real seated GLB instances when available
+ok 210 - onboard game passengers are represented by real seated GLB instances when available
+  ---
+  duration_ms: 0.509958
+  type: 'test'
+  ...
+# Subtest: goat replacement requires a discovered real asset and reports failure
+ok 211 - goat replacement requires a discovered real asset and reports failure
+  ---
+  duration_ms: 0.493883
+  type: 'test'
+  ...
+# Subtest: vehicle wear excludes visible passenger and seller materials
+ok 212 - vehicle wear excludes visible passenger and seller materials
+  ---
+  duration_ms: 0.622962
+  type: 'test'
+  ...
+# Subtest: collision wrappers call original methods and queue visual-only impacts
+ok 213 - collision wrappers call original methods and queue visual-only impacts
+  ---
+  duration_ms: 0.583742
+  type: 'test'
+  ...
+# Subtest: conditional audit panel and JSON download are available
+ok 214 - conditional audit panel and JSON download are available
+  ---
+  duration_ms: 0.20682
+  type: 'test'
+  ...
+1..214
+# tests 214
+# suites 0
+# pass 214
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1993.216923
