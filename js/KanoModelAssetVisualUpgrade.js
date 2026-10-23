@@ -273,14 +273,15 @@ if (typeof window !== 'undefined') {
 
 console.info(`[Kano Life] GLB visual quality pass registered for world/, environment/, and characters/ assets (${isTouchDevice ? 'mobile-safe' : 'desktop'} texture filtering).`);
 
-// The model pipeline must be patched before main.js creates ModelManager.
-// Keep the existing presentation, game, and persistence hooks as the app entry.
+// Register the driving-life integration first, then install a compatibility
+// guard for its older financial panel binding before any wrapper imports main.js.
+// The current index.html supplies a newer Life & Career host, so its host exists
+// but deliberately does not contain the legacy klc-close-top/profile form nodes.
 await import('./KanoNorthernDriverLifeSimulationUpgrade.js');
+await import('./KanoLifeCareerBindGuard.js');
 await import('./KanoNorthernDriverRealLifeUpgrade.js');
 await import('./KanoNorthernDriverPassengerRelationshipsUpgrade.js');
 await import('./KanoNorthernDriverParkOperationsUpgrade.js');
-// Register the additive street-rhythm layer before the gameplay bootstrap.
-// It only changes the background traffic pool size; collision and rendering
-// implementations remain the versions supplied by the current project.
 await import('./KanoStreetRhythmUpgrade.js');
+// Keep presentation hooks and the original game bootstrap as the entry point.
 await import('./KanoGameplayPresentationRepair.js');
