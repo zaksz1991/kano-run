@@ -48,12 +48,12 @@
       <nav class="drive-controls" id="drive-controls" aria-label="Driving controls"><button class="control lane" data-action="left" aria-label="Steer left">←</button><button class="control lane" data-action="right" aria-label="Steer right">→</button><button class="control brake" data-action="brake">BRAKE</button><button class="control gas" data-action="gas">GAS</button><button class="control horn" data-action="horn" aria-label="Horn">HORN</button></nav><button class="menu-button" id="menu-btn" aria-label="Open game menu">☰</button>
     </div>
   </main>
-  <!-- Register cultural-scene wrappers before the existing startup chain creates Game, Renderer3D, and KanoSceneUpgrade. -->
+  <!-- Keep current GitHub main's startup order: cultural wrappers and renderer repairs run before career extensions. -->
   <script type="module" src="/js/KanoCulturalStreetEventsUpgrade.js"></script>
   <script type="module" src="/js/KanoWorldPerformanceInstancingUpgrade.js"></script>
   <script type="module" src="/js/KanoLifeRootCauseRepair.js"></script>
   <script type="module" src="/js/KanoModelAssetVisualUpgrade.js"></script>
   <script type="module" src="/js/KanoNorthernDriverSkillsPathwaysUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverEmploymentMarketUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverEmploymentScheduleUpgrade.js"></script>
 </body>
 </html>

@@ -1,45 +1,46 @@
-# Kano Life Step 66 — Employment Market, Applications & Interviews
+# Kano Life — Step 67: Employment Schedule & Weekly Payroll
 
-## Built against current public GitHub main
+This package is based on the current public `main` source for `zaksz1991/kano-run`, inspected on 2026-10-23. The supplied `index.html` mirrors that main-branch entrypoint's existing HTML, PWA links, and startup module order, with one additive final entrypoint for the Step 67 employment schedule module. It does not replace `main.js`, `game.js`, `renderer3d.js`, model assets, service worker, or manifest.
 
-This package was prepared after checking the current public raw GitHub `main` entrypoint (`index.html`) and its Step 65 skills/career pathway modules on 2026-10-23. It is an additive feature package—not a replacement project ZIP. The existing PWA manifest and Apple touch-icon links, the four pre-existing registration modules, and the Step 65 `KanoNorthernDriverSkillsPathwaysUpgrade.js` registration remain in the supplied current-main-derived `index.html`; Step 66 is loaded immediately after Step 65.
+## Feature
 
-The package also carries forward the specific Step 64 JavaScript quote fix that addresses the Vercel parse error in `KanoNorthernDriverDigitalLifeUpgrade.js`.
+- Loads the existing Step 66 employment-market UI and extends accepted offers with a work schedule and attendance panel.
+- Shows current accepted role, fictional salary range, scheduled working days, attendance, unpaid family/health leave, and weekly payroll records.
+- Calculates per-attendance-day pay from the midpoint of the opening's fictional monthly salary range, using a 22-day or 26-day schedule divisor.
+- One date can only be attended or marked as leave once. Career actions are disabled during active driving.
+- Payroll is calculated only from explicitly recorded workdays; missed days and unpaid leave earn no pay.
+- Weekly payday is due after a complete seven-day period. When the player leaves employment, recorded work in the final partial period is settled once.
+- Uses the existing `save.money` wallet and `persist()` from `storage.js`; payroll receipts are stored with that save for duplicate-credit protection.
+- Exports a JSON report and persists employment schedule history in `localStorage`.
+- Does not automatically generate driving fares, change game clock, enforce job attendance by blocking driving, or claim real jobs/salaries.
+
+All employment openings and salary figures are fictional roleplay data.
 
 ## Install
 
-Extract into the current Kano Run project root (the folder containing `index.html` and `package.json`). Allow these complete files to be replaced:
+Extract this ZIP into the current Kano Run project root (same folder as `package.json`). Replace the complete `index.html` with the supplied current-main-based version; add:
 
-- `index.html` — current-main-derived entrypoint with the Step 66 module registered after Step 65.
-- `js/KanoNorthernDriverDigitalLifeUpgrade.js` — preserves Step 64 behaviour and fixes the invalid single-quoted `Today's` string from the supplied build log.
+- `js/KanoNorthernDriverEmploymentSchedule.js`
+- `js/KanoNorthernDriverEmploymentScheduleUpgrade.js`
 
-Add these files:
+The schedule upgrade imports the current Step 66 `KanoNorthernDriverEmploymentMarketUpgrade.js`, activating the career market and salary schedule together. Keep that current module and its `KanoNorthernDriverEmploymentMarket.js` base module in `js/`.
 
-- `js/KanoNorthernDriverEmploymentMarket.js`
-- `js/KanoNorthernDriverEmploymentMarketUpgrade.js`
+Keep all other current project files untouched. In particular, do not replace `main.js`, `game.js`, `renderer3d.js`, `storage.js`, PWA files, CSS, assets or Claude's renderer repairs.
 
-Copy the included two `KanoNorthernDriverEmploymentMarket*.test.mjs` files to the existing `tests/` folder.
+## Tests
 
-Do not replace `main.js`, `game.js`, `renderer3d.js`, `storage.js`, the service worker, manifest, CSS or assets. The package intentionally does not include `package.json`.
+Run the isolated suite using Node's test runner from the project root:
 
-## Feature behaviour
+`node --test tests/KanoNorthernDriverEmploymentSchedule.test.mjs`
 
-- Seven fictional Kano job listings tied to the current Step 65 training certificate IDs.
-- Three active applications maximum; application fees are never charged.
-- Interviews open two in-game days after applying, with three scenario-based answers.
-- Results appear on the next in-game day. Outcomes are based on interview choices and a simulated readiness threshold, not randomness.
-- Offers stay open for three days and can be accepted or declined off-shift.
-- Acceptance records a simulated role but does not pay wages, deduct money, stop keke driving or guarantee employment in the real world.
-- Application history, interviews, offers and active employment record persist in browser local storage; export produces JSON.
-- Career actions are disabled while a driving shift is active.
+This does not replace the full current-repository/Vercel build verification.
 
-Employer names, salary ranges, vacancies, readiness scores and selection outcomes are fictional gameplay content—not live job listings or current wage claims.
+## Additional integration safety
 
-## Validation performed
+- The payroll credit path checks the boolean returned by the current `storage.js` `persist()` method. If saving fails or returns `false`, it restores the previous in-memory wallet value and the previous payroll receipt value rather than claiming the payday was saved.
+- If a payroll receipt already exists, a retry marks the payroll row paid without crediting the wallet again.
+- `tests/KanoStep67EntryPointIntegration.test.mjs` checks that the current-main startup modules and PWA links are retained, that Step 66 employment UI is imported, and that the payday storage failure guard stays present.
 
-- Included Node tests: 15/15 passed.
-- JavaScript syntax checks: passed for all included `.js` and `.mjs` files.
-- HTML integration checks: passed.
-- ZIP integrity: passed.
-- Full Vercel production build against the complete live repository: not run in this environment.
-- Browser visual testing and physical-phone testing: not performed.
+## Validation scope
+
+Isolated tests and JavaScript syntax checks do not substitute for a production build against the full current repository. Verify the complete working tree and `npm run build` in the current repository before deploying.
