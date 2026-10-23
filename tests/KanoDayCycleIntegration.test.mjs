@@ -72,8 +72,8 @@ test('rest advances the connected world clock through the time-skip callback', (
 
 test('game starts with unknown breakfast, applies day modifiers and offers meal/rest events', () => {
   assert.match(gameSource, /breakfastEaten: null/);
-  assert.match(gameSource, /this\.dayCycle\?\.modifiers\?\.\(\)\.steeringResponse/);
-  assert.match(gameSource, /this\.dayCycle\?\.modifiers\?\.\(\)\.fareMultiplier/);
+  assert.match(gameSource, /this\.dayCycle\?\.modifiers\?\.\(\)\??\.steeringResponse/);
+  assert.match(gameSource, /this\.dayCycle\?\.modifiers\?\.\(\)\??\.fareMultiplier/);
   assert.match(gameSource, /offerBreak\(type\)/);
   assert.match(gameSource, /mealBreak:/);
   assert.match(gameSource, /restBreak:/);

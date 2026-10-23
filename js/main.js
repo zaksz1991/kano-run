@@ -4,6 +4,7 @@ import { Controls } from './controls.js';
 import { AudioManager } from './audio.js';
 import { Renderer2D } from './renderer2d.js';
 import { Renderer3D } from './renderer3d.js';
+import { getMobileTier } from './KanoDeviceTier.js';
 import { ModelManager } from './ModelManager.js';
 import { createModelAuditPanel } from './ModelAuditPanel.js';
 import { save, persist } from './storage.js';
@@ -22,8 +23,15 @@ import { KanoAdaptiveQuality } from './KanoAdaptiveQuality.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
 import { KanoInteractionReliability } from './KanoInteractionReliability.js';
 import { KanoWorkshopPanel } from './KanoWorkshopPanel.js';
+import { registerServiceWorker } from './registerServiceWorker.js';
 import { KanoDayCycle } from './KanoDayCycle.js';
 import { KanoDayHud } from './KanoDayHud.js';
+import {
+  canUse2D,
+  createWebGLUnavailableError,
+  isWebGLUnavailableError,
+  shouldRebuild3DAfterFrameError,
+} from './KanoRenderModePolicy.js';
 
 import '../css/kano-responsive-upgrade.css';
 
@@ -57,8 +65,12 @@ if (!canvas) {
 }
 
 const query = new URLSearchParams(window.location.search);
-const force2d = query.has('force2d');
+const force2d = query.has('force2d') && (query.has('debugModels') || query.has('browserAudit'));
 const force3d = query.has('force3d');
+
+// Enable the existing offline shell/model cache on HTTPS deployments.
+// Local Playwright runs stay isolated unless explicitly opened with ?sw=1.
+registerServiceWorker();
 
 // Developer diagnostics are opt-in.
 const debugMode = query.has('debugModels');
@@ -99,20 +111,23 @@ let dayHud = null;
 let shiftPending = false;
 
 let renderMode = '2D';
-
 let lastFrame = performance.now();
-let fpsFrames = 0;
-let fpsWindowStart = performance.now();
-let lowFpsSince = 0;
-let fallbackStarted = false;
 let runtimeFailureCount = 0;
 let rendererGeneration = 0;
 
-let keep3D = Boolean(
-  force3d || save?.settings?.quality === '3d',
-);
-
+// A saved/current 2D setting is an explicit user choice. Auto is 3D by default.
+let userSelected2D = save?.settings?.quality === '2d' && !force3d;
+let webglEverAvailable = false;
+let webglUnavailableConfirmed = false;
 let pageClosing = false;
+
+// Renderer restoration uses bounded exponential backoff. It never changes to 2D.
+let contextRecoveryTimer = 0;
+let contextRebuilds = 0;
+let rebuilding3D = false;
+let rendererRetryTimer = 0;
+let rendererRetryAttempt = 0;
+let recoveryToastShown = false;
 
 // Keep the existing morning-routine UI and the active renderer in sync.
 window.addEventListener('kano:life-scene', (event) => {
@@ -286,14 +301,23 @@ function freshCanvas() {
 // ============================================================
 
 function start2D(reason = '2D MODE · ROAD VISIBLE') {
-  if (pageClosing) return;
+  if (pageClosing) return false;
+
+  const confirmedNoWebGL = webglUnavailableConfirmed && !webglEverAvailable;
+  if (!canUse2D({
+    force2d,
+    userSelected2D,
+    webglUnavailable: confirmedNoWebGL,
+  })) {
+    console.error(
+      `[Kano Life] blocked unexpected Canvas 2D transition (${reason}); keeping the WebGL mode and retrying 3D.`,
+    );
+    schedule3DRetry(`blocked 2D transition: ${reason}`);
+    return false;
+  }
 
   // Invalidate asynchronous 3D initialization and asset callbacks.
   rendererGeneration += 1;
-
-  if (renderMode !== '2D') {
-    fallbackStarted = true;
-  }
 
   // Reuse the current Canvas 2D renderer if already active.
   if (
@@ -346,38 +370,91 @@ function start2D(reason = '2D MODE · ROAD VISIBLE') {
     );
 
     setRenderBadge('RENDERER ERROR · RELOAD GAME');
+    return false;
   }
+
+  return true;
 }
 
 // ============================================================
-// WEBGL CONTEXT RECOVERY
+// WEBGL CONTEXT RECOVERY — never downgrade after WebGL has worked.
 // ============================================================
+function schedule3DRetry(reason) {
+  if (pageClosing || force2d || userSelected2D || rendererRetryTimer) return;
 
-function attachWebGLRecovery(
-  targetCanvas,
-  generation,
-) {
-  targetCanvas.addEventListener(
-    'webglcontextlost',
-    (event) => {
-      event.preventDefault();
+  const delay = Math.min(1000 * (2 ** Math.min(rendererRetryAttempt, 4)), 16000);
+  rendererRetryAttempt += 1;
+  setRenderBadge('3D MODE · RESTORING WEBGL');
+  if (!recoveryToastShown) {
+    ui.toast('3D graphics are recovering. Kano Life will retry 3D without switching to 2D.');
+    recoveryToastShown = true;
+  }
 
-      // Ignore notifications from a replaced renderer.
-      if (
-        generation !== rendererGeneration ||
-        renderMode !== '3D'
-      ) {
-        return;
+  rendererRetryTimer = window.setTimeout(() => {
+    rendererRetryTimer = 0;
+    if (pageClosing || force2d || userSelected2D) return;
+    start3D()
+      .then(() => {
+        rendererRetryAttempt = 0;
+        recoveryToastShown = false;
+      })
+      .catch((error) => handle3DStartFailure(error, reason));
+  }, delay);
+}
+
+function handle3DStartFailure(error, reason = 'renderer startup') {
+  if (pageClosing) return;
+
+  if (isWebGLUnavailableError(error) && !webglEverAvailable) {
+    webglUnavailableConfirmed = true;
+    console.warn('[Kano Life] WebGL is genuinely unavailable; allowing the 2D accessibility fallback.', error);
+    start2D('2D MODE · WEBGL UNAVAILABLE');
+    return;
+  }
+
+  console.error(`[Kano Life] 3D ${reason} failed; keeping the 3D policy and retrying.`, error);
+  schedule3DRetry(reason);
+}
+
+function rebuild3D(reason) {
+  if (pageClosing || force2d || userSelected2D || rebuilding3D) return;
+  rebuilding3D = true;
+  console.warn('[Kano Life] rebuilding WebGL renderer:', reason);
+  start3D()
+    .then(() => {
+      rendererRetryAttempt = 0;
+      recoveryToastShown = false;
+    })
+    .catch((error) => handle3DStartFailure(error, `rebuild (${reason})`))
+    .finally(() => { rebuilding3D = false; });
+}
+
+function attachWebGLRecovery(targetCanvas, generation) {
+  targetCanvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    if (generation !== rendererGeneration || renderMode !== '3D') return;
+
+    console.error('[Kano Life] WebGL context lost; attempting 3D restoration.');
+    clearTimeout(contextRecoveryTimer);
+    contextRecoveryTimer = window.setTimeout(() => {
+      contextRecoveryTimer = 0;
+      if (generation !== rendererGeneration || pageClosing) return;
+      contextRebuilds += 1;
+      rebuild3D(`context lost (attempt ${contextRebuilds})`);
+      if (contextRebuilds >= 6) schedule3DRetry('context remains unstable');
+    }, 1800);
+  });
+
+  targetCanvas.addEventListener('webglcontextrestored', () => {
+    if (generation !== rendererGeneration || pageClosing || renderMode !== '3D') return;
+    clearTimeout(contextRecoveryTimer);
+    contextRecoveryTimer = window.setTimeout(() => {
+      contextRecoveryTimer = 0;
+      if (generation === rendererGeneration && renderMode === '3D' && !pageClosing) {
+        rebuild3D('context restored');
       }
-
-      console.error(
-        '[Kano Life] WebGL context lost; switching to Canvas 2D',
-      );
-
-      start2D('2D MODE · WEBGL CONTEXT LOST');
-    },
-    { once: true },
-  );
+    }, 120);
+  });
 }
 
 // ============================================================
@@ -389,39 +466,45 @@ async function start3D() {
 
   const generation = ++rendererGeneration;
 
-  lowFpsSince = 0;
-  fallbackStarted = false;
-
   disposeRenderer();
 
-  // Probe WebGL using a temporary canvas.
-  const probe = document.createElement('canvas');
-
+  // Probe WebGL2 on the canvas that Three.js will actually render into.
+  // WebGL1 is not enough for the installed Three.js release. Reusing one
+  // context avoids a throwaway context consuming a mobile GPU context slot.
+  const activeCanvas = freshCanvas();
   let gl = null;
-
   try {
-    gl =
-      probe.getContext('webgl2', {
-        failIfMajorPerformanceCaveat: false,
-      }) ||
-      probe.getContext('webgl', {
-        failIfMajorPerformanceCaveat: false,
-      });
+    gl = activeCanvas.getContext('webgl2', {
+      alpha: false,
+      antialias: !mobile || getMobileTier() === 'high',
+      depth: true,
+      stencil: false,
+      powerPreference: 'high-performance',
+      failIfMajorPerformanceCaveat: false,
+    });
   } catch {
     gl = null;
   }
 
   if (!gl) {
-    throw new Error('WebGL unavailable');
+    if (webglEverAvailable) {
+      const temporaryError = new Error(
+        'WebGL context is temporarily unavailable after a prior successful WebGL probe.',
+      );
+      temporaryError.code = 'KANO_WEBGL_TEMPORARILY_UNAVAILABLE';
+      throw temporaryError;
+    }
+    webglUnavailableConfirmed = true;
+    throw createWebGLUnavailableError();
   }
 
-  try {
-    gl
-      .getExtension('WEBGL_lose_context')
-      ?.loseContext();
-  } catch {
-    // The extension is optional.
-  }
+  // One successful probe is sufficient evidence not to treat later loss as
+  // permanent lack of WebGL support.
+  webglEverAvailable = true;
+  webglUnavailableConfirmed = false;
+
+  // Do not force-lose a successful context before Three.js attaches to it.
+  // On some phones the old probe + immediate re-creation caused 2D fallback.
 
   if (
     pageClosing ||
@@ -430,9 +513,7 @@ async function start3D() {
     return;
   }
 
-  const models = new ModelManager();
-  const activeCanvas = freshCanvas();
-
+  const models = new ModelManager({ mobile });
   attachWebGLRecovery(activeCanvas, generation);
 
   let webglRenderer;
@@ -585,6 +666,14 @@ async function start3D() {
 
   setRenderMode('3D');
   setRenderBadge('3D MODE · WEBGL');
+  webglUnavailableConfirmed = false;
+  contextRebuilds = 0;
+  rendererRetryAttempt = 0;
+  recoveryToastShown = false;
+  if (rendererRetryTimer) {
+    clearTimeout(rendererRetryTimer);
+    rendererRetryTimer = 0;
+  }
 
   console.info('[Kano Life] WebGL renderer ready');
 
@@ -605,16 +694,13 @@ async function start3D() {
     );
   }
 
+  // On phones, load only the player's keke before the driving scene becomes
+  // available. Traffic and passenger GLBs have procedural fallbacks and are
+  // loaded one at a time while the game is not actively being played. This
+  // prevents several large GLB parses and texture uploads from competing with
+  // the first seconds of driving.
   const essentials = mobile
-    ? [
-        'keke',
-        'car',
-        'taxi',
-        'suv',
-        'motorcycle',
-        'police',
-        'passenger',
-      ]
+    ? ['keke']
     : [
         'keke',
         'car',
@@ -683,8 +769,19 @@ async function start3D() {
   // Load remaining assets in batches on mobile.
   if (mobile) {
     const mobileAssetBatches = [
+      // Keep imported traffic and character variety available, but do not
+      // preload GLBs the mobile renderer intentionally keeps procedural.
+      // This avoids decoding pools of unused flyover, streetlight and prop
+      // models while retaining the road-side shapes and gameplay fallbacks.
       [
-        'flyover',
+        'car',
+        'taxi',
+        'suv',
+        'motorcycle',
+        'police',
+        'passenger',
+      ],
+      [
         'building',
         'passengerWoman',
         'passengerMan',
@@ -703,41 +800,47 @@ async function start3D() {
       ],
       [
         'industrialBuilding',
-        'roadlight',
         'cone',
         'dirtmound',
-      ],
-      [
-        'bench',
-        'busStop',
-        'trafficLight',
-        'stopSign',
-        'marketStall',
       ],
     ];
 
     void essentialLoad.then(async () => {
-      for (const keys of mobileAssetBatches) {
-        if (
-          pageClosing ||
-          generation !== rendererGeneration ||
-          renderer !== webglRenderer ||
-          renderMode !== '3D'
-        ) {
-          return;
-        }
+      const rendererIsCurrent = () =>
+        !pageClosing &&
+        generation === rendererGeneration &&
+        renderer === webglRenderer &&
+        renderMode === '3D';
 
-        try {
-          await models.preload(keys);
-        } catch (error) {
-          console.warn(
-            '[ModelManager] deferred mobile asset batch failed',
-            error,
-          );
+      for (const keys of mobileAssetBatches) {
+        for (const key of keys) {
+          if (!rendererIsCurrent()) return;
+
+          // GLB parsing and texture upload can monopolize a phone's main
+          // thread. Re-check play state before EVERY asset rather than only
+          // once per batch, so starting a shift stops the next model from
+          // beginning to load. Any current load is allowed to finish safely.
+          while (game?.state === 'PLAY') {
+            await new Promise((resolve) => window.setTimeout(resolve, 700));
+            if (!rendererIsCurrent()) return;
+          }
+
+          try {
+            await models.preload([key]);
+          } catch (error) {
+            console.warn(
+              `[ModelManager] deferred mobile asset failed: ${key}`,
+              error,
+            );
+          }
+
+          if (!rendererIsCurrent()) return;
+          // Yield between GLBs so the browser can paint and process input.
+          await new Promise((resolve) => window.setTimeout(resolve, 40));
         }
 
         await new Promise((resolve) => {
-          window.setTimeout(resolve, 250);
+          window.setTimeout(resolve, 180);
         });
       }
     });
@@ -1011,53 +1114,28 @@ function boot() {
         return;
       }
 
-      keep3D = quality === '3d';
-
-      if (quality === '2d') {
-        start2D(
-          '2D MODE · SELECTED IN SETTINGS',
-        );
-
+      userSelected2D = quality === '2d';
+      if (rendererRetryTimer) {
+        clearTimeout(rendererRetryTimer);
+        rendererRetryTimer = 0;
+      }
+      if (userSelected2D) {
+        start2D('2D MODE · SELECTED IN SETTINGS');
         return;
       }
 
-      start3D().catch((error) => {
-        if (pageClosing) return;
-
-        console.warn(
-          '[Kano Life] selected 3D mode unavailable; ' +
-          'using Canvas 2D',
-          error,
-        );
-
-        start2D(
-          '2D MODE · WEBGL UNAVAILABLE',
-        );
-      });
+      // Auto is 3D on phones; every other renderer fault also retries WebGL.
+      webglUnavailableConfirmed = false;
+      start3D().catch((error) => handle3DStartFailure(error, 'Settings mode change'));
     },
   );
 
   if (force2d || (saved2D && !force3d)) {
-    start2D(
-      force2d
-        ? '2D MODE · FORCED BY URL'
-        : '2D MODE · SAVED SETTING',
-    );
+    userSelected2D = !force3d && !force2d && saved2D;
+    start2D(force2d ? '2D MODE · DEBUG AUDIT OVERRIDE' : '2D MODE · SAVED SETTING');
   } else {
-    start3D().catch((error) => {
-      if (pageClosing) return;
-
-      console.warn(
-        '[Kano Life] 3D unavailable; starting Canvas 2D',
-        error,
-      );
-
-      start2D(
-        force3d
-          ? '2D MODE · WEBGL UNAVAILABLE'
-          : '2D MODE · ROAD VISIBLE',
-      );
-    });
+    userSelected2D = false;
+    start3D().catch((error) => handle3DStartFailure(error, 'initial startup'));
   }
 
   // ----------------------------------------------------------
@@ -1108,11 +1186,8 @@ function boot() {
     },
   );
 
-  if (force3d || keep3D) {
-    console.info(
-      '[Kano Life] 3D preference active; ' +
-      'automatic low-FPS fallback disabled',
-    );
+  if (!force2d && !userSelected2D) {
+    console.info('[Kano Life] 3D is locked as the active renderer; low FPS triggers quality adaptation/recovery, never Canvas 2D.');
   }
 
   if (force2d) {
@@ -1137,41 +1212,6 @@ function frame(now) {
   );
 
   lastFrame = now;
-  fpsFrames += 1;
-
-  if (now - fpsWindowStart >= 1000) {
-    const fps =
-      (fpsFrames * 1000) /
-      Math.max(1, now - fpsWindowStart);
-
-    fpsFrames = 0;
-    fpsWindowStart = now;
-
-    // Sustained low-FPS fallback on mobile only.
-    if (
-      mobile &&
-      renderMode === '3D' &&
-      !keep3D &&
-      !fallbackStarted
-    ) {
-      if (fps < 10) {
-        if (!lowFpsSince) {
-          lowFpsSince = now;
-        }
-
-        if (now - lowFpsSince >= 8000) {
-          fallbackStarted = true;
-
-          start2D(
-            '2D MODE · LOW FPS FALLBACK',
-          );
-        }
-      } else {
-        lowFpsSince = 0;
-      }
-    }
-  }
-
   try {
     // Traffic selects lane and speed before collision processing.
     trafficDirector?.update?.(dt);
@@ -1288,10 +1328,11 @@ function frame(now) {
       error,
     );
 
-    if (renderMode === '3D') {
-      start2D(
-        '2D MODE · RECOVERED AFTER ERROR',
-      );
+    if (shouldRebuild3DAfterFrameError({
+      renderMode,
+      runtimeFailureCount,
+    })) {
+      rebuild3D('repeated frame update error');
     }
 
     if (
@@ -1336,6 +1377,10 @@ window.addEventListener(
     if (pageClosing) return;
 
     pageClosing = true;
+    clearTimeout(contextRecoveryTimer);
+    clearTimeout(rendererRetryTimer);
+    contextRecoveryTimer = 0;
+    rendererRetryTimer = 0;
 
     // Invalidate pending asynchronous renderer and asset work.
     rendererGeneration += 1;

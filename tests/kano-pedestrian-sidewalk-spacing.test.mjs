@@ -32,7 +32,7 @@ test('denser mobile sidewalk layout does not add pedestrian actors or GLB promot
 });
 
 test('mobile pedestrian arm animation and recycling remain enabled', () => {
-  assert.match(source, /for \(const \[index, arm\] of pedestrian\.arms\.entries\(\)\)/);
+  assert.match(source, /const arms = pedestrian\.arms;[\s\S]*?arms\[index\]\.rotation\.z/);
   assert.match(source, /pedestrian\.actor\.position\.z \+= scroll \* 0\.72/);
   assert.match(source, /updateMobileDistanceCulling\(\)/);
 });

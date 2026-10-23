@@ -285,7 +285,7 @@ test('mobile render policy uses device tiers and never changes to 2D for low FPS
   const renderer = read('js/renderer3d.js');
   const adaptive = read('js/KanoAdaptiveQuality.js');
   const main = read('js/main.js');
-  assert.match(renderer, /antialias: !mobile \|\| this\.mobileTier === 'high'/);
+  assert.match(renderer, /antialias: !mobile,/);
   assert.match(adaptive, /const mobileRatios = this\.mobile \? getMobileRatios\(this\.mobileTier\) : null/);
   assert.match(adaptive, /criticallySlow/);
   assert.match(main, /activeCanvas\.getContext\('webgl2'/);

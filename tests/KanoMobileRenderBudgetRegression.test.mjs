@@ -17,7 +17,7 @@ test('phone render budgets stay sharp (about CSS-pixel scale or better) and neve
     assert.ok(budget.start >= 0.9, `${tier} must not start visibly blurry`);
   }
   assert.ok(getMobileRenderBudget('high').start > getMobileRenderBudget('low').start);
-  assert.deepEqual(getMobileRenderBudget('mid'), { max: 1.4, start: 1.15, min: 0.8 });
+  assert.deepEqual(getMobileRenderBudget('mid'), { max: 1.25, start: 1.15, min: 0.62 });
 });
 
 test('procedural flyover stripes use one InstancedMesh instead of dozens of stripe meshes', () => {

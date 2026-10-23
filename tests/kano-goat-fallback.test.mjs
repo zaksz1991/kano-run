@@ -6,7 +6,7 @@ const source = await readFile(new URL('../js/KanoCulturalStreetEventsUpgrade.js'
 
 test('procedural goat is only the fallback when no valid goat GLB is usable', () => {
   assert.match(source, /discoverGoatPath\(\)/);
-  assert.match(source, /new GLTFLoader\(\)\.load\(url/);
+  assert.match(source, /createGLTFLoader\(\)\.load\(url/);
   assert.match(source, /installProceduralGoatFallback\(system, state, 'no-goat-glb-found-in-inventory'\)/);
   assert.match(source, /installProceduralGoatFallback\(system, state, 'glb-load-failed'\)/);
   assert.match(source, /installProceduralGoatFallback\(system, state, 'inventory-unavailable'\)/);

@@ -7,6 +7,7 @@ import {
   MISSION_POOL,
   DAILY_MISSION_POOL,
   ACHIEVEMENTS,
+  SAFE_SPEED_MISSION_KMH,
 } from './config.js';
 
 import {
@@ -63,6 +64,35 @@ const POTHOLE_CONTACT_MAX = 0.012;
 
 // Road-object depth uses a consistent scale throughout the game.
 const ROAD_DEPTH_SCALE = 316.8;
+
+// Approximate half-lengths of the traffic models in world units. The player
+// keke's center is at z=2 and traffic is projected from depth using 88 units.
+const PLAYER_KEKE_HALF_LENGTH = 1.15;
+const PLAYER_KEKE_HALF_WIDTH = 0.62;
+const TRAFFIC_COLLISION_LENGTH = Object.freeze({
+  motorcycle: 0.78,
+  keke: 1.18,
+  car: 1.78,
+  taxi: 1.72,
+  suv: 1.9,
+  police: 1.78,
+  karota: 1.7,
+  ambulance: 2.18,
+  truck: 2.72,
+  bus: 3.0,
+});
+const TRAFFIC_COLLISION_WIDTH = Object.freeze({
+  motorcycle: 0.35,
+  keke: 0.62,
+  car: 0.9,
+  taxi: 0.9,
+  suv: 0.98,
+  police: 0.9,
+  karota: 0.82,
+  ambulance: 0.92,
+  truck: 1.08,
+  bus: 1.12,
+});
 
 // ==========================================================
 // COLLISION VISUAL FEEDBACK
@@ -128,6 +158,9 @@ export class Game {
     this.ui = ui;
     this.audio = audio;
     this.mobile = mobile;
+    // Optional adapter; main.js will attach the live cycle during the life-simulation integration.
+    this.dayCycle = null;
+    this.pendingBreak = null;
 
     this.state = 'INTRO';
     this.mode = 'career';
@@ -146,8 +179,6 @@ export class Game {
   // ==========================================================
 
   resetRun() {
-    this.pendingBreak = null;
-
     const capacity = Math.max(
       3,
       5 + (this.driver.capacityMod || 0),
@@ -157,7 +188,6 @@ export class Game {
       score: 0,
       fares: 0,
 
-      // null = the morning routine was not played; true/false = ate or skipped breakfast there.
       breakfastEaten: null,
       breakfastCost: 0,
 
@@ -271,6 +301,7 @@ export class Game {
       lastDailyCombo: 0,
     };
 
+    this.pendingBreak = null;
     this.spawnInitial();
     this.chooseMissions();
   }
@@ -798,8 +829,8 @@ export class Game {
       this.mode === 'timeAttack'
         ? 150
         : this.mode === 'freeRoam'
-          ? 36
-          : 38;
+          ? 48
+          : 46;
 
     // Mechanical wear now has a practical effect on road performance.
     // A damaged engine reduces top speed; poor overall condition adds a
@@ -856,7 +887,7 @@ export class Game {
         : s.gas && s.fuel > 0
           ? this.mode === 'timeAttack'
             ? 1.8
-            : 1.0
+            : 1.35
           : 1.6;
 
       const engineResponse = 0.62 + 0.38 * engineHealth;
@@ -879,15 +910,19 @@ export class Game {
     const tyreHandling =
       0.48 + 0.52 * clamp((s.tyres ?? 100) / 100, 0, 1);
 
-    // Optional day-cycle effect: heavy fatigue slows steering (never below 70%).
-    const driverResponse =
-      this.dayCycle?.modifiers?.().steeringResponse ?? 1;
+    let steeringResponse = 1;
+    try {
+      const requestedResponse = Number(this.dayCycle?.modifiers?.()?.steeringResponse);
+      if (Number.isFinite(requestedResponse) && requestedResponse > 0) {
+        steeringResponse = clamp(requestedResponse, 0.7, 1);
+      }
+    } catch { /* Ignore a failing optional day-cycle adapter. */ }
 
     const steeringRate = (
       s.environment === 'muddy'
         ? 4.1
         : 6.6
-    ) * tyreHandling * driverResponse;
+    ) * tyreHandling * steeringResponse;
 
     s.steer +=
       (s.targetLane - s.steer) *
@@ -1070,7 +1105,7 @@ export class Game {
       }
 
       s.safeSpeedSeconds =
-        !s.reverse && s.speed >= 95
+        !s.reverse && s.speed >= SAFE_SPEED_MISSION_KMH
           ? s.safeSpeedSeconds + dt
           : 0;
     } else {
@@ -1436,7 +1471,14 @@ export class Game {
   moveTraffic(dt) {
     const s = this.s;
 
-    const playerLane = s.steer + 1;
+    // Use the actual rendered lateral position, including roadside pull-over.
+    // The old lane-only comparison ignored pullOverSide and let side-by-side
+    // GLB models visibly overlap without registering a collision.
+    const playerWorldX = clamp(
+      (Number(s.steer) || 0) * 3 + (Number(s.pullOverSide) || 0) * 2.35,
+      -4.5,
+      4.5,
+    );
 
     for (
       let index = s.traffic.length - 1;
@@ -1446,6 +1488,18 @@ export class Game {
       const vehicle = s.traffic[index];
 
       const previousDepth = vehicle.depth;
+
+      // Visual-only post-contact deflection makes an impact readable instead
+      // of letting one GLB appear to slide straight through the player.
+      if (Number(vehicle.collisionKickTime) > 0) {
+        const duration = Number(vehicle.collisionKickDuration) || 0.44;
+        vehicle.collisionKickTime = Math.max(0, Number(vehicle.collisionKickTime) - dt);
+        const progress = clamp(1 - vehicle.collisionKickTime / duration, 0, 1);
+        vehicle.visualOffsetX = (Number(vehicle.collisionKickSide) || 1) * 0.92 * Math.sin(Math.PI * progress);
+        if (vehicle.collisionKickTime === 0) vehicle.visualOffsetX = 0;
+      } else {
+        vehicle.visualOffsetX = 0;
+      }
 
       const trafficSpeed =
         Number.isFinite(vehicle.speedKmh)
@@ -1475,70 +1529,83 @@ export class Game {
         dt *
         roadFactor;
 
-      const impactDepth = 0.022;
-
-      const crossedImpactPlane =
-        closingSpeed > 0 &&
-        previousDepth > impactDepth &&
-        vehicle.depth <= impactDepth;
-
-      const insideContactBand =
-        vehicle.depth <= 0.035 &&
-        vehicle.depth >= 0.012;
-
-      const laneGap = Math.abs(
-        vehicle.lane - playerLane,
+      const trafficHalfLength = TRAFFIC_COLLISION_LENGTH[vehicle.type] || 1.65;
+      const trafficHalfWidth = TRAFFIC_COLLISION_WIDTH[vehicle.type] || 0.82;
+      const combinedHalfLength = trafficHalfLength + PLAYER_KEKE_HALF_LENGTH;
+      // Keep a named reference contact plane for debugging; unlike the old
+      // plane-only test, the actual test below uses swept model dimensions.
+      const impactDepth = clamp(
+        (trafficHalfLength + PLAYER_KEKE_HALF_LENGTH - 2) / 88,
+        0.004,
+        0.027,
       );
+      const crossedImpactPlane = closingSpeed > 0
+        && previousDepth > impactDepth
+        && vehicle.depth <= impactDepth;
+      const previousLongitudinalSeparation = 2 + previousDepth * 88;
+      const currentLongitudinalSeparation = 2 + vehicle.depth * 88;
+      const sweptLongitudinalGap = previousLongitudinalSeparation * currentLongitudinalSeparation <= 0
+        ? 0
+        : Math.min(
+            Math.abs(previousLongitudinalSeparation),
+            Math.abs(currentLongitudinalSeparation),
+          );
+      const longitudinalOverlap = crossedImpactPlane || sweptLongitudinalGap <= combinedHalfLength;
 
-      const approachingContact =
-        crossedImpactPlane ||
-        (
-          insideContactBand &&
-          closingSpeed > 6
+      // Do not use `Number(lane) || 1`: lane 0 is a valid left lane, not the
+      // centre lane. Match the rendered position, including visible deflection.
+      const rawLane = Number(vehicle.lane);
+      const trafficLane = Number.isFinite(rawLane) ? clamp(rawLane, 0, 2) : 1;
+      const trafficWorldX =
+        (trafficLane - 1) * 3 + (Number(vehicle.visualOffsetX) || 0);
+      const lateralGap = Math.abs(trafficWorldX - playerWorldX);
+      const collisionGap = PLAYER_KEKE_HALF_WIDTH + trafficHalfWidth + 0.12;
+      const nearMissGap = collisionGap + 0.72;
+
+      if (!vehicle.passed && longitudinalOverlap) {
+        // Re-check every overlapping frame. This catches a player steering
+        // sideways into a vehicle already beside them, even when both vehicles
+        // have nearly identical speeds and neither crosses a narrow depth plane.
+        vehicle.contactObserved = true;
+        vehicle.contactMinLateralGap = Math.min(
+          Number.isFinite(vehicle.contactMinLateralGap)
+            ? vehicle.contactMinLateralGap
+            : Infinity,
+          lateralGap,
         );
+        if (closingSpeed > 4) vehicle.contactWasClosing = true;
 
-      if (
-        !vehicle.passed &&
-        approachingContact
-      ) {
+        if (lateralGap <= collisionGap) {
+          vehicle.passed = true;
+          vehicle.collisionKickDuration = 0.44;
+          vehicle.collisionKickTime = 0.44;
+          vehicle.collisionKickSide = trafficWorldX >= playerWorldX ? 1 : -1;
+          vehicle.visualOffsetX = vehicle.collisionKickSide * 0.08;
+
+          // Invulnerability prevents repeat damage, not physical collision
+          // classification or the visual contact response.
+          if (s.invuln <= 0) this.hit(vehicle);
+        } else if (lateralGap <= nearMissGap) {
+          vehicle.nearMissPending = true;
+        }
+      } else if (!vehicle.passed && vehicle.contactObserved) {
+        // Only finalize a safe pass after the body has cleared the keke. This
+        // leaves collision checks active during lane changes and pull-overs.
+        vehicle.passed = true;
         if (
-          laneGap <= 0.38 &&
-          s.invuln <= 0
+          vehicle.nearMissPending &&
+          vehicle.contactWasClosing &&
+          vehicle.contactMinLateralGap <= nearMissGap
         ) {
-          vehicle.passed = true;
-
-          this.hit(vehicle);
-        } else if (
-          laneGap <= 0.82 &&
-          closingSpeed > 4
-        ) {
-          vehicle.passed = true;
-
           s.nearMisses += 1;
-
           this.dailyAdd('nearMisses', 1);
-
-          s.combo = Math.min(
-            20,
-            s.combo + 1,
-          );
-
+          s.combo = Math.min(20, s.combo + 1);
           s.comboTimer = 5.5;
-
-          const bonus = Math.floor(
-            80 * this.comboMultiplier(),
-          );
-
+          const bonus = Math.floor(80 * this.comboMultiplier());
           s.score += bonus;
-
-          this.ui.toast(
-            `Near miss! +₦${bonus.toLocaleString()} · combo ×${s.combo}`,
-          );
-
+          this.ui.toast(`Near miss! +₦${bonus.toLocaleString()} · combo ×${s.combo}`);
           this.missionAdd('nearMisses', 1);
           this.missionAdd('combo', s.combo);
-        } else {
-          vehicle.passed = true;
         }
       }
 
@@ -1654,7 +1721,7 @@ export class Game {
       clamp(relativeSpeed / 65, 0.2, 1),
     );
 
-    showCollisionFlash('traffic', severity, vehicle.lane - (s.steer + 1));
+    showCollisionFlash('traffic', severity, ((Number(vehicle.lane) || 1) - 1) * 3 - ((Number(s.steer) || 0) * 3 + (Number(s.pullOverSide) || 0) * 2.35));
 
     s.steer = clamp(
       s.steer +
@@ -1936,6 +2003,17 @@ export class Game {
     let vehicleCareBonus = 0;
     let passengerGratitudeTip = 0;
 
+    // The cycle is optional until main.js wires the live day-loop. A missing
+    // or malformed adapter must never alter the established fare calculation.
+    let dayFareMultiplier = 1;
+    try {
+      const requestedMultiplier = Number(this.dayCycle?.modifiers?.()?.fareMultiplier);
+      if (Number.isFinite(requestedMultiplier) && requestedMultiplier > 0) {
+        dayFareMultiplier = clamp(requestedMultiplier, 0.5, 2);
+      }
+    } catch { /* Ignore a failing optional day-cycle adapter. */ }
+    fare = Math.floor(fare * dayFareMultiplier);
+
     const tripStart = passenger.tripStart || {};
     const safeTrip =
       (s.collisions || 0) <= (tripStart.collisions ?? (s.collisions || 0)) &&
@@ -2080,14 +2158,6 @@ export class Game {
         this.ui.toast(`Rough trip · passenger trust ${s.passengerTrust}/100 · drive more carefully`);
       }
       s.safeTripStreak = 0;
-    }
-
-    // Optional day-cycle effect: rush hours pay more, late nights pay less.
-    const dayFareMultiplier =
-      this.dayCycle?.modifiers?.().fareMultiplier ?? 1;
-
-    if (dayFareMultiplier !== 1) {
-      fare = Math.max(0, Math.floor(fare * dayFareMultiplier));
     }
 
     s.passengers.shift();
@@ -2238,31 +2308,39 @@ export class Game {
   }
 
   // ==========================================================
-  // ENVIRONMENT EVENTS
+  // DAY-CYCLE BREAK REQUESTS
   // ==========================================================
 
-  // Day-cycle recovery: the cycle asks for a meal or rest stop, and it is offered
-  // as a normal life event as soon as the run is in a calm state.
   offerBreak(type) {
-    if (type === 'mealBreak' || type === 'restBreak') {
-      this.pendingBreak = type;
-    }
+    if (!['mealBreak', 'restBreak'].includes(type)) return false;
+    // Keep the request queued if a dialogue is already active; it will be
+    // offered at the next safe opportunity once the cycle is connected.
+    this.pendingBreak = type;
+    return true;
   }
+
+  // ==========================================================
+  // ENVIRONMENT EVENTS
+  // ==========================================================
 
   updateEnvironment(dt) {
     const s = this.s;
 
+    // A requested meal/rest stop waits until ordinary street events clear.
+    // It is deliberately dormant without a dayCycle adapter.
     if (
-      this.pendingBreak &&
       this.dayCycle &&
+      this.pendingBreak &&
       this.state === 'PLAY' &&
       !s.event &&
-      !(s.eventCooldown > 0)
+      s.eventCooldown <= 0
     ) {
-      const pending = this.pendingBreak;
-
-      this.pendingBreak = null;
-      this.beginEvent(pending);
+      const requestedBreak = this.pendingBreak;
+      this.beginEvent(requestedBreak);
+      if (s.event === requestedBreak) {
+        this.pendingBreak = null;
+        return;
+      }
     }
 
     s.lifeEventTimer -= dt;
@@ -2616,28 +2694,6 @@ export class Game {
         ],
       },
 
-      mealBreak: {
-        kicker: 'ROADSIDE FOOD · YUNWA',
-        title: 'Your stomach is complaining.',
-        copy: 'A suya stand and a woman selling kosai and fura da nono are beside the road. Eat now, or keep driving hungry and risk smaller tips.',
-        choices: [
-          ['SUYA PLATE · ₦350', 'eatSuya'],
-          ['KOSAI & FURA · ₦120', 'eatCheap'],
-          ['KEEP DRIVING', 'skipLife'],
-        ],
-      },
-
-      restBreak: {
-        kicker: 'GAJIYA · TIME TO REST',
-        title: 'Your arms are getting heavy.',
-        copy: 'There is shade under a neem tree by the motor park. A short rest costs time, not much money, and the steering will feel lighter after.',
-        choices: [
-          ['REST IN THE SHADE · FREE', 'restShade'],
-          ['SHAI & REST · ₦150', 'restTea'],
-          ['KEEP DRIVING', 'skipLife'],
-        ],
-      },
-
       waterSeller: {
         kicker: 'ROADSIDE KIOSK',
         title: 'Pure water and phone top-up.',
@@ -2656,6 +2712,29 @@ export class Game {
           ['SLOW DOWN', 'slowForGoats'],
           ['HORN CAREFULLY', 'hornForGoats'],
           ['CONTINUE CAREFULLY', 'skipLife'],
+        ],
+      },
+
+      mealBreak: {
+        kicker: 'ROADSIDE FOOD STOP',
+        title: 'Take a short food break?',
+        copy: 'Choose a local meal to restore hunger. The cost comes from the current run earnings.',
+        choices: [
+          ['SUYA · ₦350', 'eatSuya'],
+          ['KOSAI · ₦150', 'eatKosai'],
+          ['FURA DA NONO · ₦200', 'drinkFura'],
+          ['KEEP DRIVING', 'skipBreak'],
+        ],
+      },
+
+      restBreak: {
+        kicker: 'DRIVER REST STOP',
+        title: 'Rest before the next trip?',
+        copy: 'Tea costs money; sitting in the shade is free. Rest reduces fatigue and advances the day clock.',
+        choices: [
+          ['TEA & REST · ₦150', 'restTea'],
+          ['REST IN SHADE · FREE', 'restShade'],
+          ['KEEP DRIVING', 'skipBreak'],
         ],
       },
     };
@@ -2696,7 +2775,36 @@ export class Game {
     s.event = null;
     this.state = 'PLAY';
 
-    if (type === 'fare') {
+    if (type === 'mealBreak') {
+      const mealOptions = {
+        eatSuya: { cost: 350, relief: 50, label: 'Suya' },
+        eatKosai: { cost: 150, relief: 30, label: 'Kosai' },
+        drinkFura: { cost: 200, relief: 20, label: 'Fura da nono' },
+      };
+      const meal = mealOptions[action];
+      if (meal) {
+        if (s.score < meal.cost) {
+          this.ui.toast(`Not enough run earnings for ${meal.label.toLowerCase()}`);
+        } else {
+          s.score -= meal.cost;
+          try { this.dayCycle?.eat?.(meal.relief); } catch { /* keep gameplay usable if an optional adapter fails */ }
+          this.ui.toast(`${meal.label} stop · -₦${meal.cost}`);
+        }
+      }
+    } else if (type === 'restBreak') {
+      if (action === 'restTea') {
+        if (s.score < 150) {
+          this.ui.toast('Not enough run earnings for tea');
+        } else {
+          s.score -= 150;
+          try { this.dayCycle?.rest?.(25); } catch { /* optional adapter */ }
+          this.ui.toast('Tea break · -₦150 · fatigue reduced');
+        }
+      } else if (action === 'restShade') {
+        try { this.dayCycle?.rest?.(50); } catch { /* optional adapter */ }
+        this.ui.toast('Rested in the shade · free stop');
+      }
+    } else if (type === 'fare') {
       if (action === 'low') {
         const passenger = s.passengers[0];
 
@@ -3028,38 +3136,6 @@ export class Game {
           this.ui.toast(
             'Mirror scrape · slow down near the convoy',
           );
-        }
-      }
-    } else if (type === 'mealBreak') {
-      const meals = {
-        eatSuya: { cost: 350, relief: 50, text: 'Suya plate eaten · hunger gone' },
-        eatCheap: { cost: 120, relief: 25, text: 'Kosai and fura da nono · hunger eased' },
-      };
-      const meal = meals[action];
-
-      if (meal) {
-        if (s.score >= meal.cost) {
-          s.score -= meal.cost;
-          this.dayCycle?.eat?.(meal.relief);
-          this.ui.toast(meal.text);
-        } else {
-          this.ui.toast('Not enough run earnings for food · keep driving');
-        }
-      }
-    } else if (type === 'restBreak') {
-      const rests = {
-        restShade: { cost: 0, minutes: 50, text: 'Rested in the shade · fatigue eased' },
-        restTea: { cost: 150, minutes: 80, text: 'Shai and a proper rest · you feel fresh' },
-      };
-      const rest = rests[action];
-
-      if (rest) {
-        if (s.score >= rest.cost) {
-          s.score -= rest.cost;
-          this.dayCycle?.rest?.(rest.minutes);
-          this.ui.toast(rest.text);
-        } else {
-          this.ui.toast('Not enough run earnings for tea · try the free shade');
         }
       }
     } else if (type === 'waterSeller') {

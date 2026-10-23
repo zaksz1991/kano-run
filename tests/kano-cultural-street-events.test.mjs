@@ -30,7 +30,7 @@ test('roadside children use existing ModelManager character instances', () => {
 
 test('goat loader prefers an existing real GLB and falls back when inventory or loading fails', () => {
   assert.match(moduleSource, /model-catalog-audit\.generated\.json/);
-  assert.match(moduleSource, /new GLTFLoader\(\)\.load\(url/);
+  assert.match(moduleSource, /createGLTFLoader\(\)\.load\(url/);
   assert.match(moduleSource, /no-goat-glb-found-in-inventory/);
   assert.match(moduleSource, /installProceduralGoatFallback\(system, state, 'no-goat-glb-found-in-inventory'\)/);
   assert.match(moduleSource, /installProceduralGoatFallback\(system, state, 'glb-load-failed'\)/);

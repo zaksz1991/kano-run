@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
+import { disposeOwnedZoneLabelTexture } from './KanoZoneTextureLifecycle.js';
 import { advanceInstancedRoadPattern } from './KanoInstancedRoadScroll.js';
 import { buildKekeEvidenceNamePaths, classifyKekeMeshEvidence, hasVisiblePathWithinRoot } from './KanoKekeStructureEvidence.js';
 import { inspectPlayerKekeRenderability } from './KanoPlayerKekeRuntimeGuard.js';
@@ -159,6 +160,7 @@ export class Renderer3D {
     // per-frame movement or collision simulation.
     this._nextMobileDistanceCullAt = 0;
     this._mobileTrafficCandidateScratch = [];
+    this._nextMobileGlbTrafficSelectionAt = 0;
     this._mobileTrafficTypeScratch = new Set();
     this.zoneActors = new Map();
     this.laneDashes = [];
@@ -4689,6 +4691,11 @@ export class Renderer3D {
       if (activeIds.has(id)) continue;
 
       this.world.remove(actor);
+      // Each temporary roadside zone owns a unique CanvasTexture for its
+      // sign. disposeSceneTree intentionally preserves textures by default
+      // because many GLB textures are shared; release this zone-owned texture
+      // explicitly to prevent GPU texture accumulation as zones recycle.
+      disposeOwnedZoneLabelTexture(actor);
       disposeSceneTree(actor);
       this.zoneActors.delete(id);
     }
@@ -4711,10 +4718,19 @@ export class Renderer3D {
         if (!activeIds.has(id)) this._mobileGlbTrafficIds.delete(id);
       }
       const budget = getMobileTrafficModelBudget(this.mobileTier);
-      let freeSlots = Math.max(0, budget - this._mobileGlbTrafficIds.size);
-      if (freeSlots > 0 && this.models?.cache?.size) {
-        // Avoid filter/filter/sort chains that allocate two temporary arrays
-        // on each driving frame while the model budget has free slots.
+      const freeSlots = Math.max(0, budget - this._mobileGlbTrafficIds.size);
+      const selectionNow = globalThis.performance?.now?.() ?? Date.now();
+      if (
+        freeSlots > 0 &&
+        this.models?.cache?.size &&
+        selectionNow >= this._nextMobileGlbTrafficSelectionAt
+      ) {
+        // Model promotion affects visuals only. On phones, select the nearest
+        // eligible GLB actors at most about 3 times per second instead of
+        // re-scanning and sorting the full traffic list every rendered frame.
+        // Movement, visibility, collision ownership and traffic state still
+        // update in the normal per-frame path below.
+        this._nextMobileGlbTrafficSelectionAt = selectionNow + 350;
         const candidates = this._mobileTrafficCandidateScratch;
         candidates.length = 0;
         for (const vehicle of traffic) {
@@ -4726,10 +4742,11 @@ export class Renderer3D {
         candidates.sort((a, b) =>
           Math.abs(Number(a.depth) || 0) - Math.abs(Number(b.depth) || 0),
         );
+        let slotsToFill = freeSlots;
         for (const vehicle of candidates) {
-          if (freeSlots <= 0) break;
+          if (slotsToFill <= 0) break;
           this._mobileGlbTrafficIds.add(vehicle.id);
-          freeSlots -= 1;
+          slotsToFill -= 1;
         }
       }
       mobileGlbIds = this._mobileGlbTrafficIds;
@@ -4957,9 +4974,9 @@ export class Renderer3D {
     }
 
     // Move the arms in response to steering.
-    for (const [index, arm] of (
-      parts.arms || []
-    ).entries()) {
+    const driverArms = parts.arms || [];
+    for (let index = 0; index < driverArms.length; index += 1) {
+      const arm = driverArms[index];
       if (!arm?.shoulder || !arm?.forearm) continue;
 
       const side = index === 0 ? -1 : 1;
@@ -5344,19 +5361,20 @@ export class Renderer3D {
     // ENVIRONMENT
     // --------------------------------------------------------
 
+    // Night stays readable on a phone in daylight; harmattan is a pale, dusty haze.
     const sky = state.night
-      ? 0x26334a
+      ? 0x37465a
       : state.environment === 'harmattan'
-        ? 0xb5b2a3
+        ? 0xbdb9aa
         : 0x8ccde5;
 
     this.scene.background.set(sky);
 
     this.scene.fog.color.set(
       state.night
-        ? 0x374256
+        ? 0x47566a
         : state.environment === 'harmattan'
-          ? 0xb5b2a3
+          ? 0xbdb9aa
           : 0x8ccde5,
     );
 
@@ -5455,8 +5473,9 @@ export class Renderer3D {
         const phase =
           this.driverAnimationTime + pedestrian.phase;
 
-        for (const [index, arm] of pedestrian.arms.entries()) {
-          arm.rotation.z =
+        const arms = pedestrian.arms;
+        for (let index = 0; index < arms.length; index += 1) {
+          arms[index].rotation.z =
             Math.sin(phase + index * Math.PI) * 0.12;
         }
       }

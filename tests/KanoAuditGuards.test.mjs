@@ -21,8 +21,8 @@ test('the day cycle (clock, prayer periods, hunger, fatigue) is wired into the r
   assert.match(main, /import \{ KanoDayCycle \} from '\.\/KanoDayCycle\.js'/);
   assert.match(main, /import \{ KanoDayHud \} from '\.\/KanoDayHud\.js'/);
   assert.match(main, /game\.dayCycle = dayCycle/);
-  assert.match(main, /dayCycle\.update\(dt,/);
-  assert.match(main, /__kanoScheduleClockMinutes/);
+  assert.match(main, /dayCycle\.update\(dt, \{/);
+  assert.match(main, /minuteOfDay: game\.s\?\.gameClockMinutes/);
   assert.match(read('js/game.js'), /breakfastEaten: null/);
 });
 
@@ -43,4 +43,25 @@ test('every GLTF loader goes through the shared factory', () => {
     assert.match(source, /createGLTFLoader/);
     assert.doesNotMatch(source, /new GLTFLoader\s*\(/);
   }
+});
+
+test('the 3D-only guard, service worker and PWA links survive later ZIPs', () => {
+  const main = read('js/main.js');
+  assert.match(main, /registerServiceWorker\(\)/);
+  assert.match(main, /canUse2D/);
+  assert.doesNotMatch(main, /WebGL context lost; switching to Canvas 2D/);
+  const html = read('index.html');
+  assert.match(html, /rel="manifest" href="\/manifest\.webmanifest"/);
+  assert.match(html, /rel="apple-touch-icon"/);
+});
+
+test('phone performance fixes from Steps 21-22 survive the renderer merges', () => {
+  const renderer = read('js/renderer3d.js');
+  assert.match(renderer, /_nextMobileGlbTrafficSelectionAt/);
+  assert.match(renderer, /disposeOwnedZoneLabelTexture\(actor\)/);
+  assert.doesNotMatch(renderer, /pedestrian\.arms\.entries\(\)/);
+});
+
+test('the right-anchored day HUD placement logic is intact', () => {
+  assert.match(read('js/KanoDayHud.js'), /#place\(\)/);
 });
