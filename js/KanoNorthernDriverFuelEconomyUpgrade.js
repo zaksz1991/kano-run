@@ -1,3 +1,4 @@
+import './KanoNorthernDriverRoadComplianceUpgrade.js';
 /** Runtime integration for the existing Career/Free roam fuel gauge. */
 import { Game } from './game.js';
 import { UI } from './ui.js';

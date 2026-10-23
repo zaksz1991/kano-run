@@ -1,0 +1,5 @@
+Step 56 isolated validation status
+- Tests included: 7 (5 pure model tests + 2 integration-guard tests)
+- Required next validation in the current repaired repository: node --test tests/KanoNorthernDriverRoadCompliance*.test.mjs
+- Browser render and physical-phone checkpoint behaviour not verified here.
+- Full Claude-repaired 524-test suite not run in this package environment.
