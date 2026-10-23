@@ -1,3 +1,4 @@
+import './KanoNorthernDriverKanoSocietyMarketsUpgrade.js';
 /** Runtime UI for Aure, relationships, women drivers and everyday Kano cultural life. */
 import { UI } from './ui.js';
 import { save, persist } from './storage.js';

@@ -1,0 +1,13 @@
+STEP 58 VALIDATION
+
+- Pure society/market tests: 28/28 passed.
+- Integration/data coverage tests: 6/6 passed.
+- Combined focused tests: 34/34 passed.
+- JavaScript syntax checks: passed for the new pure module, the runtime/UI module, and the Step 57 integration replacement.
+- ZIP integrity: checked after packaging.
+- Full repaired-project suite (including Claude's 524-test snapshot): not run; that repaired working tree was not provided as an accessible project archive in this turn.
+- Vite production build: not run.
+- Live WebGL render/browser screenshot: not verified.
+- Physical-phone performance: not measured.
+
+A passing source-level test is not a substitute for verifying the new storefronts, market UI and installed-module order in the current running game.
