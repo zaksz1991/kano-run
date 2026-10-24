@@ -13,13 +13,13 @@ test('uses the existing pre-main world-performance module as the integration poi
   ]) assert.match(diff, new RegExp(module.replaceAll('.', '\\.')));
 });
 test('only lengthens the existing flyover driveability constants', async () => {
-  const diff = await read('../integration/KanoFlyoverDriveabilityRules.mjs.diff');
+  const diff = await read('../js/KanoFlyoverDriveabilityRules.mjs');
   assert.match(diff, /KANO_FLYOVER_DECK_HALF_LENGTH = 7\.5/);
   assert.match(diff, /KANO_FLYOVER_RAMP_END = 44/);
   assert.doesNotMatch(diff, /public\/assets\/models/);
 });
 test('aligns the title panel to the approach-facing side', async () => {
-  const diff = await read('../integration/KanoFlyoverRoundaboutUpgrade.js.diff');
+  const diff = await read('../js/KanoFlyoverRoundaboutUpgrade.js');
   assert.match(diff, /\[0, 5\.68, 2\.635\]/);
   assert.match(diff, /signFace\.rotation\.y = Math\.PI/);
 });

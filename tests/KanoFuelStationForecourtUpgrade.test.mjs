@@ -10,7 +10,7 @@ import {
 } from '../js/KanoFuelStationForecourtRules.mjs';
 
 const upgradeSource = await readFile(new URL('../js/KanoFuelStationForecourtUpgrade.js', import.meta.url), 'utf8');
-const integrationPatch = await readFile(new URL('../integration/KanoAnimationTrafficUpgrade.js.diff', import.meta.url), 'utf8');
+const integrationPatch = await readFile(new URL('../js/KanoFeatureActivationBridge.js', import.meta.url), 'utf8');
 
 test('forecourt layout mirrors cleanly for either roadside', () => {
   const left = buildKanoFuelStationLayout(-1, { mobile: true });
@@ -62,7 +62,7 @@ test('signage uses neutral station copy and does not hard-code a petrol price', 
 test('the forecourt integrates after the existing syncZones renderer call', () => {
   assert.match(upgradeSource, /originalSyncZones\.call\(this, state, \.\.\.args\)/);
   assert.match(upgradeSource, /this\.zoneActors\?\.get\?\.\(zone\.id\)/);
-  assert.match(integrationPatch, /installKanoFuelStationForecourtUpgrade\(renderer\)/);
+  assert.match(integrationPatch, /installKanoFuelStationForecourtUpgrade\(this\)/);
 });
 
 test('legacy green cylinder pad and green pump are specifically recognized for removal', () => {

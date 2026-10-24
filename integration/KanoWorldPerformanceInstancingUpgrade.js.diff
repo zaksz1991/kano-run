@@ -1,6 +1,16 @@
-*** KanoWorldPerformanceInstancingUpgrade.js (add one import)
+--- a/js/KanoWorldPerformanceInstancingUpgrade.js
++++ b/js/KanoWorldPerformanceInstancingUpgrade.js
 @@
  import * as THREE from 'three';
++import './KanoMobileWorldClarityUpgrade.js';
++import './KanoMobileGeometryBudgetUpgrade.js';
  import { Renderer3D } from './renderer3d.js';
++import './KanoKekeGlbActivationRepair.js';
++import './KanoNorthernPedestrianGaitUpgrade.js';
++import './KanoFlyoverDriveabilityUpgrade.js';
++import './KanoCurrentMainExperienceRepair.js';
++import './KanoCompactDrivingHudUpgrade.js';
 +import './KanoKnownKekeModelAcceptanceRepair.js';
++import './KanoFeatureActivationBridge.js';
++import './KanoKekeCatalogFailoverRepair.js';
  import { KanoAtmosphere } from './KanoAtmosphere.js';

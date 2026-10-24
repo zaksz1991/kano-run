@@ -40,6 +40,7 @@ export function planMobileGeometryReduction(source = {}) {
 
   const common = {
     originalTriangles: totalTriangles,
+    totalTriangles,
     eligibleTriangles,
     fixedTriangles,
     targetTriangles: KANO_MOBILE_MODEL_TRIANGLE_TARGET,
@@ -59,8 +60,8 @@ export function planMobileGeometryReduction(source = {}) {
     1,
     Math.min(
       hardEligibleMaximum,
-      KANO_MOBILE_MODEL_TRIANGLE_TARGET - fixedTriangles > 0
-        ? KANO_MOBILE_MODEL_TRIANGLE_TARGET - fixedTriangles
+      KANO_MOBILE_MODEL_TRIANGLE_TARGET - fixedTriangles - 1 > 0
+        ? KANO_MOBILE_MODEL_TRIANGLE_TARGET - fixedTriangles - 1
         : hardEligibleMaximum,
     ),
   );

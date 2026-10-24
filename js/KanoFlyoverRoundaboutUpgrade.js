@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
+import { getKanoSignboardTextureProfile } from './KanoSignboardClarityRules.js';
 
 /**
  * KANO LIFE — Step 94: Kwankwasiyya flyover identity and Kano roundabout scenery.
@@ -46,8 +47,9 @@ function addBox(parent, size, color, position, options = {}) {
 function makeSignTexture(title, subtitle, key, options = {}) {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 300;
+  const profile = getKanoSignboardTextureProfile();
+  canvas.width = profile.width;
+  canvas.height = profile.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
@@ -56,29 +58,39 @@ function makeSignTexture(title, subtitle, key, options = {}) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // Kwankwasiyya-inspired red / white stripe identity on the sign edges.
-  const band = 26;
+  const band = profile.topBand;
   ctx.fillStyle = '#c63b37';
   ctx.fillRect(0, 0, canvas.width, band);
   ctx.fillRect(0, canvas.height - band, canvas.width, band);
   ctx.fillStyle = '#f7f2e7';
-  ctx.fillRect(0, band, canvas.width, 10);
-  ctx.fillRect(0, canvas.height - band - 10, canvas.width, 10);
+  ctx.fillRect(0, band, canvas.width, profile.innerBand);
+  ctx.fillRect(0, canvas.height - band - profile.innerBand, canvas.width, profile.innerBand);
 
   ctx.strokeStyle = '#f7f2e7';
-  ctx.lineWidth = 7;
-  ctx.strokeRect(13, 39, canvas.width - 26, canvas.height - 78);
+  ctx.lineWidth = profile.borderLineWidth;
+  ctx.strokeRect(16, 50, canvas.width - 32, canvas.height - 100);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff8e7';
-  ctx.font = '900 92px Arial, sans-serif';
-  ctx.fillText(title, canvas.width / 2, 118, canvas.width - 90);
+  ctx.font = `900 ${profile.titleFontSize}px Arial, sans-serif`;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#08251d';
+  ctx.lineWidth = profile.titleStrokeWidth;
+  ctx.strokeText(title, canvas.width / 2, profile.titleY, canvas.width - 90);
+  ctx.fillText(title, canvas.width / 2, profile.titleY, canvas.width - 90);
   ctx.fillStyle = '#f3d477';
-  ctx.font = '700 39px Arial, sans-serif';
-  ctx.fillText(subtitle, canvas.width / 2, 218, canvas.width - 90);
+  ctx.font = `700 ${profile.subtitleFontSize}px Arial, sans-serif`;
+  ctx.strokeStyle = '#08251d';
+  ctx.lineWidth = profile.subtitleStrokeWidth;
+  ctx.strokeText(subtitle, canvas.width / 2, profile.subtitleY, canvas.width - 90);
+  ctx.fillText(subtitle, canvas.width / 2, profile.subtitleY, canvas.width - 90);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 2;
+  texture.anisotropy = profile.anisotropy;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
   texture.name = key;
   return texture;
 }
@@ -113,7 +125,8 @@ function createKwankwasiyyaFlyoverSign(renderer, flyover, index) {
   addBox(sign, [9.78, 0.16, 0.31], 0xc63b37, [0, 4.91, 2.76], { name: 'kwankwasiyya_red_bottom_stripe' });
   addBox(sign, [9.78, 0.16, 0.31], 0xf7f2e7, [0, 5.08, 2.76], { name: 'kwankwasiyya_white_bottom_stripe' });
   const texture = makeSignTexture('KWANKWASIYYA', 'FLYOVER  •  KANO STATE', `kwankwasiyya-flyover-${index + 1}`);
-  addSignFace(sign, texture, 9.25, 1.12, [0, 5.68, 2.925], 'kwankwasiyya_sign_face');
+  const signFace = addSignFace(sign, texture, 9.25, 1.12, [0, 5.68, 2.635], 'kwankwasiyya_sign_face');
+  signFace.rotation.y = Math.PI; // title panel faces the approach-facing side
 
   // Two robust brackets make the sign visibly belong to the flyover structure.
   for (const x of [-4.25, 4.25]) {

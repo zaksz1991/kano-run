@@ -1,7 +1,8 @@
 /** Pure geometry and looping rules shared by the flyover adapter tests. */
 export const KANO_FLYOVER_DECK_HEIGHT = 4.64;
-export const KANO_FLYOVER_DECK_HALF_LENGTH = 2.6;
-export const KANO_FLYOVER_RAMP_END = 34;
+// Extend the actual drivable deck while retaining approach ramps and the existing signed scroll.
+export const KANO_FLYOVER_DECK_HALF_LENGTH = 7.5;
+export const KANO_FLYOVER_RAMP_END = 44;
 
 const finite = (value, fallback = 0) => {
   const number = Number(value);

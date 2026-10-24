@@ -1,6 +1,11 @@
-KANO PHONE COMFORT (complete replacement files). Copy index.html, js and tests into the project root, replace, commit via GitHub.
+KANO ACTIVATION PACK - copy every file into your project, same folders, replace when asked. No patches.
 
-1. Picture sharpness setting (blur fix): LIFE & CAREER > Settings > "Picture sharpness": Standard / Sharp / Maximum. Your phone renders at about half its native pixel density, which is why it looks soft. Sharp and Maximum raise the resolution; the game still lowers quality if the phone struggles. Reload after changing. Try Sharp first; use Maximum only if the game stays smooth. Standard stays the default.
-2. Road guide is now a slim strip on phones (the long text lines are hidden), so it no longer covers the road.
-Tests: 1238/1238 pass.
-Not fixed here (needs the real models on a phone): T-pose passenger arms, placeholder-looking keke body, few pedestrians.
+WHY: ChatGPT's recent Task upgrades (phone clarity, geometry budget, real keke GLB activation,
+pedestrian gait/pavement walk, vehicle collision contact, flyover drivability, compact HUD, fuel
+station forecourt, readable signboards) were delivered as integration/*.diff files that were never
+applied, so none of them ran in the game. This pack imports them for real.
+
+Wiring: js/KanoWorldPerformanceInstancingUpgrade.js (imports in correct order),
+js/KanoTrafficMix.js (pedestrian + collision modules), js/KanoFeatureActivationBridge.js (new, fuel station).
+Also: flyover deck/ramp lengths, sign orientation + sharp signboard textures, geometry rules fixed.
+Tests: 1443/1443 passing. Boot check: game starts, driving controls present.

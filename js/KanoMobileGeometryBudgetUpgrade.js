@@ -12,7 +12,7 @@ import {
   countGeometryTriangles,
   planMobileGeometryReduction,
   verticesToRemove,
-} from './KanoMobileGeometryBudgetRules.mjs';
+} from './KanoMobileGeometryBudgetRules.js';
 
 const PATCH_KEY = Symbol.for('kano.life.mobileGeometryBudget.v1');
 const REPORT_KEY = 'kanoMobileGeometryBudgetAudit';

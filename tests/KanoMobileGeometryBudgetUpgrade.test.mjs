@@ -6,7 +6,7 @@ import {
   countGeometryTriangles,
   planMobileGeometryReduction,
   verticesToRemove,
-} from '../js/KanoMobileGeometryBudgetRules.mjs';
+} from '../js/KanoMobileGeometryBudgetRules.js';
 
 test('sets a 4,800 triangle working target below the 5,000 hard limit', () => {
   assert.equal(KANO_MOBILE_MODEL_TRIANGLE_TARGET, 4800);

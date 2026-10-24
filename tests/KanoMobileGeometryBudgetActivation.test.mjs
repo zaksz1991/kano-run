@@ -8,8 +8,8 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('optimizer imports the rules module required by its existing tests', () => {
   const optimizer = read('js/KanoMobileGeometryBudgetUpgrade.js');
-  const rules = read('js/KanoMobileGeometryBudgetRules.mjs');
-  assert.match(optimizer, /from '\.\/KanoMobileGeometryBudgetRules\.mjs'/);
+  const rules = read('js/KanoMobileGeometryBudgetRules.js');
+  assert.match(optimizer, /from '\.\/KanoMobileGeometryBudgetRules\.js'/);
   for (const name of [
     'KANO_MOBILE_MODEL_TRIANGLE_LIMIT',
     'KANO_MOBILE_MODEL_TRIANGLE_TARGET',

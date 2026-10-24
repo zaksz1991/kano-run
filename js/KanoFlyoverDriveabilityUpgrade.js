@@ -90,7 +90,7 @@ function hideCrossDeckBarriers(flyover, deckHeight) {
 }
 
 function addRoadMarkings(renderer, parent, deckHeight) {
-  const count = 17;
+  const count = Math.floor(((KANO_FLYOVER_RAMP_END - 1) * 2) / 3.75) + 1;
   const geometry = new THREE.BoxGeometry(0.13, 0.026, 1.15);
   const material = new THREE.MeshBasicMaterial({ color: 0xf6cd4b, toneMapped: false });
   const marks = new THREE.InstancedMesh(geometry, material, count);
@@ -99,7 +99,7 @@ function addRoadMarkings(renderer, parent, deckHeight) {
   marks.frustumCulled = false;
   const transform = new THREE.Object3D();
   let index = 0;
-  for (let z = 30; z >= -30; z -= 3.75) {
+  for (let z = KANO_FLYOVER_RAMP_END - 1; z >= -KANO_FLYOVER_RAMP_END + 1; z -= 3.75) {
     transform.position.set(0, kanoFlyoverHeightAt(z, deckHeight) + 0.105, z);
     transform.rotation.set(0, 0, 0);
     transform.scale.set(1, 1, 1);

@@ -6,7 +6,19 @@
  * GLBs, changing gameplay rules, or forcing 3D on unsupported hardware.
  */
 import * as THREE from 'three';
+// Pure-side-effect repair modules. Order matters: clarity filtering wraps model
+// loading before the geometry budget wraps it, and both register before the
+// renderer module executes.
+import './KanoMobileWorldClarityUpgrade.js';
+import './KanoMobileGeometryBudgetUpgrade.js';
 import { Renderer3D } from './renderer3d.js';
+import './KanoKekeGlbActivationRepair.js';
+import './KanoNorthernPedestrianGaitUpgrade.js';
+import './KanoFlyoverDriveabilityUpgrade.js';
+import './KanoCurrentMainExperienceRepair.js';
+import './KanoCompactDrivingHudUpgrade.js';
+import './KanoKnownKekeModelAcceptanceRepair.js';
+import './KanoFeatureActivationBridge.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
 const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');

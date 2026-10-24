@@ -37,7 +37,7 @@ test('exit ramp descends symmetrically from the deck', () => {
 test('deck-height override scales the full surface without negative heights', () => {
   assert.equal(kanoFlyoverHeightAt(0, 3.8), 3.8);
   assert.ok(kanoFlyoverHeightAt(20, -2) >= 0);
-  assert.equal(kanoFlyoverHeightAt(34, 3.8), 0);
+  assert.equal(kanoFlyoverHeightAt(44, 3.8), 0);
 });
 
 test('flyover loop preserves forward and reverse world continuity', () => {

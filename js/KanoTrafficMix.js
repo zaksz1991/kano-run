@@ -1,3 +1,5 @@
+import './KanoPedestrianPavementWalkUpgrade.js';
+import './KanoVehicleCollisionContactUpgrade.js';
 /**
  * Kano Life — weighted traffic family selector.
  *
