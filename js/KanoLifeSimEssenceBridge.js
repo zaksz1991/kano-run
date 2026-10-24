@@ -18,6 +18,14 @@ import { save, persist } from './storage.js';
 import { KanoNorthernDriverLifeSimulation } from './KanoNorthernDriverLifeSimulation.js';
 import { KanoNorthernDriverDaySettlementLedger } from './KanoNorthernDriverDaySettlement.js';
 
+function stage(detail) {
+  try {
+    if (window.kanoLifeStage?.present) window.kanoLifeStage.present(detail);
+    else window.dispatchEvent(new CustomEvent('kano-life-stage', { detail }));
+  } catch (_) {}
+}
+
+
 const PATCH = Symbol.for('kano.life.essenceBridge.v1');
 const money = (v) => Math.max(0, Math.round(Number(v) || 0));
 const formatNaira = (v) => `₦${money(v).toLocaleString('en-NG')}`;
@@ -105,6 +113,13 @@ function settleTerminal(game) {
         : `LIFE · shift settled · ${formatNaira(earned)} · wallet ${formatNaira(save.money)}`;
     try {
       game.ui?.toast?.(line);
+            stage({
+              kind: 'shift',
+              title: 'Shift closed in your life ledger',
+              body: 'Driving earnings and shift costs were written to the northern driver career ledger and wallet.',
+              chips: [formatNaira(earned) + ' earned', costs != null ? formatNaira(costs) + ' costs' : null, 'Wallet ' + formatNaira(save.money)].filter(Boolean),
+              ms: 5000,
+            });
     } catch (_) {}
     try {
       game.ui?.__kanoLifeCareerRefresh?.();

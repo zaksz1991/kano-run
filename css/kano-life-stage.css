@@ -1,0 +1,13 @@
+/* Kano Life Stage */
+#kano-life-stage{position:fixed;inset:0;z-index:80;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;padding:0 12px 96px;font-family:Inter,system-ui,sans-serif}
+#kano-life-stage .kls-card{width:min(420px,100%);background:linear-gradient(180deg,rgba(14,28,42,.96),rgba(10,18,28,.94));border:1px solid rgba(245,197,66,.35);border-radius:16px;box-shadow:0 12px 40px #0007;padding:14px 16px 12px;transform:translateY(24px);opacity:0;transition:transform .35s ease,opacity .35s ease;will-change:transform,opacity}
+#kano-life-stage.kls-on .kls-card{transform:translateY(0);opacity:1}
+#kano-life-stage .kls-eyebrow{margin:0 0 4px;font-size:10px;font-weight:900;letter-spacing:.14em;color:#f5c542;text-transform:uppercase}
+#kano-life-stage .kls-title{margin:0 0 6px;font-size:17px;font-weight:900;color:#f6f8fb;line-height:1.25}
+#kano-life-stage .kls-body{margin:0 0 8px;font-size:13px;line-height:1.45;color:#c5d0dc}
+#kano-life-stage .kls-meta{display:flex;flex-wrap:wrap;gap:6px}
+#kano-life-stage .kls-chip{font-size:11px;font-weight:800;padding:4px 8px;border-radius:999px;background:rgba(40,196,165,.15);border:1px solid rgba(40,196,165,.35);color:#9aefd8}
+#kano-life-stage .kls-chip.gold{background:rgba(245,197,66,.12);border-color:rgba(245,197,66,.4);color:#f5c542}
+#kano-life-stage .kls-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:20px;background:rgba(255,255,255,.06);margin-bottom:8px}
+#kano-life-stage .kls-row{display:flex;gap:12px;align-items:flex-start}
+#kano-life-stage .kls-row>div{flex:1;min-width:0}

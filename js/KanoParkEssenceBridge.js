@@ -16,6 +16,13 @@ import {
   KANO_PARK_DAILY_TOKEN,
 } from './KanoNorthernDriverParkOperations.js';
 
+function stage(detail) {
+  try {
+    if (window.kanoLifeStage?.present) window.kanoLifeStage.present(detail);
+    else window.dispatchEvent(new CustomEvent('kano-life-stage', { detail }));
+  } catch (_) {}
+}
+
 const PATCH = Symbol.for('kano.life.parkEssenceBridge.v1');
 const money = (v) => Math.max(0, Math.round(Number(v) || 0));
 
@@ -133,6 +140,15 @@ function openParkDay(game) {
   const queueLine = q != null ? ` · queue #${q}` : '';
   try {
     game.ui?.toast?.(`PARK · ${label}${queueLine}${tokenLine}`);
+        stage({
+          kind: token?.ok ? 'token' : 'park',
+          title: token?.ok ? `Park token at ${label}` : `On duty at ${label}`,
+          body: token?.ok
+            ? `You paid the official-queue token. The park recorded your stand entry and shift.`
+            : `Your shift opened at this Kano park stand. Board passengers here; the ledger tracks your day.`,
+          chips: [label, q != null ? `Queue #${q}` : 'On duty', token?.ok ? `Token ₦${KANO_PARK_DAILY_TOKEN}` : 'No token charged'].filter(Boolean),
+          ms: 4500,
+        });
   } catch (_) {}
 
   if (game.s) {

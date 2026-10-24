@@ -10,6 +10,14 @@
 import { Game } from './game.js';
 import { KanoNorthernDriverParkOperations } from './KanoNorthernDriverParkOperations.js';
 
+function stage(detail) {
+  try {
+    if (window.kanoLifeStage?.present) window.kanoLifeStage.present(detail);
+    else window.dispatchEvent(new CustomEvent('kano-life-stage', { detail }));
+  } catch (_) {}
+}
+
+
 const PATCH = Symbol.for('kano.life.passengerParkBridge.v1');
 const money = (v) => Math.max(0, Math.round(Number(v) || 0));
 
@@ -54,6 +62,15 @@ function install() {
             name: p?.name || zone?.stopName || '',
             returning: Boolean(p?.returning),
           });
+          stage({
+            kind: 'board',
+            title: (p?.name ? `${p.name} boarded` : 'Passenger boarded'),
+            body: p?.dest
+              ? `They are going toward ${p.dest}. Fare is held until you drop them at a matching stop.`
+              : 'They sat in your keke. Complete the drop to earn the fare and update the park day.',
+            chips: [p?.name, p?.dest, p?.fare != null ? `₦${Math.round(p.fare)}` : null].filter(Boolean),
+            ms: 3500,
+          });
         }
       } catch (e) {
         console.warn('[PassengerPark] pickup', e);
@@ -88,6 +105,15 @@ function install() {
             destination: String(zone?.dest || head.dest || ''),
             returning: Boolean(head.returning),
             name: String(head.name || ''),
+          });
+          stage({
+            kind: 'drop',
+            title: matched ? 'Correct drop · fare earned' : 'Drop completed',
+            body: matched
+              ? 'Destination matched. Fare is counted and the park ledger records a completed trip.'
+              : 'Passenger left the keke. Trip is recorded; matching drops pay better over a full day.',
+            chips: [head.name, zone?.dest || head.dest, fareEarned ? `₦${fareEarned}` : null, matched ? 'Matched' : 'Unmatched'].filter(Boolean),
+            ms: 3800,
           });
         }
       } catch (e) {
