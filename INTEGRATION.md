@@ -1,5 +1,11 @@
-# Integration status
+# Integration notes
 
-This ZIP is an additive, tested module and its focused tests. It is **not wired into the live Kano Run game** because the complete current-main source and its exact simulation clock / traffic / passenger APIs were not available in this workspace. No existing files are overwritten. Do not copy speculative integration calls into protected files; wire the module only after mapping the actual current-main APIs.
+1. Import `KanoFuelQueueDirector` from `js/KanoFuelQueueDirector.js` in the existing station controller.
+2. Create one director per station, with pump count, stock, and price taken from the existing station configuration.
+3. When a vehicle enters the station's queue zone, call `joinQueue` once for its stable vehicle ID. Render the returned queue position and wait estimate using the existing UI.
+4. When a pump becomes free, call `startNext`; play the existing pump/refuelling animation for that service.
+5. Advance the service clock from the game's existing update loop with bounded elapsed simulation minutes.
+6. On completion, call `settle(vehicleId, payCallback)`. The callback must use the real wallet/payment API and return `true` or `{ ok: true }` only after payment succeeds. Add fuel to the vehicle only after settlement returns `{ ok: true }`.
+7. Connect stock delivery, station opening hours, queue positioning, and pump collision/parking to existing systems rather than creating parallel UI or vehicle state.
 
-Prayer windows are configurable gameplay approximations, not a replacement for location/date-based prayer times. Market days are configurable and should match the simulation's design.
+The current repository source was not available during this additive module build, so no live integration points or filenames beyond this new module are assumed. Full project regression tests remain required after integration.

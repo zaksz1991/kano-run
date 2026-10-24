@@ -1,12 +1,17 @@
-# Kano Life — Daily Rhythm Director
+# Kano Life — Fuel Queue Director
 
-Additive simulation module for in-game market-day activity, prayer-time traffic patterns, Friday Jumu’ah rhythm, and optional park prayer-break prompts.
+An additive, host-agnostic module for realistic station queues in Kano Life.
 
-## Integration contract
-- Call `evaluate({ weekday, time, location, demand })` using the game's own simulation clock and weekday.
-- Apply returned `effects` through existing traffic/passenger/pedestrian systems; do not let this module directly change world objects or money.
-- Render `events` in the existing event/UI layer. `park_pause_opportunity` is a choice prompt, not an automatic pause.
-- Configure prayer windows and market days against the game's chosen fictionalized calendar. Default windows are gameplay defaults, not live religious timetable data.
-- `weekday`: Sunday=0 through Saturday=6. `time`: 24-hour `HH:MM`. `location`: e.g. `road` or `park`.
+## Included
+- FIFO vehicle queue with queue positions and rough wait estimates.
+- Configurable number of pumps, service speed, station stock, and fuel price.
+- Per-vehicle fuel requests, partial fills when stock is low, and service timing.
+- Queue exit and duplicate-entry protection.
+- Payment callback before a completed receipt is marked paid; the module does not mutate the player wallet or vehicle fuel itself.
+- Focused automated tests.
 
-No device clock, network calls, wallet writes, or global state changes.
+## Important integration boundary
+This ZIP is not wired into the live Kano Run UI, station collision/parking logic, wallet, vehicle fuel meter, or existing refuelling animation. The host game must call `joinQueue`, `startNext`, `tick`, and `settle` from its actual station lifecycle and apply fuel to the vehicle only after successful settlement. Do not replace existing protected files to install this module.
+
+## Test
+Run the included `tests/KanoFuelQueueDirector.test.mjs` using the project's supported Node test setup. The included tests were also run standalone in this build environment.
