@@ -1,11 +1,9 @@
-TASK 30 — TURN DISPATCH HELPER
-
-Copy js/KanoTrafficTurnDispatch.js into the project's js/ directory.
-Import it after KanoJunctionTurnRuntime.js in the existing activation bridge:
-  import './KanoTrafficTurnDispatch.js';
-
-This only installs validated dispatch helpers and an audit function. The game's
-traffic controller still needs to call dispatchKanoTrafficTurn({ vehicle, start,
-end, turn, junction, durationMs }) once when a vehicle enters a junction. The
-start/end points must be actual scene-space coordinates. Do not call every frame.
-No real junction coordinates are fabricated by this module.
+Task 31 integration order
+1. Ensure Task 29's KanoJunctionTurnRuntime.js is imported before main.js.
+2. Ensure Task 30's KanoTrafficTurnDispatch.js is imported before this module.
+3. Add: import './KanoJunctionApproachCoordinator.js';
+4. In the actual traffic controller, register each junction route once using real scene-space coordinates:
+   registerKanoJunctionApproach({vehicle, junctionId, trigger, start, end, turn, durationMs})
+5. During that vehicle's existing traffic update, call updateKanoJunctionApproach(vehicle).
+6. Use cancelKanoJunctionApproach(vehicle) when despawning or rerouting the vehicle.
+Do not invent coordinates: derive them from the existing road/lane scene objects.
