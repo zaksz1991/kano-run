@@ -5,20 +5,25 @@
  * traffic. Service vehicles are selected only within the four-wheel share, so
  * the target category balance is preserved while Kano's Hiace and police
  * pickup fallbacks can appear on phones.
+ *
+ * The collision-contact adapter is imported here because this module is already
+ * loaded before the game bootstrap by KanoGameplayPresentationRepair.js. This
+ * preserves the protected startup chain and installs the adapter before the
+ * live Game instance is constructed.
  */
+import './KanoVehicleCollisionContactUpgrade.js';
+
 const NORMALIZE_ROLL = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   return Math.max(0, Math.min(0.999999999, numeric));
 };
-
 export function chooseKanoTrafficType(mixRoll, nextRandom = Math.random, mobile = false) {
   const roll = NORMALIZE_ROLL(mixRoll);
   if (roll < 0.4) return 'keke';
   if (roll < 0.7) return 'motorcycle';
 
   const familyRoll = NORMALIZE_ROLL(typeof nextRandom === 'function' ? nextRandom() : 0);
-
   if (mobile) {
     // Both key Kano service vehicles are mobile-enabled. The first three
     // choices retain regular traffic variety; the remaining share is split
@@ -29,7 +34,6 @@ export function chooseKanoTrafficType(mixRoll, nextRandom = Math.random, mobile 
     if (familyRoll < 0.725) return 'bus';
     return 'police';
   }
-
   if (familyRoll < 0.20) return 'car';
   if (familyRoll < 0.35) return 'taxi';
   if (familyRoll < 0.50) return 'suv';
@@ -38,7 +42,6 @@ export function chooseKanoTrafficType(mixRoll, nextRandom = Math.random, mobile 
   if (familyRoll < 0.90) return 'truck';
   return 'karota';
 }
-
 export function getKanoTrafficFamily(type) {
   if (type === 'keke') return 'keke';
   if (type === 'motorcycle') return 'motorcycle';
