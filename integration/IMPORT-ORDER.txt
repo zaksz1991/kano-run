@@ -1,19 +1,8 @@
-TASK 28 INTEGRATION
+TASK 29 — TIME-BASED JUNCTION TURN CONTROLLER
 
-1. Copy both JavaScript files into the existing js/ folder.
-2. Add this import to the current Claude activation-pack version of js/KanoWorldPerformanceInstancingUpgrade.js, alongside its other feature imports and before the module that dynamically imports main.js:
-
-   import './KanoJunctionTurnRuntime.js';
-
-3. Do not replace the whole activation bridge with a public repository version; preserve Claude's existing feature wiring.
-4. The runtime listens for `kano:traffic-turn`. The existing traffic movement loop must dispatch this event with detail shaped like:
-   {
-     vehicle: vehicleObject3D,
-     start: {x, y, z},
-     end: {x, y, z},
-     turn: 'left' | 'straight' | 'right',
-     progress: 0..1,
-     junction: 'kofar-mata'
-   }
-5. Until that event is connected to the real traffic loop, this package supplies tested turn-path math and a runtime bridge but does NOT make existing traffic automatically turn. Do not claim live traffic turns are activated merely because the files are imported.
-6. Named junction labels are route labels only, not GPS-accurate placements. Exact scene placement requires the project's road/junction coordinate system.
+1. Copy js/KanoJunctionTurnRules.js and js/KanoJunctionTurnRuntime.js into the existing js/ folder.
+2. Add `import './KanoJunctionTurnRuntime.js';` to the existing activation bridge after its shared imports and before the module that dynamically imports main.js.
+3. To animate a vehicle, the real traffic loop must dispatch `kano:traffic-turn-start` with a vehicle Object3D and actual start/end positions in scene coordinates, plus `turn: 'left' | 'straight' | 'right'`. Optional `durationMs` defaults to 1400 and is clamped to 250–10000 ms.
+4. To cancel a vehicle's current turn, dispatch `kano:traffic-turn-cancel` with `{ vehicle }`.
+5. Do not dispatch turn-start every frame. Dispatch once when the vehicle enters a junction; the runtime animates the movement itself.
+6. Preserve all existing imports and do not replace the Claude activation bridge wholesale. The actual traffic loop and scene-space junction endpoints are not present in this package, so this import alone does not activate turns for existing traffic.
