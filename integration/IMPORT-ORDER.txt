@@ -1,9 +1,19 @@
-TASK 27 IMPORT ORDER (one import line; keep the existing activation bridge intact)
+TASK 28 INTEGRATION
 
-Add this side-effect import to the CURRENT js/KanoWorldPerformanceInstancingUpgrade.js that came from the Claude activation ZIP:
+1. Copy both JavaScript files into the existing js/ folder.
+2. Add this import to the current Claude activation-pack version of js/KanoWorldPerformanceInstancingUpgrade.js, alongside its other feature imports and before the module that dynamically imports main.js:
 
-import './KanoKAROTAWildlifePotholeUpgrade.js';
+   import './KanoJunctionTurnRuntime.js';
 
-Place it after the existing `import { Renderer3D } from './renderer3d.js';` and before the import that activates `KanoGameplayPresentationRepair.js` (or any module that dynamically imports `main.js`). Do not replace the Claude-modified bridge with a copy from the public GitHub branch: that could undo its feature wiring. Keep every existing import and its relative order except for inserting this new line.
-
-The add-on module imports the same `three` package and `Renderer3D` class. It patches `makePotholeActor` and `draw` before the game renderer is constructed. It is safe to import before or after the pothole presentation wrapper because both layers are idempotent, but the import must run before the renderer is constructed.
+3. Do not replace the whole activation bridge with a public repository version; preserve Claude's existing feature wiring.
+4. The runtime listens for `kano:traffic-turn`. The existing traffic movement loop must dispatch this event with detail shaped like:
+   {
+     vehicle: vehicleObject3D,
+     start: {x, y, z},
+     end: {x, y, z},
+     turn: 'left' | 'straight' | 'right',
+     progress: 0..1,
+     junction: 'kofar-mata'
+   }
+5. Until that event is connected to the real traffic loop, this package supplies tested turn-path math and a runtime bridge but does NOT make existing traffic automatically turn. Do not claim live traffic turns are activated merely because the files are imported.
+6. Named junction labels are route labels only, not GPS-accurate placements. Exact scene placement requires the project's road/junction coordinate system.
