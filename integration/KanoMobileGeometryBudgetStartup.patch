@@ -1,0 +1,12 @@
+--- a/js/KanoMobileGeometryBudgetUpgrade.js
++++ b/js/KanoMobileGeometryBudgetUpgrade.js
+@@
+-} from './KanoMobileGeometryBudgetRules.mjs';
++} from './KanoMobileGeometryBudgetRules.js';
+--- a/js/KanoWorldPerformanceInstancingUpgrade.js
++++ b/js/KanoWorldPerformanceInstancingUpgrade.js
+@@
+ import * as THREE from 'three';
++import './KanoMobileGeometryBudgetUpgrade.js';
+ import { Renderer3D } from './renderer3d.js';
+*** End Patch
