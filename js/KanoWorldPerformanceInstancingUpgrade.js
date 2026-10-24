@@ -7,8 +7,8 @@
  */
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
+import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
-
 const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
 const ATMOSPHERE_PATCH = Symbol.for('kano.life.worldBrightnessProfile.v1');
 
@@ -24,7 +24,6 @@ const report = {
   renderer: null,
   errors: [],
 };
-
 function publishReport() {
   if (typeof window === 'undefined') return;
   window.__KANO_WORLD_PERFORMANCE_REPORT__ = report;
@@ -40,7 +39,6 @@ function disposeMaterial(material) {
     }
   }
 }
-
 function makeInstancedWindows(renderer, group, width, height) {
   if (renderer.mobile || !group?.isObject3D) return;
 
@@ -48,7 +46,6 @@ function makeInstancedWindows(renderer, group, width, height) {
   const rows = Math.max(1, Math.floor(height / 1.2));
   const count = columns * rows;
   if (!count) return;
-
   // One draw call per building replaces the old one-mesh-per-window approach.
   // Each building owns its geometry/material so replacing a procedural building
   // later cannot dispose resources still used by another building.
@@ -66,7 +63,6 @@ function makeInstancedWindows(renderer, group, width, height) {
   windows.userData.kanoInstancedWindows = true;
   windows.castShadow = false;
   windows.receiveShadow = false;
-
   const dummy = new THREE.Object3D();
   let index = 0;
   for (let row = 0; row < rows; row += 1) {
@@ -83,7 +79,6 @@ function makeInstancedWindows(renderer, group, width, height) {
       index += 1;
     }
   }
-
   windows.instanceMatrix.setUsage(THREE.StaticDrawUsage);
   windows.instanceMatrix.needsUpdate = true;
   windows.computeBoundingSphere();
@@ -95,7 +90,6 @@ function makeInstancedWindows(renderer, group, width, height) {
 function installWindowInstancing() {
   const prototype = Renderer3D?.prototype;
   if (!prototype || prototype[PATCH]) return;
-
   // Keep a stable reference for clean-up, diagnostics and renderer recovery.
   const originalAddWindows = prototype.addWindows;
   if (typeof originalAddWindows === 'function') {
@@ -110,7 +104,6 @@ function installWindowInstancing() {
       }
     };
   }
-
   Object.defineProperty(prototype, PATCH, { value: true, configurable: false });
 }
 
@@ -120,7 +113,6 @@ function installLaneMarkingInstancing(renderer) {
     ? renderer.laneDashes.filter((dash) => dash?.position && dash?.geometry)
     : [];
   if (source.length < 8 || !renderer.world?.isObject3D) return;
-
   const geometry = new THREE.PlaneGeometry(0.095, 3.4);
   const material = new THREE.MeshBasicMaterial({
     color: 0xf3ead2,
@@ -132,7 +124,6 @@ function installLaneMarkingInstancing(renderer) {
   mesh.userData.kanoInstancedLaneMarkings = true;
   mesh.frustumCulled = false;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-
   const dummy = new THREE.Object3D();
   const entries = source.map((dash, index) => ({
     index,
@@ -140,7 +131,6 @@ function installLaneMarkingInstancing(renderer) {
     y: Number(dash.position.y) || 0.028,
     z: Number(dash.position.z) || 0,
   }));
-
   const writeMatrix = (entry) => {
     dummy.position.set(entry.x, entry.y, entry.z);
     dummy.rotation.set(-Math.PI / 2, 0, 0);
@@ -152,7 +142,6 @@ function installLaneMarkingInstancing(renderer) {
   mesh.instanceMatrix.needsUpdate = true;
   mesh.computeBoundingSphere();
   renderer.world.add(mesh);
-
   // The existing draw loop expects one mutable position per dash. Lightweight
   // logical records preserve that behaviour; the GPU receives a single batched
   // instance matrix update immediately before each WebGL render call.
@@ -179,13 +168,11 @@ function installLaneMarkingInstancing(renderer) {
       userData: { kanoInstancedLaneDash: true, instanceIndex: entry.index },
     };
   });
-
   for (const dash of source) {
     dash.parent?.remove(dash);
     try { dash.geometry.dispose?.(); } catch {}
     disposeMaterial(dash.material);
   }
-
   const webgl = renderer.renderer;
   if (webgl?.render && !renderer.__kanoLaneRenderSync) {
     const originalRender = webgl.render;
@@ -197,7 +184,6 @@ function installLaneMarkingInstancing(renderer) {
     webgl.render = renderWrapper;
     renderer.__kanoLaneRenderSync = { webgl, originalRender, renderWrapper, mesh };
   }
-
   renderer.__kanoLaneMarkingInstancing = { mesh, entries };
   report.laneMarkingsInstanced += source.length;
   report.laneMarkingDrawCallsBefore += source.length;
@@ -209,18 +195,15 @@ function installWorldBrightness() {
   const prototype = KanoAtmosphere?.prototype;
   if (!prototype || prototype[ATMOSPHERE_PATCH] || typeof prototype.applyProfile !== 'function') return;
   const originalApplyProfile = prototype.applyProfile;
-
   prototype.applyProfile = function applyBrighterKanoProfile(state = {}) {
     const result = originalApplyProfile.call(this, state);
     const profileKey = String(this.lastProfileKey || '');
     if (!profileKey || this.__kanoWorldBrightnessKey === profileKey) return result;
-
     const profile = this.profileFor?.(state);
     if (!profile || !this.renderer3d?.scene) return result;
     this.__kanoWorldBrightnessKey = profileKey;
     const night = profile.time === 'night';
     const scene = this.renderer3d.scene;
-
     // Use profile-derived base values on every change. Avoid cumulative colour
     // or intensity multipliers as the game clock advances.
     if (scene.background?.isColor && profile.backgroundColor) {
@@ -231,7 +214,6 @@ function installWorldBrightness() {
       const fogLift = new THREE.Color(night ? 0x34465a : 0xcce8ef);
       scene.fog.color.copy(profile.fogColor).lerp(fogLift, night ? 0.10 : 0.13);
     }
-
     for (const item of this.original?.lights || []) {
       const light = item.light;
       if (!light || light.parent === null) continue;
@@ -241,7 +223,6 @@ function installWorldBrightness() {
         light.intensity = item.intensity * profile.directional * (night ? 1.04 : 1.10);
       }
     }
-
     const webgl = this.renderer3d.renderer;
     if (webgl && 'toneMappingExposure' in webgl) {
       webgl.toneMappingExposure = night ? 1.07 : 1.14;
@@ -252,11 +233,9 @@ function installWorldBrightness() {
   };
   Object.defineProperty(prototype, ATMOSPHERE_PATCH, { value: true, configurable: false });
 }
-
 function installRendererHooks() {
   const prototype = Renderer3D?.prototype;
   if (!prototype || prototype.__kanoWorldPerfHooks) return;
-
   const originalBuildWorld = prototype.buildWorld;
   if (typeof originalBuildWorld === 'function') {
     prototype.buildWorld = function buildWorldWithInstancing(...args) {
@@ -279,7 +258,6 @@ function installRendererHooks() {
       return result;
     };
   }
-
   const originalDispose = prototype.dispose;
   if (typeof originalDispose === 'function') {
     prototype.dispose = function disposeWorldPerformanceUpgrade(...args) {
@@ -295,7 +273,6 @@ function installRendererHooks() {
       return originalDispose.apply(this, args);
     };
   }
-
   Object.defineProperty(prototype, '__kanoWorldPerfHooks', { value: true, configurable: false });
 }
 
@@ -304,7 +281,6 @@ function installOptionalAuditPanel() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('worldPerfAudit') !== '1' && params.get('debugPerf') !== '1') return;
   if (document.getElementById('kano-world-perf-upgrade-panel')) return;
-
   const panel = document.createElement('aside');
   panel.id = 'kano-world-perf-upgrade-panel';
   panel.style.cssText = 'position:fixed;z-index:2147483001;left:8px;bottom:8px;max-width:min(94vw,390px);max-height:32vh;overflow:auto;padding:9px 11px;border:1px solid #35c7e4;border-radius:8px;background:#071725ed;color:#eef8ff;font:11px/1.4 ui-monospace,Consolas,monospace;pointer-events:auto;';
@@ -336,7 +312,6 @@ function installOptionalAuditPanel() {
   actions.append(exportButton, hide);
   panel.append(heading, output, actions);
   document.body.append(panel);
-
   const refresh = () => {
     const info = window.__KANO_WORLD_PERF_RENDERER__?.renderer?.info;
     output.textContent = [
@@ -355,7 +330,6 @@ function installOptionalAuditPanel() {
   const timer = setInterval(refresh, 1000);
   window.addEventListener('pagehide', () => clearInterval(timer), { once: true });
 }
-
 installWindowInstancing();
 installRendererHooks();
 installWorldBrightness();

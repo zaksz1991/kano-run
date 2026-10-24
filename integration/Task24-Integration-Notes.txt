@@ -1,0 +1,5 @@
+Task 24 is activated by the complete replacement js/KanoWorldPerformanceInstancingUpgrade.js included in this ZIP. It adds:
+
+import './KanoKekeCatalogFailoverRepair.js';
+
+immediately after the existing Renderer3D import. The full replacement preserves the existing world-instancing, brightness, and optional performance-audit code. No separate diff or chunk insertion is required.
