@@ -126,9 +126,40 @@ for (const file of KANO_GLB_FILES) {
   BY_NAME.get(key).push(file);
 }
 
+// Requested models whose files were never added to the project, mapped to the
+// closest model that exists. Entries without a stand-in (ground photo tiles,
+// electricity poles) are left alone so their procedural versions stay in use.
+export const KANO_GLB_STAND_INS = {
+  'characters/passengers/Man-fjHyMd5Wxw.glb': 'characters/passengers/Man.glb',
+  'characters/passengers/free_download_attractive_african_woman_236.glb': 'characters/passengers/female.glb',
+  'characters/passengers/handsome_man_in_casual_clothes_in_a-pose_86.glb': 'characters/passengers/man-2.glb',
+  'characters/passengers/tekamist_mens.glb': 'characters/passengers/man-2.glb',
+  'characters/passengers/women_in_hijab.glb': 'characters/passengers/hijab-muslim-woman-2.glb',
+  'characters/pedestrians/hi_guys.glb': 'characters/pedestrians/dancing-man.glb',
+  'characters/pedestrians/low_poly_people_free_sample_pack.glb': 'characters/pedestrians/Man-Long-Sleeves.glb',
+  'characters/pedestrians/passenger.glb': 'characters/pedestrians/pedestrian.glb',
+  'vehicles/cars/asphalt_8_-_nissan_juke_nismo.glb': 'vehicles/cars/2006_kia_ceed.glb',
+  'vehicles/cars/lowpoly_bmw_e36_m3.glb': 'vehicles/cars/bmw.glb',
+  'vehicles/cars/volvo_fh.glb': 'vehicles/cars/truck-1449.glb',
+  'vehicles/cars/volvo_fh_cement_truck.glb': 'vehicles/cars/peterbilt.glb',
+  'vehicles/keke/keke-6.glb': 'vehicles/keke/keke-4.glb',
+  'vehicles/keke/keke-7.glb': 'vehicles/keke/keke-5.glb',
+  'vehicles/keke/keke-8.glb': 'vehicles/keke/keke-2.glb',
+  'world/roads/construction-barrier.glb': 'world/roads/construction-cone.glb',
+  'world/roads/kai_tak_flyovers.glb': 'world/roads/kano_urban_flyover.glb',
+  'world/roads/kowloon_bay_flyovers.glb': 'world/roads/kano_urban_flyover.glb',
+  'world/roads/light-curved.glb': 'world/roads/light-square.glb',
+  'world/roads/light-curved-double.glb': 'world/roads/light-square.glb',
+  'world/roads/light-square-double.glb': 'world/roads/light-square.glb',
+  'world/roads/road-sign-stop.glb': 'world/props/Stop-sign.glb',
+  'world/roads/traffic-light.glb': 'world/props/Traffic-Light.glb',
+};
+
 export function resolveKanoGlbPath(relativePath) {
   const path = String(relativePath || '');
   if (EXACT.has(path)) return path;
+  const standIn = KANO_GLB_STAND_INS[path];
+  if (standIn && EXACT.has(standIn)) return standIn;
   const parts = path.split('/');
   const candidates = BY_NAME.get(norm(parts.pop() || ''));
   if (!candidates || !candidates.length) return path;
