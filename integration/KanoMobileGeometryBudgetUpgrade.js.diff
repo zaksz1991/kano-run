@@ -1,0 +1,5 @@
+--- a/js/KanoMobileGeometryBudgetUpgrade.js
++++ b/js/KanoMobileGeometryBudgetUpgrade.js
+@@
+-} from './KanoMobileGeometryBudgetRules.mjs';
++} from './KanoMobileGeometryBudgetRules.js';

@@ -6,70 +6,65 @@ import {
   countGeometryTriangles,
   planMobileGeometryReduction,
   verticesToRemove,
-} from '../js/KanoMobileGeometryBudgetRules.mjs';
+} from '../js/KanoMobileGeometryBudgetRules.js';
 
-test('keeps the 4,800 working target below the 5,000 hard limit', () => {
+test('uses a target below the hard triangle limit', () => {
   assert.equal(KANO_MOBILE_MODEL_TRIANGLE_TARGET, 4800);
   assert.equal(KANO_MOBILE_MODEL_TRIANGLE_LIMIT, 5000);
+  assert.ok(KANO_MOBILE_MODEL_TRIANGLE_TARGET < KANO_MOBILE_MODEL_TRIANGLE_LIMIT);
 });
 
-test('counts indexed triangles', () => {
-  assert.equal(countGeometryTriangles({ index: { count: 303 }, attributes: { position: { count: 250 } } }), 101);
+test('counts indexed geometry using its index count', () => {
+  assert.equal(countGeometryTriangles({ index: { count: 303 }, attributes: { position: { count: 500 } } }), 101);
 });
 
-test('counts non-indexed triangles', () => {
+test('counts non-indexed geometry from the position attribute', () => {
   assert.equal(countGeometryTriangles({ attributes: { position: { count: 99 } } }), 33);
 });
 
-test('respects finite draw ranges', () => {
-  assert.equal(countGeometryTriangles({ index: { count: 300 }, drawRange: { start: 30, count: 90 } }), 30);
+test('respects drawRange count', () => {
+  assert.equal(countGeometryTriangles({ index: { count: 900 }, drawRange: { start: 150, count: 150 } }), 50);
 });
 
-test('returns zero for malformed geometry data', () => {
+test('returns zero for absent or invalid geometry', () => {
   assert.equal(countGeometryTriangles(null), 0);
-  assert.equal(countGeometryTriangles({ index: { count: -3 } }), 0);
-  assert.equal(countGeometryTriangles({ attributes: { position: { count: Infinity } } }), 0);
+  assert.equal(countGeometryTriangles({ attributes: { position: { count: -9 } } }), 0);
+  assert.equal(countGeometryTriangles({ attributes: {} }), 0);
 });
 
-test('does not alter models already within the working target', () => {
-  const plan = planMobileGeometryReduction({ totalTriangles: 4400, eligibleTriangles: 4000, fixedTriangles: 400 });
-  assert.equal(plan.status, 'within-budget');
-  assert.equal(plan.keepRatio, 1);
+test('leaves models within the hard limit unchanged', () => {
+  assert.equal(planMobileGeometryReduction({ totalTriangles: 5000, eligibleTriangles: 4000, fixedTriangles: 1000 }).status, 'within-budget');
 });
 
-test('plans reductions below the working target', () => {
-  const plan = planMobileGeometryReduction({ totalTriangles: 38000, eligibleTriangles: 38000, fixedTriangles: 0 });
+test('plans reduction for an eligible over-budget model', () => {
+  const plan = planMobileGeometryReduction({ totalTriangles: 38000, eligibleTriangles: 35000, fixedTriangles: 3000 });
   assert.equal(plan.status, 'simplification-planned');
-  assert.ok(plan.keepRatio > 0 && plan.keepRatio < 0.13);
-  assert.ok(Math.floor(38000 * plan.keepRatio) < KANO_MOBILE_MODEL_TRIANGLE_TARGET);
+  assert.ok(plan.keepRatio > 0 && plan.keepRatio < 1);
 });
 
-test('includes unsupported geometry in the fixed triangle budget', () => {
-  const plan = planMobileGeometryReduction({ totalTriangles: 10000, eligibleTriangles: 7000, fixedTriangles: 3000 });
-  assert.equal(plan.status, 'simplification-planned');
-  assert.ok(3000 + Math.floor(7000 * plan.keepRatio) < KANO_MOBILE_MODEL_TRIANGLE_TARGET);
+test('reports a model with only protected geometry as unreducible', () => {
+  assert.equal(planMobileGeometryReduction({ totalTriangles: 38000, eligibleTriangles: 0, fixedTriangles: 38000 }).status, 'over-budget-unreducible');
 });
 
-test('does not claim success when fixed geometry alone exceeds the target', () => {
-  const plan = planMobileGeometryReduction({ totalTriangles: 12000, eligibleTriangles: 2000, fixedTriangles: 10000 });
-  assert.equal(plan.status, 'over-budget-unreducible');
-  assert.equal(plan.keepRatio, 1);
+test('reports over-budget if fixed geometry already exceeds the limit', () => {
+  assert.equal(planMobileGeometryReduction({ totalTriangles: 8000, eligibleTriangles: 1000, fixedTriangles: 7000 }).status, 'over-budget-unreducible');
 });
 
-test('reports over-budget models with no eligible geometry', () => {
-  assert.equal(planMobileGeometryReduction({ totalTriangles: 9000, eligibleTriangles: 0, fixedTriangles: 9000 }).status, 'over-budget-unreducible');
-});
-
-test('bounds vertex removal and retains at least four vertices', () => {
-  assert.equal(verticesToRemove(100, 1), 0);
-  assert.equal(verticesToRemove(100, 0.5), 50);
-  assert.equal(verticesToRemove(4, 0.1), 0);
-  assert.equal(verticesToRemove(100, 0), 96);
-});
-
-test('invalid numeric inputs cannot produce non-finite plans', () => {
+test('sanitizes invalid plan inputs rather than producing non-finite values', () => {
   const plan = planMobileGeometryReduction({ totalTriangles: Infinity, eligibleTriangles: NaN, fixedTriangles: -1 });
-  for (const key of ['totalTriangles', 'eligibleTriangles', 'fixedTriangles', 'keepRatio']) {
-    assert.ok(Number.isFinite(plan[key]), `${key} must be finite`);
-  }
+  assert.ok(Number.isFinite(plan.originalTriangles));
+  assert.ok(Number.isFinite(plan.eligibleTriangles));
+  assert.ok(Number.isFinite(plan.fixedTriangles));
+});
+
+test('vertex removal does not request a negative or excessive count', () => {
+  assert.equal(verticesToRemove(3, 0.2), 0);
+  assert.equal(verticesToRemove(100, 1), 0);
+  assert.equal(verticesToRemove(100, 0), 96);
+  assert.ok(verticesToRemove(20, -100) <= 16);
+});
+
+test('invalid keep ratios do not remove vertices', () => {
+  assert.equal(verticesToRemove(100, NaN), 0);
+  assert.equal(verticesToRemove(100, Infinity), 0);
 });

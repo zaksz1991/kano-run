@@ -4,10 +4,5 @@
  import * as THREE from 'three';
  import { createGLTFLoader } from './createGLTFLoader.js';
  import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
-+// Register mobile geometry reduction through main.js's existing import graph.
-+// KanoModelAssetVisualUpgrade is loaded as an earlier module script in index.html;
-+// this import therefore wraps its ModelManager.load hook before main constructs
-+// the ModelManager instance, without modifying any protected startup file.
++// Load the mobile geometry optimizer before main.js constructs ModelManager.
 +import './KanoMobileGeometryBudgetUpgrade.js';
- 
- const CHARACTER_KEYS = new Set([
