@@ -1,7 +1,5 @@
-Copy js/KanoFlyoverRoundaboutUpgrade.js into your project (replace). Apply after kano-activation.zip.
-Flyovers no longer loop on every road. They are built into the scene only on routes that have one in real Kano:
-  Kofar Mata  -> "KOFAR MATA FLYOVER"
-  Kofar Dan Agundi -> "DAN AGUNDI INTERCHANGE"
-The signboard text changes with the route. To add another real site, add a line to KANO_FLYOVER_SITES.
-(Tal'udu interchange is real too but has no matching route in config.js yet.)
-Tests 1443/1443 pass.
+Copy js/ files (replace). Apply after the earlier ZIPs (the instancing file here contains all earlier imports plus 2 new lines).
+NEW js/KanoRealLandmarksUpgrade.js
+- Kofar Mata route: the old city-gate arch (mud-brick pillars, arch, crenellations, KOFAR MATA plaque) spans the road
+- Kano City Centre / Murtala Muhammad Way: "I LOVE KANO" monument board on two pylons
+Shown only on those routes. Tests 1443/1443 pass; browser check shows the arch overhead on Kofar Mata.
