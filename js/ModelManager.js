@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
+import { resolveKanoGlbPath } from './KanoGlbPathResolver.js';
 
 // ============================================================
 // KANO LIFE — MODEL MANAGER
@@ -108,6 +109,11 @@ const CATALOG = {
     'characters/passengers/Man in Suit.glb',
     'characters/passengers/Man-fjHyMd5Wxw.glb',
     'characters/passengers/handsome_man_in_casual_clothes_in_a-pose_86.glb',
+  ],
+
+  karotaOfficer: [
+    'characters/pedestrians/police_man.glb',
+    'characters/pedestrians/police-man.glb',
   ],
 
   security: [
@@ -1201,7 +1207,8 @@ export class ModelManager {
     const catalog = CATALOG[key] || [];
 
     const task = (async () => {
-      for (const relativePath of catalog) {
+      for (const requestedPath of catalog) {
+        const relativePath = resolveKanoGlbPath(requestedPath);
         const encodedPath = relativePath
           .split('/')
           .map((segment) => encodeURIComponent(segment))

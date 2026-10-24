@@ -102,7 +102,16 @@ function createOfficer() {
   root.add(sign);
   for (const z of [0.8, 1.6]) part(root, S.cone, S.orange, [0.3, 0.2, z], [0.14, 0.4, 0.14]);
   root.scale.setScalar(1.12);
-  return { root, armR, armL };
+  // Procedural body parts kept as a fallback; replaced by the real police GLB when it loads.
+  const body = new THREE.Group();
+  body.name = 'procedural_officer_body';
+  for (const child of [...root.children]) {
+    if (child.type === 'Group' && child !== armL && child !== armR && child !== sign) continue;
+    if (child === sign || (child.geometry === S.cone)) continue;
+    body.add(child);
+  }
+  root.add(body, armL, armR);
+  return { root, armR, armL, body };
 }
 
 function buildState(system) {
@@ -149,10 +158,35 @@ function recycle(root, side, minZ, maxZ, xMin, xMax) {
   root.position.x = side * rand(xMin, xMax);
 }
 
+function upgradeOfficersToGlb(system, state) {
+  if (state.glbRequested || !system.renderer?.models?.load) return;
+  state.glbRequested = true;
+  system.renderer.models.load('karotaOfficer').then(() => {
+    if (state.disposed) return;
+    for (const officer of state.officers) {
+      const model = system.renderer.models.getInstance('karotaOfficer');
+      if (!model) return;
+      const box = new THREE.Box3().setFromObject(model);
+      const height = box.max.y - box.min.y;
+      if (!(height > 0.1)) continue;
+      model.scale.multiplyScalar(1.75 / height);
+      model.position.y -= box.min.y * (1.75 / height);
+      model.rotation.y = Math.PI / 2;
+      officer.body.visible = false;
+      officer.armR.visible = false;
+      officer.armL.visible = false;
+      officer.root.add(model);
+      officer.model = model;
+      kanoStreetAnimalsAudit.officerGlb = true;
+    }
+  }).catch(() => {});
+}
+
 function update(system, dt, snap) {
   if (!system?.renderer?.world || system.renderer.disposed) return;
   let state = states.get(system);
   if (!state) { state = buildState(system); states.set(system, state); }
+  upgradeOfficersToGlb(system, state);
   const visible = !system.renderer.lifeScene || system.renderer.lifeScene === 'road';
   state.group.visible = visible;
   if (!visible) return;
