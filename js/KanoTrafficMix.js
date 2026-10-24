@@ -1,9 +1,4 @@
-import { Game } from './game.js';
-import { installKanoCollisionContactUpgrade } from './KanoCollisionContactUpgrade.js';
-
-// Install the collision-contact adapter here because this module is imported by
-// KanoGameplayPresentationRepair.js before main.js constructs the live Game.
-installKanoCollisionContactUpgrade(Game);
+import './KanoPedestrianPavementWalkUpgrade.js';
 
 /**
  * Kano Life — weighted traffic family selector.
