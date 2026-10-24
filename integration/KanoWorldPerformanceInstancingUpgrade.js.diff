@@ -1,6 +1,10 @@
 --- a/js/KanoWorldPerformanceInstancingUpgrade.js
 +++ b/js/KanoWorldPerformanceInstancingUpgrade.js
-@@
+@@ -4,6 +4,7 @@
+  * then lightly lifts the existing Kano atmosphere lighting without replacing
+  * GLBs, changing gameplay rules, or forcing 3D on unsupported hardware.
+  */
++import './KanoMobileGeometryBudgetUpgrade.js';
+ import * as THREE from 'three';
+ import { Renderer3D } from './renderer3d.js';
  import { KanoAtmosphere } from './KanoAtmosphere.js';
-+import './KanoCompactDrivingHudUpgrade.js';
- const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
