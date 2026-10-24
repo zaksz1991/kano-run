@@ -1,15 +1,7 @@
-diff --git a/js/KanoWorldPerformanceInstancingUpgrade.js b/js/KanoWorldPerformanceInstancingUpgrade.js
 --- a/js/KanoWorldPerformanceInstancingUpgrade.js
 +++ b/js/KanoWorldPerformanceInstancingUpgrade.js
 @@
  import * as THREE from 'three';
  import { Renderer3D } from './renderer3d.js';
++import './KanoKnownKekeModelAcceptanceRepair.js';
  import { KanoAtmosphere } from './KanoAtmosphere.js';
-+// Activate existing repairs before main.js constructs the renderer/model manager.
-+import './KanoKekeGlbActivationRepair.js';
-+import './KanoNorthernPedestrianGaitUpgrade.js';
-+import './KanoMobileWorldClarityUpgrade.js';
-+import './KanoMobileGeometryBudgetUpgrade.js';
-+import './KanoFlyoverDriveabilityUpgrade.js';
- const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
- const ATMOSPHERE_PATCH = Symbol.for('kano.life.worldBrightnessProfile.v1');
