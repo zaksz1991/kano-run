@@ -10,12 +10,32 @@ export function getMobileTier(hardware = {}) {
   return 'low';
 }
 
+export const RENDER_SHARPNESS_KEY = 'kano-life-render-sharpness-v1';
+
+/** Optional player choice: 'standard' (device default), 'sharp' or 'max'.
+ * Phones render below their native pixel density to save battery and heat, which
+ * looks soft. Sharp and Max raise the resolution ceiling and floor. The
+ * adaptive controller still steps down if the phone cannot keep up. */
+export function getRenderSharpness() {
+  try {
+    const value = globalThis.localStorage?.getItem(RENDER_SHARPNESS_KEY);
+    return value === 'sharp' || value === 'max' ? value : 'standard';
+  } catch { return 'standard'; }
+}
+
+function applySharpness(base) {
+  const mode = getRenderSharpness();
+  if (mode === 'sharp') return { max: Math.max(base.max, 2.0), start: Math.max(base.start, 1.6), min: Math.max(base.min, 1.0) };
+  if (mode === 'max') return { max: Math.max(base.max, 3.0), start: Math.max(base.start, 2.25), min: Math.max(base.min, 1.25) };
+  return base;
+}
+
 /** Capability ratios relative to CSS pixels. The adaptive controller may step
  * down from the startup value when sustained frame timings require it. */
 export function getMobileRatios(tier) {
-  if (tier === 'high') return { max: 1.45, start: 1.40, min: 0.72 };
-  if (tier === 'mid') return { max: 1.25, start: 1.15, min: 0.62 };
-  return { max: 1.10, start: 0.92, min: 0.58 };
+  if (tier === 'high') return applySharpness({ max: 1.45, start: 1.40, min: 0.72 });
+  if (tier === 'mid') return applySharpness({ max: 1.25, start: 1.15, min: 0.62 });
+  return applySharpness({ max: 1.10, start: 0.92, min: 0.58 });
 }
 
 /**
@@ -26,9 +46,9 @@ export function getMobileRatios(tier) {
 export function getMobileRenderBudget(tier) {
   // Start with sharper Kano street rendering; the existing adaptive controller
   // lowers these ratios only when sustained frame-time measurements require it.
-  if (tier === 'high') return { max: 1.45, start: 1.40, min: 0.72 };
-  if (tier === 'mid') return { max: 1.25, start: 1.15, min: 0.62 };
-  return { max: 1.10, start: 0.92, min: 0.58 };
+  if (tier === 'high') return applySharpness({ max: 1.45, start: 1.40, min: 0.72 });
+  if (tier === 'mid') return applySharpness({ max: 1.25, start: 1.15, min: 0.62 });
+  return applySharpness({ max: 1.10, start: 0.92, min: 0.58 });
 }
 
 

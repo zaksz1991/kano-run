@@ -30,6 +30,7 @@ test('runtime audit and launch recovery precede the seasonal bridge, while core 
     '/js/KanoNorthernDriverSocialDramaUpgrade.js',
     '/js/KanoNorthernDriverSocialNetworkUpgrade.js',
     '/js/KanoLifeCareerSettingsHub.js',
+    '/js/KanoPhoneComfortUpgrade.js',
     '/js/KanoModelAssetVisualUpgrade.js',
     '/js/main.js',
   ];
