@@ -63,3 +63,14 @@ Verify console:
 <script type="module" src="/js/KanoPhonePlayProfile.js"></script>
 <script type="module" src="/js/KanoPhoneWorldBudget.js"></script>
 ```
+
+## Render guard (final mile)
+`KanoPhoneRenderGuard.js`
+- Caps canvas long edge (960 / 1120 / 1280) so 3× DPR phones stay playable
+- Notes tab hidden (battery/heat)
+- `window.kanoPhoneFps` — check live FPS in console
+
+```html
+<script type="module" src="/js/KanoPhoneRenderGuard.js"></script>
+```
+While driving on phone: `kanoPhoneFps` — aim ≥25–30 sustained.
