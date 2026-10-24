@@ -1,8 +1,9 @@
-Copy js/ files into your project (replace). Apply after the earlier ZIPs
-(renderer3d.js here also contains the real keke-stop names from kano-names-scores.zip).
-1. POTHOLE redesigned (renderer3d.js): jagged irregular hole in cracked asphalt, deep dark core, mud, broken
-   asphalt chunks, hairline cracks, and a roadside warning stick with red rag. The red target ring is gone.
-   The photoscan pothole GLB no longer overrides it (KanoGameplayPresentationRepair.js flag KANO_USE_POTHOLE_PHOTOSCAN=false).
-2. COINS (KanoVisualEffects.js): arranged in trails - straight lines, a diagonal sweep, a zig-zag and short gaps.
-   New coins queue at the far end so trail spacing stays intact instead of popping in near the keke.
-Tests 1443/1443 pass.
+Copy js/ and tests/ files into your project (replace).
+REAL JUNCTION TURNS (js/KanoRoadNavigationUpgrade.js)
+Before: the world rotated but the camera cancelled it exactly, so a left/right turn changed nothing on screen.
+Now:
+- a real cross road (asphalt, dashes, kerbs, stop line) is placed at each junction ahead
+- when you tap LEFT/RIGHT/U-TURN (below 35 km/h) the keke body yaws into the turn, the scenery swings past,
+  and a short fade hides the hand-over to the new road
+Tests 1443/1443 pass. Traffic cars are part of the world, so they swing with it; independent AI cars turning
+at junctions is the next step.

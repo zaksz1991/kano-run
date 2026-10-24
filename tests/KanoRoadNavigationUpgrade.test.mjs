@@ -62,8 +62,9 @@ test('U-turn changes the road heading by 180 degrees and can return to a previou
 
 test('WebGL road geometry, keke, and camera share the same pivoted heading transform', () => {
   assert.match(source, /function rotatePoint\(x, z, angle\)/);
-  assert.match(source, /this\.world\.rotation\.y = heading/);
-  assert.match(source, /ROAD_PIVOT_Z \* \(1 - Math\.cos\(heading\)\)/);
+  assert.match(source, /this\.world\.rotation\.y = worldHeading/);
+  assert.match(source, /ROAD_PIVOT_Z \* \(1 - Math\.cos\(worldHeading\)\)/);
+  assert.match(source, /KANO_JUNCTION_CROSSROAD/);
   assert.match(source, /cameraPoint = rotatePoint/);
   assert.match(source, /playerPoint = rotatePoint/);
   assert.match(source, /this\.driveFacingY = heading/);
