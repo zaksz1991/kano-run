@@ -1,3 +1,10 @@
+import { Game } from './game.js';
+import { installKanoCollisionContactUpgrade } from './KanoCollisionContactUpgrade.js';
+
+// Install the collision-contact adapter here because this module is imported by
+// KanoGameplayPresentationRepair.js before main.js constructs the live Game.
+installKanoCollisionContactUpgrade(Game);
+
 /**
  * Kano Life — weighted traffic family selector.
  *
@@ -5,14 +12,7 @@
  * traffic. Service vehicles are selected only within the four-wheel share, so
  * the target category balance is preserved while Kano's Hiace and police
  * pickup fallbacks can appear on phones.
- *
- * The collision-contact adapter is imported here because this module is already
- * loaded before the game bootstrap by KanoGameplayPresentationRepair.js. This
- * preserves the protected startup chain and installs the adapter before the
- * live Game instance is constructed.
  */
-import './KanoVehicleCollisionContactUpgrade.js';
-
 const NORMALIZE_ROLL = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
