@@ -1,7 +1,6 @@
-Copy js/ and tests/ (replace). Built on your current repo (Grok's modules included).
-FARE HAGGLING is now live: after a solo roadside passenger boards, a compact panel shows their offer in Hausa
-(KanoFareHagglingDirector personalities: trader, student, worker, elder, visitor...). ACCEPT their offer, ASK the fair fare
-or +10%, or REFUSE. Too-greedy asks make them walk away; no answer in 14 s accepts their offer.
-The agreed amount becomes passenger.fare, so the normal drop-off payout/wallet stays authoritative.
-Group, checkpoint and special passengers are not haggled. It waits if another event dialog is open.
-Tests 1501/1501. KanoWorldPerformanceInstancingUpgrade.js = yours + one import line.
+Copy js/ and tests/ (replace). Includes the haggling import too, so it works even if you skipped kano-haggle.zip
+(KanoFareHagglingBridge.js itself is in kano-haggle.zip).
+FUEL STATION QUEUE: refuelling is no longer free. At a fuel stop you see how many cars are ahead (0-3, 3-5 on fuel-queue days),
+wait a few seconds (LEAVE QUEUE any time), then buy 1/4, 1/2 or FULL tank. Price per litre varies through the day and is higher
+on fuel-queue days. The cost comes out of run earnings; if you cannot afford a full fill you get what you can pay for.
+Tests 1503/1503.
