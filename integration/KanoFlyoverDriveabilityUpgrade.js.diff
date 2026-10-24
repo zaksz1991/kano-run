@@ -1,0 +1,10 @@
+--- a/js/KanoFlyoverDriveabilityUpgrade.js
++++ b/js/KanoFlyoverDriveabilityUpgrade.js
+@@
+ function addRoadMarkings(renderer, parent, deckHeight) {
+-  const count = 17;
++  const count = Math.floor(((KANO_FLYOVER_RAMP_END - 1) * 2) / 3.75) + 1;
+@@
+-  for (let z = 30; z >= -30; z -= 3.75) {
++  for (let z = KANO_FLYOVER_RAMP_END - 1; z >= -KANO_FLYOVER_RAMP_END + 1; z -= 3.75) {
+*** End Patch
