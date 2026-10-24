@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { validateKanoTrafficTurnRequest, dispatchKanoTrafficTurn, cancelKanoTrafficTurn, installKanoTrafficTurnDispatchAudit } from '../js/KanoTrafficTurnDispatch.js';
+const vehicle = { position: { set() {} } };
+const valid = { vehicle, start: {x:0,y:0,z:0}, end: {x:4,y:0,z:8}, turn:'left' };
+test('accepts a valid scene-space turn request', () => assert.equal(validateKanoTrafficTurnRequest(valid).ok, true));
+test('rejects missing vehicle pose API', () => assert.equal(validateKanoTrafficTurnRequest({...valid, vehicle:{}}).reason, 'vehicle-must-have-position-set'));
+test('rejects non-finite coordinates', () => assert.equal(validateKanoTrafficTurnRequest({...valid, end:{x:Infinity,y:0,z:1}}).reason, 'scene-space-endpoints-invalid'));
+test('rejects unsupported turn type', () => assert.equal(validateKanoTrafficTurnRequest({...valid, turn:'u-turn'}).reason, 'turn-must-be-left-straight-or-right'));
+test('rejects nearly identical endpoints', () => assert.equal(validateKanoTrafficTurnRequest({...valid, end:{x:0.1,y:0,z:0}}).reason, 'endpoints-too-close'));
+test('clamps duration to supported range', () => { assert.equal(validateKanoTrafficTurnRequest({...valid,durationMs:50}).durationMs,250); assert.equal(validateKanoTrafficTurnRequest({...valid,durationMs:50000}).durationMs,10000); });
+test('dispatches one start event with normalized duration', () => { let got; const target={dispatchEvent(e){got=e;}}; const old=globalThis.CustomEvent; globalThis.CustomEvent=class {constructor(type,init){this.type=type;this.detail=init.detail;}}; try { const r=dispatchKanoTrafficTurn({...valid,durationMs:50},target); assert.equal(r.dispatched,true); assert.equal(got.type,'kano:traffic-turn-start'); assert.equal(got.detail.durationMs,250); } finally { if(old===undefined) delete globalThis.CustomEvent; else globalThis.CustomEvent=old; } });
+test('cancel dispatches the expected event', () => { let got; const target={dispatchEvent(e){got=e;}}; const old=globalThis.CustomEvent; globalThis.CustomEvent=class {constructor(type,init){this.type=type;this.detail=init.detail;}}; try { assert.equal(cancelKanoTrafficTurn(vehicle,target).dispatched,true); assert.equal(got.type,'kano:traffic-turn-cancel'); assert.equal(got.detail.vehicle,vehicle); } finally { if(old===undefined) delete globalThis.CustomEvent; else globalThis.CustomEvent=old; } });
+test('audit reports the actual integration limitation', () => { const target={}; assert.equal(installKanoTrafficTurnDispatchAudit(target),true); assert.match(target.kanoTrafficTurnDispatchAudit().integrationStatus,/traffic loop must call/); });

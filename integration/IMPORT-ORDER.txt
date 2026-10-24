@@ -1,8 +1,11 @@
-TASK 29 — TIME-BASED JUNCTION TURN CONTROLLER
+TASK 30 — TURN DISPATCH HELPER
 
-1. Copy js/KanoJunctionTurnRules.js and js/KanoJunctionTurnRuntime.js into the existing js/ folder.
-2. Add `import './KanoJunctionTurnRuntime.js';` to the existing activation bridge after its shared imports and before the module that dynamically imports main.js.
-3. To animate a vehicle, the real traffic loop must dispatch `kano:traffic-turn-start` with a vehicle Object3D and actual start/end positions in scene coordinates, plus `turn: 'left' | 'straight' | 'right'`. Optional `durationMs` defaults to 1400 and is clamped to 250–10000 ms.
-4. To cancel a vehicle's current turn, dispatch `kano:traffic-turn-cancel` with `{ vehicle }`.
-5. Do not dispatch turn-start every frame. Dispatch once when the vehicle enters a junction; the runtime animates the movement itself.
-6. Preserve all existing imports and do not replace the Claude activation bridge wholesale. The actual traffic loop and scene-space junction endpoints are not present in this package, so this import alone does not activate turns for existing traffic.
+Copy js/KanoTrafficTurnDispatch.js into the project's js/ directory.
+Import it after KanoJunctionTurnRuntime.js in the existing activation bridge:
+  import './KanoTrafficTurnDispatch.js';
+
+This only installs validated dispatch helpers and an audit function. The game's
+traffic controller still needs to call dispatchKanoTrafficTurn({ vehicle, start,
+end, turn, junction, durationMs }) once when a vehicle enters a junction. The
+start/end points must be actual scene-space coordinates. Do not call every frame.
+No real junction coordinates are fabricated by this module.
