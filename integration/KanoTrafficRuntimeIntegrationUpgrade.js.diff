@@ -1,0 +1,7 @@
+--- a/js/KanoTrafficRuntimeIntegrationUpgrade.js
++++ b/js/KanoTrafficRuntimeIntegrationUpgrade.js
+@@
+ import { takeNextKanoTrafficType } from './KanoTrafficCompositionRules.mjs';
+ import { flowDirectionForLane, relativeApproachDelta, modelKeyForVehicle } from './KanoTrafficFlowRules.mjs';
++import './KanoMobileGeometryBudgetUpgrade.js';
+ const PATCH_KEY = Symbol.for('kano.life.trafficRuntimeIntegration.step101');

@@ -1,0 +1,82 @@
+TAP version 13
+# Subtest: sets a 4,800 triangle working target below the 5,000 hard limit
+ok 1 - sets a 4,800 triangle working target below the 5,000 hard limit
+  ---
+  duration_ms: 1.629077
+  type: 'test'
+  ...
+# Subtest: counts triangles in indexed geometry
+ok 2 - counts triangles in indexed geometry
+  ---
+  duration_ms: 0.241582
+  type: 'test'
+  ...
+# Subtest: counts triangles in non-indexed geometry
+ok 3 - counts triangles in non-indexed geometry
+  ---
+  duration_ms: 0.098168
+  type: 'test'
+  ...
+# Subtest: respects a finite draw range
+ok 4 - respects a finite draw range
+  ---
+  duration_ms: 0.088933
+  type: 'test'
+  ...
+# Subtest: returns zero for absent or malformed geometry
+ok 5 - returns zero for absent or malformed geometry
+  ---
+  duration_ms: 0.087451
+  type: 'test'
+  ...
+# Subtest: does not simplify a model already under target
+ok 6 - does not simplify a model already under target
+  ---
+  duration_ms: 0.148052
+  type: 'test'
+  ...
+# Subtest: reduces a 38,000 triangle static model toward the working target
+ok 7 - reduces a 38,000 triangle static model toward the working target
+  ---
+  duration_ms: 0.241773
+  type: 'test'
+  ...
+# Subtest: accounts for protected and rigged geometry when planning
+ok 8 - accounts for protected and rigged geometry when planning
+  ---
+  duration_ms: 0.113962
+  type: 'test'
+  ...
+# Subtest: does not claim success when fixed geometry alone exceeds target
+ok 9 - does not claim success when fixed geometry alone exceeds target
+  ---
+  duration_ms: 0.237636
+  type: 'test'
+  ...
+# Subtest: reports unreducible models when there are no eligible triangles
+ok 10 - reports unreducible models when there are no eligible triangles
+  ---
+  duration_ms: 0.373971
+  type: 'test'
+  ...
+# Subtest: vertex removal stays within valid bounds
+ok 11 - vertex removal stays within valid bounds
+  ---
+  duration_ms: 0.209024
+  type: 'test'
+  ...
+# Subtest: invalid numeric values cannot produce non-finite plans
+ok 12 - invalid numeric values cannot produce non-finite plans
+  ---
+  duration_ms: 0.104748
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 64.392912
