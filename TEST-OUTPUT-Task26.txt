@@ -1,0 +1,118 @@
+TAP version 13
+# Subtest: normalizes catalogued paths and URL suffixes
+ok 1 - normalizes catalogued paths and URL suffixes
+  ---
+  duration_ms: 4.240997
+  type: 'test'
+  ...
+# Subtest: rejects unknown paths and traversal
+ok 2 - rejects unknown paths and traversal
+  ---
+  duration_ms: 2.365822
+  type: 'test'
+  ...
+# Subtest: marks only known visual-structure failures as retryable
+ok 3 - marks only known visual-structure failures as retryable
+  ---
+  duration_ms: 0.129394
+  type: 'test'
+  ...
+# Subtest: returns untried candidates in catalog order with duplicates removed
+ok 4 - returns untried candidates in catalog order with duplicates removed
+  ---
+  duration_ms: 1.331289
+  type: 'test'
+  ...
+# Subtest: starts failover only for a ready renderer and retryable catalogued rejection
+ok 5 - starts failover only for a ready renderer and retryable catalogued rejection
+  ---
+  duration_ms: 0.497197
+  type: 'test'
+  ...
+# Subtest: uses an isolated candidate array and restores the shared catalog immediately
+ok 6 - uses an isolated candidate array and restores the shared catalog immediately
+  ---
+  duration_ms: 14.564737
+  type: 'test'
+  ...
+# Subtest: restores the original catalog even when the load callback throws
+ok 7 - restores the original catalog even when the load callback throws
+  ---
+  duration_ms: 2.525672
+  type: 'test'
+  ...
+# Subtest: recognizes each catalogued keke model path
+ok 8 - recognizes each catalogued keke model path
+  ---
+  duration_ms: 1.667293
+  type: 'test'
+  ...
+# Subtest: recognizes a deployed model URL while normalizing path policy
+ok 9 - recognizes a deployed model URL while normalizing path policy
+  ---
+  duration_ms: 0.162735
+  type: 'test'
+  ...
+# Subtest: rejects non-catalogued assets and path traversal
+ok 10 - rejects non-catalogued assets and path traversal
+  ---
+  duration_ms: 0.092749
+  type: 'test'
+  ...
+# Subtest: accepts geometry evidence for generic mesh names
+ok 11 - accepts geometry evidence for generic mesh names
+  ---
+  duration_ms: 0.208954
+  type: 'test'
+  ...
+# Subtest: accepts a strict world-bounds rejection when normalized local geometry is credible
+ok 12 - accepts a strict world-bounds rejection when normalized local geometry is credible
+  ---
+  duration_ms: 0.169595
+  type: 'test'
+  ...
+# Subtest: accepts a bounds recheck with substantial body evidence when wheel meshes are generic
+ok 13 - accepts a bounds recheck with substantial body evidence when wheel meshes are generic
+  ---
+  duration_ms: 0.142544
+  type: 'test'
+  ...
+# Subtest: rejects bounds recheck when measured dimensions are still implausible
+ok 14 - rejects bounds recheck when measured dimensions are still implausible
+  ---
+  duration_ms: 0.179149
+  type: 'test'
+  ...
+# Subtest: rejects bounds recheck without independent vehicle-part evidence
+ok 15 - rejects bounds recheck without independent vehicle-part evidence
+  ---
+  duration_ms: 0.15317
+  type: 'test'
+  ...
+# Subtest: does not use geometry to override a missing-renderability failure
+ok 16 - does not use geometry to override a missing-renderability failure
+  ---
+  duration_ms: 0.246861
+  type: 'test'
+  ...
+# Subtest: does not accept a plausible shape under an untrusted model path
+ok 17 - does not accept a plausible shape under an untrusted model path
+  ---
+  duration_ms: 0.342384
+  type: 'test'
+  ...
+# Subtest: rejects incomplete or non-finite geometry measurements
+ok 18 - rejects incomplete or non-finite geometry measurements
+  ---
+  duration_ms: 0.162133
+  type: 'test'
+  ...
+1..18
+# tests 18
+# suites 0
+# pass 18
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 216.090073

@@ -1,13 +1,12 @@
 /**
- * KANO LIFE — Catalogued Keke Generic-Mesh Acceptance Repair (Task 23)
+ * KANO LIFE — Catalogued Keke Geometry Acceptance Repair (Task 26)
  *
- * The main renderer intentionally rejects a loaded GLB when names do not prove
- * that it is a vehicle. Some catalogued keke GLBs use generic mesh names; when
- * ModelManager attaches a seated driver, the strict validator can then report
- * "character-only-model-no-vehicle-structure" even though the GLB contains a
- * real keke chassis. This adapter permits only the two name-evidence failures
- * and only for keke-1.glb through keke-8.glb when independent rendered geometry
- * proves plausible dimensions plus wheel or substantial body evidence.
+ * The main renderer can reject a genuine catalogued keke when its source meshes
+ * use generic names, or when strict world-space bounds disagree with its
+ * normalized mesh-local dimensions. This adapter rechecks only the known keke
+ * catalog and only three specific structural/bounds rejection reasons. It does
+ * not relax checks for missing renderable geometry, non-finite bounds, singular
+ * transforms, or unrelated asset failures.
  *
  * It does not edit assets, relax unrelated validation failures, or replace the
  * fallback unless the existing renderer accepts the candidate after this check.
@@ -18,7 +17,7 @@ import { decideCataloguedKekeValidation } from './KanoKnownKekeValidationRules.j
 
 const PATCH = Symbol.for('kano.life.knownKekeModelAcceptance.v1');
 const report = {
-  version: 2,
+  version: 3,
   installed: false,
   checked: 0,
   acceptedByGeometry: 0,
@@ -121,7 +120,11 @@ function install() {
 
     if (
       result?.ok ||
-      !['missing-vehicle-structure-evidence', 'character-only-model-no-vehicle-structure'].includes(result?.reason)
+      ![
+        'missing-vehicle-structure-evidence',
+        'character-only-model-no-vehicle-structure',
+        'implausible-keke-bounds',
+      ].includes(result?.reason)
     ) return result;
 
     // ModelManager explicitly stores the catalog-relative path on the wrapper
