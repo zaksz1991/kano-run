@@ -1,0 +1,9 @@
+TASK 27 IMPORT ORDER (one import line; keep the existing activation bridge intact)
+
+Add this side-effect import to the CURRENT js/KanoWorldPerformanceInstancingUpgrade.js that came from the Claude activation ZIP:
+
+import './KanoKAROTAWildlifePotholeUpgrade.js';
+
+Place it after the existing `import { Renderer3D } from './renderer3d.js';` and before the import that activates `KanoGameplayPresentationRepair.js` (or any module that dynamically imports `main.js`). Do not replace the Claude-modified bridge with a copy from the public GitHub branch: that could undo its feature wiring. Keep every existing import and its relative order except for inserting this new line.
+
+The add-on module imports the same `three` package and `Renderer3D` class. It patches `makePotholeActor` and `draw` before the game renderer is constructed. It is safe to import before or after the pothole presentation wrapper because both layers are idempotent, but the import must run before the renderer is constructed.

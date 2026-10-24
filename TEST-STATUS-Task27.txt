@@ -1,0 +1,3 @@
+Focused tests: 7 passed, 0 failed
+Full repository npm test: not run (Claude activation ZIP was not attached here)
+Browser / phone verification: not performed

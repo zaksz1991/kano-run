@@ -1,0 +1,3 @@
+PASS: runtime adapter syntax
+PASS: rules module syntax
+PASS: focused test syntax
