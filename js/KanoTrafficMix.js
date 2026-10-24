@@ -1,5 +1,3 @@
-import './KanoPedestrianPavementWalkUpgrade.js';
-
 /**
  * Kano Life — weighted traffic family selector.
  *
@@ -8,11 +6,14 @@ import './KanoPedestrianPavementWalkUpgrade.js';
  * the target category balance is preserved while Kano's Hiace and police
  * pickup fallbacks can appear on phones.
  */
+import './KanoFlyoverDriveabilityUpgrade.js';
+
 const NORMALIZE_ROLL = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   return Math.max(0, Math.min(0.999999999, numeric));
 };
+
 export function chooseKanoTrafficType(mixRoll, nextRandom = Math.random, mobile = false) {
   const roll = NORMALIZE_ROLL(mixRoll);
   if (roll < 0.4) return 'keke';
@@ -37,6 +38,7 @@ export function chooseKanoTrafficType(mixRoll, nextRandom = Math.random, mobile 
   if (familyRoll < 0.90) return 'truck';
   return 'karota';
 }
+
 export function getKanoTrafficFamily(type) {
   if (type === 'keke') return 'keke';
   if (type === 'motorcycle') return 'motorcycle';
