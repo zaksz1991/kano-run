@@ -1,46 +1,44 @@
 /**
- * Pure policy helpers for the mobile GLB geometry budget.
- * No Three.js imports are required, so these rules are testable in Node.
+ * Shared rules for Kano Life's mobile GLB geometry-budget adapter.
+ * Pure functions only: no Three.js import, browser access, or asset writes.
  */
-export const KANO_MOBILE_MODEL_TRIANGLE_TARGET = 4800;
-export const KANO_MOBILE_MODEL_TRIANGLE_LIMIT = 5000;
+export const KANO_MOBILE_MODEL_TRIANGLE_LIMIT = 5_000;
+export const KANO_MOBILE_MODEL_TRIANGLE_TARGET = 4_800;
 
-function finiteNonNegativeInteger(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) return 0;
-  return Math.floor(number);
+function finiteNonNegative(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-/** Count triangles in indexed or non-indexed geometry, respecting a finite draw range. */
+/** Count submitted triangle primitives from an ordinary BufferGeometry. */
 export function countGeometryTriangles(geometry) {
   if (!geometry || typeof geometry !== 'object') return 0;
-
-  const rawCount = geometry.index?.count ?? geometry.attributes?.position?.count;
-  let count = finiteNonNegativeInteger(rawCount);
-  if (count <= 0) return 0;
+  const indexCount = geometry.index?.count;
+  const positionCount = geometry.attributes?.position?.count;
+  const rawCount = Number.isFinite(Number(indexCount))
+    ? Number(indexCount)
+    : Number(positionCount);
+  if (!Number.isFinite(rawCount) || rawCount < 0) return 0;
 
   const drawRangeCount = Number(geometry.drawRange?.count);
-  if (Number.isFinite(drawRangeCount)) {
-    if (drawRangeCount < 0) return 0;
-    count = Math.min(count, Math.floor(drawRangeCount));
-  }
-
-  return Math.max(0, Math.floor(count / 3));
+  const boundedCount = Number.isFinite(drawRangeCount) && drawRangeCount >= 0
+    ? Math.min(rawCount, drawRangeCount)
+    : rawCount;
+  return Math.floor(boundedCount / 3);
 }
 
 /**
- * Plan a safe first-pass reduction. The target is one triangle below 4,800
- * before rounding so a successful plan does not depend on equality at the limit.
- * Fixed (rigged/unsupported) triangles are accounted for; the planner never
- * claims a model is reducible when the fixed portion alone is too large.
+ * Decide whether a cached model needs simplification. `eligibleTriangles` are
+ * from static single-material meshes; `fixedTriangles` are protected meshes.
+ * Unreducible/protected excess is reported rather than hidden or substituted.
  */
-export function planMobileGeometryReduction(input = {}) {
-  const totalTriangles = finiteNonNegativeInteger(input?.totalTriangles);
-  const eligibleTriangles = finiteNonNegativeInteger(input?.eligibleTriangles);
-  const fixedTriangles = finiteNonNegativeInteger(input?.fixedTriangles);
+export function planMobileGeometryReduction(source = {}) {
+  const totalTriangles = Math.floor(finiteNonNegative(source.totalTriangles));
+  const eligibleTriangles = Math.floor(finiteNonNegative(source.eligibleTriangles));
+  const fixedTriangles = Math.floor(finiteNonNegative(source.fixedTriangles));
 
-  const base = {
-    totalTriangles,
+  const common = {
+    originalTriangles: totalTriangles,
     eligibleTriangles,
     fixedTriangles,
     targetTriangles: KANO_MOBILE_MODEL_TRIANGLE_TARGET,
@@ -48,35 +46,36 @@ export function planMobileGeometryReduction(input = {}) {
     keepRatio: 1,
   };
 
-  if (totalTriangles <= KANO_MOBILE_MODEL_TRIANGLE_TARGET) {
-    return { ...base, status: 'within-budget' };
+  if (totalTriangles <= KANO_MOBILE_MODEL_TRIANGLE_LIMIT) {
+    return { ...common, status: 'within-budget' };
+  }
+  if (eligibleTriangles <= 0 || fixedTriangles >= KANO_MOBILE_MODEL_TRIANGLE_LIMIT) {
+    return { ...common, status: 'over-budget-unreducible' };
   }
 
-  const availableEligibleTriangles = KANO_MOBILE_MODEL_TRIANGLE_TARGET - fixedTriangles - 1;
-  if (eligibleTriangles <= 0 || availableEligibleTriangles <= 0) {
-    return { ...base, status: 'over-budget-unreducible' };
-  }
-
-  const keepRatio = Math.max(
-    0,
-    Math.min(1, availableEligibleTriangles / eligibleTriangles),
+  // Aim for 4,800 total triangles when possible. If protected geometry alone
+  // exceeds that aspirational target, aim just below the 5,000 hard limit.
+  const maximumEligible = Math.max(1, KANO_MOBILE_MODEL_TRIANGLE_LIMIT - fixedTriangles - 1);
+  const targetEligible = Math.max(
+    1,
+    Math.min(
+      maximumEligible,
+      KANO_MOBILE_MODEL_TRIANGLE_TARGET - fixedTriangles > 0
+        ? KANO_MOBILE_MODEL_TRIANGLE_TARGET - fixedTriangles
+        : maximumEligible,
+    ),
   );
-  if (!Number.isFinite(keepRatio) || keepRatio >= 1) {
-    return { ...base, status: 'over-budget-unreducible' };
-  }
-
-  return { ...base, keepRatio, status: 'simplification-planned' };
+  const keepRatio = Math.max(0.01, Math.min(0.98, targetEligible / eligibleTriangles));
+  return { ...common, status: 'simplification-planned', keepRatio };
 }
 
-/** Calculate a bounded vertex removal count while retaining at least four vertices. */
-export function verticesToRemove(vertexCountInput, keepRatioInput) {
-  const vertexCount = finiteNonNegativeInteger(vertexCountInput);
-  if (vertexCount < 5) return 0;
-
-  const rawRatio = Number(keepRatioInput);
-  const keepRatio = Number.isFinite(rawRatio)
-    ? Math.max(0, Math.min(1, rawRatio))
-    : 1;
-  const wantedKeep = Math.floor(vertexCount * keepRatio);
-  return Math.max(0, Math.min(vertexCount - 4, vertexCount - wantedKeep));
+/** Number of vertices to ask SimplifyModifier to remove, leaving at least four. */
+export function verticesToRemove(vertexCount, keepRatio) {
+  const count = Math.floor(finiteNonNegative(vertexCount));
+  if (count < 5) return 0;
+  const ratio = Number(keepRatio);
+  if (!Number.isFinite(ratio)) return 0;
+  const clampedRatio = Math.max(0, Math.min(1, ratio));
+  const proposed = Math.floor(count * (1 - clampedRatio));
+  return Math.max(0, Math.min(count - 4, proposed));
 }

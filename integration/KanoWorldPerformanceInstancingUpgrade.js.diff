@@ -1,10 +1,9 @@
 --- a/js/KanoWorldPerformanceInstancingUpgrade.js
 +++ b/js/KanoWorldPerformanceInstancingUpgrade.js
-@@ -4,6 +4,7 @@
-  * then lightly lifts the existing Kano atmosphere lighting without replacing
-  * GLBs, changing gameplay rules, or forcing 3D on unsupported hardware.
-  */
-+import './KanoMobileGeometryBudgetUpgrade.js';
- import * as THREE from 'three';
+@@
  import { Renderer3D } from './renderer3d.js';
  import { KanoAtmosphere } from './KanoAtmosphere.js';
++// Register the existing mobile GLB geometry-budget adapter before main.js
++// constructs ModelManager. No renderer/game files are replaced.
++import './KanoMobileGeometryBudgetUpgrade.js';
+ const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
