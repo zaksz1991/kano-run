@@ -78,19 +78,23 @@ const CATALOG = {
     'vehicles/special/bus.glb',
   ],
 
+  // Light models first (about 2-3k triangles). The hijab_muslim_woman GLBs are
+  // about 38k triangles with 14 materials each and a T-pose (arms held out), which is
+  // too heavy to draw several times in a phone keke, so they are the last resort.
   passenger: [
-    'characters/passengers/hijab_muslim_woman.glb',
+    'characters/passengers/woman with her arms crossed.glb',
     'characters/passengers/Man.glb',
     'characters/passengers/Man in Suit.glb',
     'characters/passengers/women_in_hijab.glb',
+    'characters/passengers/hijab_muslim_woman.glb',
   ],
 
   passengerWoman: [
-    'characters/passengers/hijab_muslim_woman.glb',
-    'characters/passengers/women_in_hijab.glb',
-    'characters/passengers/hijab_muslim_woman 2.glb',
-    'characters/passengers/free_download_attractive_african_woman_236.glb',
     'characters/passengers/woman with her arms crossed.glb',
+    'characters/passengers/women_in_hijab.glb',
+    'characters/passengers/free_download_attractive_african_woman_236.glb',
+    'characters/passengers/hijab_muslim_woman.glb',
+    'characters/passengers/hijab_muslim_woman 2.glb',
   ],
 
   passengerMan: [
@@ -121,8 +125,8 @@ const CATALOG = {
   ],
 
   pedestrianWoman: [
-    'characters/pedestrians/muslim_girl.glb',
     'characters/pedestrians/keke female.glb',
+    'characters/pedestrians/muslim_girl.glb',
     'characters/passengers/women_in_hijab.glb',
     'characters/passengers/hijab_muslim_woman.glb',
     'characters/pedestrians/low_poly_people_free_sample_pack.glb',
