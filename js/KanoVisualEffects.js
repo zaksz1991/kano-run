@@ -24,6 +24,18 @@ const COIN_ROUTE = [
   { lane: 1, depth: 0.39 },
 ];
 
+// Long repeating pattern: straight trails, a diagonal sweep, a zig-zag and a
+// short breather gap. Each step is [lane, gapToNext]. Respawned coins are queued
+// at the far end of the road so the trail spacing is preserved while driving.
+const COIN_PATTERN = [
+  [2, 0.075], [2, 0.075], [2, 0.075], [2, 0.075], [2, 0.34],
+  [2, 0.08], [1, 0.08], [0, 0.08], [0, 0.08], [0, 0.34],
+  [0, 0.075], [0, 0.075], [0, 0.34],
+  [1, 0.09], [2, 0.09], [1, 0.09], [0, 0.09], [1, 0.09], [2, 0.09], [1, 0.34],
+  [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.34],
+];
+const COIN_FAR_LIMIT = 1.18;
+
 /**
  * KanoVisualEffects
  *
@@ -93,10 +105,16 @@ export class KanoVisualEffects {
 
   ensureCoinState() {
     if (!this.game.__kanoCoinState || this.game.__kanoCoinState.runState !== this.game.s) {
-      const coins = COIN_ROUTE.map((spot, index) => ({
+      let startDepth = 0.5;
+      const coins = COIN_ROUTE.map((_, index) => {
+        const [lane, gap] = COIN_PATTERN[index % COIN_PATTERN.length];
+        const spot = { lane, depth: startDepth };
+        startDepth += gap;
+        return spot;
+      }).map((spot, index) => ({
         id: `kano-coin-${index}`,
         lane: spot.lane,
-        xOffset: randomBetween(-0.035, 0.035),
+        xOffset: randomBetween(-0.02, 0.02),
         depth: spot.depth,
         phase: randomBetween(0, Math.PI * 2),
         collected: false,
@@ -470,15 +488,27 @@ export class KanoVisualEffects {
   respawnCoin(coin) {
     const routeState = this.coinState || this.game.__kanoCoinState;
     const spawnIndex = Math.max(0, Math.floor(routeState?.nextSpawnIndex || 0));
-    const routeIndex = spawnIndex % COIN_ROUTE.length;
-    const spot = COIN_ROUTE[routeIndex];
+    const [lane] = COIN_PATTERN[spawnIndex % COIN_PATTERN.length];
+    const previousGap = COIN_PATTERN[(spawnIndex + COIN_PATTERN.length - 1) % COIN_PATTERN.length][1];
 
-    if (routeState) routeState.nextSpawnIndex = spawnIndex + 1;
-
-    coin.depth = spot.depth;
-    coin.lane = spot.lane;
-    coin.xOffset = randomBetween(-0.035, 0.035);
+    let farthest = 0.5;
+    for (const other of routeState?.coins || []) {
+      if (other !== coin && !other.pending && other.depth > farthest) farthest = other.depth;
+    }
+    const depth = farthest + previousGap;
+    coin.xOffset = randomBetween(-0.02, 0.02);
     coin.phase = randomBetween(0, Math.PI * 2);
+    coin.lane = lane;
+    if (depth > COIN_FAR_LIMIT) {
+      // No room at the horizon yet: keep hidden and retry next frame.
+      coin.pending = true;
+      coin.collected = true;
+      coin.depth = 2;
+      return;
+    }
+    if (routeState) routeState.nextSpawnIndex = spawnIndex + 1;
+    coin.pending = false;
+    coin.depth = depth;
     coin.collected = false;
   }
 
@@ -508,6 +538,7 @@ export class KanoVisualEffects {
 
     if (activePlay) {
       for (const coin of this.coinState.coins) {
+        if (coin.pending) { this.respawnCoin(coin); continue; }
         const previousDepth = coin.depth;
         coin.depth -= (speed / ROAD_DEPTH_SCALE) * dt;
 

@@ -4382,81 +4382,83 @@ export class Renderer3D {
    */
   makePotholeActor(zone) {
     const group = new THREE.Group();
-
     const radius = zone.hub ? 1.25 : 0.82;
-
-    const warningMaterial = new THREE.MeshBasicMaterial({
-      color: 0xe64a3b,
-      transparent: true,
-      opacity: 0.9,
-      side: THREE.DoubleSide,
-    });
-
-    const outerRing = new THREE.Mesh(
-      new THREE.RingGeometry(radius * 0.9, radius * 1.18, 28),
-      warningMaterial,
-    );
-
-    outerRing.rotation.x = -Math.PI / 2;
-    outerRing.position.y = 0.055;
-    group.add(outerRing);
-
-    const brokenEdge = new THREE.Mesh(
-      new THREE.CylinderGeometry(
-        radius,
-        radius * 0.92,
-        0.075,
-        12,
-        1,
-        true,
-      ),
-      this.material(0x77736a),
-    );
-
-    brokenEdge.position.y = 0.025;
-    group.add(brokenEdge);
-
-    const crater = new THREE.Mesh(
-      new THREE.CircleGeometry(radius * 0.91, 16),
-      this.material(0x15191c),
-    );
-
-    crater.rotation.x = -Math.PI / 2;
-    crater.position.y = 0.019;
-    group.add(crater);
-
-    const innerShadow = new THREE.Mesh(
-      new THREE.CircleGeometry(radius * 0.65, 16),
-      this.material(0x080b0e),
-    );
-
-    innerShadow.rotation.x = -Math.PI / 2;
-    innerShadow.position.y = 0.021;
-    group.add(innerShadow);
-
-    const chipsMaterial = this.material(0x6e6659);
-
-    for (let index = 0; index < 7; index += 1) {
-      const angle = (index / 7) * Math.PI * 2;
-
-      const chip = new THREE.Mesh(
-        new THREE.BoxGeometry(0.16, 0.035, 0.12),
-        chipsMaterial,
-      );
-
-      chip.position.set(
-        Math.cos(angle) * radius * 1.02,
-        0.055,
-        Math.sin(angle) * radius * 1.02,
-      );
-
-      chip.rotation.y = angle;
-      group.add(chip);
+    // Deterministic jagged outline so every pothole is irregular but stable.
+    let seed = 0;
+    for (const ch of String(zone.id || 'p')) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const outline = (scale, wobble) => {
+      const pts = [];
+      const n = 14;
+      for (let i = 0; i < n; i += 1) {
+        const a = (i / n) * Math.PI * 2;
+        const r = radius * scale * (1 + (rnd() - 0.5) * wobble);
+        pts.push(new THREE.Vector2(Math.cos(a) * r * 1.12, Math.sin(a) * r * 0.86));
+      }
+      return pts;
+    };
+    const flat = (shape, color, y) => {
+      const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), this.material(color));
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = y;
+      group.add(mesh);
+      return mesh;
+    };
+    // Cracked, lighter patch of broken asphalt around the hole.
+    const rimPts = outline(1.28, 0.35);
+    const rim = flat(new THREE.Shape(rimPts), 0x4a4742, 0.012);
+    // Dark hole with a deeper core.
+    const holePts = outline(0.92, 0.5);
+    flat(new THREE.Shape(holePts), 0x14120f, 0.02);
+    flat(new THREE.Shape(outline(0.55, 0.45)), 0x050505, 0.024);
+    // Damp mud at the bottom for depth cues.
+    const mud = flat(new THREE.Shape(outline(0.32, 0.4)), 0x2a2218, 0.027);
+    mud.position.x = radius * 0.1;
+    // Raised broken asphalt chunks on the rim.
+    const chunkMat = this.material(0x5d5951);
+    const chunkGeo = new THREE.DodecahedronGeometry(1, 0);
+    for (let i = 0; i < 9; i += 1) {
+      const a = rnd() * Math.PI * 2;
+      const d = radius * (0.95 + rnd() * 0.35);
+      const chunk = new THREE.Mesh(chunkGeo, chunkMat);
+      const sz = 0.05 + rnd() * 0.08;
+      chunk.scale.set(sz * 1.6, sz * 0.7, sz * 1.2);
+      chunk.position.set(Math.cos(a) * d * 1.1, 0.03 + sz * 0.3, Math.sin(a) * d * 0.88);
+      chunk.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+      group.add(chunk);
     }
+    // Hairline cracks radiating from the hole.
+    const crackMat = new THREE.LineBasicMaterial({ color: 0x1b1a18 });
+    for (let i = 0; i < 6; i += 1) {
+      const a = rnd() * Math.PI * 2;
+      const start = radius * 1.0;
+      const len = radius * (0.5 + rnd() * 0.6);
+      const mid = a + (rnd() - 0.5) * 0.5;
+      const pts = [
+        new THREE.Vector3(Math.cos(a) * start, 0.018, Math.sin(a) * start * 0.8),
+        new THREE.Vector3(Math.cos(mid) * (start + len * 0.5), 0.018, Math.sin(mid) * (start + len * 0.5) * 0.8),
+        new THREE.Vector3(Math.cos(a) * (start + len), 0.018, Math.sin(a) * (start + len) * 0.8),
+      ];
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), crackMat));
+    }
+    // Subtle warning (not a target ring): a small pulsing amber marker at the edge.
+    const warningMaterial = new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.0, side: THREE.DoubleSide });
+    const outerRing = new THREE.Mesh(new THREE.RingGeometry(radius * 1.45, radius * 1.52, 28), warningMaterial);
+    outerRing.rotation.x = -Math.PI / 2;
+    outerRing.position.y = 0.03;
+    group.add(outerRing);
+    // A leaning stick with a rag, the common Kano roadside warning for a bad hole.
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.9, 5), this.material(0x6b4a2a));
+    stick.position.set(radius * 0.9, 0.42, -radius * 0.6);
+    stick.rotation.z = 0.12;
+    group.add(stick);
+    const rag = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.2), new THREE.MeshBasicMaterial({ color: 0xd9381e, side: THREE.DoubleSide }));
+    rag.position.set(radius * 0.9 + 0.15, 0.82, -radius * 0.6);
+    group.add(rag);
 
+    void rim;
     group.userData.zoneType = 'pothole';
     group.userData.potholeWarning = outerRing;
-
     return group;
   }
 

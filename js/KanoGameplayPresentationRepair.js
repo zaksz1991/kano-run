@@ -539,7 +539,12 @@ function kanoLoadEnvironmentAsset(renderer, state, spec) {
   );
 }
 
+const KANO_USE_POTHOLE_PHOTOSCAN = false;
+
 function kanoApplyPotholeEnvironmentModel(renderer, state, drawState) {
+  // The photoscan pothole GLB looked wrong in play; the redesigned procedural
+  // pothole (jagged cracked hole, rubble, warning stick) stays visible instead.
+  if (!KANO_USE_POTHOLE_PHOTOSCAN) return;
   const entry = state.assets.get('potholeSurface');
   const template = entry?.template;
   if (!template || state.disposed || !renderer.zoneActors) return;
