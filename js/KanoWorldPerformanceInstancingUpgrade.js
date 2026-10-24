@@ -19,6 +19,7 @@ import './KanoCurrentMainExperienceRepair.js';
 import './KanoCompactDrivingHudUpgrade.js';
 import './KanoKnownKekeModelAcceptanceRepair.js';
 import './KanoFeatureActivationBridge.js';
+import './KanoFareHagglingBridge.js';
 import './KanoStreetAnimalsOfficerUpgrade.js';
 import './KanoRealLandmarksUpgrade.js';
 import './KanoKekeCatalogFailoverRepair.js';
