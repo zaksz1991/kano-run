@@ -5,6 +5,21 @@ import { RENDER_SHARPNESS_KEY, getRenderSharpness } from './KanoDeviceTier.js';
 
 const STYLE_ID = 'kano-phone-comfort-style';
 const ROW_ID = 'kano-sharpness-row';
+const SIZE_ROW_ID = 'kano-ui-size-row';
+const UI_SCALE_KEY = 'kano-life-ui-scale-v1';
+const UI_SCALES = [['0.85', 'Small'], ['1', 'Normal'], ['1.15', 'Large'], ['1.25', 'Extra large']];
+
+function readUiScale() {
+  try {
+    const value = localStorage.getItem(UI_SCALE_KEY);
+    return UI_SCALES.some(([v]) => v === value) ? value : '1';
+  } catch { return '1'; }
+}
+
+// Scales the on-screen controls and HUD only (the 3D picture is unaffected).
+function applyUiScale(value) {
+  document.documentElement.style.setProperty('--kano-ui-scale', value);
+}
 
 function injectStyle() {
   if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
@@ -12,6 +27,8 @@ function injectStyle() {
   style.id = STYLE_ID;
   // Road guide: keep it as a slim strip so the road stays visible.
   style.textContent = `
+    #drive-controls, .hud-top, .hud-bottom, #kano-road-navigation { zoom: var(--kano-ui-scale, 1); }
+    #drive-controls .control { white-space: nowrap; }
     @media (max-width: 700px) {
       #kano-road-navigation #kano-nav-note,
       #kano-road-navigation .kano-nav-note,
@@ -52,16 +69,42 @@ function buildRow() {
   return row;
 }
 
+function buildSizeRow() {
+  const row = document.createElement('div');
+  row.className = 'setting-row';
+  row.id = SIZE_ROW_ID;
+  const label = document.createElement('label');
+  label.setAttribute('for', 'ui-size-select');
+  label.textContent = 'Game controls size';
+  const select = document.createElement('select');
+  select.id = 'ui-size-select';
+  for (const [value, text] of UI_SCALES) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    select.append(option);
+  }
+  select.value = readUiScale();
+  select.addEventListener('change', () => {
+    try { localStorage.setItem(UI_SCALE_KEY, select.value); } catch { /* storage unavailable */ }
+    applyUiScale(select.value);
+  });
+  row.append(label, select);
+  return row;
+}
+
 function mount() {
   if (typeof document === 'undefined' || document.getElementById(ROW_ID)) return true;
   const quality = document.getElementById('quality-select');
   const host = quality?.closest('.setting-row') || quality?.parentElement;
   if (!host?.parentElement) return false;
   host.after(buildRow());
+  if (!document.getElementById(SIZE_ROW_ID)) host.after(buildSizeRow());
   return true;
 }
 
 injectStyle();
+if (typeof document !== 'undefined') applyUiScale(readUiScale());
 if (typeof document !== 'undefined' && !mount()) {
   // The settings rows are created/moved by other modules; wait for them.
   const observer = new MutationObserver(() => { if (mount()) observer.disconnect(); });
