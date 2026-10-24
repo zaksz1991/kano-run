@@ -1,9 +1,7 @@
-Copy js/ and tests/ files into your project (replace).
-REAL JUNCTION TURNS (js/KanoRoadNavigationUpgrade.js)
-Before: the world rotated but the camera cancelled it exactly, so a left/right turn changed nothing on screen.
-Now:
-- a real cross road (asphalt, dashes, kerbs, stop line) is placed at each junction ahead
-- when you tap LEFT/RIGHT/U-TURN (below 35 km/h) the keke body yaws into the turn, the scenery swings past,
-  and a short fade hides the hand-over to the new road
-Tests 1443/1443 pass. Traffic cars are part of the world, so they swing with it; independent AI cars turning
-at junctions is the next step.
+Copy js/KanoFlyoverRoundaboutUpgrade.js into your project (replace). Apply after kano-activation.zip.
+Flyovers no longer loop on every road. They are built into the scene only on routes that have one in real Kano:
+  Kofar Mata  -> "KOFAR MATA FLYOVER"
+  Kofar Dan Agundi -> "DAN AGUNDI INTERCHANGE"
+The signboard text changes with the route. To add another real site, add a line to KANO_FLYOVER_SITES.
+(Tal'udu interchange is real too but has no matching route in config.js yet.)
+Tests 1443/1443 pass.

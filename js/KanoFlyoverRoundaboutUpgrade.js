@@ -327,6 +327,33 @@ function signedScroll(state, deltaSeconds) {
   return signedSpeed * dt * 0.28;
 }
 
+// Real Kano flyover / interchange sites. A flyover is only built into the scene
+// while the driver is on the route that actually has one (Kofar Mata flyover and
+// the Dan Agundi interchange are real; other routes have none).
+export const KANO_FLYOVER_SITES = {
+  'Kofar Mata': { title: 'KOFAR MATA', subtitle: 'FLYOVER  •  KANO' },
+  'Kofar Dan Agundi': { title: 'DAN AGUNDI', subtitle: 'INTERCHANGE  •  KANO' },
+};
+
+function applyFlyoverSite(renderer, routeName) {
+  const site = KANO_FLYOVER_SITES[routeName] || null;
+  const key = site ? routeName : '';
+  const changed = renderer.__kanoFlyoverSiteKey !== key;
+  renderer.__kanoFlyoverSiteKey = key;
+  for (const flyover of renderer.flyovers || []) if (flyover) flyover.visible = Boolean(site);
+  for (const record of renderer.kanoFlyoverSignRecords || []) {
+    record.sign.visible = Boolean(site);
+    if (site && changed) {
+      const face = record.sign.getObjectByName('kwankwasiyya_sign_face');
+      const texture = makeSignTexture(site.title, site.subtitle, `flyover-site-${routeName}-${record.index}`);
+      if (face && texture) {
+        face.material.map = texture;
+        face.material.needsUpdate = true;
+      }
+    }
+  }
+}
+
 function advanceRoundabouts(renderer, state, deltaSeconds) {
   const actors = renderer.kanoRoundaboutActors || [];
   if (renderer.lifeScene !== 'road' || !actors.length) return;
@@ -415,6 +442,7 @@ if (!Renderer3D.prototype[PATCH]) {
       if (this.lifeScene === 'road') {
         ensureFlyoverSignage(this);
         advanceRoundabouts(this, state, deltaSeconds);
+        if (state && typeof state.route === 'string') applyFlyoverSite(this, state.route);
       }
       return originalDraw.call(this, state, deltaSeconds, ...args);
     };
