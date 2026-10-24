@@ -1,6 +1,9 @@
 /**
- * KANO LIFE — pure rules for trying the next catalogued keke GLB.
- * Does not load models, mutate the catalog, or depend on Three.js.
+ * KANO LIFE — pure policy and isolated-load helpers for catalogued keke GLBs.
+ *
+ * ModelManager reads MODEL_KEYS[key] synchronously at the start of load().
+ * Replacing that property for only the synchronous call lets that load capture
+ * an isolated candidate array without mutating the shared catalog array itself.
  */
 const RETRYABLE_REJECTIONS = new Set([
   'character-only-model-no-vehicle-structure',
@@ -61,4 +64,47 @@ export function shouldStartKekeCatalogFailover({
     Number.isFinite(Number(attemptsRemaining)) &&
     Number(attemptsRemaining) > 0,
   );
+}
+
+/**
+ * Start one ModelManager.load() against an isolated candidate list.
+ *
+ * IMPORTANT: `load` must synchronously capture owner[key] before its first
+ * await, as ModelManager.load() does. The shared property's original array is
+ * restored in the same JavaScript turn, while the in-flight loader retains its
+ * private candidate-array reference. The original array object and order are
+ * never edited.
+ */
+export function loadWithIsolatedCatalog(owner, key, candidatePaths, load) {
+  if (!owner || typeof owner !== 'object' || typeof key !== 'string' || !key) {
+    throw new TypeError('A catalog owner and key are required.');
+  }
+  if (!Array.isArray(candidatePaths) || candidatePaths.length === 0) {
+    throw new TypeError('At least one candidate catalog path is required.');
+  }
+  if (typeof load !== 'function') {
+    throw new TypeError('A load callback is required.');
+  }
+
+  const originalArray = owner[key];
+  if (!Array.isArray(originalArray)) {
+    throw new TypeError(`Catalog owner has no array at key "${key}".`);
+  }
+  const isolatedCandidates = candidatePaths
+    .map(normalizeCataloguedKekePath)
+    .filter(Boolean);
+  if (!isolatedCandidates.length) {
+    throw new TypeError('No valid catalogued keke paths were provided.');
+  }
+
+  let pending;
+  owner[key] = isolatedCandidates;
+  try {
+    // ModelManager.load() reads MODEL_KEYS[key] synchronously here.
+    pending = load(key);
+  } finally {
+    // Restore the same array reference without changing its contents or order.
+    owner[key] = originalArray;
+  }
+  return Promise.resolve(pending);
 }

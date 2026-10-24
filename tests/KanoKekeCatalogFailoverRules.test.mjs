@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   getUntriedKekeCatalogPaths,
   isRetryableKekeRejection,
+  loadWithIsolatedCatalog,
   normalizeCataloguedKekePath,
   shouldStartKekeCatalogFailover,
 } from '../js/KanoKekeCatalogFailoverRules.js';
@@ -57,4 +58,31 @@ test('starts failover only for a ready renderer and retryable catalogued rejecti
   assert.equal(shouldStartKekeCatalogFailover({ ...good, modelPath: 'characters/pedestrian.glb' }), false);
   assert.equal(shouldStartKekeCatalogFailover({ ...good, validation: { ok: false, reason: 'http_404' } }), false);
   assert.equal(shouldStartKekeCatalogFailover({ ...good, attemptsRemaining: 0 }), false);
+});
+
+test('uses an isolated candidate array and restores the shared catalog immediately', async () => {
+  const originalArray = [...paths];
+  const owner = { keke: originalArray };
+  let captured;
+  const pending = loadWithIsolatedCatalog(owner, 'keke', [paths[1], paths[2]], (key) => {
+    captured = owner[key]; // ModelManager captures this value synchronously.
+    return new Promise((resolve) => setTimeout(() => resolve([...captured]), 0));
+  });
+
+  assert.strictEqual(owner.keke, originalArray, 'property is restored before asynchronous load completion');
+  assert.deepEqual(owner.keke, paths, 'the shared catalog contents and order remain unchanged');
+  assert.notStrictEqual(captured, originalArray, 'the in-flight load owns a separate array');
+  assert.deepEqual(await pending, [paths[1], paths[2]]);
+  assert.strictEqual(owner.keke, originalArray);
+});
+
+test('restores the original catalog even when the load callback throws', () => {
+  const originalArray = [...paths];
+  const owner = { keke: originalArray };
+  assert.throws(
+    () => loadWithIsolatedCatalog(owner, 'keke', [paths[1]], () => { throw new Error('simulated load failure'); }),
+    /simulated load failure/,
+  );
+  assert.strictEqual(owner.keke, originalArray);
+  assert.deepEqual(owner.keke, paths);
 });
