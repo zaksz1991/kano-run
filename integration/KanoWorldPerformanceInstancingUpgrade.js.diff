@@ -4,7 +4,5 @@
  import * as THREE from 'three';
  import { Renderer3D } from './renderer3d.js';
  import { KanoAtmosphere } from './KanoAtmosphere.js';
-+// Current-main additive repair: let the real catalogued keke GLB pass safe bounds validation,
-+// enhance visible collision response/potholes, tune text textures, and display persistent play count.
-+import './KanoCoreExperienceRepair.js';
++import './KanoKekeGlbActivationRepair.js';
  const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
