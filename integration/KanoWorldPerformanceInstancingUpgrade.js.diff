@@ -1,9 +1,12 @@
 --- a/js/KanoWorldPerformanceInstancingUpgrade.js
 +++ b/js/KanoWorldPerformanceInstancingUpgrade.js
 @@
+ import * as THREE from 'three';
  import { Renderer3D } from './renderer3d.js';
  import { KanoAtmosphere } from './KanoAtmosphere.js';
-+// Register the existing mobile GLB geometry-budget adapter before main.js
-+// constructs ModelManager. No renderer/game files are replaced.
++// Current-main repairs register before main.js constructs Renderer3D and
++// ModelManager. Keep the optimizer before the flyover and runtime adapters.
 +import './KanoMobileGeometryBudgetUpgrade.js';
++import './KanoFlyoverDriveabilityUpgrade.js';
++import './KanoCurrentMainExperienceRepair.js';
  const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');

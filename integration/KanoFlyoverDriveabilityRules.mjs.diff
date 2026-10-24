@@ -1,0 +1,9 @@
+--- a/js/KanoFlyoverDriveabilityRules.mjs
++++ b/js/KanoFlyoverDriveabilityRules.mjs
+@@
+-export const KANO_FLYOVER_DECK_HALF_LENGTH = 2.6;
+-export const KANO_FLYOVER_RAMP_END = 34;
++// Longer flat deck and longer approach transitions, still within the existing
++// loop and without replacing the source flyover GLB.
++export const KANO_FLYOVER_DECK_HALF_LENGTH = 7.5;
++export const KANO_FLYOVER_RAMP_END = 44;

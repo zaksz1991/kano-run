@@ -1,0 +1,8 @@
+--- a/js/KanoFlyoverRoundaboutUpgrade.js
++++ b/js/KanoFlyoverRoundaboutUpgrade.js
+@@
+-  addSignFace(sign, texture, 9.25, 1.12, [0, 5.68, 2.925], 'kwankwasiyya_sign_face');
++  // The player approaches from the near (-Z) side. Put the title plate on the
++  // near face of its backing and point the readable side toward the driver.
++  const signFace = addSignFace(sign, texture, 9.25, 1.12, [0, 5.68, 2.635], 'kwankwasiyya_sign_face');
++  if (signFace) signFace.rotation.y = Math.PI;
