@@ -1,0 +1,6 @@
+--- a/js/KanoWorldPerformanceInstancingUpgrade.js
++++ b/js/KanoWorldPerformanceInstancingUpgrade.js
+@@
+ import { KanoAtmosphere } from './KanoAtmosphere.js';
++import './KanoCompactDrivingHudUpgrade.js';
+ const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
