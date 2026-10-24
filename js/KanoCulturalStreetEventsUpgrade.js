@@ -246,7 +246,7 @@ async function discoverGoatPath() {
   return candidates[0]?.path || null;
 }
 
-function createProceduralGoat() {
+export function createProceduralGoat() {
   const root = new THREE.Group();
   root.name = 'KANO_PROCEDURAL_GOAT_CROSSING';
   root.userData.kanoCulturalRole = 'goat-crossing';

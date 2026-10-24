@@ -19,6 +19,7 @@ import './KanoCurrentMainExperienceRepair.js';
 import './KanoCompactDrivingHudUpgrade.js';
 import './KanoKnownKekeModelAcceptanceRepair.js';
 import './KanoFeatureActivationBridge.js';
+import './KanoStreetAnimalsOfficerUpgrade.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
 const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
