@@ -1,11 +1,16 @@
 /**
- * KANO LIFE — Known Keke GLB Acceptance Repair
+ * KANO LIFE — Catalogued Keke Generic-Mesh Acceptance Repair (Task 23)
  *
- * Installs before the application creates Renderer3D. A real model from the
- * existing vehicles/keke catalog is permitted past the name-only rejection
- * only when its measured geometry has a plausible vehicle footprint and
- * component evidence. No source assets are modified and the original
- * validator remains authoritative for every other result.
+ * The main renderer intentionally rejects a loaded GLB when names do not prove
+ * that it is a vehicle. Some catalogued keke GLBs use generic mesh names; when
+ * ModelManager attaches a seated driver, the strict validator can then report
+ * "character-only-model-no-vehicle-structure" even though the GLB contains a
+ * real keke chassis. This adapter permits only the two name-evidence failures
+ * and only for keke-1.glb through keke-8.glb when independent rendered geometry
+ * proves plausible dimensions plus wheel or substantial body evidence.
+ *
+ * It does not edit assets, relax unrelated validation failures, or replace the
+ * fallback unless the existing renderer accepts the candidate after this check.
  */
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
@@ -13,7 +18,7 @@ import { decideCataloguedKekeValidation } from './KanoKnownKekeValidationRules.j
 
 const PATCH = Symbol.for('kano.life.knownKekeModelAcceptance.v1');
 const report = {
-  version: 1,
+  version: 2,
   installed: false,
   checked: 0,
   acceptedByGeometry: 0,
@@ -30,7 +35,8 @@ function visibleRenderableMesh(node, root) {
   }
   if (ancestor !== root) return false;
   const materials = Array.isArray(node.material)
-    ? node.material : node.material ? [node.material] : [];
+    ? node.material
+    : node.material ? [node.material] : [];
   return materials.some((material) =>
     material && material.visible !== false && Number(material.opacity ?? 1) > 0.025
   );
@@ -44,23 +50,20 @@ function measureVehicleGeometry(root) {
   if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-10) {
     return { valid: false, reason: 'singular-root-transform' };
   }
+
   const inverseRoot = rootMatrix.invert();
   const bounds = new THREE.Box3();
   const parts = [];
-  let characterMeshCount = 0;
   root.traverse((node) => {
     if (!node?.isMesh || !node.geometry || !visibleRenderableMesh(node, root)) return;
-    const name = `${node.name || ''} ${node.parent?.name || ''}`;
-    if (/pedestrian|character|human|person|driver|rider|passenger|crowd|woman|man|female|male|npc/i.test(name)) {
-      characterMeshCount += 1;
-    }
     const geometry = node.geometry;
     if (!geometry.boundingBox) {
       try { geometry.computeBoundingBox(); } catch { return; }
     }
     if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return;
-    const matrix = new THREE.Matrix4().multiplyMatrices(inverseRoot, node.matrixWorld);
-    const partBounds = geometry.boundingBox.clone().applyMatrix4(matrix);
+
+    const relativeMatrix = new THREE.Matrix4().multiplyMatrices(inverseRoot, node.matrixWorld);
+    const partBounds = geometry.boundingBox.clone().applyMatrix4(relativeMatrix);
     if (partBounds.isEmpty()) return;
     const size = partBounds.getSize(new THREE.Vector3());
     const center = partBounds.getCenter(new THREE.Vector3());
@@ -68,9 +71,11 @@ function measureVehicleGeometry(root) {
     bounds.union(partBounds);
     parts.push({ size, center });
   });
+
   if (bounds.isEmpty() || parts.length < 3) {
     return { valid: false, reason: 'insufficient-visible-meshes', meshCount: parts.length };
   }
+
   const size = bounds.getSize(new THREE.Vector3());
   const wheelLikeCount = parts.filter(({ size: part, center }) => {
     const horizontalDiameter = Math.max(part.x, part.z);
@@ -80,11 +85,14 @@ function measureVehicleGeometry(root) {
     const wheelSized = horizontalDiameter >= 0.18 && horizontalDiameter <= 0.86;
     return nearGround && wheelSized && thinRatio <= 0.72;
   }).length;
+
   const broadBodyCount = parts.filter(({ size: part, center }) =>
     part.x >= size.x * 0.48 &&
     part.z >= size.z * 0.25 &&
+    part.y >= 0.12 &&
     center.y <= bounds.min.y + size.y * 0.78
   ).length;
+
   return {
     valid: true,
     width: size.x,
@@ -93,13 +101,13 @@ function measureVehicleGeometry(root) {
     meshCount: parts.length,
     wheelLikeCount,
     broadBodyCount,
-    characterMeshCount,
   };
 }
 
 function install() {
   const prototype = Renderer3D?.prototype;
   if (!prototype || prototype[PATCH] || typeof prototype.validateKekeModelCandidate !== 'function') return false;
+
   const original = prototype.validateKekeModelCandidate;
   Object.defineProperty(prototype, PATCH, { value: true, configurable: false });
   prototype.validateKekeModelCandidate = function validateKekeCandidateWithCatalogGeometry(object, ...args) {
@@ -110,7 +118,14 @@ function install() {
       report.errors.push(`original-validator: ${String(error?.message || error)}`);
       throw error;
     }
-    if (result?.ok || result?.reason !== 'missing-vehicle-structure-evidence') return result;
+
+    if (
+      result?.ok ||
+      !['missing-vehicle-structure-evidence', 'character-only-model-no-vehicle-structure'].includes(result?.reason)
+    ) return result;
+
+    // ModelManager explicitly stores the catalog-relative path on the wrapper
+    // and preserves it on each instance; do not infer trust from object names.
     const path = object?.userData?.modelPath || object?.userData?.assetPath || '';
     const geometry = measureVehicleGeometry(object);
     report.checked += 1;
@@ -126,10 +141,12 @@ function install() {
       decision,
       at: new Date().toISOString(),
     };
+
     if (!decision.accept) {
       report.leftRejected += 1;
       return result;
     }
+
     report.acceptedByGeometry += 1;
     object.userData.kanoCatalogGeometryValidation = decision;
     return {
@@ -145,13 +162,18 @@ function install() {
       },
     };
   };
+
   report.installed = true;
   return true;
 }
 
 install();
 if (typeof window !== 'undefined') {
-  window.kanoKnownKekeModelAcceptanceAudit = () => ({ ...report, last: report.last ? { ...report.last } : null, errors: [...report.errors] });
+  window.kanoKnownKekeModelAcceptanceAudit = () => ({
+    ...report,
+    last: report.last ? { ...report.last } : null,
+    errors: [...report.errors],
+  });
 }
 
 export { install as installKanoKnownKekeModelAcceptanceRepair };

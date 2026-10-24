@@ -1,5 +1,4 @@
---- a/js/KanoWorldPerformanceInstancingUpgrade.js
-+++ b/js/KanoWorldPerformanceInstancingUpgrade.js
+*** KanoWorldPerformanceInstancingUpgrade.js (add one import)
 @@
  import * as THREE from 'three';
  import { Renderer3D } from './renderer3d.js';

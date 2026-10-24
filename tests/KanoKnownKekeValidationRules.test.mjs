@@ -1,64 +1,86 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { Buffer } from 'node:buffer';
+import {
+  isCataloguedKekeModelPath,
+  decideCataloguedKekeValidation,
+} from '../js/KanoKnownKekeValidationRules.js';
 
-// The browser app uses native ES modules without a package.json type flag.
-// Loading the pure helper from a data URL lets Node test the exact JS source
-// without changing the repository's package configuration.
-const source = await readFile(new URL('../js/KanoKnownKekeValidationRules.js', import.meta.url), 'utf8');
-const rules = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
-
-const plausible = {
-  path: 'vehicles/keke/keke-3.glb',
-  originalReason: 'missing-vehicle-structure-evidence',
-  width: 1.15,
+const goodGeometry = {
+  width: 1.42,
   height: 1.85,
-  depth: 1.8,
-  meshCount: 18,
-  wheelLikeCount: 3,
-  broadBodyCount: 2,
-  characterMeshCount: 1,
+  depth: 2.15,
+  meshCount: 22,
+  wheelLikeCount: 2,
+  broadBodyCount: 1,
 };
 
-test('recognizes only catalogued keke GLB paths', () => {
-  assert.equal(rules.isCataloguedKekeModelPath('vehicles/keke/keke-3.glb'), true);
-  assert.equal(rules.isCataloguedKekeModelPath('/assets/models/vehicles/keke/keke-8.glb'), true);
-  assert.equal(rules.isCataloguedKekeModelPath('characters/passengers/hijab_muslim_woman.glb'), false);
-  assert.equal(rules.isCataloguedKekeModelPath('vehicles/keke/../../characters/Man.glb'), false);
+function candidate(overrides = {}) {
+  return {
+    path: 'vehicles/keke/keke-3.glb',
+    originalReason: 'missing-vehicle-structure-evidence',
+    ...goodGeometry,
+    ...overrides,
+  };
+}
+
+test('accepts every known keke catalog slot and optional asset-root prefix', () => {
+  for (let index = 1; index <= 8; index += 1) {
+    assert.equal(isCataloguedKekeModelPath(`vehicles/keke/keke-${index}.glb`), true);
+    assert.equal(isCataloguedKekeModelPath(`/assets/models/vehicles/keke/keke-${index}.glb`), true);
+  }
 });
 
-test('accepts realistic catalogued vehicle geometry when only names fail', () => {
-  const result = rules.decideCataloguedKekeValidation(plausible);
+test('rejects traversal, unexpected extensions, and paths outside the keke catalog', () => {
+  assert.equal(isCataloguedKekeModelPath('../vehicles/keke/keke-3.glb'), false);
+  assert.equal(isCataloguedKekeModelPath('vehicles/keke/keke-9.glb'), false);
+  assert.equal(isCataloguedKekeModelPath('characters/passengers/keke-3.glb'), false);
+  assert.equal(isCataloguedKekeModelPath('vehicles/keke/keke-3.gltf'), false);
+});
+
+test('accepts generic-named catalogued body geometry for the usual name-evidence failure', () => {
+  const result = decideCataloguedKekeValidation(candidate());
   assert.equal(result.accept, true);
   assert.equal(result.reason, 'catalogued-keke-path-and-geometric-vehicle-evidence');
 });
 
-test('does not override other original validation failures', () => {
-  assert.equal(rules.decideCataloguedKekeValidation({ ...plausible, originalReason: 'no-visible-renderable-meshes' }).accept, false);
+test('accepts a catalogued keke rejected as character-only when chassis geometry is independently plausible', () => {
+  const result = decideCataloguedKekeValidation(candidate({
+    originalReason: 'character-only-model-no-vehicle-structure',
+    wheelLikeCount: 0,
+    meshCount: 18,
+    broadBodyCount: 1,
+  }));
+  assert.equal(result.accept, true);
+  assert.equal(result.originalReason, 'character-only-model-no-vehicle-structure');
 });
 
-test('rejects implausible dimensions', () => {
-  assert.equal(rules.decideCataloguedKekeValidation({ ...plausible, width: 7.5 }).accept, false);
-  assert.equal(rules.decideCataloguedKekeValidation({ ...plausible, height: 0.12 }).accept, false);
-});
-
-test('rejects a human/prop without vehicle component evidence', () => {
-  const result = rules.decideCataloguedKekeValidation({ ...plausible, wheelLikeCount: 0, broadBodyCount: 0, characterMeshCount: 5 });
-  assert.equal(result.accept, false);
-  assert.equal(result.reason, 'insufficient-geometric-vehicle-evidence');
-});
-
-test('allows a broad low chassis with component evidence and up to two embedded human meshes', () => {
-  const result = rules.decideCataloguedKekeValidation({ ...plausible, wheelLikeCount: 0, broadBodyCount: 1, meshCount: 8, characterMeshCount: 2 });
+test('accepts wheel-backed geometry even when broad body evidence is inconclusive', () => {
+  const result = decideCataloguedKekeValidation(candidate({ broadBodyCount: 0, wheelLikeCount: 2 }));
   assert.equal(result.accept, true);
 });
 
-test('rejects too few or excessive meshes', () => {
-  assert.equal(rules.decideCataloguedKekeValidation({ ...plausible, meshCount: 2 }).accept, false);
-  assert.equal(rules.decideCataloguedKekeValidation({ ...plausible, meshCount: 2501 }).accept, false);
+test('rejects non-catalogued paths even if dimensions and meshes are plausible', () => {
+  const result = decideCataloguedKekeValidation(candidate({ path: 'vehicles/cars/sedan.glb' }));
+  assert.equal(result.accept, false);
+  assert.equal(result.reason, 'untrusted-model-path');
 });
 
-test('rejects non-finite measurements', () => {
-  assert.equal(rules.decideCataloguedKekeValidation({ ...plausible, depth: Number.NaN }).accept, false);
+test('does not override unrelated renderer failures', () => {
+  const result = decideCataloguedKekeValidation(candidate({ originalReason: 'implausible-keke-bounds' }));
+  assert.equal(result.accept, false);
+  assert.equal(result.reason, 'not-a-name-evidence-only-failure');
+});
+
+test('rejects implausible dimensions and insufficient mesh evidence', () => {
+  assert.equal(decideCataloguedKekeValidation(candidate({ width: 0.12 })).accept, false);
+  assert.equal(decideCataloguedKekeValidation(candidate({ height: 7 })).accept, false);
+  assert.equal(decideCataloguedKekeValidation(candidate({ meshCount: 2 })).accept, false);
+  assert.equal(decideCataloguedKekeValidation(candidate({ wheelLikeCount: 0, broadBodyCount: 0 })).accept, false);
+  assert.equal(decideCataloguedKekeValidation(candidate({ wheelLikeCount: 0, broadBodyCount: 1, meshCount: 7 })).accept, false);
+});
+
+test('rejects non-finite geometry evidence', () => {
+  const result = decideCataloguedKekeValidation(candidate({ depth: Number.NaN }));
+  assert.equal(result.accept, false);
+  assert.equal(result.reason, 'non-finite-geometry-evidence');
 });
