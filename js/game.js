@@ -22,6 +22,9 @@ import {
   addDailyMissionProgress,
 } from './storage.js';
 
+// Real Kano keke stops / junction names (replaces the old generic title).
+const KANO_KEKE_STOP_NAMES = ['Kofar Mata','Sabon Gari','Kantin Kwari','Yankaba','Sharada','Rimin Gado','Zoo Road','Murtala Mohammed Way','Gwarzo Road','Kofar Ruwa','Dakata','Tarauni'];
+
 const randomBetween = (min, max) =>
   min + Math.random() * (max - min);
 
@@ -459,8 +462,11 @@ export class Game {
       ? 0.52 + initialIndex * 0.15
       : randomBetween(1.05, 1.30);
 
+    const stopName = hub
+      ? KANO_KEKE_STOP_NAMES[Math.floor(Math.random() * KANO_KEKE_STOP_NAMES.length)]
+      : '';
     const label = hub
-      ? `GENERAL CHECKPOINT · KEKE STOP · ${dest}`
+      ? `${stopName.toUpperCase()} KEKE STOP · ${dest}`
       : type === 'pickup'
         ? `PICK UP · ${dest}`
         : type === 'drop'
@@ -482,6 +488,7 @@ export class Game {
       dest,
       seats,
       hub,
+      stopName,
       label,
 
       warned: false,
@@ -1259,7 +1266,7 @@ export class Game {
       ) {
         this.ui.toast(
           zone.hub
-            ? 'GENERAL CHECKPOINT AHEAD · brake and pull into the stop'
+            ? `${zone.stopName || 'KEKE STOP'} AHEAD · brake and pull into the stop`
             : 'Roadside stop ahead · slow and pull to the shoulder',
         );
 
@@ -1931,7 +1938,7 @@ export class Game {
       this.missionAdd('aishat', 1);
     } else if (largePassenger) {
       this.ui.toast(
-        `GENERAL CHECKPOINT · ${passenger.name} boarded · 2 seats used`,
+        `${(zone && zone.stopName) || 'KEKE STOP'} · ${passenger.name} boarded · 2 seats used`,
       );
     } else if (groupPickup) {
       this.ui.toast(

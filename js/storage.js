@@ -454,6 +454,19 @@ export function tribeStanding() {
   })).sort((a, b) => b.total - a.total);
 }
 
+/** Top 3 per tribe plus the top 3 across all tribes. */
+export function tribeLeaderboards() {
+  const perTribe = {};
+  const all = [];
+  for (const tribe of ['hausa', 'yoruba', 'igbo']) {
+    const scores = [...(save.tribes[tribe] || [])].sort((a, b) => b.score - a.score).slice(0, 3);
+    perTribe[tribe] = scores;
+    scores.forEach((entry) => all.push({ ...entry, tribe }));
+  }
+  const overall = all.sort((a, b) => b.score - a.score).slice(0, 3);
+  return { perTribe, overall };
+}
+
 export function dailyLoginStatus() {
   const today = todayInWAT();
   const claimed = save.daily.date === today && Boolean(save.daily.claimed);

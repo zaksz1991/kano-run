@@ -12,6 +12,7 @@ import {
   save,
   persist,
   tribeStanding,
+  tribeLeaderboards,
   dailyLoginStatus,
   claimDaily,
   getDailyMissions,
@@ -24,6 +25,40 @@ import {
   selectPaint,
   purchasePaint,
 } from './progression.js';
+
+const TRIBE_MEDALS = ['🥇', '🥈', '🥉'];
+const TRIBE_NAMES = { hausa: 'HAUSA', yoruba: 'YORUBA', igbo: 'IGBO' };
+
+/** Fills `host` with top-3 per tribe and the overall top-3. */
+export function renderTribeLeaderboards(host) {
+  if (!host) return;
+  host.replaceChildren();
+  const { perTribe, overall } = tribeLeaderboards();
+  const addHeading = (text) => {
+    const h = document.createElement('b');
+    h.textContent = text;
+    host.append(h, document.createElement('br'));
+  };
+  const addRows = (rows, withTribe) => {
+    if (!rows.length) {
+      const empty = document.createElement('span');
+      empty.textContent = '— no scores yet';
+      host.append(empty, document.createElement('br'));
+      return;
+    }
+    rows.forEach((entry, index) => {
+      const line = document.createElement('span');
+      line.textContent = `${TRIBE_MEDALS[index]} ${withTribe ? `${TRIBE_NAMES[entry.tribe]} · ` : ''}${entry.driver || 'Driver'} — ₦${Math.floor(entry.score).toLocaleString()}`;
+      host.append(line, document.createElement('br'));
+    });
+  };
+  addHeading('TOP 3 · ALL TRIBES');
+  addRows(overall, true);
+  for (const tribe of ['hausa', 'yoruba', 'igbo']) {
+    addHeading(`TOP 3 · ${TRIBE_NAMES[tribe]}`);
+    addRows(perTribe[tribe], false);
+  }
+}
 
 export class UI {
   constructor() {
@@ -173,16 +208,21 @@ export class UI {
     });
 
     on('rank-btn', 'click', () => {
-      const standings = tribeStanding();
-
-      this.toast(
-        `Naija Rank · ${standings
-          .map(
-            (item, index) =>
-              `${index + 1}. ${item.tribe.toUpperCase()} ₦${item.total.toLocaleString()}`,
-          )
-          .join(' · ')}`,
-      );
+      let panel = document.getElementById('kano-tribe-leaderboard');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'kano-tribe-leaderboard';
+        panel.style.cssText = 'position:fixed;inset:12% 8%;z-index:9999;background:rgba(10,24,16,.96);color:#fff4d0;border:2px solid #f5d77b;border-radius:14px;padding:14px;overflow:auto;font:700 14px/1.6 Arial,sans-serif;max-width:420px;margin:auto';
+        const body = document.createElement('div');
+        body.id = 'kano-tribe-leaderboard-body';
+        const close = document.createElement('button');
+        close.textContent = 'CLOSE';
+        close.style.cssText = 'margin-top:10px;padding:8px 18px;font-weight:900';
+        close.addEventListener('click', () => panel.remove());
+        panel.append(body, close);
+        document.body.append(panel);
+      }
+      renderTribeLeaderboards(panel.querySelector('#kano-tribe-leaderboard-body'));
     });
 
     on('dialect-select', 'change', (event) => {
@@ -1247,21 +1287,7 @@ export class UI {
     const standingHost = this.el('tribe-standing');
 
     if (standingHost) {
-      standingHost.replaceChildren();
-
-      const heading = document.createElement('b');
-      heading.textContent = 'NAIJA TRIBE STANDING';
-
-      standingHost.append(heading, document.createElement('br'));
-
-      standing.forEach((entry, index) => {
-        const line = document.createElement('span');
-
-        line.textContent =
-          `${['🥇', '🥈', '🥉'][index] || '•'} ${entry.tribe.toUpperCase()} — ₦${entry.total.toLocaleString()} (${entry.scores.length} top scores)`;
-
-        standingHost.append(line, document.createElement('br'));
-      });
+      renderTribeLeaderboards(standingHost);
     }
 
     const continueButton = this.el('continue-btn');

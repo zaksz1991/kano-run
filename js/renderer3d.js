@@ -4541,7 +4541,7 @@ export class Renderer3D {
             labelCtx.textAlign = 'center';
 
             const labelText = zone.hub
-              ? 'GENERAL CHECKPOINT · KEKE STOP'
+              ? `${String(zone.stopName || 'KEKE STOP').toUpperCase()} · KEKE STOP`
               : zone.type === 'pickup'
                 ? 'ROADSIDE PICK-UP'
                 : zone.type === 'drop'
