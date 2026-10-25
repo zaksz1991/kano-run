@@ -127,7 +127,7 @@ export class Renderer3D {
     this.scene.fog = new THREE.Fog(0x8ccde5, 150, 600); // shops + road fully visible
 
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 500 : 600);
-    this.camera.position.set(0, 3.85, 10.5);
+    this.camera.position.set(0, 4.8, 14.5);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -225,6 +225,7 @@ export class Renderer3D {
 
     this.player = this.makeKeke();
     this.player.position.set(0, 0, 2);
+    this.player.scale.setScalar(0.62);
     this.scene.add(this.player);
 
     // Garage and life-scene geometry is created only when that scene is first
@@ -5414,6 +5415,7 @@ export class Renderer3D {
       -(state.steer || 0) * 0.075;
 
     this.player.rotation.y = this.driveFacingY;
+    this.player.scale.setScalar(0.62);
 
     this.player.position.y =
       Math.sin((state.distance || 0) * 2.2) * 0.025;
@@ -5562,8 +5564,8 @@ export class Renderer3D {
 
     // Raise and pull the driver camera behind the keke canopy. The old low,
     // close position looked through the bodywork and could fill the viewport.
-    this.camera.position.y = driverView ? 2.9 : 3.35;
-    this.camera.position.z = driverView ? 7.2 : 8.6;
+    this.camera.position.y = driverView ? 4.4 : 4.9;
+    this.camera.position.z = driverView ? 13.5 : 15.0;
 
     const shake = Math.max(
       0,
