@@ -98,33 +98,49 @@
     </div>
   </main>
   <!-- A dependency-free local audit starts first, before app and simulation modules load. -->
-  <script type="module" src="/js/KanoLifeRuntimeAudit.js"></script>
-  <!-- Launch recovery keeps the existing main.js/Game/UI authoritative. -->
-  <script type="module" src="/js/KanoAppLaunchRecovery.js"></script>
-  <!-- The existing systems are registered before the application entry where possible. -->
-  <script type="module" src="/js/KanoNorthernDriverSeasonalEnvironmentBridge.js"></script>
-  <script type="module" src="/js/KanoCulturalStreetEventsUpgrade.js"></script>
-  <script type="module" src="/js/KanoWorldPerformanceInstancingUpgrade.js"></script>
-  <script type="module" src="/js/KanoLifeRootCauseRepair.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverSkillsPathwaysUpgrade.js"></script>
-  <!-- These are explicit roots for independent screens; shared module URLs are evaluated once by ES module caching. -->
-  <script type="module" src="/js/KanoNorthernDriverEmploymentMarketUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverEmploymentScheduleUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverDigitalLifeUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverCareerProgressionUpgrade.js"></script>
-  <!-- Longitudinal social systems register before the renderer bootstrap. -->
-  <script type="module" src="/js/KanoNorthernDriverAureJourneyUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverLefeNegotiationUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverParenthoodUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverSeasonalResilienceUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverAdashiSupportUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverCivicProjectsUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverSocialDramaUpgrade.js"></script>
-  <script type="module" src="/js/KanoNorthernDriverSocialNetworkUpgrade.js"></script>
-  <script type="module" src="/js/KanoLifeCareerSettingsHub.js"></script>
-  <script type="module" src="/js/KanoPhoneComfortUpgrade.js"></script>
-  <!-- This wrapper installs visual repair hooks and imports main.js. A separate direct entry below is intentional: ES module caching prevents a second game instance and recovers if this optional wrapper fails. -->
-  <script type="module" src="/js/KanoModelAssetVisualUpgrade.js"></script>
-  <script type="module" src="/js/main.js"></script>
+  <!-- Boot main first; life upgrades load after idle -->
+<script>
+  window.__KANO_DEFER_SCRIPTS = [
+    '/js/KanoLifeRuntimeAudit.js',
+    '/js/KanoAppLaunchRecovery.js',
+    '/js/KanoNorthernDriverSeasonalEnvironmentBridge.js',
+    '/js/KanoCulturalStreetEventsUpgrade.js',
+    '/js/KanoWorldPerformanceInstancingUpgrade.js',
+    '/js/KanoLifeRootCauseRepair.js',
+    '/js/KanoNorthernDriverSkillsPathwaysUpgrade.js',
+    '/js/KanoNorthernDriverEmploymentMarketUpgrade.js',
+    '/js/KanoNorthernDriverEmploymentScheduleUpgrade.js',
+    '/js/KanoNorthernDriverDigitalLifeUpgrade.js',
+    '/js/KanoNorthernDriverCareerProgressionUpgrade.js',
+    '/js/KanoNorthernDriverAureJourneyUpgrade.js',
+    '/js/KanoNorthernDriverLefeNegotiationUpgrade.js',
+    '/js/KanoNorthernDriverParenthoodUpgrade.js',
+    '/js/KanoNorthernDriverSeasonalResilienceUpgrade.js',
+    '/js/KanoNorthernDriverAdashiSupportUpgrade.js',
+    '/js/KanoNorthernDriverCivicProjectsUpgrade.js',
+    '/js/KanoNorthernDriverSocialDramaUpgrade.js',
+    '/js/KanoNorthernDriverSocialNetworkUpgrade.js',
+    '/js/KanoLifeCareerSettingsHub.js',
+    '/js/KanoPhoneComfortUpgrade.js',
+    '/js/KanoModelAssetVisualUpgrade.js'
+  ];
+  (function () {
+    var loaded = false;
+    function loadAll() {
+      if (loaded) return;
+      loaded = true;
+      (window.__KANO_DEFER_SCRIPTS || []).forEach(function (src) {
+        var el = document.createElement('script');
+        el.type = 'module';
+        el.src = src;
+        document.head.appendChild(el);
+      });
+      console.info('[Boot] deferred modules loading');
+    }
+    if (window.requestIdleCallback) requestIdleCallback(loadAll, { timeout: 5000 });
+    else setTimeout(loadAll, 2500);
+  })();
+</script>
+<script type="module" src="/js/main.js"></script>
 </body>
 </html>
