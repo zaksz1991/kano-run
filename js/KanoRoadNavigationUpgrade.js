@@ -4,9 +4,9 @@
  * Adds an arcade navigation graph over the established route catalogue. Links
  * are playable connections between named destinations, not a surveyed street map.
  */
-import * as THREE from 'three';
 import { Game } from './game.js';
 import { Renderer3D } from './renderer3d.js';
+import './KanoTrafficJunctionTurnUpgrade.js';
 import { Renderer2D } from './renderer2d.js';
 import { ROUTES } from './config.js';
 import { save, persist } from './storage.js';
@@ -405,9 +405,7 @@ function updateNavigation(game, dt) {
     nav.heading = wrapHeading(nav.turn.from + difference * eased);
     state.kanoRoadHeading = nav.heading;
     state.kanoRoadTurn = { direction: nav.turn.visualDirection, progress };
-    state.kanoRoadHeadingBase = nav.turn.from;
     if (progress >= 1) {
-      state.kanoRoadHeadingBase = nav.turn.to;
       const label = nav.turn.direction === 'uturn' ? 'U-turn complete' : `${nav.turn.direction.toUpperCase()} turn complete`;
       nav.heading = wrapHeading(nav.turn.to);
       state.kanoRoadHeading = nav.heading;
@@ -417,7 +415,6 @@ function updateNavigation(game, dt) {
     }
   } else {
     state.kanoRoadHeading = nav.heading;
-    state.kanoRoadHeadingBase = nav.heading;
     state.kanoRoadTurn = null;
     const travel = syncJunctionTargetForTravel(game, nav);
     if (travel.reverse) {
@@ -495,84 +492,6 @@ function rotatePoint(x, z, angle) {
   return { x: dx * cosine + dz * sine, z: ROAD_PIVOT_Z - dx * sine + dz * cosine };
 }
 
-// ---- Visible junction: a real cross road that swings into view during a turn ----
-let activeNavGame = null;
-const UNITS_PER_KM = 1008; // 0.28 world units per (km/h * second)
-function ensureCrossroad(renderer) {
-  if (renderer.__kanoCrossroad) return renderer.__kanoCrossroad;
-  const group = new THREE.Group();
-  group.name = 'KANO_JUNCTION_CROSSROAD';
-  const asphalt = new THREE.MeshStandardMaterial({ color: 0x34363a, roughness: 0.95 });
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(260, 15), asphalt);
-  road.rotation.x = -Math.PI / 2;
-  road.position.y = 0.016;
-  group.add(road);
-  const paint = new THREE.MeshBasicMaterial({ color: 0xf3efe0 });
-  const dash = new THREE.PlaneGeometry(2.4, 0.22);
-  for (let x = -120; x <= 120; x += 6) {
-    if (Math.abs(x) < 9) continue;
-    const mark = new THREE.Mesh(dash, paint);
-    mark.rotation.x = -Math.PI / 2;
-    mark.position.set(x, 0.02, 0);
-    group.add(mark);
-  }
-  const kerb = new THREE.MeshStandardMaterial({ color: 0xb9b3a6, roughness: 0.9 });
-  for (const z of [-7.8, 7.8]) {
-    for (const side of [-1, 1]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(115, 0.16, 0.45), kerb);
-      strip.position.set(side * (9 + 57.5), 0.08, z);
-      group.add(strip);
-    }
-  }
-  const stop = new THREE.Mesh(new THREE.PlaneGeometry(10, 0.5), paint);
-  stop.rotation.x = -Math.PI / 2;
-  stop.position.set(0, 0.021, 8.4);
-  group.add(stop);
-  group.visible = false;
-  renderer.world.add(group);
-  renderer.__kanoCrossroad = group;
-  return group;
-}
-
-function updateCrossroad(renderer, state) {
-  if (!renderer?.world) return;
-  const game = activeNavGame;
-  const group = ensureCrossroad(renderer);
-  const nav = game?.kanoNavigationState;
-  if (!nav || !state) { group.visible = false; return; }
-  const remainingKm = Number.isFinite(nav.nextJunctionAt) ? nav.nextJunctionAt - navigationWorldDistance(game) : Infinity;
-  const turning = Boolean(nav.turn);
-  let z;
-  if (turning) {
-    const p = clamp(Number(state.kanoRoadTurn?.progress) || 0, 0, 1);
-    // The junction slides under the keke during the first part of the turn.
-    const startZ = nav.__crossStartZ ?? ROAD_PIVOT_Z;
-    z = startZ + (ROAD_PIVOT_Z - startZ) * clamp(p / 0.25, 0, 1);
-  } else {
-    // Junction we are about to take: nextJunctionAt has been advanced already after a turn.
-    const prevKm = nav.nextJunctionAt - JUNCTION_INTERVAL_KM;
-    const ahead = remainingKm;
-    const behind = navigationWorldDistance(game) - prevKm;
-    const km = (behind >= -0.001 && behind < 0.06) ? -behind : ahead;
-    z = ROAD_PIVOT_Z - km * UNITS_PER_KM;
-    nav.__crossStartZ = z;
-  }
-  group.visible = z > -330 && z < 40;
-  group.position.z = z;
-}
-
-let turnFadeEl = null;
-function updateTurnFade(state) {
-  if (typeof document === 'undefined') return;
-  const p = state?.kanoRoadTurn?.progress;
-  if (!turnFadeEl) {
-    turnFadeEl = document.createElement('div');
-    turnFadeEl.style.cssText = 'position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:40;transition:opacity .12s linear';
-    document.body.appendChild(turnFadeEl);
-  }
-  turnFadeEl.style.opacity = Number.isFinite(p) && p > 0.86 ? String(Math.min(0.85, (p - 0.86) * 6)) : '0';
-}
-
 function installRenderer3DRoadHeading() {
   if (Renderer3D.prototype[PATCH_KEY]) return;
   const originalDraw = Renderer3D.prototype.draw;
@@ -594,18 +513,10 @@ function installRenderer3DRoadHeading() {
       return originalDraw.call(this, state, deltaSeconds, ...args);
     }
 
-    const animatedHeading = Number.isFinite(state?.kanoRoadHeading) ? state.kanoRoadHeading : 0;
-    // `heading` is the settled heading the camera/player are cancelled against.
-    // While turning, the world swings against it so the junction visibly rotates
-    // past the keke instead of the camera cancelling the whole manoeuvre.
-    const heading = Number.isFinite(state?.kanoRoadHeadingBase) ? state.kanoRoadHeadingBase : animatedHeading;
-    const swing = state?.kanoRoadTurn ? wrapHeading(animatedHeading - heading) : 0;
-    const worldHeading = heading - swing;
-    this.world.rotation.y = worldHeading;
-    this.world.position.set(-Math.sin(worldHeading) * ROAD_PIVOT_Z, 0, ROAD_PIVOT_Z * (1 - Math.cos(worldHeading)));
+    const heading = Number.isFinite(state?.kanoRoadHeading) ? state.kanoRoadHeading : 0;
+    this.world.rotation.y = heading;
+    this.world.position.set(-Math.sin(heading) * ROAD_PIVOT_Z, 0, ROAD_PIVOT_Z * (1 - Math.cos(heading)));
     this.driveFacingY = heading;
-    updateCrossroad(this, state);
-    updateTurnFade(state);
 
     const renderer = this.renderer;
     const camera = this.camera;
@@ -630,11 +541,7 @@ function installRenderer3DRoadHeading() {
       }
       const playerPoint = rotatePoint(player.position.x, player.position.z, heading);
       player.position.set(playerPoint.x, player.position.y, playerPoint.z);
-      const yawBefore = player.rotation.y;
-      const turnInfo = state?.kanoRoadTurn;
-      if (turnInfo) player.rotation.y += turnInfo.direction * Math.sin(turnInfo.progress * Math.PI) * 0.42;
-      try { return originalRender.call(this, scene, activeCamera); }
-      finally { player.rotation.y = yawBefore; }
+      return originalRender.call(this, scene, activeCamera);
     };
     try {
       return originalDraw.call(this, state, deltaSeconds, ...args);
@@ -688,7 +595,6 @@ function installGameHooks() {
     return result;
   };
   Game.prototype.tick = function tickWithKanoNavigation(deltaSeconds, ...args) {
-    activeNavGame = this;
     const result = originalTick.call(this, deltaSeconds, ...args);
     if (this.state === 'PLAY' && this.s && !this.s.event && !this.s.runEnded) {
       updateNavigation(this, clamp(Number(deltaSeconds) || 0, 0, 0.045));
