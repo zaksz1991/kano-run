@@ -16,7 +16,7 @@ import { save, persist } from './storage.js';
 
 // The bridge installs the road-network movement hook; real scene-space paths
 // must still be registered before any vehicle is assigned to the network.
-export const kanoTrafficRoadNetworkBridge = createKanoTrafficRoadNetworkBridge({ GameClass: Game });
+export const kanoTrafficRoadNetworkBridge = createKanoTrafficRoadNetworkBridge({ GameClass: Game, RendererClass: Renderer3D });
 
 const PATCH_KEY = Symbol.for('kano.life.roadNavigation.step95');
 const JUNCTION_INTERVAL_KM = 0.46;

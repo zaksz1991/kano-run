@@ -8,14 +8,16 @@ import { createKanoTrafficRoadRuntime } from './KanoTrafficRoadNetworkRuntime.js
 
 const BRIDGE_PATCH = Symbol.for('kano.life.trafficRoadNetworkBridge.v1');
 
-export function createKanoTrafficRoadNetworkBridge({ GameClass, windowObject = globalThis.window, connectionTolerance = 0.75 } = {}) {
+export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, windowObject = globalThis.window, connectionTolerance = 0.75 } = {}) {
   if (!GameClass?.prototype) return { ok: false, reason: 'game-class-required' };
   const network = createKanoTrafficRoadNetwork({ connectionTolerance });
   if (!network.ok) return network;
   const runtime = createKanoTrafficRoadRuntime(network);
   if (!runtime.ok) return runtime;
   let installed = false;
+  let rendererInstalled = false;
   let originalMoveTraffic = null;
+  let originalSyncTraffic = null;
 
   function activeGame() {
     return windowObject?.__KANO_ACTIVE_GAME__ || windowObject?.__KANO_ACTIVE_UI__?.game || null;
@@ -77,6 +79,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, windowObject = g
     const routed = traffic.filter(vehicle => vehicle.kanoRoadRoute?.ok);
     return {
       installed,
+      rendererInstalled,
       activeGame: Boolean(game),
       trafficCount: traffic.length,
       routedVehicleCount: routed.length,
@@ -96,21 +99,45 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, windowObject = g
   function install() {
     if (GameClass.prototype[BRIDGE_PATCH]) {
       installed = true;
-      return { ok: true, alreadyInstalled: true };
+    } else {
+      originalMoveTraffic = GameClass.prototype.moveTraffic;
+      if (typeof originalMoveTraffic !== 'function') return { ok: false, reason: 'move-traffic-method-missing' };
+      GameClass.prototype.moveTraffic = function moveTrafficWithRoadNetwork(...args) {
+        const result = originalMoveTraffic.apply(this, args);
+        const traffic = Array.isArray(this.s?.traffic) ? this.s.traffic : [];
+        for (const vehicle of traffic) {
+          if (vehicle.kanoRoadRoute?.ok) runtime.updateVehicle(vehicle);
+        }
+        return result;
+      };
+      Object.defineProperty(GameClass.prototype, BRIDGE_PATCH, { value: true });
+      installed = true;
     }
-    originalMoveTraffic = GameClass.prototype.moveTraffic;
-    if (typeof originalMoveTraffic !== 'function') return { ok: false, reason: 'move-traffic-method-missing' };
-    GameClass.prototype.moveTraffic = function moveTrafficWithRoadNetwork(...args) {
-      const result = originalMoveTraffic.apply(this, args);
-      const traffic = Array.isArray(this.s?.traffic) ? this.s.traffic : [];
-      for (const vehicle of traffic) {
-        if (vehicle.kanoRoadRoute?.ok) runtime.updateVehicle(vehicle);
+
+    // Keep elevated/curved road-path poses and model heading synchronized after
+    // the renderer performs its normal traffic placement. Mobile instancing is
+    // still handled by the existing junction-turn renderer adapter.
+    if (RendererClass?.prototype) {
+      const rendererPatch = Symbol.for('kano.life.trafficRoadNetworkRendererBridge.v1');
+      if (RendererClass.prototype[rendererPatch]) {
+        rendererInstalled = true;
+      } else if (typeof RendererClass.prototype.syncTraffic === 'function') {
+        originalSyncTraffic = RendererClass.prototype.syncTraffic;
+        RendererClass.prototype.syncTraffic = function syncTrafficWithRoadNetwork(state, ...args) {
+          const result = originalSyncTraffic.call(this, state, ...args);
+          const traffic = Array.isArray(state?.traffic) ? state.traffic : [];
+          for (const vehicle of traffic) {
+            if (!vehicle.kanoRoadRoute?.ok || !vehicle.kanoRoadPose) continue;
+            const actor = this.trafficActors?.get?.(vehicle.id);
+            runtime.applyActorPose(actor, vehicle);
+          }
+          return result;
+        };
+        Object.defineProperty(RendererClass.prototype, rendererPatch, { value: true });
+        rendererInstalled = true;
       }
-      return result;
-    };
-    Object.defineProperty(GameClass.prototype, BRIDGE_PATCH, { value: true });
-    installed = true;
-    return { ok: true };
+    }
+    return { ok: true, rendererInstalled };
   }
 
   const api = {

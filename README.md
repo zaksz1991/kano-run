@@ -1,16 +1,16 @@
-# Kano Run — AI Traffic Junction Turn (Next 9)
+# Kano Run — AI Traffic Junction Turn (Next 10)
 
-## New in Next 9
-- Connected `KanoTrafficRoadNetworkBridge` to `KanoRoadNavigationUpgrade.js`, so loading the navigation upgrade now installs the road-network movement hook on the existing `Game` class.
-- Removed the bridge module's implicit direct dependency on `game.js`; navigation supplies the real `Game` class explicitly. This also makes the bridge independently testable with a mock game class.
-- Added an integration test that registers connected road paths, assigns a live traffic object to a route, runs the original `moveTraffic` method, and verifies that the vehicle advances along the registered geometry while its collision X coordinate remains aligned.
-- Exposed the instantiated bridge as `kanoTrafficRoadNetworkBridge` from the navigation module, alongside the browser audit global already published by the bridge.
+## New in Next 10
+- Added an optional `Renderer3D.syncTraffic` bridge alongside the existing `Game.moveTraffic` bridge.
+- After the normal renderer placement, explicitly routed GLB actors now receive the same sampled road-path XYZ position and yaw used by the road-network runtime.
+- Added a focused integration test for elevated road paths, checking actor X/Y/Z and heading against the runtime's sampled pose.
+- Added `rendererInstalled` to the bridge audit so the caller can see whether the renderer hook was installed.
 
 ## Verification
-`node --test tests/*.test.mjs` — **26/26 focused tests passed**. This includes a new test of the bridge's Game hook and routed vehicle movement.
+`node --test tests/*.test.mjs` is the focused test suite for this package. Its results do not establish full-repository or browser gameplay correctness.
 
 ## Important boundary
-This fixes a missing integration connection, but it does not by itself create surveyed road anchors or assign arbitrary live traffic automatically. The network still needs explicit scene-space paths registered through `window.kanoTrafficRoadNetwork` before traffic can take real branch turns. Full repository `npm test` and browser/mobile gameplay remain unverified.
+The bridge remains opt-in for traffic routes: real scene-space paths must be registered and assigned. This update aligns GLB actor poses with registered route geometry, but does not invent road coordinates, auto-route every vehicle, or independently verify the full game. The mobile instanced renderer continues to use the existing traffic-turn adapter; this new actor-pose hook is for `trafficActors` GLB actors.
 
 ## Additive scope
-This package contains additive navigation/traffic modules and focused tests. It does not modify protected game/rendering source files or assets. Merge these files into the current project without replacing protected files with the snapshots used for analysis.
+Only the navigation/traffic add-on modules and focused tests in this package are included. Protected game/rendering files and assets are not replaced.

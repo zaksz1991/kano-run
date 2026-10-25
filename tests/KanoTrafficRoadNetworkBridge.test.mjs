@@ -47,3 +47,45 @@ test('navigation bridge installs on Game and updates explicitly routed live traf
   assert.ok(Math.abs(collisionX - vehicle.kanoRoadPose.position.x) < 1e-6);
   assert.equal(bridge.audit().routedVehicleCount, 1);
 });
+
+test('renderer bridge applies registered road-path XYZ position and sampled heading to GLB actors', () => {
+  class FakeRenderer {
+    constructor() {
+      this.trafficActors = new Map();
+    }
+    syncTraffic(state) {
+      for (const vehicle of state.traffic) {
+        if (!this.trafficActors.has(vehicle.id)) {
+          this.trafficActors.set(vehicle.id, {
+            position: { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
+            rotation: { y: 0 },
+          });
+        }
+      }
+      return 'original-render-ran';
+    }
+  }
+  const game = new FakeGame();
+  const vehicle = { id: 'elevated-keke', lane: 1, depth: 0, direction: 1, visualOffsetX: 0 };
+  game.s.traffic.push(vehicle);
+  const bridge = createKanoTrafficRoadNetworkBridge({
+    GameClass: FakeGame,
+    RendererClass: FakeRenderer,
+    windowObject: { __KANO_ACTIVE_GAME__: game },
+  });
+  assert.equal(bridge.ok, true);
+  assert.equal(bridge.audit().rendererInstalled, true);
+  assert.equal(bridge.registerPath({
+    path: path('ramp', { x: 3, y: 2, z: 0 }, { x: 9, y: 5, z: 100 }),
+    fromNode: 'ramp-start', toNode: 'ramp-end', turn: 'right',
+  }).ok, true);
+  const assignment = bridge.assignVehicleRoute({ vehicleId: vehicle.id, fromNode: 'ramp-start', toNode: 'ramp-end', progress: 0.25 });
+  assert.equal(assignment.ok, true);
+  const renderer = new FakeRenderer();
+  assert.equal(renderer.syncTraffic(game.s), 'original-render-ran');
+  const actor = renderer.trafficActors.get(vehicle.id);
+  assert.ok(Math.abs(actor.position.x - vehicle.kanoRoadPose.position.x) < 1e-6);
+  assert.ok(Math.abs(actor.position.y - vehicle.kanoRoadPose.position.y) < 1e-6);
+  assert.ok(Math.abs(actor.position.z - vehicle.kanoRoadPose.position.z) < 1e-6);
+  assert.ok(Math.abs(actor.rotation.y - vehicle.kanoRoadPose.yaw) < 1e-6);
+});
