@@ -4856,6 +4856,7 @@ export class Renderer3D {
         -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
       );
       actor.rotation.y = vehicle.direction === -1 ? Math.PI : 0;
+      if (vehicle.turnYaw) actor.rotation.y += vehicle.turnYaw; // AI car turning off at a junction
       if (vehicle.type === 'motorcycle') this.ensureAchabaRiders(actor);
     }
 
@@ -4885,6 +4886,7 @@ export class Renderer3D {
             -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
           );
           transform.rotation.set(0, vehicle.direction === -1 ? Math.PI : 0, 0);
+          if (vehicle.turnYaw) transform.rotation.y += vehicle.turnYaw;
           transform.scale.set(1, 1, 1);
           transform.updateMatrix();
           batch.mesh.setMatrixAt(index, transform.matrix);
