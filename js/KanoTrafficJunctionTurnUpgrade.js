@@ -82,7 +82,7 @@ function updateBranchVehicle(game, vehicle, dt) {
 
   // Let the original collision/despawn loop see a stable junction depth. Once
   // the junction is behind the player, allow the normal traffic despawn path.
-  if (targetDepth <= -0.12 || Math.abs(turn.branchX) >= BRANCH_EXIT_X) {
+  if (targetDepth <= -1.35 || Math.abs(turn.branchX) >= BRANCH_EXIT_X) {
     vehicle.depth = -0.13;
     vehicle.kanoTurn = null;
     vehicle._kanoTurnOffsetX = 0;
@@ -91,7 +91,7 @@ function updateBranchVehicle(game, vehicle, dt) {
     vehicle.kanoBranchTargetDepth = null;
     return;
   }
-  vehicle.depth = Math.max(targetDepth, -0.10);
+  vehicle.depth = targetDepth;
 }
 
 function updateVehicleTurn(game, vehicle, depthAtJunction, dt) {
@@ -181,17 +181,43 @@ function installGameHook() {
   if (typeof originalMoveTraffic !== 'function') return;
   Game.prototype.moveTraffic = function moveTrafficWithJunctionTurns(dt, ...args) {
     const depth = junctionDepth(this);
-    const trafficBefore = Array.isArray(this.s?.traffic) ? this.s.traffic.slice() : [];
+    const traffic = Array.isArray(this.s?.traffic) ? this.s.traffic : null;
+    const trafficBefore = traffic ? traffic.slice() : [];
     for (const vehicle of trafficBefore) updateVehicleTurn(this, vehicle, depth, dt);
-    const result = originalMoveTraffic.call(this, dt, ...args);
-    // The original movement loop resets the visual offset base and advances Z.
-    // Re-pin branch vehicles after its collision check so their rendered pose
-    // stays on the perpendicular crossroad. Collision X uses the same accessor.
+
+    // The base game despawns traffic at depth < -0.12. A vehicle already
+    // committed to the perpendicular branch must remain on that side road
+    // until it leaves the visible junction, rather than disappearing as soon
+    // as the junction crosses the player's plane.
+    const deferredBranches = [];
+    if (traffic) {
+      for (let index = traffic.length - 1; index >= 0; index -= 1) {
+        const vehicle = traffic[index];
+        const targetDepth = Number(vehicle.kanoBranchTargetDepth);
+        if (vehicle.kanoTurn?.phase === 'branch'
+            && Number.isFinite(targetDepth)
+            && targetDepth <= -0.12
+            && targetDepth > -1.35) {
+          deferredBranches.push(vehicle);
+          traffic.splice(index, 1);
+        }
+      }
+    }
+
+    let result;
+    try {
+      result = originalMoveTraffic.call(this, dt, ...args);
+    } finally {
+      if (traffic && deferredBranches.length) traffic.push(...deferredBranches.reverse());
+    }
+
+    // Keep branch vehicles attached to the same moving junction plane after
+    // the base movement/collision loop has processed ordinary traffic.
     const trafficAfter = Array.isArray(this.s?.traffic) ? this.s.traffic : [];
     for (const vehicle of trafficAfter) {
       if (vehicle.kanoTurn?.phase !== 'branch') continue;
       const targetDepth = Number(vehicle.kanoBranchTargetDepth);
-      if (Number.isFinite(targetDepth) && targetDepth > -0.12) vehicle.depth = Math.max(targetDepth, -0.10);
+      if (Number.isFinite(targetDepth)) vehicle.depth = targetDepth;
     }
     return result;
   };

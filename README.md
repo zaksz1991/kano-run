@@ -1,20 +1,26 @@
-# Kano Run — AI Traffic Junction Turn, Next 21
+# Kano Run — AI Traffic Junction Turn, Next 22
 
-## Fix in this update
-The available turn math set the approach yaw to zero at both ends of its curve, while the branch phase immediately set the vehicle heading to 90 degrees. That caused a heading snap exactly when an AI vehicle entered the crossroad.
+## Change in this update
 
-The approach curve now eases the vehicle heading from straight ahead to the final ±90-degree branch heading. The branch phase uses that same final heading, so orientation is continuous at the transition. This is a targeted correction to the existing additive traffic-turn module; it does not create or register missing road geometry.
+This update fixes the branch-lifetime defect in `js/KanoTrafficJunctionTurnUpgrade.js`.
 
-## Regression coverage
-- Replaced the old lane-change-style expectation of zero yaw at turn completion with the correct branch heading.
-- Added a monotonic heading test from approach start through completion.
-- Added an adapter-level regression test for the approach-to-branch transition.
-- Retained the existing route-network, traffic movement, renderer, and mobile-instance tests.
+Previously, a turning vehicle was cleared as soon as the junction passed the game's normal traffic despawn plane (`depth < -0.12`). The same frame then removed it from the traffic list, so the vehicle could begin a turn and disappear before travelling along the crossroad. The adapter now keeps a committed branch vehicle alive while the junction moves behind the player, skips the ordinary collision/despawn pass for that already-behind vehicle, and releases it once the junction leaves the visible depth range or the vehicle reaches the branch exit distance.
 
-## Verification boundary
-- Focused tests: **41/41 passed** with `node --test tests/*.test.mjs`.
-- ZIP integrity: checked after packaging.
-- Full production repository tests and live browser gameplay were not run. This does not prove that the deployed game is fixed.
+The original `Game.moveTraffic` and `Renderer3D.syncTraffic` implementations remain in place and are still called. No protected core files or model assets are included for replacement.
 
 ## Installation
-Replace `js/KanoTrafficJunctionTurnUpgrade.js` and `js/KanoTrafficJunctionTurnMath.js` with the complete included files. Keep protected core files and model assets unchanged. This package is based on the previously supplied additive module set, not a fresh checkout of the latest GitHub main branch.
+
+From this ZIP, use only the complete replacement file:
+
+- `js/KanoTrafficJunctionTurnUpgrade.js`
+
+Replace the existing file at that exact path in the project. Do not replace `game.js`, `renderer3d.js`, `main.js`, `index.html`, `KanoModelAssetVisualUpgrade.js`, `KanoDeviceTier.js`, `KanoPhoneComfortUpgrade.js`, `ModelManager.js`, `KanoGameplayPresentationRepair.js`, `tests/KanoRegressionGuard.test.mjs`, or anything under `public/`.
+
+The existing `KanoRoadNavigationUpgrade.js` must already import `KanoTrafficJunctionTurnUpgrade.js` for this adapter to load. This package does not alter startup files.
+
+## Verification
+
+- Focused package tests: **42/42 passed** with Node's test runner.
+- Added regression coverage simulates the base game's `depth < -0.12` traffic despawn and checks that a committed turning vehicle remains until it leaves the junction view.
+- ZIP integrity checked.
+- The full production repository suite and live browser gameplay were not run. These tests do not prove the deployed game is fixed.

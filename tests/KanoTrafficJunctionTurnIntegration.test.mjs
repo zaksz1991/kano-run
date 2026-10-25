@@ -12,7 +12,7 @@ async function loadAdapterFixture() {
   await mkdir(js, { recursive: true });
   await copyFile(new URL('../js/KanoTrafficJunctionTurnUpgrade.js', import.meta.url), path.join(js, 'KanoTrafficJunctionTurnUpgrade.js'));
   await copyFile(new URL('../js/KanoTrafficJunctionTurnMath.js', import.meta.url), path.join(js, 'KanoTrafficJunctionTurnMath.js'));
-  await writeFile(path.join(js, 'game.js'), `export class Game { moveTraffic(dt) { this.originalCalls = (this.originalCalls || 0) + 1; for (const v of this.s.traffic) { v.visualOffsetX = 0; v.depth -= dt * 0.01; } } }\n`);
+  await writeFile(path.join(js, 'game.js'), `export class Game { moveTraffic(dt) { this.originalCalls = (this.originalCalls || 0) + 1; for (let i = this.s.traffic.length - 1; i >= 0; i -= 1) { const v = this.s.traffic[i]; v.visualOffsetX = 0; v.depth -= dt * 0.01; if (this.simulateDespawn && v.depth < -0.12) this.s.traffic.splice(i, 1); } } }\n`);
   await writeFile(path.join(js, 'renderer3d.js'), `export class Renderer3D { syncTraffic(state) { this.originalSyncCalls = (this.originalSyncCalls || 0) + 1; } }\n`);
   const adapterUrl = pathToFileURL(path.join(js, 'KanoTrafficJunctionTurnUpgrade.js')).href + `?fixture=${Date.now()}-${Math.random()}`;
   const { Game } = await import(pathToFileURL(path.join(js, 'game.js')).href);
@@ -166,6 +166,40 @@ test('AI traffic does not miss a junction when a large frame step crosses the wh
   }
 });
 
+
+
+test('branching traffic survives the base-game despawn plane until it leaves the junction', async () => {
+  const fixture = await loadAdapterFixture();
+  try {
+    const game = new fixture.Game();
+    const vehicle = makeVehicle(findTurningId());
+    game.kanoWorldDistanceKm = 0.36;
+    game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
+    game.s = { traffic: [vehicle], distance: 0.36 };
+    game.simulateDespawn = true;
+    const junctionDepth = (0 * 1008 - 2) / 88;
+    vehicle.depth = junctionDepth - 0.15;
+
+    game.moveTraffic(0.016);
+    assert.equal(vehicle.kanoTurn?.phase, 'branch');
+
+    // The junction moves behind the player. The base game would normally
+    // remove the vehicle at depth < -0.12, but a committed turn must continue.
+    game.kanoWorldDistanceKm = 0.39;
+    game.moveTraffic(0.016);
+    assert.ok(game.s.traffic.includes(vehicle), 'branching vehicle survives the ordinary despawn plane');
+    assert.equal(vehicle.kanoTurn?.phase, 'branch');
+    assert.ok(vehicle.depth < -0.12 && vehicle.depth > -1.35);
+
+    // Once the junction is fully outside the visible depth range, normal
+    // cleanup is allowed again.
+    game.kanoWorldDistanceKm = 0.50;
+    game.moveTraffic(0.016);
+    assert.ok(!game.s.traffic.includes(vehicle), 'vehicle is removed after leaving the junction view');
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
 
 test('AI vehicle heading is continuous when the approach phase becomes a perpendicular branch', async () => {
   const fixture = await loadAdapterFixture();
