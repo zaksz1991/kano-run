@@ -146,75 +146,96 @@
 
 
 
+
+
+
 <script>
-/* View fix: smaller keke, camera further back, clearer world */
+/* ViewFix v2 — from your phone screenshots: keke too big, fog too strong */
 (function () {
   var patched = false;
 
-  function applyPatch(renderer) {
-    if (!renderer || patched || typeof renderer.draw !== 'function') return false;
-    var origDraw = renderer.draw.bind(renderer);
-    renderer.draw = function (state, dt) {
+  function hardenFog(scene) {
+    if (!scene || !scene.fog) return;
+    scene.fog.near = 8;
+    scene.fog.far = 140;
+  }
+
+  function fixCamera(camera, player) {
+    if (!camera || !camera.position) return;
+    // Much further back than stock (stock ~7–9)
+    camera.position.z = 15.5;
+    camera.position.y = 5.2;
+    if (camera.fov < 68) {
+      camera.fov = 70;
+      if (camera.updateProjectionMatrix) camera.updateProjectionMatrix();
+    }
+    var px = player && player.position ? player.position.x : 0;
+    var pz = player && player.position ? player.position.z : 0;
+    if (camera.lookAt) camera.lookAt(px * 0.2, 0.7, pz - 10);
+  }
+
+  function fixPlayer(player) {
+    if (!player || !player.scale || !player.scale.setScalar) return;
+    player.scale.setScalar(0.55);
+  }
+
+  function wrapRenderer(r) {
+    if (!r || patched) return false;
+    if (typeof r.draw !== 'function') return false;
+    var origDraw = r.draw.bind(r);
+    r.draw = function (state, dt) {
       var webgl = this.renderer;
-      if (!webgl || typeof webgl.render !== 'function') {
-        return origDraw(state, dt);
-      }
-      var origRender = webgl.render.bind(webgl);
-      webgl.render = function (scene, camera) {
-        try {
-          if (camera && this.lifeScene !== 'garage') {
-            // Pull camera back + up so road and lower view are visible
-            if (camera.position.z < 12) camera.position.z = 12.5;
-            if (camera.position.y < 4) camera.position.y = 4.3;
-            if (camera.fov < 64) {
-              camera.fov = 66;
-              camera.updateProjectionMatrix();
+      var self = this;
+      if (webgl && typeof webgl.render === 'function') {
+        var origRender = webgl.render.bind(webgl);
+        webgl.render = function (scene, camera) {
+          try {
+            fixPlayer(self.player);
+            hardenFog(scene);
+            fixCamera(camera, self.player);
+            if (typeof webgl.setPixelRatio === 'function') {
+              webgl.setPixelRatio(Math.min(Math.max(window.devicePixelRatio || 1, 1.3), 2));
             }
-            var px = (this.player && this.player.position) ? this.player.position.x : 0;
-            var pz = (this.player && this.player.position) ? this.player.position.z : 0;
-            camera.lookAt(px * 0.25, 0.85, pz - 7);
-          }
-          // Shrink oversized player keke
-          if (this.player && this.player.scale) {
-            this.player.scale.setScalar(0.7);
-          }
-          // Clearer air — less blurry wash
-          if (scene && scene.fog) {
-            scene.fog.near = 10;
-            scene.fog.far = 95;
-          }
-          // Sharper pixels
-          if (typeof webgl.setPixelRatio === 'function') {
-            var dpr = Math.min(window.devicePixelRatio || 1, 1.75);
-            if (dpr < 1.25) dpr = 1.25;
-            webgl.setPixelRatio(dpr);
-          }
-        } catch (e) {}
-        return origRender(scene, camera);
-      }.bind(this);
-      try {
-        return origDraw(state, dt);
-      } finally {
-        webgl.render = origRender;
+          } catch (e) {}
+          return origRender(scene, camera);
+        };
+        try {
+          return origDraw(state, dt);
+        } finally {
+          webgl.render = origRender;
+        }
       }
+      return origDraw(state, dt);
     };
     patched = true;
-    console.info('[ViewFix] camera back, keke smaller, clearer fog');
+    console.info('[ViewFix v2] camera back, keke 55%, fog light');
     return true;
   }
 
-  function tryPatch() {
+  function tick() {
     var r =
       (window.game && window.game.renderer) ||
+      (window.game && window.game.renderer3d) ||
       window.__kanoRenderer3d ||
       null;
-    if (applyPatch(r)) return;
+    if (wrapRenderer(r)) return;
+    // Also try walking children
+    if (window.game) {
+      for (var k in window.game) {
+        try {
+          var v = window.game[k];
+          if (v && typeof v.draw === 'function' && v.camera && v.player) {
+            if (wrapRenderer(v)) return;
+          }
+        } catch (e) {}
+      }
+    }
   }
 
-  setInterval(tryPatch, 500);
-  setTimeout(tryPatch, 300);
-  setTimeout(tryPatch, 1500);
-  setTimeout(tryPatch, 4000);
+  setInterval(tick, 400);
+  setTimeout(tick, 200);
+  setTimeout(tick, 1000);
+  setTimeout(tick, 3000);
 })();
 </script>
 
