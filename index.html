@@ -182,9 +182,6 @@
         });
       });
     } catch (e) {}
-    if (webgl && webgl.setPixelRatio) {
-      webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    }
   }
 
   function wrap(r) {
@@ -201,9 +198,7 @@
             if (scene) {
               scene.fog = null;
             }
-            if (webgl.setPixelRatio) {
-              webgl.setPixelRatio(Math.min(Math.max(window.devicePixelRatio || 1, 1.25), 2));
-            }
+            // Pixel ratio is owned by KanoDeviceTier/KanoAdaptiveQuality; resizing the canvas every frame is expensive.
           } catch (e) {}
           return or(scene, camera);
         };
