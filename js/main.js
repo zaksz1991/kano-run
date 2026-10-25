@@ -6,12 +6,12 @@ import { Renderer2D } from './renderer2d.js';
 import { Renderer3D } from './renderer3d.js';
 import { getMobileTier } from './KanoDeviceTier.js';
 import { ModelManager } from './ModelManager.js';
-import { createModelAuditPanel } from './ModelAuditPanel.js';
+/* phone-lazy */ // import { createModelAuditPanel } from './ModelAuditPanel.js';
 import { save, persist } from './storage.js';
 import { KanoProductionBridge } from './KanoProductionBridge.js';
 import { KekeDynamics } from './KekeDynamics.js';
 import { KanoVisualEffects } from './KanoVisualEffects.js';
-import { LiveUserCounter } from './LiveUserCounter.js';
+/* phone-lazy */ // import { LiveUserCounter } from './LiveUserCounter.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
 import {
   KanoTrafficDirector,
@@ -22,8 +22,8 @@ import { KanoCinematicCamera } from './KanoCinematicCamera.js';
 import { KanoAdaptiveQuality } from './KanoAdaptiveQuality.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
 import { KanoInteractionReliability } from './KanoInteractionReliability.js';
-import { KanoWorkshopPanel } from './KanoWorkshopPanel.js';
-import { registerServiceWorker } from './registerServiceWorker.js';
+/* phone-lazy */ // import { KanoWorkshopPanel } from './KanoWorkshopPanel.js';
+/* phone-lazy */ // import { registerServiceWorker } from './registerServiceWorker.js';
 import { KanoDayCycle } from './KanoDayCycle.js';
 import { KanoDayHud } from './KanoDayHud.js';
 import {
@@ -70,7 +70,9 @@ const force3d = query.has('force3d');
 
 // Enable the existing offline shell/model cache on HTTPS deployments.
 // Local Playwright runs stay isolated unless explicitly opened with ?sw=1.
-registerServiceWorker();
+setTimeout(() => {
+  import('./registerServiceWorker.js').then((m) => m.registerServiceWorker?.()).catch(() => {});
+}, 4000);
 
 // Developer diagnostics are opt-in.
 const debugMode = query.has('debugModels');
@@ -890,14 +892,23 @@ function boot() {
     );
   }
 
-  // Server-backed presence count.
+  // Server-backed presence count (phone-lazy).
   try {
-    liveUserCounter = new LiveUserCounter({
-      container,
-    }).start();
+    liveUserCounter = null;
+    setTimeout(() => {
+      import('./LiveUserCounter.js')
+        .then((m) => {
+          try {
+            liveUserCounter = new m.LiveUserCounter({ container });
+            liveUserCounter.start?.();
+          } catch (e) {
+            console.warn('[phone-lazy] LiveUserCounter', e);
+          }
+        })
+        .catch(() => {});
+    }, 3500);
   } catch (error) {
     liveUserCounter = null;
-
     console.warn(
       '[Kano Life] live-user counter unavailable',
       error,
@@ -907,7 +918,11 @@ function boot() {
   // Developer-only model audit.
   if (debugMode) {
     try {
-      createModelAuditPanel();
+      setTimeout(() => {
+        import('./ModelAuditPanel.js')
+          .then((m) => m.createModelAuditPanel?.())
+          .catch(() => {});
+      }, 3000);
     } catch (error) {
       console.warn(
         '[Kano Life] model audit panel unavailable',
@@ -1017,26 +1032,31 @@ function boot() {
   // ----------------------------------------------------------
 
   try {
-    workshopPanel = new KanoWorkshopPanel({
-      game,
-      container,
-      mobile,
-    });
-
-    window.kanoWorkshopPanel = workshopPanel;
-
-    console.info(
-      '[Kano Life] Workshop and recovery panel ready.',
-    );
+    workshopPanel = null;
+    setTimeout(() => {
+      import('./KanoWorkshopPanel.js')
+        .then((m) => {
+          try {
+            workshopPanel = new m.KanoWorkshopPanel({
+              game,
+              container,
+              mobile,
+            });
+            window.kanoWorkshopPanel = workshopPanel;
+            console.info('[Kano Life] Workshop and recovery panel ready.');
+          } catch (e) {
+            console.warn('[phone-lazy] WorkshopPanel', e);
+          }
+        })
+        .catch(() => {});
+    }, 4000);
   } catch (error) {
     workshopPanel = null;
-
     try {
       delete window.kanoWorkshopPanel;
     } catch {
       // Ignore unavailable global cleanup.
     }
-
     console.warn(
       '[Kano Life] Workshop panel could not start:',
       error,
