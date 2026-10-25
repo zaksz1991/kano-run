@@ -423,8 +423,8 @@ export class Renderer3D {
     this.laneDashRecords = laneDashRecords;
     laneDashGeometry.computeBoundingSphere();
 
-    const buildingCount = this.mobile ? 10 : 24;
-    const buildingSpacing = this.mobile ? 14 : 9;
+    const buildingCount = this.mobile ? 6 : 20;
+    const buildingSpacing = this.mobile ? 18 : 9;
 
     this.buildingLoopDistance =
       buildingCount * buildingSpacing + 15;
