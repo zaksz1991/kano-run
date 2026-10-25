@@ -149,93 +149,99 @@
 
 
 
+
+
+
 <script>
-/* ViewFix v2 — from your phone screenshots: keke too big, fog too strong */
+/* ENV CLEAR — remove milky fog wash on buildings/road (not camera) */
 (function () {
   var patched = false;
 
-  function hardenFog(scene) {
-    if (!scene || !scene.fog) return;
-    scene.fog.near = 8;
-    scene.fog.far = 140;
-  }
-
-  function fixCamera(camera, player) {
-    if (!camera || !camera.position) return;
-    // Much further back than stock (stock ~7–9)
-    camera.position.z = 15.5;
-    camera.position.y = 5.2;
-    if (camera.fov < 68) {
-      camera.fov = 70;
-      if (camera.updateProjectionMatrix) camera.updateProjectionMatrix();
+  function clearEnvironment(scene, webgl) {
+    if (!scene) return;
+    // Kill the grey soup: fog is what blurs distant shops/road
+    if (scene.fog) {
+      scene.fog.near = 80;
+      scene.fog.far = 400;
+      // Prefer no fog if API allows
+      try { scene.fog = null; } catch (e) {}
     }
-    var px = player && player.position ? player.position.x : 0;
-    var pz = player && player.position ? player.position.z : 0;
-    if (camera.lookAt) camera.lookAt(px * 0.2, 0.7, pz - 10);
+    // Sharpen materials / textures already on meshes
+    try {
+      scene.traverse(function (obj) {
+        if (!obj.isMesh || !obj.material) return;
+        var mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(function (m) {
+          if (!m) return;
+          if (m.map) {
+            m.map.anisotropy = 8;
+            m.map.needsUpdate = true;
+          }
+          if (m.roughness !== undefined) m.roughness = Math.min(m.roughness, 0.85);
+          m.needsUpdate = true;
+        });
+      });
+    } catch (e) {}
+    if (webgl && webgl.setPixelRatio) {
+      webgl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    }
   }
 
-  function fixPlayer(player) {
-    if (!player || !player.scale || !player.scale.setScalar) return;
-    player.scale.setScalar(0.55);
-  }
-
-  function wrapRenderer(r) {
-    if (!r || patched) return false;
-    if (typeof r.draw !== 'function') return false;
-    var origDraw = r.draw.bind(r);
+  function wrap(r) {
+    if (!r || patched || typeof r.draw !== 'function') return false;
+    var orig = r.draw.bind(r);
     r.draw = function (state, dt) {
       var webgl = this.renderer;
       var self = this;
-      if (webgl && typeof webgl.render === 'function') {
-        var origRender = webgl.render.bind(webgl);
+      if (webgl && webgl.render) {
+        var or = webgl.render.bind(webgl);
         webgl.render = function (scene, camera) {
           try {
-            fixPlayer(self.player);
-            hardenFog(scene);
-            fixCamera(camera, self.player);
-            if (typeof webgl.setPixelRatio === 'function') {
-              webgl.setPixelRatio(Math.min(Math.max(window.devicePixelRatio || 1, 1.3), 2));
+            // Game sets fog every frame in draw() — clear it right before paint
+            if (scene) {
+              scene.fog = null;
+            }
+            if (webgl.setPixelRatio) {
+              webgl.setPixelRatio(Math.min(Math.max(window.devicePixelRatio || 1, 1.25), 2));
             }
           } catch (e) {}
-          return origRender(scene, camera);
+          return or(scene, camera);
         };
         try {
-          return origDraw(state, dt);
+          var out = orig(state, dt);
+          // Also clear after their draw assigned fog
+          try {
+            if (self.scene) self.scene.fog = null;
+          } catch (e) {}
+          return out;
         } finally {
-          webgl.render = origRender;
+          webgl.render = or;
         }
       }
-      return origDraw(state, dt);
+      var out2 = orig(state, dt);
+      try { if (this.scene) this.scene.fog = null; } catch (e) {}
+      return out2;
     };
     patched = true;
-    console.info('[ViewFix v2] camera back, keke 55%, fog light');
+    console.info('[ENV CLEAR] fog removed — world should look sharp not milky');
     return true;
   }
 
   function tick() {
-    var r =
-      (window.game && window.game.renderer) ||
-      (window.game && window.game.renderer3d) ||
-      window.__kanoRenderer3d ||
-      null;
-    if (wrapRenderer(r)) return;
-    // Also try walking children
+    var r = (window.game && window.game.renderer) || window.__kanoRenderer3d;
+    if (wrap(r)) return;
     if (window.game) {
       for (var k in window.game) {
         try {
           var v = window.game[k];
-          if (v && typeof v.draw === 'function' && v.camera && v.player) {
-            if (wrapRenderer(v)) return;
-          }
+          if (v && v.draw && v.scene) { if (wrap(v)) return; }
         } catch (e) {}
       }
     }
   }
-
   setInterval(tick, 400);
-  setTimeout(tick, 200);
-  setTimeout(tick, 1000);
-  setTimeout(tick, 3000);
+  setTimeout(tick, 300);
+  setTimeout(tick, 1500);
 })();
 </script>
 
