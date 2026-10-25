@@ -3,8 +3,6 @@
  * Road paths must use the renderer's scene coordinates: x in lane-world units,
  * z mapped to depth by depth = -z / 88. No road anchors are guessed here.
  */
-import { sampleKanoRoadPath } from './KanoDriveableRoadGeometry.js';
-
 const DEPTH_UNITS = 88;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const normalizeAngle = angle => {
@@ -38,18 +36,25 @@ export function createKanoTrafficRoadRuntime(network) {
     return { ok: true, pathId: route.pathIds[0], progress: initialProgress };
   }
 
-  function updateVehicle(vehicle) {
+  function updateVehicle(vehicle, { distanceDelta } = {}) {
     const route = vehicle?.kanoRoadRoute;
     if (!route?.ok || !Array.isArray(route.pathIds)) return { ok: false, reason: 'vehicle-route-not-assigned' };
     let index = clamp(Math.trunc(Number(vehicle.kanoRoadPathIndex) || 0), 0, route.pathIds.length - 1);
     let progress = clamp(Number(vehicle.kanoRoadPathProgress) || 0, 0, 1);
     const currentDepth = Number(vehicle.depth) || 0;
     const lastDepth = Number(vehicle.kanoRoadLastDepth);
-    // Carry travelled scene distance across path boundaries. The previous
-    // normalized-progress subtraction lost distance when adjacent paths had
-    // different lengths or a single frame crossed more than one short path.
+    // Route progress must follow travelled distance along the road, not only
+    // the change in Z/depth. A left/right turn can move mostly along X while
+    // Z barely changes; depth-only progress makes such vehicles stall at the
+    // bend. The live bridge supplies speed-derived distance for each frame.
+    // Legacy callers that change depth directly retain the previous behavior.
     let travelledDistance = progress * pathLength(route.pathIds[index]);
-    if (Number.isFinite(lastDepth)) travelledDistance += Math.abs(currentDepth - lastDepth) * DEPTH_UNITS;
+    const explicitDistance = Number(distanceDelta);
+    if (Number.isFinite(explicitDistance) && explicitDistance >= 0) {
+      travelledDistance += explicitDistance;
+    } else if (Number.isFinite(lastDepth)) {
+      travelledDistance += Math.abs(currentDepth - lastDepth) * DEPTH_UNITS;
+    }
 
     while (index < route.pathIds.length - 1) {
       const currentLength = pathLength(route.pathIds[index]);
@@ -105,12 +110,31 @@ export function createKanoTrafficRoadRuntime(network) {
       set(value) {
         storedDepth = Number(value) || 0;
         if (!this.__kanoRoadRuntimeUpdating && this.kanoRoadRoute?.ok) {
-          this.__kanoRoadRuntime?.updateVehicle(this);
+          const frameToken = this.__kanoRoadFrameToken;
+          const frameDt = Number(this.__kanoRoadFrameDt);
+          if (frameToken != null && Number.isFinite(frameDt) && frameDt > 0) {
+            // Advance at most once per simulation frame, even if the game's
+            // movement code writes depth more than once.
+            if (this.__kanoRoadAdvancedFrameToken !== frameToken) {
+              this.__kanoRoadAdvancedFrameToken = frameToken;
+              this.__kanoRoadRuntime?.updateVehicle(this, { distanceDelta: vehicleTravelDistance(this, frameDt) });
+            }
+          } else {
+            this.__kanoRoadRuntime?.updateVehicle(this);
+          }
         }
       },
     });
     vehicle.__kanoRoadDepthObserver = true;
     return { ok: true };
+  }
+
+  function vehicleTravelDistance(vehicle, dt) {
+    const suppliedSpeed = Number(vehicle?.speedKmh);
+    const speedKmh = Number.isFinite(suppliedSpeed) && suppliedSpeed > 0
+      ? suppliedSpeed
+      : (vehicle?.direction === -1 ? 30 : 22);
+    return speedKmh * dt / 3.6;
   }
 
   function pathLength(pathId) {
@@ -126,6 +150,6 @@ export function createKanoTrafficRoadRuntime(network) {
     return true;
   }
 
-  const api = { ok: true, assignRoute, updateVehicle, applyActorPose };
+  const api = { ok: true, assignRoute, updateVehicle, applyActorPose, vehicleTravelDistance };
   return api;
 }

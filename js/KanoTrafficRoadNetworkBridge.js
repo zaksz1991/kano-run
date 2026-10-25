@@ -266,12 +266,35 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
     } else {
       originalMoveTraffic = GameClass.prototype.moveTraffic;
       if (typeof originalMoveTraffic !== 'function') return { ok: false, reason: 'move-traffic-method-missing' };
+      let frameSequence = 0;
       GameClass.prototype.moveTraffic = function moveTrafficWithRoadNetwork(...args) {
+        const frameDt = Number(args[0]);
+        const token = ++frameSequence;
+        const before = Array.isArray(this.s?.traffic) ? this.s.traffic : [];
+        for (const vehicle of before) {
+          if (!vehicle?.kanoRoadRoute?.ok) continue;
+          vehicle.__kanoRoadFrameToken = token;
+          vehicle.__kanoRoadFrameDt = frameDt;
+          vehicle.__kanoRoadAdvancedFrameToken = null;
+        }
         const result = originalMoveTraffic.apply(this, args);
         const traffic = Array.isArray(this.s?.traffic) ? this.s.traffic : [];
         assignUnroutedTraffic(traffic);
         for (const vehicle of traffic) {
-          if (vehicle.kanoRoadRoute?.ok) runtime.updateVehicle(vehicle);
+          if (!vehicle.kanoRoadRoute?.ok) continue;
+          // Some game frames do not write depth (for example, a vehicle near a
+          // boundary). Still advance its road pose by travelled distance so a
+          // curved path cannot stall merely because its Z coordinate is flat.
+          if (vehicle.__kanoRoadAdvancedFrameToken !== token) {
+            runtime.updateVehicle(vehicle, {
+              distanceDelta: Number.isFinite(frameDt) && frameDt > 0
+                ? runtime.vehicleTravelDistance(vehicle, frameDt)
+                : 0,
+            });
+          }
+          delete vehicle.__kanoRoadFrameToken;
+          delete vehicle.__kanoRoadFrameDt;
+          delete vehicle.__kanoRoadAdvancedFrameToken;
         }
         continueCompletedRoutes(traffic);
         return result;

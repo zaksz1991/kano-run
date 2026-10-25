@@ -89,3 +89,34 @@ test('renderer bridge applies registered road-path XYZ position and sampled head
   assert.ok(Math.abs(actor.position.z - vehicle.kanoRoadPose.position.z) < 1e-6);
   assert.ok(Math.abs(actor.rotation.y - vehicle.kanoRoadPose.yaw) < 1e-6);
 });
+
+test('curved road progress advances by vehicle travel distance even when depth does not change', () => {
+  class TimedGame {
+    constructor() { this.s = { traffic: [] }; }
+    moveTraffic(dt) {
+      // Simulate the normal game frame. This route runs laterally, so Z/depth
+      // is intentionally almost unchanged while the vehicle travels along X.
+      for (const vehicle of this.s.traffic) vehicle.depth -= 0.001 * dt;
+      return 'timed-movement-ran';
+    }
+  }
+  const game = new TimedGame();
+  const vehicle = { id: 'turning-car', type: 'car', lane: 1, depth: 0, direction: 1, speedKmh: 36, visualOffsetX: 0 };
+  game.s.traffic.push(vehicle);
+  const bridge = createKanoTrafficRoadNetworkBridge({ GameClass: TimedGame, windowObject: { __KANO_ACTIVE_GAME__: game } });
+  assert.equal(bridge.ok, true);
+  const lateral = createKanoRoadPath({ id: 'lateral-turn', segments: [{
+    p0: { x: 0, y: 0, z: 0 },
+    p1: { x: 3.333, y: 0, z: 0 },
+    p2: { x: 6.667, y: 0, z: 0 },
+    p3: { x: 10, y: 0, z: 0 },
+  }] });
+  assert.equal(lateral.ok, true);
+  assert.equal(bridge.registerPath({ path: lateral, fromNode: 'turn-in', toNode: 'turn-out', turn: 'left' }).ok, true);
+  const assignment = bridge.assignVehicleRoute({ vehicleId: vehicle.id, fromNode: 'turn-in', toNode: 'turn-out', progress: 0.1 });
+  assert.equal(assignment.ok, true);
+  game.moveTraffic(0.5); // 36 km/h for half a second = 5 scene units.
+  assert.ok(vehicle.kanoRoadPathProgress > 0.58 && vehicle.kanoRoadPathProgress < 0.63, `progress=${vehicle.kanoRoadPathProgress}`);
+  assert.ok(vehicle.kanoRoadPose.position.x > 5.5, `x=${vehicle.kanoRoadPose.position.x}`);
+  assert.equal(vehicle.kanoRoadPose.position.z, 0);
+});
