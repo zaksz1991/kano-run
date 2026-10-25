@@ -139,3 +139,29 @@ test('an in-progress AI turn stays attached to its original junction after navig
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+
+test('AI traffic does not miss a junction when a large frame step crosses the whole turn window', async () => {
+  const fixture = await loadAdapterFixture();
+  try {
+    const game = new fixture.Game();
+    const junctionKey = '3600:0';
+    const vehicle = makeVehicle(findTurningId(junctionKey));
+    game.kanoWorldDistanceKm = 0.36;
+    game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
+    game.s = { traffic: [vehicle], distance: 0.36 };
+    const junctionDepth = (0 * 1008 - 2) / 88;
+    vehicle.depth = junctionDepth + 0.5;
+
+    game.moveTraffic(0); // Record the vehicle before the approach envelope.
+    assert.equal(vehicle.kanoTurn, undefined);
+    game.moveTraffic(100); // The original movement loop jumps beyond the whole envelope.
+    assert.equal(vehicle.kanoTurn, undefined, 'the crossing is detected on the following update');
+    game.moveTraffic(0);
+
+    assert.equal(vehicle.kanoTurn?.phase, 'branch', 'the vehicle joins the branch instead of silently skipping the junction');
+    assert.ok(Math.abs(Math.abs(vehicle.kanoVisualYawDelta) - Math.PI / 2) < 1e-9);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});

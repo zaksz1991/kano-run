@@ -1,16 +1,18 @@
-# Kano Run — AI Traffic Junction Turn, Next 19
+# Kano Run — AI Traffic Junction Turn, Next 20
 
 ## Fix in this update
-Traffic that has already started approaching a junction now keeps using that junction's saved world position until its turn completes. The navigation system advances `nextJunctionAt` when the player selects a branch; previously, that global target change could make an AI vehicle's approach jump to the next junction and prematurely complete its turn.
+AI traffic could miss its turn window when a large frame-time step moved a vehicle from before the junction to beyond the entire approach/exit interval. The turn hook only checked the current position, so no turn was assigned after that jump.
+
+The update tracks each vehicle's previous junction-relative depth for the current junction key. If a vehicle crosses the whole turn window between updates, it is assigned the deterministic turn and transitions into the branch rather than silently continuing past the junction. Tracking resets when the junction key changes.
 
 ## Regression coverage
-- Confirms the original `Game.moveTraffic` hook still runs.
-- Confirms GLB actor and mobile-instanced yaw integration.
-- Confirms sideways branch progress and collision-aligned lateral offset.
-- Adds a regression test that advances the navigation target mid-approach and verifies the AI vehicle remains committed to its original junction.
+- Adds an integration fixture that records a vehicle before the turn envelope, advances it past the entire envelope in one large step, then verifies it enters the branch on the next update.
+- Retains existing tests for original movement calls, collision-aligned offsets, sideways branch travel, GLB/mobile yaw, junction commitment, route-network behavior, and renderer integration.
 
 ## Verification boundary
-These are focused module/integration-fixture tests, not the full repository suite. No browser or live deployment test was performed. This update does not register surveyed Kano street geometry and cannot prove live gameplay is fixed.
+- Focused tests: 40/40 passed (`node --test tests/*.test.mjs`).
+- ZIP integrity: checked after packaging.
+- Full production repository tests and live browser gameplay were not run. This update does not register surveyed Kano road geometry and does not prove the deployed game is fixed.
 
 ## Installation
-Replace the existing `js/KanoTrafficJunctionTurnUpgrade.js` with the complete included file. Keep the existing `KanoRoadNavigationUpgrade.js` and all protected files unchanged.
+Replace the existing `js/KanoTrafficJunctionTurnUpgrade.js` with the complete included file. Keep `KanoRoadNavigationUpgrade.js`, protected core files, and model assets unchanged.

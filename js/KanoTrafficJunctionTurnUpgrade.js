@@ -121,9 +121,20 @@ function updateVehicleTurn(game, vehicle, depthAtJunction, dt) {
   const targetKm = committedTargetKm;
   const junctionKey = vehicle.kanoTurn?.key
     || `${Math.round((Number(targetKm) || 0) * 10000)}:${nav?.junctionIndex ?? 0}`;
+  // Traffic depth advances inside the original movement loop, after this hook.
+  // Keep the previous frame's position so a large frame step cannot skip the
+  // entire turn envelope without ever being assigned a turn.
+  if (vehicle._kanoTurnWindowKey !== junctionKey) {
+    vehicle._kanoTurnWindowKey = junctionKey;
+    vehicle._kanoTurnPreviousRelativeDepth = null;
+  }
+  const previousRelativeDepth = Number(vehicle._kanoTurnPreviousRelativeDepth);
+  const crossedTurnWindow = Number.isFinite(previousRelativeDepth)
+    && previousRelativeDepth > TURN_APPROACH_DEPTH
+    && relativeDepth < TURN_EXIT_DEPTH;
 
   if (!vehicle.kanoTurn && vehicle.kanoTurnCompletedKey !== junctionKey
-      && relativeDepth <= TURN_APPROACH_DEPTH && relativeDepth >= TURN_EXIT_DEPTH) {
+      && ((relativeDepth <= TURN_APPROACH_DEPTH && relativeDepth >= TURN_EXIT_DEPTH) || crossedTurnWindow)) {
     const baseLane = clamp(Math.round(Number(vehicle.lane) || 0), 0, 2);
     const side = chooseKanoTrafficTurnSide(vehicle.id ?? vehicle.type ?? 'traffic', junctionKey, baseLane);
     const targetLane = clamp(baseLane + side, 0, 2);
@@ -146,6 +157,7 @@ function updateVehicleTurn(game, vehicle, depthAtJunction, dt) {
   if (!turn) {
     vehicle._kanoTurnOffsetX = 0;
     vehicle.kanoVisualYawDelta = 0;
+    vehicle._kanoTurnPreviousRelativeDepth = relativeDepth;
     return;
   }
 
@@ -160,6 +172,7 @@ function updateVehicleTurn(game, vehicle, depthAtJunction, dt) {
       updateBranchVehicle(game, vehicle, dt);
     }
   }
+  vehicle._kanoTurnPreviousRelativeDepth = relativeDepth;
 }
 
 function installGameHook() {
