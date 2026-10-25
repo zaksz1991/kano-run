@@ -13,6 +13,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 export const KANO_LANDMARK_ROUTES = {
   'Kofar Mata': 'kofarMataGate',
+  'Kofar Famfo': 'kofarFamfoGate',
   'Kano City Centre': 'iLoveKano',
   'Murtala Muhammad Way': 'iLoveKano',
 };
@@ -38,40 +39,45 @@ function textTexture(lines) {
 }
 
 function buildKofarMataGate() {
+  // Style from the reference photo: cream twin-arch city gate on red-brown pillars,
+  // with a white signboard on each arch carrying green capital letters.
   const root = new THREE.Group();
-  root.name = 'KANO_KOFAR_MATA_GATE';
-  const mud = mat(0xb08a5c);
-  const mudDark = mat(0x8f6c44);
-  const w = 3.0, h = 9.0, x = 8.2;
+  root.name = 'KANO_CITY_GATE';
+  const cream = mat(0xe9e1c9);
+  const creamShade = mat(0xd3c9ac);
+  const pillarMat = mat(0x9a4a2e);
+  const spanHalf = 7.6;
+  // central pier with red-brown twin columns
+  const pier = new THREE.Mesh(new THREE.BoxGeometry(2.4, 6.2, 1.6), creamShade);
+  pier.position.set(0, 3.1, 0);
+  root.add(pier);
   for (const s of [-1, 1]) {
-    const pillar = new THREE.Mesh(new THREE.BoxGeometry(w, h, 3.2), mud);
-    pillar.position.set(s * x, h / 2, 0);
-    root.add(pillar);
-    // tapering buttress like the old city wall
-    const base = new THREE.Mesh(new THREE.BoxGeometry(w + 1, 2.2, 4), mudDark);
-    base.position.set(s * x, 1.1, 0);
-    root.add(base);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 6.0, 10), pillarMat);
+    col.position.set(s * 1.5, 3.0, 0.9);
+    root.add(col);
   }
-  // Arch: half ring over the carriageway
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(x - w / 2 - 0.2, 1.1, 8, 24, Math.PI), mud);
-  arch.position.set(0, h - 1.4, 0);
-  root.add(arch);
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(2 * x + w, 2.4, 3.0), mud);
-  lintel.position.set(0, h + 3.4, 0);
-  root.add(lintel);
-  // crenellations
-  const crenGeo = new THREE.BoxGeometry(1.0, 0.9, 3.0);
-  for (let i = -8; i <= 8; i += 1) {
-    const c = new THREE.Mesh(crenGeo, mudDark);
-    c.position.set(i * 1.25, h + 5.05, 0);
-    root.add(c);
+  // end piers
+  for (const s of [-1, 1]) {
+    const end = new THREE.Mesh(new THREE.BoxGeometry(1.8, 6.2, 1.6), creamShade);
+    end.position.set(s * (spanHalf * 2 - 0.4) * 0.5 * 1.02 * 1.0 + s * 0.0, 3.1, 0);
+    end.position.x = s * (spanHalf + 1.6);
+    root.add(end);
   }
-  const plaque = new THREE.Mesh(
-    new THREE.PlaneGeometry(9, 2.2),
-    new THREE.MeshBasicMaterial({ map: textTexture({ bg: '#7a5230', border: '#f5d77b', stroke: '#2b1a0c', fg: '#fff4d0', fg2: '#f5d77b', main: 'KOFAR MATA', sub: 'KANO CITY GATE' }), toneMapped: false, side: THREE.DoubleSide }),
-  );
-  plaque.position.set(0, h + 3.4, 1.55);
-  root.add(plaque);
+  // two arches (half tori) and the cream deck above them
+  for (const s of [-1, 1]) {
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(spanHalf / 2 + 0.1, 0.55, 8, 24, Math.PI), cream);
+    arch.position.set(s * (spanHalf / 2 + 1.2), 3.3, 0);
+    root.add(arch);
+    const board = new THREE.Mesh(
+      new THREE.PlaneGeometry(5.6, 1.7),
+      new THREE.MeshBasicMaterial({ map: textTexture({ bg: '#f4f1e6', border: '#d9d2bd', stroke: '#f4f1e6', fg: '#0b7a3b', fg2: '#0b7a3b', main: s < 0 ? 'KOFAR' : 'KANO', sub: '' }), toneMapped: false, side: THREE.DoubleSide }),
+    );
+    board.position.set(s * (spanHalf / 2 + 1.2), 7.7, 0.85);
+    root.add(board);
+  }
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(2 * (spanHalf + 1.6) + 1.8, 2.6, 1.6), cream);
+  deck.position.set(0, 7.5, 0);
+  root.add(deck);
   root.userData.spacing = 230;
   return root;
 }
@@ -95,6 +101,75 @@ function buildILoveKano() {
   return root;
 }
 
+
+// Twin-arch cream gate with red-brown pillars and green lettering (Kofar Famfo).
+function buildKofarFamfoGate() {
+  const root = new THREE.Group();
+  root.name = 'KANO_KOFAR_FAMFO_GATE';
+  const cream = mat(0xe8dfc4);
+  const pillarMat = mat(0x9b4a2a);
+  const span = 9;
+  for (const s of [-1, 1]) {
+    const outer = new THREE.Mesh(new THREE.BoxGeometry(1.6, 7.2, 1.8), cream);
+    outer.position.set(s * (span + 3.2), 3.6, 0);
+    root.add(outer);
+  }
+  // central red-brown pillars carrying posters
+  for (const s of [-0.5, 0.5]) {
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 6.6, 12), pillarMat);
+    p.position.set(s * 1.5, 3.3, 0);
+    root.add(p);
+  }
+  const core = new THREE.Mesh(new THREE.BoxGeometry(1.8, 6.0, 1.6), cream);
+  core.position.set(0, 3.2, 0);
+  root.add(core);
+  for (const s of [-1, 1]) {
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(span / 2 + 1, 0.8, 8, 20, Math.PI), cream);
+    arch.position.set(s * (span / 2 + 2.1), 6.4, 0);
+    root.add(arch);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(span + 3.4, 1.6, 1.8), cream);
+    top.position.set(s * (span / 2 + 2.1), 8.0, 0);
+    root.add(top);
+    const board = new THREE.Mesh(
+      new THREE.PlaneGeometry(span - 1.5, 1.7),
+      new THREE.MeshBasicMaterial({ map: textTexture({ bg: '#f4f1e6', border: '#f4f1e6', stroke: '#f4f1e6', fg: '#0f7a3c', fg2: '#f4f1e6', main: s < 0 ? 'KOFAR' : 'FAMFO', sub: '' }), toneMapped: false, side: THREE.DoubleSide }),
+    );
+    board.position.set(s * (span / 2 + 2.1), 8.0, 0.95);
+    root.add(board);
+  }
+  root.userData.spacing = 240;
+  return root;
+}
+
+// Pedestrian footbridge: pink/white deck on pink piers with stair towers (seen over Kano dual carriageways).
+function buildFootbridge() {
+  const root = new THREE.Group();
+  root.name = 'KANO_PINK_FOOTBRIDGE';
+  const pink = mat(0xd8478f, 0.8);
+  const white = mat(0xf4f1ec, 0.8);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(24, 0.35, 2.0), white);
+  deck.position.set(0, 6.0, 0);
+  root.add(deck);
+  for (const z of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(24, 0.9, 0.12), white);
+    rail.position.set(0, 6.65, z * 0.95);
+    root.add(rail);
+  }
+  for (const x of [-9, 9]) {
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(1.2, 6.0, 1.6), pink);
+    pier.position.set(x, 3.0, 0);
+    root.add(pier);
+  }
+  for (const s of [-1, 1]) {
+    const stair = new THREE.Mesh(new THREE.BoxGeometry(7, 0.3, 1.8), white);
+    stair.position.set(s * 15.5, 3.0, 0);
+    stair.rotation.z = s * -0.5;
+    root.add(stair);
+  }
+  root.userData.spacing = 340;
+  return root;
+}
+
 function update(system, dt, snap) {
   if (!system?.renderer?.world || system.renderer.disposed) return;
   let st = states.get(system);
@@ -105,13 +180,15 @@ function update(system, dt, snap) {
     states.set(system, st);
   }
   const road = !system.renderer.lifeScene || system.renderer.lifeScene === 'road';
-  const key = road ? KANO_LANDMARK_ROUTES[snap?.route] || null : null;
+  const key = road ? KANO_LANDMARK_ROUTES[snap?.route] || 'footbridge' : null;
   if (key !== st.current) {
     for (const actor of Object.values(st.actors)) actor.visible = false;
     st.current = key;
     if (key) {
       if (!st.actors[key]) {
-        st.actors[key] = key === 'kofarMataGate' ? buildKofarMataGate() : buildILoveKano();
+        st.actors[key] = key === 'kofarMataGate' ? buildKofarMataGate()
+          : key === 'kofarFamfoGate' ? buildKofarFamfoGate()
+          : key === 'footbridge' ? buildFootbridge() : buildILoveKano();
         st.group.add(st.actors[key]);
       }
       const actor = st.actors[key];

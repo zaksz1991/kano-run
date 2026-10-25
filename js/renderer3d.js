@@ -2693,7 +2693,7 @@ export class Renderer3D {
     const group = new THREE.Group();
 
     const yellow = this.material(0xf5c542, 0.72);
-    const darkGreen = this.material(0x18382e, 0.88);
+    const darkGreen = this.material(0x3b2a24, 0.88);
     const frame = this.material(0x343e44, 0.62);
     const rubber = this.material(0x111820, 0.95);
     const metal = this.material(0x9da7a8, 0.55);
@@ -2886,9 +2886,10 @@ export class Renderer3D {
       addBar([x, 1.62, -0.47], [x, 1.62, 0.48], 0.035, frame);
     }
 
+    // Kano Napep keke: yellow body with a dark brown/black canopy (see reference photos).
     const roof = new THREE.Mesh(
       new THREE.BoxGeometry(1.26, 0.09, 1.22),
-      darkGreen,
+      this.material(0x2e211a),
     );
 
     roof.position.set(0, 1.67, 0.0);
