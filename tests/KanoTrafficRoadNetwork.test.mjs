@@ -66,6 +66,19 @@ test('connection validation flags disconnected paths without modifying their geo
   assert.ok(validation.issues.some(issue => issue.nodeId === 'j'));
 });
 
+
+test('one-way approach endpoints are checked against outgoing junction branches', () => {
+  const network = createKanoTrafficRoadNetwork({ connectionTolerance: 0.5 });
+  // Both outgoing branches meet at the same point, but the incoming approach
+  // ends six scene units away. The old outgoing-only validator missed this.
+  network.addPath({ path: road('approach-far', { x: -10, y: 0, z: 6 }, { x: -6, y: 0, z: 6 }), fromNode: 'west', toNode: 'j' });
+  network.addPath({ path: road('branch-north', { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 10 }), fromNode: 'j', toNode: 'north' });
+  network.addPath({ path: road('branch-east', { x: 0, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }), fromNode: 'j', toNode: 'east' });
+  const validation = network.validateConnections();
+  assert.equal(validation.ok, false);
+  assert.ok(validation.issues.some(issue => issue.nodeId === 'j' && issue.pathIds.includes('approach-far')));
+});
+
 test('sampleRoutePose returns world position and heading from registered geometry', () => {
   const network = buildNetwork();
   const route = network.planRoute({ fromNode: 'west', toNode: 'north' });

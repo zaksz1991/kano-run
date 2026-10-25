@@ -50,19 +50,30 @@ export function createKanoTrafficRoadNetwork({ connectionTolerance = 0.75 } = {}
 
   function validateConnections() {
     const issues = [];
-    for (const [nodeId, edges] of outgoing) {
-      if (edges.length < 2) continue;
-      const ends = edges.map(edge => {
-        const record = paths.get(edge.pathId);
-        const isReverse = Boolean(edge.reverse);
-        const point = isReverse ? record.path.table[record.path.table.length - 1].position : record.path.table[0].position;
-        return { edge, point };
-      });
-      for (let i = 0; i < ends.length; i += 1) {
-        for (let j = i + 1; j < ends.length; j += 1) {
-          const distance = pointDistance(ends[i].point, ends[j].point);
+    // Validate every path endpoint incident to each node, not only outgoing
+    // directed edges. Otherwise a one-way approach ending far from a junction
+    // can escape validation when the outgoing branches happen to align.
+    for (const [nodeId, node] of nodes) {
+      const endpoints = [];
+      for (const pathId of node.pathIds) {
+        const record = paths.get(pathId);
+        if (!record) continue;
+        const first = record.path.table[0]?.position;
+        const last = record.path.table[record.path.table.length - 1]?.position;
+        if (record.fromNode === nodeId && first) endpoints.push({ pathId, endpoint: 'start', point: first });
+        if (record.toNode === nodeId && last) endpoints.push({ pathId, endpoint: 'end', point: last });
+      }
+      for (let i = 0; i < endpoints.length; i += 1) {
+        for (let j = i + 1; j < endpoints.length; j += 1) {
+          const distance = pointDistance(endpoints[i].point, endpoints[j].point);
           if (!finite(distance) || distance > tolerance) {
-            issues.push({ nodeId, pathIds: [ends[i].edge.pathId, ends[j].edge.pathId], distance, tolerance });
+            issues.push({
+              nodeId,
+              pathIds: [endpoints[i].pathId, endpoints[j].pathId],
+              endpoints: [endpoints[i].endpoint, endpoints[j].endpoint],
+              distance,
+              tolerance,
+            });
           }
         }
       }

@@ -1,6 +1,10 @@
-# Kano Run — AI Traffic Junction Turn (Next 7)
+# Kano Run — AI Traffic Junction Turn (Next 8)
 
-## New in Next 7
+## New in Next 8
+- Fixed road-network connection validation to compare every incident path endpoint at a junction, including incoming one-way approaches. The previous validator checked only outgoing edges, so it could miss a disconnected approach when the outgoing branches aligned.
+- Connection audit issues now identify which endpoint (`start` or `end`) failed validation.
+
+## Included from Next 7
 - Route plans retain per-path traversal direction (`pathSteps`), not only path IDs.
 - Bidirectional routes can start by travelling along a path in reverse; sampling starts at the correct endpoint and reverses the tangent and heading.
 - The route planner avoids an immediate reversal over the same path after a vehicle has entered the network, without incorrectly rejecting a valid reverse-direction route at the start node.
@@ -8,7 +12,7 @@
 - Added focused runtime tests for reverse traversal, progress carry, and agreement between sampled road X and the existing collision-position formula.
 
 ## Verification
-`node --test tests/*.test.mjs` — **24/24 focused tests passed**.
+`node --test tests/*.test.mjs` — **25/25 focused tests passed**.
 
 This is not a full repository test run and does not verify live browser/mobile gameplay.
 
