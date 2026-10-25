@@ -1,20 +1,22 @@
-# Kano Run — AI Traffic Junction Turn Update (Next 5)
+# Kano Run — AI Traffic Junction Turn (Next 6)
 
-## Included files
-- `js/KanoRoadNavigationUpgrade.js`: the supplied Step 95 navigation module with an additive import for the traffic-turn adapter.
-- `js/KanoTrafficJunctionTurnUpgrade.js`: additive hooks around `Game.moveTraffic` and `Renderer3D.syncTraffic`.
-- `js/KanoTrafficJunctionTurnMath.js`: deterministic turn choice and turn-curve math.
-- `tests/KanoTrafficJunctionTurnUpgrade.test.mjs`: focused math regression tests.
-- `tests/KanoTrafficJunctionTurnIntegration.test.mjs`: runtime-hook tests using isolated mock Game and Renderer3D classes.
+## New in Next 6
+- Adds `KanoTrafficRoadNetwork.js`, an explicit road graph for traffic routing over authored world-space road paths.
+- Supports connected junction branches marked left / straight / right, deterministic route selection, destination reachability, and pose sampling along a selected path.
+- Validates branch endpoint continuity using the coordinates supplied by the road geometry; it does not invent road anchors or conceal disconnected roads.
+- Includes the Task 32 `KanoDriveableRoadGeometry.js` core required to build and sample road paths.
 
-## What Next 5 adds
-- Integration tests now execute the actual adapter against mock Game and Renderer3D classes, rather than testing only the math helpers.
-- Verifies the original movement and renderer methods are still called.
-- Verifies the turn offset survives the movement method's normal visual-offset reset, so collision reads and rendering share the same lateral position.
-- Verifies direction-aware yaw is applied to both GLB actors and mobile fallback instances.
+## Important scope boundary
+This is the route-network foundation, **not a completed live-game traffic integration**. The existing game uses traffic `lane` and `depth` coordinates and the renderer positions actors in its scrolling-road coordinate system. The live app has not yet supplied authoritative junction entry/exit anchors or converted the traffic loop, collision logic, and renderer to consume this graph. No guessed coordinates were wired into the game. Therefore this package does not claim that traffic now takes real branch turns in the live build.
 
-## Integration instructions
-Copy the included JS files into the existing project `js` folder. Replace only the existing `KanoRoadNavigationUpgrade.js` with the supplied version and add the two `KanoTrafficJunctionTurn*` modules. Keep tests in `tests/`; do not copy `.mjs` files into `js/`. Do not replace `game.js`, `renderer3d.js`, `main.js`, `index.html`, model assets, or the regression guard.
+## Files
+- `js/KanoDriveableRoadGeometry.js` — cubic Bezier road path geometry and sampling.
+- `js/KanoTrafficRoadNetwork.js` — graph registration, connectivity validation, route planning, and route pose sampling.
+- `js/KanoTrafficJunctionTurnMath.js`, `js/KanoTrafficJunctionTurnUpgrade.js`, `js/KanoRoadNavigationUpgrade.js` — previous additive junction-turn adapter package.
+- `tests/` — focused unit and mocked adapter tests. Keep `.mjs` files in `tests/`, never in `js/`.
 
-## Scope and verification
-The adapter currently creates a curved adjacent-lane transition around the active junction and animates yaw. It does not create full 3D side-road paths or a complete road-network path planner. The focused tests exercise math and hook behavior against mocks; they do not replace the full repository test suite or browser testing.
+## Verification
+The included Node test suite checks route graph registration, connected branch selection, unreachable routes, deterministic choices, connection validation, and sampled poses, alongside the prior focused adapter tests. It is not a substitute for the full repository `npm test` or browser/mobile gameplay verification.
+
+## Protected files
+No changes are made to `game.js`, `renderer3d.js`, `main.js`, `ui.js`, `index.html`, `ModelManager.js`, the regression guard, or any `public/` asset. The navigation module is copied unchanged from the Next 5 package.

@@ -1,5 +1,5 @@
 {
-  "name": "kano-traffic-junction-turn-update",
+  "name": "kano-traffic-junction-turn-next6",
   "private": true,
   "type": "module",
   "scripts": { "test": "node --test tests/*.test.mjs" }
