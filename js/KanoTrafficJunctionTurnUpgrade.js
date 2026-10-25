@@ -5,7 +5,7 @@
  */
 import { Game } from './game.js';
 import { Renderer3D } from './renderer3d.js';
-import { computeKanoTrafficTurnFrame, chooseKanoTrafficTurnSide } from './KanoTrafficJunctionTurnMath.js';
+import { computeKanoTrafficTurnFrame, chooseKanoTrafficTurnSide, computeKanoTrafficRelativeDepth } from './KanoTrafficJunctionTurnMath.js';
 
 const PATCH = Symbol.for('kano.life.trafficJunctionTurn.v1');
 const JUNCTION_INTERVAL_KM = 0.46;
@@ -64,7 +64,7 @@ function updateVehicleTurn(game, vehicle, depthAtJunction) {
   }
 
   // Positive means the vehicle is still before the junction; negative means it has passed it.
-  const relativeDepth = depthAtJunction - Number(vehicle.depth);
+  const relativeDepth = computeKanoTrafficRelativeDepth(vehicle.depth, depthAtJunction);
   const nav = game.kanoNavigationState;
   const targetKm = junctionWorldKm(game);
   const junctionKey = `${Math.round((Number(targetKm) || 0) * 10000)}:${nav?.junctionIndex ?? 0}`;

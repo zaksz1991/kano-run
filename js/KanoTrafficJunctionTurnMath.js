@@ -1,3 +1,13 @@
+/** Convert shared road depth coordinates into junction-relative depth.
+ * Positive values are before the junction; negative values are after it.
+ */
+export function computeKanoTrafficRelativeDepth(vehicleDepth, junctionDepth) {
+  const vehicle = Number(vehicleDepth);
+  const junction = Number(junctionDepth);
+  if (!Number.isFinite(vehicle) || !Number.isFinite(junction)) return NaN;
+  return vehicle - junction;
+}
+
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smoothstep = (value) => {
   const t = clamp(Number(value) || 0, 0, 1);

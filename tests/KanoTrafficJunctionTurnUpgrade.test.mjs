@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeKanoTrafficTurnFrame, chooseKanoTrafficTurnSide } from '../js/KanoTrafficJunctionTurnMath.js';
+import { computeKanoTrafficTurnFrame, chooseKanoTrafficTurnSide, computeKanoTrafficRelativeDepth } from '../js/KanoTrafficJunctionTurnMath.js';
 
 test('turn starts on the original path with no lateral or yaw jump', () => {
   const frame = computeKanoTrafficTurnFrame(0.28, 1);
@@ -82,4 +82,14 @@ test('traffic decision retains a straight-through share across many vehicles', (
     if (chooseKanoTrafficTurnSide(`vehicle-${index}`, 'junction-8', 1) === 0) straight += 1;
   }
   assert.ok(straight > 20 && straight < 90, `unexpected straight-through count: ${straight}`);
+});
+
+test('relative depth is positive before and negative after the junction', () => {
+  assert.ok(Math.abs(computeKanoTrafficRelativeDepth(0.8, 0.5) - 0.3) < 1e-12);
+  assert.ok(Math.abs(computeKanoTrafficRelativeDepth(0.2, 0.5) + 0.3) < 1e-12);
+});
+
+test('relative depth rejects non-finite traffic coordinates', () => {
+  assert.ok(Number.isNaN(computeKanoTrafficRelativeDepth(Number.NaN, 0.5)));
+  assert.ok(Number.isNaN(computeKanoTrafficRelativeDepth(0.5, Infinity)));
 });
