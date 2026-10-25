@@ -25,3 +25,27 @@ export function computeKanoTrafficTurnFrame(relativeDepth, side, travelDirection
     complete: progress >= 1,
   };
 }
+
+
+/**
+ * Stable per-vehicle/per-junction decision. This avoids a vehicle changing its
+ * intended turn because frame timing or unrelated Math.random() calls changed.
+ * Returns -1 (left), 1 (right), or 0 (continue straight).
+ */
+export function chooseKanoTrafficTurnSide(vehicleId, junctionKey, lane) {
+  const currentLane = clamp(Math.round(Number(lane) || 0), 0, 2);
+  const available = [];
+  if (currentLane > 0) available.push(-1);
+  if (currentLane < 2) available.push(1);
+  if (!available.length) return 0;
+
+  const key = `${String(vehicleId ?? 'traffic')}:${String(junctionKey ?? 'junction')}`;
+  let hash = 2166136261;
+  for (let index = 0; index < key.length; index += 1) {
+    hash ^= key.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const unit = (hash >>> 0) / 4294967296;
+  if (unit >= 0.72) return 0;
+  return available[Math.floor((unit / 0.72) * available.length)] || available[0];
+}

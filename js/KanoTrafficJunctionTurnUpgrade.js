@@ -5,7 +5,7 @@
  */
 import { Game } from './game.js';
 import { Renderer3D } from './renderer3d.js';
-import { computeKanoTrafficTurnFrame } from './KanoTrafficJunctionTurnMath.js';
+import { computeKanoTrafficTurnFrame, chooseKanoTrafficTurnSide } from './KanoTrafficJunctionTurnMath.js';
 
 const PATCH = Symbol.for('kano.life.trafficJunctionTurn.v1');
 const JUNCTION_INTERVAL_KM = 0.46;
@@ -71,17 +71,13 @@ function updateVehicleTurn(game, vehicle, depthAtJunction) {
 
   if (!vehicle.kanoTurn && vehicle.kanoTurnCompletedKey !== junctionKey
       && relativeDepth <= TURN_APPROACH_DEPTH && relativeDepth >= TURN_EXIT_DEPTH) {
-    // Bias the mix toward left/right turns but keep a straight-through share.
-    const roll = Math.random();
-    if (roll < 0.36 || roll > 0.64) {
-      const side = roll < 0.36 ? -1 : 1;
-      const baseLane = clamp(Math.round(Number(vehicle.lane) || 0), 0, 2);
-      const targetLane = clamp(baseLane + side, 0, 2);
-      if (targetLane !== baseLane) {
-        vehicle.kanoTurn = { key: junctionKey, side, baseLane, targetLane };
-      } else {
-        vehicle.kanoTurnCompletedKey = junctionKey;
-      }
+    // Stable per vehicle and junction. Edge lanes only choose a direction that
+    // actually exists, preventing a 50% no-op turn at either edge of the road.
+    const baseLane = clamp(Math.round(Number(vehicle.lane) || 0), 0, 2);
+    const side = chooseKanoTrafficTurnSide(vehicle.id ?? vehicle.type ?? 'traffic', junctionKey, baseLane);
+    const targetLane = clamp(baseLane + side, 0, 2);
+    if (side && targetLane !== baseLane) {
+      vehicle.kanoTurn = { key: junctionKey, side, baseLane, targetLane };
     } else {
       vehicle.kanoTurnCompletedKey = junctionKey;
     }

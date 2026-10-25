@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeKanoTrafficTurnFrame } from '../js/KanoTrafficJunctionTurnMath.js';
+import { computeKanoTrafficTurnFrame, chooseKanoTrafficTurnSide } from '../js/KanoTrafficJunctionTurnMath.js';
 
 test('turn starts on the original path with no lateral or yaw jump', () => {
   const frame = computeKanoTrafficTurnFrame(0.28, 1);
@@ -55,4 +55,31 @@ test('oncoming traffic keeps the same world-lateral curve but reverses its yaw',
   const oncoming = computeKanoTrafficTurnFrame(0.065, 1, -1);
   assert.equal(oncoming.lateralOffset, sameFlow.lateralOffset);
   assert.equal(oncoming.yawDelta, -sameFlow.yawDelta);
+});
+
+
+test('traffic turn choice is stable for the same vehicle and junction', () => {
+  const first = chooseKanoTrafficTurnSide('vehicle-17', 'junction-42', 1);
+  for (let index = 0; index < 50; index += 1) {
+    assert.equal(chooseKanoTrafficTurnSide('vehicle-17', 'junction-42', 1), first);
+  }
+});
+
+test('edge lanes never choose a turn that leaves the three-lane road', () => {
+  for (let index = 0; index < 100; index += 1) {
+    const leftEdgeChoice = chooseKanoTrafficTurnSide(`left-${index}`, 'junction-1', 0);
+    const rightEdgeChoice = chooseKanoTrafficTurnSide(`right-${index}`, 'junction-1', 2);
+    assert.ok([-1, 0, 1].includes(leftEdgeChoice));
+    assert.ok([-1, 0, 1].includes(rightEdgeChoice));
+    if (leftEdgeChoice !== 0) assert.equal(0 + leftEdgeChoice, 1);
+    if (rightEdgeChoice !== 0) assert.equal(2 + rightEdgeChoice, 1);
+  }
+});
+
+test('traffic decision retains a straight-through share across many vehicles', () => {
+  let straight = 0;
+  for (let index = 0; index < 200; index += 1) {
+    if (chooseKanoTrafficTurnSide(`vehicle-${index}`, 'junction-8', 1) === 0) straight += 1;
+  }
+  assert.ok(straight > 20 && straight < 90, `unexpected straight-through count: ${straight}`);
 });
