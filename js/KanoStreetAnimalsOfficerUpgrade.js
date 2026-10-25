@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
 import { createProceduralGoat } from './KanoCulturalStreetEventsUpgrade.js';
+import { mergeActor } from './KanoMergeStaticMeshes.js';
 
 const PATCH_TAG = Symbol.for('kano.life.streetAnimalsOfficer.v1');
 const states = new WeakMap();
@@ -121,8 +122,10 @@ function buildState(system) {
   world.add(group);
   const state = { group, goats: [], dogs: [], officers: [], t: 0, disposed: false };
   const sideOf = (i) => (i % 2 ? 1 : -1);
-  for (let i = 0; i < 5; i += 1) {
+  const mobile = Boolean(system.renderer?.mobile);
+  for (let i = 0; i < (mobile ? 3 : 5); i += 1) {
     const goat = createProceduralGoat();
+    mergeActor(goat.root);
     goat.root.visible = true;
     const side = sideOf(i);
     const herdZ = -40 - Math.floor(i / 3) * 70;
@@ -132,8 +135,9 @@ function buildState(system) {
     group.add(goat.root);
     state.goats.push({ ...goat, side, phase: rand(0, 6), heading: goat.root.rotation.y, speed: rand(0.05, 0.25) });
   }
-  for (let i = 0; i < 3; i += 1) {
+  for (let i = 0; i < (mobile ? 2 : 3); i += 1) {
     const dog = createDog();
+    mergeActor(dog.root);
     const side = sideOf(i + 1);
     dog.root.position.set(side * rand(6.9, 8), 0, -30 - i * 45 - rand(0, 20));
     group.add(dog.root);
@@ -141,6 +145,7 @@ function buildState(system) {
   }
   for (let i = 0; i < 2; i += 1) {
     const officer = createOfficer();
+    mergeActor(officer.root); mergeActor(officer.body);
     const side = sideOf(i);
     officer.root.position.set(side * 6.1, 0, -60 - i * 85);
     officer.root.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;

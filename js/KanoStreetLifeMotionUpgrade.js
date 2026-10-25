@@ -1,3 +1,4 @@
+import { mergeActor } from './KanoMergeStaticMeshes.js';
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
 
@@ -128,7 +129,10 @@ function makeStreetPerson(variant, { waiting = false } = {}) {
   // Clothing and body shapes remain separate meshes, which makes the silhouette readable
   // and leaves room to replace this temporary articulated crowd with InstantMesh assets.
   root.scale.setScalar(isWoman ? 0.96 : (style.kind === 'young-man' ? 0.93 : 0.98));
-  root.userData.kanoAnimationParts = { arms, legs, headCover, isWoman, waiting, variant, phase: variant * 1.13 };
+  // Merge the many small body meshes (colours baked as vertex colours): ~15 draw calls -> ~5 per person.
+  // The tiny head-wrap sway is dropped because that mesh is merged into the body.
+  mergeActor(root);
+  root.userData.kanoAnimationParts = { arms, legs, headCover: null, isWoman, waiting, variant, phase: variant * 1.13 };
   return root;
 }
 
