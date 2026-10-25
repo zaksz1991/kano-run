@@ -1,20 +1,21 @@
 /**
- * Kano Run — traffic junction turn integration.
- * Adds curved, collision-aligned traffic turns without replacing game.js or renderer3d.js.
- * Imported by KanoRoadNavigationUpgrade.js after Game and Renderer3D are defined.
+ * Kano Run — AI traffic turns onto the visible junction crossroad.
+ * Additive hook only: keeps Game.moveTraffic collision checks and Renderer3D
+ * placement as the owners of the existing traffic objects.
  */
 import { Game } from './game.js';
 import { Renderer3D } from './renderer3d.js';
 import { computeKanoTrafficTurnFrame, chooseKanoTrafficTurnSide, computeKanoTrafficRelativeDepth } from './KanoTrafficJunctionTurnMath.js';
 
-const PATCH = Symbol.for('kano.life.trafficJunctionTurn.v1');
+const PATCH = Symbol.for('kano.life.trafficJunctionTurn.v2');
 const JUNCTION_INTERVAL_KM = 0.46;
 const ROAD_UNITS_PER_KM = 1008;
 const ROAD_PIVOT_Z = 2;
 const TRAFFIC_DEPTH_UNITS = 88;
 const TURN_APPROACH_DEPTH = 0.28;
 const TURN_EXIT_DEPTH = -0.15;
-
+const BRANCH_EXIT_X = 104;
+const SCENE_UNITS_PER_METRE = ROAD_UNITS_PER_KM / 1000;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 function signedWorldKm(game) {
@@ -25,16 +26,19 @@ function signedWorldKm(game) {
 function junctionWorldKm(game) {
   const nav = game?.kanoNavigationState;
   if (!nav || !Number.isFinite(Number(nav.nextJunctionAt))) return null;
-  // selectTurn advances nextJunctionAt immediately; while a player turn is
-  // animating, ambient traffic is still crossing the junction just passed.
+  // A selected player turn advances nextJunctionAt immediately. The current
+  // junction remains one interval behind while that player turn is animating.
   return Number(nav.nextJunctionAt) - (nav.turn ? JUNCTION_INTERVAL_KM : 0);
+}
+
+function depthForWorldJunction(game, worldKm) {
+  const remainingKm = Number(worldKm) - signedWorldKm(game);
+  return (remainingKm * ROAD_UNITS_PER_KM - ROAD_PIVOT_Z) / TRAFFIC_DEPTH_UNITS;
 }
 
 function junctionDepth(game) {
   const target = junctionWorldKm(game);
-  if (!Number.isFinite(target)) return null;
-  const km = target - signedWorldKm(game);
-  return (km * ROAD_UNITS_PER_KM - ROAD_PIVOT_Z) / TRAFFIC_DEPTH_UNITS;
+  return Number.isFinite(target) ? depthForWorldJunction(game, target) : null;
 }
 
 function installVisualOffsetAccessor(vehicle) {
@@ -55,15 +59,53 @@ function installVisualOffsetAccessor(vehicle) {
   vehicle.__kanoTurnOffsetAccessor = true;
 }
 
-function updateVehicleTurn(game, vehicle, depthAtJunction) {
+function worldX(vehicle) {
+  return (clamp(Math.round(Number(vehicle?.lane) || 0), 0, 2) - 1) * 3
+    + (Number(vehicle?.visualOffsetX) || 0);
+}
+
+function updateBranchVehicle(game, vehicle, dt) {
+  const turn = vehicle.kanoTurn;
+  const targetDepth = depthForWorldJunction(game, turn.junctionWorldKm);
+  const speedKmh = Number.isFinite(Number(vehicle.speedKmh)) && Number(vehicle.speedKmh) > 0
+    ? Number(vehicle.speedKmh)
+    : (vehicle.direction === -1 ? 30 : 22);
+  const travelSign = vehicle.direction === -1 ? -1 : 1;
+  const laneBaseX = (clamp(Math.round(Number(vehicle.lane) || 0), 0, 2) - 1) * 3;
+  // Continue along the crossroad, perpendicular to the approach road. A branch
+  // vehicle keeps the junction's world distance instead of drifting through it.
+  turn.branchX += turn.side * speedKmh * Math.max(0, Number(dt) || 0) / 3.6 * SCENE_UNITS_PER_METRE;
+  vehicle._kanoTurnOffsetX = turn.branchX - laneBaseX;
+  vehicle.kanoVisualYawDelta = -turn.side * travelSign * Math.PI / 2;
+  vehicle.kanoTurnProgress = 1;
+  vehicle.kanoBranchTargetDepth = targetDepth;
+
+  // Let the original collision/despawn loop see a stable junction depth. Once
+  // the junction is behind the player, allow the normal traffic despawn path.
+  if (targetDepth <= -0.12 || Math.abs(turn.branchX) >= BRANCH_EXIT_X) {
+    vehicle.depth = -0.13;
+    vehicle.kanoTurn = null;
+    vehicle._kanoTurnOffsetX = 0;
+    vehicle.kanoVisualYawDelta = 0;
+    vehicle.kanoTurnCompletedKey = turn.key;
+    vehicle.kanoBranchTargetDepth = null;
+    return;
+  }
+  vehicle.depth = Math.max(targetDepth, -0.10);
+}
+
+function updateVehicleTurn(game, vehicle, depthAtJunction, dt) {
   installVisualOffsetAccessor(vehicle);
+  if (vehicle.kanoTurn?.phase === 'branch') {
+    updateBranchVehicle(game, vehicle, dt);
+    return;
+  }
   if (!Number.isFinite(depthAtJunction)) {
     vehicle._kanoTurnOffsetX = 0;
     vehicle.kanoVisualYawDelta = Number(vehicle.kanoVisualYawDelta) || 0;
     return;
   }
 
-  // Positive means the vehicle is still before the junction; negative means it has passed it.
   const relativeDepth = computeKanoTrafficRelativeDepth(vehicle.depth, depthAtJunction);
   const nav = game.kanoNavigationState;
   const targetKm = junctionWorldKm(game);
@@ -71,13 +113,19 @@ function updateVehicleTurn(game, vehicle, depthAtJunction) {
 
   if (!vehicle.kanoTurn && vehicle.kanoTurnCompletedKey !== junctionKey
       && relativeDepth <= TURN_APPROACH_DEPTH && relativeDepth >= TURN_EXIT_DEPTH) {
-    // Stable per vehicle and junction. Edge lanes only choose a direction that
-    // actually exists, preventing a 50% no-op turn at either edge of the road.
     const baseLane = clamp(Math.round(Number(vehicle.lane) || 0), 0, 2);
     const side = chooseKanoTrafficTurnSide(vehicle.id ?? vehicle.type ?? 'traffic', junctionKey, baseLane);
     const targetLane = clamp(baseLane + side, 0, 2);
     if (side && targetLane !== baseLane) {
-      vehicle.kanoTurn = { key: junctionKey, side, baseLane, targetLane };
+      vehicle.kanoTurn = {
+        key: junctionKey,
+        side,
+        baseLane,
+        targetLane,
+        phase: 'approach',
+        junctionWorldKm: Number(targetKm),
+        branchX: (baseLane - 1) * 3 + side * 3,
+      };
     } else {
       vehicle.kanoTurnCompletedKey = junctionKey;
     }
@@ -86,21 +134,20 @@ function updateVehicleTurn(game, vehicle, depthAtJunction) {
   const turn = vehicle.kanoTurn;
   if (!turn) {
     vehicle._kanoTurnOffsetX = 0;
+    vehicle.kanoVisualYawDelta = 0;
     return;
   }
 
-  // Keep lateral movement in shared world X coordinates, but calculate yaw
-  // relative to each vehicle's own forward axis (opposite for oncoming traffic).
-  const frame = computeKanoTrafficTurnFrame(relativeDepth, turn.side, vehicle.direction === -1 ? -1 : 1);
-  vehicle._kanoTurnOffsetX = frame.lateralOffset;
-  vehicle.kanoVisualYawDelta = frame.yawDelta;
-  vehicle.kanoTurnProgress = frame.progress;
-  if (frame.complete) {
-    vehicle.lane = turn.targetLane;
-    vehicle._kanoTurnOffsetX = 0;
-    vehicle.kanoVisualYawDelta = 0;
-    vehicle.kanoTurnCompletedKey = turn.key;
-    vehicle.kanoTurn = null;
+  if (turn.phase === 'approach') {
+    const frame = computeKanoTrafficTurnFrame(relativeDepth, turn.side, vehicle.direction === -1 ? -1 : 1);
+    vehicle._kanoTurnOffsetX = frame.lateralOffset;
+    vehicle.kanoVisualYawDelta = frame.yawDelta;
+    vehicle.kanoTurnProgress = frame.progress;
+    if (frame.complete) {
+      turn.phase = 'branch';
+      turn.branchX = (turn.baseLane - 1) * 3 + turn.side * 3;
+      updateBranchVehicle(game, vehicle, dt);
+    }
   }
 }
 
@@ -108,12 +155,21 @@ function installGameHook() {
   if (Game.prototype[PATCH]) return;
   const originalMoveTraffic = Game.prototype.moveTraffic;
   if (typeof originalMoveTraffic !== 'function') return;
-  Game.prototype.moveTraffic = function moveTrafficWithJunctionTurns(...args) {
+  Game.prototype.moveTraffic = function moveTrafficWithJunctionTurns(dt, ...args) {
     const depth = junctionDepth(this);
-    if (Array.isArray(this.s?.traffic)) {
-      for (const vehicle of this.s.traffic) updateVehicleTurn(this, vehicle, depth);
+    const trafficBefore = Array.isArray(this.s?.traffic) ? this.s.traffic.slice() : [];
+    for (const vehicle of trafficBefore) updateVehicleTurn(this, vehicle, depth, dt);
+    const result = originalMoveTraffic.call(this, dt, ...args);
+    // The original movement loop resets the visual offset base and advances Z.
+    // Re-pin branch vehicles after its collision check so their rendered pose
+    // stays on the perpendicular crossroad. Collision X uses the same accessor.
+    const trafficAfter = Array.isArray(this.s?.traffic) ? this.s.traffic : [];
+    for (const vehicle of trafficAfter) {
+      if (vehicle.kanoTurn?.phase !== 'branch') continue;
+      const targetDepth = Number(vehicle.kanoBranchTargetDepth);
+      if (Number.isFinite(targetDepth) && targetDepth > -0.12) vehicle.depth = Math.max(targetDepth, -0.10);
     }
-    return originalMoveTraffic.apply(this, args);
+    return result;
   };
   Object.defineProperty(Game.prototype, PATCH, { value: true });
 }
@@ -138,7 +194,7 @@ function applyInstancedYaw(renderer, state) {
     for (let index = 0; index < count; index += 1) {
       const vehicle = vehicles[index];
       transform.position.set(
-        (clamp(Number(vehicle.lane) || 0, 0, 2) - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
+        (clamp(Math.round(Number(vehicle.lane) || 0), 0, 2) - 1) * 3 + (Number(vehicle.visualOffsetX) || 0),
         0,
         -Math.max(-0.05, Number(vehicle.depth) || 0) * TRAFFIC_DEPTH_UNITS,
       );
@@ -171,17 +227,19 @@ if (typeof window !== 'undefined') {
   window.kanoTrafficJunctionTurnAudit = () => {
     const game = window.__KANO_ACTIVE_GAME__ || window.__KANO_ACTIVE_UI__?.game || null;
     const traffic = Array.isArray(game?.s?.traffic) ? game.s.traffic : [];
-    const turning = traffic.filter((vehicle) => vehicle.kanoTurn || Math.abs(Number(vehicle.kanoVisualYawDelta) || 0) > 0.01);
+    const turning = traffic.filter(vehicle => vehicle.kanoTurn || Math.abs(Number(vehicle.kanoVisualYawDelta) || 0) > 0.01);
     return {
       installed: Boolean(Game.prototype[PATCH] && Renderer3D.prototype[PATCH]),
       activeGame: Boolean(game),
       trafficCount: traffic.length,
       turningCount: turning.length,
+      branchTrafficCount: traffic.filter(vehicle => vehicle.kanoTurn?.phase === 'branch').length,
       mobileInstancing: Boolean(game?.mobile),
-      collisionAlignedOffset: traffic.every((vehicle) => vehicle.__kanoTurnOffsetAccessor),
-      examples: turning.slice(0, 5).map((vehicle) => ({
+      collisionAlignedOffset: traffic.every(vehicle => vehicle.__kanoTurnOffsetAccessor),
+      examples: turning.slice(0, 5).map(vehicle => ({
         type: vehicle.type,
         lane: vehicle.lane,
+        phase: vehicle.kanoTurn?.phase || 'approach',
         depth: Number((Number(vehicle.depth) || 0).toFixed(3)),
         progress: Number((Number(vehicle.kanoTurnProgress) || 0).toFixed(2)),
         yawDelta: Number((Number(vehicle.kanoVisualYawDelta) || 0).toFixed(2)),

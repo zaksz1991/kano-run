@@ -79,3 +79,31 @@ test('Renderer3D hook applies yaw to GLB actors and mobile fallback instances', 
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+test('turning AI traffic enters the perpendicular branch and keeps moving sideways', async () => {
+  const fixture = await loadAdapterFixture();
+  try {
+    const game = new fixture.Game();
+    const junctionKey = '3600:0';
+    const id = findTurningId(junctionKey);
+    const vehicle = makeVehicle(id);
+    game.kanoWorldDistanceKm = 0.36;
+    game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
+    game.s = { traffic: [vehicle], distance: 0.36 };
+    const junctionDepth = (0 * 1008 - 2) / 88;
+    vehicle.depth = junctionDepth - 0.15;
+
+    game.moveTraffic(0.016);
+    assert.equal(vehicle.kanoTurn?.phase, 'branch', 'vehicle completes its approach curve and joins the crossroad');
+    assert.ok(Math.abs(Math.abs(vehicle.kanoVisualYawDelta) - Math.PI / 2) < 1e-9, 'vehicle keeps a 90-degree branch heading');
+    const firstX = vehicle.kanoTurn.branchX;
+    const pinnedDepth = vehicle.depth;
+
+    game.moveTraffic(0.016);
+    assert.ok(Math.abs(vehicle.kanoTurn.branchX) > Math.abs(firstX), 'vehicle continues along the side road instead of returning to its original lane');
+    assert.ok(Math.abs(vehicle.depth - pinnedDepth) < 1e-9, 'vehicle remains on the crossroad depth while travelling sideways');
+    assert.ok(Math.abs(vehicle.visualOffsetX) > 3, 'branch movement remains in the same lateral position used by collision checks');
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
