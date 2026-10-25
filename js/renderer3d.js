@@ -124,9 +124,9 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
-    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 24 : 48, mobile ? 105 : 195);
+    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 40 : 60, mobile ? 220 : 280);
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 125 : 260);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 280 : 360);
     this.camera.position.set(0, 3.85, 10.5);
 
     this.renderer = new THREE.WebGLRenderer({
@@ -5386,12 +5386,12 @@ export class Renderer3D {
     );
 
     this.scene.fog.near = this.mobile
-      ? (state.environment === 'harmattan' ? 14 : 24)
-      : (state.environment === 'harmattan' ? 18 : 48);
+      ? (state.environment === 'harmattan' ? 28 : 45)
+      : (state.environment === 'harmattan' ? 30 : 60);
 
     this.scene.fog.far = this.mobile
-      ? (state.environment === 'harmattan' ? 70 : 105)
-      : (state.environment === 'harmattan' ? 100 : 195);
+      ? (state.environment === 'harmattan' ? 160 : 240)
+      : (state.environment === 'harmattan' ? 180 : 300);
 
     // --------------------------------------------------------
     // PLAYER POSITION AND STEERING
