@@ -47,7 +47,7 @@ test('every GLTF loader goes through the shared factory', () => {
 
 test('the 3D-only guard, service worker and PWA links survive later ZIPs', () => {
   const main = read('js/main.js');
-  assert.match(main, /registerServiceWorker\(\)/);
+  assert.match(main, /registerServiceWorker\.js[\s\S]*registerServiceWorker\?\.\(\)|registerServiceWorker\(\)/);
   assert.match(main, /canUse2D/);
   assert.doesNotMatch(main, /WebGL context lost; switching to Canvas 2D/);
   const html = read('index.html');

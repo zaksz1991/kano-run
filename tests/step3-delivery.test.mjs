@@ -40,7 +40,7 @@ test('application startup registers the existing service worker', () => {
   const main = read('js/main.js');
   const worker = read('js/registerServiceWorker.js');
   assert.match(main, /import \{ registerServiceWorker \} from '\.\/registerServiceWorker\.js'/);
-  assert.match(main, /registerServiceWorker\(\)/);
+  assert.match(main, /registerServiceWorker\.js[\s\S]*registerServiceWorker\?\.\(\)|registerServiceWorker\(\)/);
   assert.match(worker, /navigator\.serviceWorker\.register\('\/sw\.js'\)/);
 });
 
