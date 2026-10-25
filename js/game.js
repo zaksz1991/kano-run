@@ -521,6 +521,12 @@ export class Game {
   }
 
   spawnTraffic(initialIndex = null) {
+    // Phone: cap traffic so GPU stays smooth with clear view
+    const trafficCap = this.mobile ? 6 : 12;
+    if (this.s?.traffic?.length >= trafficCap) {
+      return null;
+    }
+
     const types = [
       'keke',
       'car',

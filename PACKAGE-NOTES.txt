@@ -1,2 +1,0 @@
-Task 18 package contains only additive files and one import-only integration diff.
-It intentionally excludes protected engine/UI files, tests/KanoRegressionGuard.test.mjs, and every path under public/.

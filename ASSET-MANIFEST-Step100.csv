@@ -1,4 +1,0 @@
-category,asset_path,source,used_for
-keke,public/assets/models/vehicles/keke/keke-3.glb,Step 99 bundled model,checkpoint and traffic keke model catalog
-motorcycle,public/assets/models/vehicles/special/okada.glb,Step 84 bundled model,traffic motorcycle model catalog
-car,public/assets/models/vehicles/cars/quaternius_cc0-normal-car-1190.glb,Step 84 bundled model,traffic car model catalog

@@ -1,6 +1,0 @@
-KanoFlyoverRoundaboutUpgrade.js: syntax PASS
-KanoModelAssetVisualUpgrade.js: syntax PASS
-KanoRoadNavigationUpgrade.js: syntax PASS
-KanoRoadWorldCoordinatesUpgrade.js: syntax PASS
-KanoStreetLifeMotionUpgrade.js: syntax PASS
-KanoWorldInfrastructureUpgrade.js: syntax PASS

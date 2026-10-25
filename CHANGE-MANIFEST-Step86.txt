@@ -1,7 +1,0 @@
-KANO LIFE STEP 86 — CHANGE MANIFEST
-
-1. Replaced js/KanoLifeCareerSettingsHub.js in full. Adds a collapsible runtime warning/error details panel within the existing Life & Career screen, including long-task timings and Long Animation Frame script attribution.
-2. Added tests/KanoLifeCareerRuntimeWarningDetails.test.mjs with five regression checks.
-3. No index.html, game engine, rendering, persistence, settings controls, package configuration, public assets, or runtime audit source replacement.
-4. No harness folder or boot.py required.
-5. All diagnostic content is rendered as text; no network or storage calls added.

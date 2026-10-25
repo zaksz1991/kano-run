@@ -1,9 +1,0 @@
-KANO LIFE — STEP 84 CHANGE MANIFEST
-
-Added 24 bundled original low-poly GLB models under public/assets/models/ at the unique first-choice paths already used by js/ModelManager.js.
-Added tests/KanoStep84BundledModelAssets.test.mjs with regression coverage for catalog path coverage and GLB binary structure.
-Added docs/Kano-Life-Step84-Bundled-Model-Asset-Repair.md, README-Step84.md, TEST-STATUS-Step84.txt, and ASSET-MANIFEST-Step84.csv.
-
-No existing game logic, start screen, UI, renderer, storage, service worker, package files, radio/audio, saves, or existing art files are replaced.
-
-Runtime scope: the bundled assets directly address missing GLB requests in the supplied source snapshot by supplying each model category's first configured candidate. They reduce catalog fallback churn but are not a claim that the unrelated live startup freeze is definitively fixed.

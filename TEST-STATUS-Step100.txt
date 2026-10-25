@@ -1,6 +1,0 @@
-Step 100 regression status
-Node test suite: 28 passed, 0 failed.
-JavaScript / ES-module syntax checks: 15 files parsed successfully.
-ZIP integrity: checked after packaging.
-Full production build: not run in this environment.
-Interactive live-browser test: not performed.

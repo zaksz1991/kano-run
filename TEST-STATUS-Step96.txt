@@ -1,7 +1,0 @@
-Kano Life Step 96 — validation summary
-Focused regression tests: 21 passed, 0 failed.
-JavaScript syntax: 6 included JavaScript files passed node --check.
-ZIP integrity: validated after archive creation.
-Production build: not run (no dependency installation performed).
-Live browser visual test: not completed.
-InstantMesh inference: not run; no model output is claimed as InstantMesh-generated.

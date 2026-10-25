@@ -1,5 +1,0 @@
-Step 98 source-level regression tests: 9 passed, 0 failed.
-These tests check bootstrap ordering, source contracts, signed-coordinate math,
-visible-range behaviour, reverse re-approach, pedestrian offset bounds, crowd
-animation fallback, run reset, and bounded record handling. They are not a live
-Three.js rendering test.

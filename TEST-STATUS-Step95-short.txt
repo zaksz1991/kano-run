@@ -1,1 +1,0 @@
-542 tests PASS; 0 FAIL. Syntax 232 PASS. Release checks 13 PASS; 0 warnings/failures. 150 local imports resolved. No Vite build or interactive browser test; live deployment not verified.
