@@ -17,7 +17,7 @@ test('automatic routing assigns newly spawned traffic only after explicit nodes 
   const game = new AutoRouteGame();
   const windowObject = { __KANO_ACTIVE_GAME__: game };
   const bridge = createKanoTrafficRoadNetworkBridge({ GameClass: AutoRouteGame, windowObject });
-  game.s.traffic.push({ id: 'new-car-1', type: 'car', lane: 1, depth: 0, direction: 1, visualOffsetX: 0 });
+  game.s.traffic.push({ id: 'new-car-1', type: 'car', lane: 1, depth: 0, direction: 1, visualOffsetX: 0, kanoRoadEntryNode: 'south', kanoRoadExitNode: 'north' });
 
   assert.equal(bridge.configureAutoRouting({ enabled: true, entryNodes: ['south'], exitNodes: ['north'] }).ok, false);
   assert.equal(bridge.audit().routedVehicleCount, 0);
@@ -37,6 +37,20 @@ test('automatic routing assigns newly spawned traffic only after explicit nodes 
   assert.equal(bridge.audit().routedVehicleCount, 1);
   assert.equal(game.s.traffic[0].kanoRoadRoute.ok, true);
   assert.ok(['south-approach', 'north-exit'].includes(game.s.traffic[0].kanoRoadPose.pathId));
+});
+
+test('automatic routing does not hijack untagged ordinary traffic by default', () => {
+  const game = new AutoRouteGame();
+  const vehicle = { id: 'ordinary-car', type: 'car', lane: 1, depth: -2, direction: 1, visualOffsetX: 0 };
+  game.s.traffic.push(vehicle);
+  const bridge = createKanoTrafficRoadNetworkBridge({ GameClass: AutoRouteGame, windowObject: { __KANO_ACTIVE_GAME__: game } });
+  const point = t => ({ x: 0, y: 0, z: 50 * t });
+  assert.equal(bridge.registerPath({ path: straightPath('road', point(0), point(1)), fromNode: 'south', toNode: 'north' }).ok, true);
+  assert.equal(bridge.configureAutoRouting({ enabled: true, entryNodes: ['south'], exitNodes: ['north'] }).ok, true);
+  const result = bridge.assignUnroutedTraffic(game.s.traffic);
+  assert.deepEqual(result, { assigned: 0, skipped: 1 });
+  assert.equal(vehicle.kanoRoadRoute, undefined);
+  assert.equal(vehicle.depth, -2);
 });
 
 test('automatic routing rejects unknown nodes and can be disabled', () => {

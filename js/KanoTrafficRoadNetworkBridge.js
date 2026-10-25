@@ -48,7 +48,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
   let rendererInstalled = false;
   let originalMoveTraffic = null;
   let originalSyncTraffic = null;
-  let autoRouting = { enabled: false, continueRoutes: true, entryNodes: [], exitNodes: [], seed: 'kano-traffic' };
+  let autoRouting = { enabled: false, continueRoutes: true, assignAllUnrouted: false, entryNodes: [], exitNodes: [], seed: 'kano-traffic' };
 
   function activeGame() {
     return windowObject?.__KANO_ACTIVE_GAME__ || windowObject?.__KANO_ACTIVE_UI__?.game || null;
@@ -74,7 +74,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
     return network.planRoute(options);
   }
 
-  function configureAutoRouting({ enabled = true, continueRoutes = true, entryNodes = [], exitNodes = [], seed = 'kano-traffic' } = {}) {
+  function configureAutoRouting({ enabled = true, continueRoutes = true, assignAllUnrouted = false, entryNodes = [], exitNodes = [], seed = 'kano-traffic' } = {}) {
     if (!Array.isArray(entryNodes) || !Array.isArray(exitNodes)) {
       return { ok: false, reason: 'entry-and-exit-nodes-must-be-arrays' };
     }
@@ -89,7 +89,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
     if (enabled && !entries.some(from => exits.some(to => from !== to && network.planRoute({ fromNode: from, toNode: to }).ok))) {
       return { ok: false, reason: 'no-reachable-entry-exit-pair' };
     }
-    autoRouting = { enabled: Boolean(enabled), continueRoutes: Boolean(continueRoutes), entryNodes: entries, exitNodes: exits, seed: String(seed || 'kano-traffic') };
+    autoRouting = { enabled: Boolean(enabled), continueRoutes: Boolean(continueRoutes), assignAllUnrouted: Boolean(assignAllUnrouted), entryNodes: entries, exitNodes: exits, seed: String(seed || 'kano-traffic') };
     return { ok: true, ...autoRouting };
   }
 
@@ -99,18 +99,27 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
     let skipped = 0;
     for (const vehicle of traffic) {
       if (!vehicle || vehicle.kanoRoadRoute?.ok) continue;
+      // By default, only route vehicles explicitly tagged by a spawn/traffic
+      // integration. Routing every ordinary vehicle can teleport it to the
+      // beginning of an authored path, so blanket assignment is opt-in.
+      const taggedEntry = typeof vehicle.kanoRoadEntryNode === 'string' ? vehicle.kanoRoadEntryNode.trim() : '';
+      const taggedExit = typeof vehicle.kanoRoadExitNode === 'string' ? vehicle.kanoRoadExitNode.trim() : '';
+      if ((!taggedEntry || !taggedExit) && !autoRouting.assignAllUnrouted) { skipped += 1; continue; }
       const key = String(vehicle.id ?? `${vehicle.type ?? 'traffic'}:${vehicle.lane ?? 0}:${vehicle.depth ?? 0}`);
-      const startIndex = stableIndex(`${autoRouting.seed}:entry:${key}`, autoRouting.entryNodes.length);
-      const destinationOffset = stableIndex(`${autoRouting.seed}:exit:${key}`, autoRouting.exitNodes.length);
+      const entryCandidates = taggedEntry ? [taggedEntry] : autoRouting.entryNodes;
+      const exitCandidates = taggedExit ? [taggedExit] : autoRouting.exitNodes;
+      const startIndex = stableIndex(`${autoRouting.seed}:entry:${key}`, entryCandidates.length);
+      const destinationOffset = stableIndex(`${autoRouting.seed}:exit:${key}`, exitCandidates.length);
       let result = null;
-      for (let attempt = 0; attempt < autoRouting.entryNodes.length; attempt += 1) {
-        const fromNode = autoRouting.entryNodes[(startIndex + attempt) % autoRouting.entryNodes.length];
-        for (let offset = 0; offset < autoRouting.exitNodes.length; offset += 1) {
-          const toNode = autoRouting.exitNodes[(destinationOffset + offset) % autoRouting.exitNodes.length];
+      for (let attempt = 0; attempt < entryCandidates.length; attempt += 1) {
+        const fromNode = entryCandidates[(startIndex + attempt) % entryCandidates.length];
+        for (let offset = 0; offset < exitCandidates.length; offset += 1) {
+          const toNode = exitCandidates[(destinationOffset + offset) % exitCandidates.length];
           if (fromNode === toNode) continue;
           const route = network.planRoute({ fromNode, toNode, seed: key });
           if (!route.ok) continue;
-          const assignedRoute = runtime.assignRoute(vehicle, route, { progress: 0 });
+          const requestedProgress = Number(vehicle.kanoRoadInitialProgress);
+          const assignedRoute = runtime.assignRoute(vehicle, route, { progress: Number.isFinite(requestedProgress) ? Math.max(0, Math.min(1, requestedProgress)) : 0 });
           if (assignedRoute.ok) {
             const pose = runtime.updateVehicle(vehicle);
             if (pose.ok) result = { ok: true, fromNode, toNode, route };
@@ -119,8 +128,12 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
         }
         if (result) break;
       }
-      if (result) assigned += 1;
-      else skipped += 1;
+      if (result) {
+        delete vehicle.kanoRoadEntryNode;
+        delete vehicle.kanoRoadExitNode;
+        delete vehicle.kanoRoadInitialProgress;
+        assigned += 1;
+      } else skipped += 1;
     }
     return { assigned, skipped };
   }
