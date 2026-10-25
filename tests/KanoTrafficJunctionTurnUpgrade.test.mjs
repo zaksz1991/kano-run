@@ -88,8 +88,19 @@ test('traffic decision retains a straight-through share across many vehicles', (
 });
 
 test('relative depth is positive before and negative after the junction', () => {
-  assert.ok(Math.abs(computeKanoTrafficRelativeDepth(0.8, 0.5) - 0.3) < 1e-12);
-  assert.ok(Math.abs(computeKanoTrafficRelativeDepth(0.2, 0.5) + 0.3) < 1e-12);
+  assert.ok(Math.abs(computeKanoTrafficRelativeDepth(0.2, 0.5) - 0.3) < 1e-12);
+  assert.ok(Math.abs(computeKanoTrafficRelativeDepth(0.8, 0.5) + 0.3) < 1e-12);
+});
+
+test('relative-depth sign matches the renderer world-Z mapping before and after a junction', () => {
+  const junctionDepth = 0.5;
+  const beforeDepth = 0.2;
+  const afterDepth = 0.8;
+  const worldZ = depth => -depth * 88;
+  assert.ok(worldZ(beforeDepth) > worldZ(junctionDepth), 'before-junction vehicle is closer to the player than the junction');
+  assert.ok(computeKanoTrafficRelativeDepth(beforeDepth, junctionDepth) > 0);
+  assert.ok(worldZ(afterDepth) < worldZ(junctionDepth), 'after-junction vehicle is farther forward than the junction');
+  assert.ok(computeKanoTrafficRelativeDepth(afterDepth, junctionDepth) < 0);
 });
 
 test('relative depth rejects non-finite traffic coordinates', () => {

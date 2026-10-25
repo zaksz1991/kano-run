@@ -1,5 +1,5 @@
 {
-  "name": "kano-run-ai-traffic-junction-next21-focused-tests",
+  "name": "kano-run-ai-traffic-junction-next23-focused-tests",
   "private": true,
   "type": "module",
   "scripts": { "test": "node --test tests/*.test.mjs" }

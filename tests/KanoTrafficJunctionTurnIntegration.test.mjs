@@ -12,7 +12,7 @@ async function loadAdapterFixture() {
   await mkdir(js, { recursive: true });
   await copyFile(new URL('../js/KanoTrafficJunctionTurnUpgrade.js', import.meta.url), path.join(js, 'KanoTrafficJunctionTurnUpgrade.js'));
   await copyFile(new URL('../js/KanoTrafficJunctionTurnMath.js', import.meta.url), path.join(js, 'KanoTrafficJunctionTurnMath.js'));
-  await writeFile(path.join(js, 'game.js'), `export class Game { moveTraffic(dt) { this.originalCalls = (this.originalCalls || 0) + 1; for (let i = this.s.traffic.length - 1; i >= 0; i -= 1) { const v = this.s.traffic[i]; v.visualOffsetX = 0; v.depth -= dt * 0.01; if (this.simulateDespawn && v.depth < -0.12) this.s.traffic.splice(i, 1); } } }\n`);
+  await writeFile(path.join(js, 'game.js'), `export class Game { moveTraffic(dt) { this.originalCalls = (this.originalCalls || 0) + 1; for (let i = this.s.traffic.length - 1; i >= 0; i -= 1) { const v = this.s.traffic[i]; v.visualOffsetX = 0; v.depth += dt * 0.01; if (this.simulateDespawn && v.depth < -0.12) this.s.traffic.splice(i, 1); } } }\n`);
   await writeFile(path.join(js, 'renderer3d.js'), `export class Renderer3D { syncTraffic(state) { this.originalSyncCalls = (this.originalSyncCalls || 0) + 1; } }\n`);
   const adapterUrl = pathToFileURL(path.join(js, 'KanoTrafficJunctionTurnUpgrade.js')).href + `?fixture=${Date.now()}-${Math.random()}`;
   const { Game } = await import(pathToFileURL(path.join(js, 'game.js')).href);
@@ -91,7 +91,7 @@ test('turning AI traffic enters the perpendicular branch and keeps moving sidewa
     game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
     game.s = { traffic: [vehicle], distance: 0.36 };
     const junctionDepth = (0 * 1008 - 2) / 88;
-    vehicle.depth = junctionDepth - 0.15;
+    vehicle.depth = junctionDepth + 0.15;
 
     game.moveTraffic(0.016);
     assert.equal(vehicle.kanoTurn?.phase, 'branch', 'vehicle completes its approach curve and joins the crossroad');
@@ -118,7 +118,7 @@ test('an in-progress AI turn stays attached to its original junction after navig
     game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
     game.s = { traffic: [vehicle], distance: 0.36 };
     const junctionDepth = (0 * 1008 - 2) / 88;
-    vehicle.depth = junctionDepth + 0.10;
+    vehicle.depth = junctionDepth - 0.10;
 
     game.moveTraffic(0.016);
     assert.equal(vehicle.kanoTurn?.phase, 'approach');
@@ -151,7 +151,7 @@ test('AI traffic does not miss a junction when a large frame step crosses the wh
     game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
     game.s = { traffic: [vehicle], distance: 0.36 };
     const junctionDepth = (0 * 1008 - 2) / 88;
-    vehicle.depth = junctionDepth + 0.5;
+    vehicle.depth = junctionDepth - 0.5;
 
     game.moveTraffic(0); // Record the vehicle before the approach envelope.
     assert.equal(vehicle.kanoTurn, undefined);
@@ -178,7 +178,7 @@ test('branching traffic survives the base-game despawn plane until it leaves the
     game.s = { traffic: [vehicle], distance: 0.36 };
     game.simulateDespawn = true;
     const junctionDepth = (0 * 1008 - 2) / 88;
-    vehicle.depth = junctionDepth - 0.15;
+    vehicle.depth = junctionDepth + 0.15;
 
     game.moveTraffic(0.016);
     assert.equal(vehicle.kanoTurn?.phase, 'branch');
@@ -211,7 +211,7 @@ test('AI vehicle heading is continuous when the approach phase becomes a perpend
     game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
     game.s = { traffic: [vehicle], distance: 0.36 };
     const junctionDepth = (0 * 1008 - 2) / 88;
-    vehicle.depth = junctionDepth - 0.15;
+    vehicle.depth = junctionDepth + 0.15;
 
     game.moveTraffic(0.016);
     assert.equal(vehicle.kanoTurn?.phase, 'branch');

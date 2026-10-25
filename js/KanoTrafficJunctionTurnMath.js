@@ -1,11 +1,11 @@
 /** Convert shared road depth coordinates into junction-relative depth.
- * Positive values are before the junction; negative values are after it.
+ * Traffic depth is measured forward as increasing depth (rendered at z = -depth * 88). Positive values are before the junction; negative values are after it.
  */
 export function computeKanoTrafficRelativeDepth(vehicleDepth, junctionDepth) {
   const vehicle = Number(vehicleDepth);
   const junction = Number(junctionDepth);
   if (!Number.isFinite(vehicle) || !Number.isFinite(junction)) return NaN;
-  return vehicle - junction;
+  return junction - vehicle;
 }
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
