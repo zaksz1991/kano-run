@@ -48,3 +48,11 @@ test('a vehicle before the junction progresses into the turn, not out of it', ()
   assert.ok(beforeJunction.progress > 0);
   assert.ok(afterJunction.progress > beforeJunction.progress);
 });
+
+
+test('oncoming traffic keeps the same world-lateral curve but reverses its yaw', () => {
+  const sameFlow = computeKanoTrafficTurnFrame(0.065, 1, 1);
+  const oncoming = computeKanoTrafficTurnFrame(0.065, 1, -1);
+  assert.equal(oncoming.lateralOffset, sameFlow.lateralOffset);
+  assert.equal(oncoming.yawDelta, -sameFlow.yawDelta);
+});

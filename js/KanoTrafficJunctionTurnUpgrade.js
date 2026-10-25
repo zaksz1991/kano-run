@@ -93,9 +93,9 @@ function updateVehicleTurn(game, vehicle, depthAtJunction) {
     return;
   }
 
-  // Three.js yaw is positive toward world-left for a vehicle travelling along -Z.
-  // Oncoming traffic has the opposite forward axis, so invert its yaw sign.
-  const frame = computeKanoTrafficTurnFrame(relativeDepth, turn.side * (vehicle.direction === -1 ? -1 : 1));
+  // Keep lateral movement in shared world X coordinates, but calculate yaw
+  // relative to each vehicle's own forward axis (opposite for oncoming traffic).
+  const frame = computeKanoTrafficTurnFrame(relativeDepth, turn.side, vehicle.direction === -1 ? -1 : 1);
   vehicle._kanoTurnOffsetX = frame.lateralOffset;
   vehicle.kanoVisualYawDelta = frame.yawDelta;
   vehicle.kanoTurnProgress = frame.progress;

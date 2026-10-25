@@ -4,16 +4,17 @@ const smoothstep = (value) => {
   return t * t * (3 - 2 * t);
 };
 
-export function computeKanoTrafficTurnFrame(relativeDepth, side) {
+export function computeKanoTrafficTurnFrame(relativeDepth, side, travelDirection = 1) {
   const approachDepth = 0.28;
   const exitDepth = -0.15;
   const progress = clamp((approachDepth - Number(relativeDepth)) / (approachDepth - exitDepth), 0, 1);
   const eased = smoothstep(progress);
   const direction = Number(side) < 0 ? -1 : 1;
-  // The vehicle yaws into the turn and straightens before leaving it. The
-  // lateral curve reaches the target lane at the same time the offset resets.
+  const travelSign = Number(travelDirection) < 0 ? -1 : 1;
+  // Lateral offset is shared world X; yaw is relative to each vehicle's
+  // forward axis, which reverses for oncoming traffic.
   const yawEnvelope = progress <= 0 || progress >= 1 ? 0 : Math.sin(progress * Math.PI);
-  const rawYawDelta = -direction * (Math.PI / 2) * yawEnvelope;
+  const rawYawDelta = -direction * travelSign * (Math.PI / 2) * yawEnvelope;
   const yawDelta = Math.abs(rawYawDelta) < 1e-12 ? 0 : rawYawDelta;
   return {
     progress,
