@@ -13,11 +13,14 @@ export function computeKanoTrafficTurnFrame(relativeDepth, side) {
   // The vehicle yaws into the turn and straightens before leaving it. The
   // lateral curve reaches the target lane at the same time the offset resets.
   const yawEnvelope = progress <= 0 || progress >= 1 ? 0 : Math.sin(progress * Math.PI);
+  const rawYawDelta = -direction * (Math.PI / 2) * yawEnvelope;
+  const yawDelta = Math.abs(rawYawDelta) < 1e-12 ? 0 : rawYawDelta;
   return {
     progress,
     eased,
     lateralOffset: direction * 3 * eased,
-    yawDelta: direction * (Math.PI / 2) * yawEnvelope,
+    // Three.js rotation.y positive turns a -Z-facing vehicle toward world-left.
+    yawDelta,
     complete: progress >= 1,
   };
 }

@@ -15,8 +15,9 @@ test('left and right turns produce mirrored curves and yaw', () => {
   const right = computeKanoTrafficTurnFrame(0.065, 1);
   assert.ok(left.lateralOffset < 0);
   assert.ok(right.lateralOffset > 0);
-  assert.ok(left.yawDelta < 0);
-  assert.ok(right.yawDelta > 0);
+  // Positive Three.js yaw turns a -Z-facing vehicle toward world-left.
+  assert.ok(left.yawDelta > 0);
+  assert.ok(right.yawDelta < 0);
   assert.equal(Math.abs(left.lateralOffset), Math.abs(right.lateralOffset));
 });
 
@@ -35,7 +36,15 @@ test('turn progress is clamped for positions outside the turn envelope', () => {
 
 test('yaw peaks during the turn and returns to zero at the exit', () => {
   const frame = computeKanoTrafficTurnFrame(0.065, 1);
-  assert.ok(frame.yawDelta > 0);
-  assert.ok(frame.yawDelta <= Math.PI / 2);
+  assert.ok(frame.yawDelta < 0);
+  assert.ok(Math.abs(frame.yawDelta) <= Math.PI / 2);
   assert.equal(computeKanoTrafficTurnFrame(-0.15, 1).yawDelta, 0);
+});
+
+
+test('a vehicle before the junction progresses into the turn, not out of it', () => {
+  const beforeJunction = computeKanoTrafficTurnFrame(0.20, 1);
+  const afterJunction = computeKanoTrafficTurnFrame(-0.08, 1);
+  assert.ok(beforeJunction.progress > 0);
+  assert.ok(afterJunction.progress > beforeJunction.progress);
 });
