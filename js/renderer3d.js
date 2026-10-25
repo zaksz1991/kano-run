@@ -1883,38 +1883,40 @@ export class Renderer3D {
       });
     }
 
-    if (!this.mobile) {
-      for (let index = 0; index < 6; index += 1) {
+    // Kano solar double-arm street lights (black pole, twin arms, tilted solar
+    // panels) as in the reference photos. Phones get fewer poles and shared
+    // geometry/materials so the extra detail costs almost nothing.
+    {
+      const poleMat = this.material(0x1c1e21);
+      const panelMat = this.material(0x23324a);
+      const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
+      const stemGeo = new THREE.CylinderGeometry(0.07, 0.1, 6.2, 8);
+      const armGeo = new THREE.BoxGeometry(1.35, 0.07, 0.07);
+      const panelGeo = new THREE.BoxGeometry(1.05, 0.05, 0.62);
+      const lampGeo = new THREE.BoxGeometry(0.46, 0.1, 0.26);
+      const perSide = this.mobile ? 3 : 6;
+      const spacing = 245 / perSide;
+      for (let index = 0; index < perSide; index += 1) {
         for (const side of [-1, 1]) {
           const pole = new THREE.Group();
-
-          const stem = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.055, 0.07, 4.1, 8),
-            this.material(0x48505a),
-          );
-
-          stem.position.y = 2.05;
+          const stem = new THREE.Mesh(stemGeo, poleMat);
+          stem.position.y = 3.1;
           pole.add(stem);
-
-          const arm = new THREE.Mesh(
-            new THREE.BoxGeometry(0.7, 0.07, 0.07),
-            this.material(0x48505a),
-          );
-
-          arm.position.set(-side * 0.22, 4.05, 0);
-          pole.add(arm);
-
-          const lamp = new THREE.Mesh(
-            new THREE.BoxGeometry(0.38, 0.12, 0.24),
-            this.material(0xf3e2a1),
-          );
-
-          lamp.position.set(-side * 0.48, 4.00, 0);
-          pole.add(lamp);
-
-          pole.position.set(side * 7.6, 0, -24 - index * 34);
+          for (const arm of [-1, 1]) {
+            const bar = new THREE.Mesh(armGeo, poleMat);
+            bar.position.set(arm * 0.62, 6.05, 0);
+            bar.rotation.z = arm * 0.06;
+            pole.add(bar);
+            const panel = new THREE.Mesh(panelGeo, panelMat);
+            panel.position.set(arm * 0.78, 6.34, 0);
+            panel.rotation.z = -arm * 0.2;
+            pole.add(panel);
+            const lamp = new THREE.Mesh(lampGeo, lampMat);
+            lamp.position.set(arm * 1.2, 5.96, 0);
+            pole.add(lamp);
+          }
+          pole.position.set(side * 7.6, 0, -24 - index * spacing);
           pole.userData.proceduralStreetLight = true;
-
           this.world.add(pole);
           this.streetLights.push(pole);
         }
