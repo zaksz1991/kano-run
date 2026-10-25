@@ -86,8 +86,20 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
       return { ok: false, reason: 'entry-and-exit-nodes-required' };
     }
     if (unknown.length) return { ok: false, reason: 'route-node-not-found', nodes: unknown };
-    if (enabled && !entries.some(from => exits.some(to => from !== to && network.planRoute({ fromNode: from, toNode: to }).ok))) {
-      return { ok: false, reason: 'no-reachable-entry-exit-pair' };
+    if (enabled) {
+      const geometry = network.validateConnections();
+      if (!geometry.ok) {
+        return {
+          ok: false,
+          reason: 'road-path-connections-invalid',
+          issueCount: geometry.issues.length,
+          issues: geometry.issues.slice(0, 20),
+          connectionTolerance: geometry.issues[0]?.tolerance ?? null,
+        };
+      }
+      if (!entries.some(from => exits.some(to => from !== to && network.planRoute({ fromNode: from, toNode: to }).ok))) {
+        return { ok: false, reason: 'no-reachable-entry-exit-pair' };
+      }
     }
     autoRouting = { enabled: Boolean(enabled), continueRoutes: Boolean(continueRoutes), assignAllUnrouted: Boolean(assignAllUnrouted), entryNodes: entries, exitNodes: exits, seed: String(seed || 'kano-traffic') };
     return { ok: true, ...autoRouting };

@@ -86,3 +86,22 @@ test('completed routes continue onto a connected exit without teleporting to an 
   assert.equal(vehicle.kanoRoadRoute.nodeIds[0], 'north');
   assert.equal(vehicle.kanoRoadPose.position.z, 100);
 });
+
+
+test('automatic routing refuses graph-connected paths whose scene-space endpoints do not meet', () => {
+  const bridge = createKanoTrafficRoadNetworkBridge({ GameClass: AutoRouteGame, windowObject: {} });
+  assert.equal(bridge.registerPath({
+    path: straightPath('approach-gap', { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 20 }),
+    fromNode: 'south', toNode: 'junction',
+  }).ok, true);
+  assert.equal(bridge.registerPath({
+    path: straightPath('exit-gap', { x: 5, y: 0, z: 20 }, { x: 5, y: 0, z: 40 }),
+    fromNode: 'junction', toNode: 'north',
+  }).ok, true);
+
+  const configured = bridge.configureAutoRouting({ enabled: true, entryNodes: ['south'], exitNodes: ['north'] });
+  assert.equal(configured.ok, false);
+  assert.equal(configured.reason, 'road-path-connections-invalid');
+  assert.ok(configured.issueCount > 0);
+  assert.equal(bridge.audit().autoRouting.enabled, false);
+});
