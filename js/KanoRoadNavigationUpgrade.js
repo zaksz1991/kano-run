@@ -314,13 +314,12 @@ function selectTurn(game, direction) {
     game.ui?.toast?.('Select forward gear before entering a junction.');
     return false;
   }
-  if (direction === 'uturn' && state.speed > UTURN_SPEED_LIMIT) {
-    game.ui?.toast?.('For a safe U-turn, brake to 12 km/h or below first.');
-    return false;
-  }
-  if (['left', 'right'].includes(direction) && state.speed > NORMAL_TURN_SPEED_LIMIT) {
-    game.ui?.toast?.('Slow to 35 km/h or below before turning.');
-    return false;
+  // Instead of refusing, the driver brakes hard for the turn (what a real keke driver does).
+  const turnLimit = direction === 'uturn' ? UTURN_SPEED_LIMIT : (['left', 'right'].includes(direction) ? NORMAL_TURN_SPEED_LIMIT : Infinity);
+  if (state.speed > turnLimit) {
+    state.speed = turnLimit;
+    if (Number.isFinite(state.signedSpeed)) state.signedSpeed = Math.sign(state.signedSpeed || 1) * turnLimit;
+    game.ui?.toast?.(direction === 'uturn' ? 'Brakes squealing… slowing for the U-turn!' : 'You brake hard for the turn!');
   }
   if (!['left', 'straight', 'right', 'uturn'].includes(direction)) return false;
 
@@ -491,7 +490,7 @@ function updateNavigationHUD(game, force) {
         ? 'Select forward gear before choosing a junction direction.'
         : 'Choose a visible arrow. Brake first; U-turns require 12 km/h or less. Q / T / E / U are keyboard shortcuts.';
   } else {
-    note.textContent = 'Directions activate near the junction. ← / → still steer between lanes; R selects reverse gear.';
+    note.textContent = 'Directions activate near the junction. At the junction, keep steering ← / → past the edge lane to turn; R selects reverse gear.';
   }
 }
 
@@ -705,6 +704,24 @@ function installGameHooks() {
       updateNavigationHUD(this, false);
     }
     return result;
+  };
+  // Steering past the edge lane near a junction turns the keke into that road.
+  const originalLane = Game.prototype.lane;
+  Game.prototype.lane = function laneWithKanoEdgeTurn(direction, ...args) {
+    const nav = this.kanoNavigationState;
+    const sign = Math.sign(direction);
+    const atEdge = this.s && ((sign < 0 && this.s.targetLane <= -1) || (sign > 0 && this.s.targetLane >= 1));
+    if (atEdge && nav?.windowOpen && !nav.turn && this.state === 'PLAY') {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (nav.edgeSince && now - nav.edgeSince > 350 && nav.edgeSign === sign) {
+        nav.edgeSince = 0;
+        if (selectTurn(this, sign < 0 ? 'left' : 'right')) return undefined;
+      }
+      if (!nav.edgeSince || nav.edgeSign !== sign) { nav.edgeSince = now; nav.edgeSign = sign; }
+    } else if (nav) {
+      nav.edgeSince = 0;
+    }
+    return originalLane.call(this, direction, ...args);
   };
   const originalSetReverse = Game.prototype.setReverse;
   if (typeof originalSetReverse === 'function') {
