@@ -149,11 +149,9 @@ function installExistingGlbPoolCompatibility() {
     if (this.__kanoExistingGlbPoolTasks.has(key)) {
       return this.__kanoExistingGlbPoolTasks.get(key);
     }
-    if (this.cache.has(key)) {
-      // A standard load already ran before the pool hook. Preserve it safely;
-      // the next page load will activate the pool from the beginning.
-      return Promise.resolve(this.cache.get(key));
-    }
+    // A plain load can already have cached one template before this hook runs
+    // (the hook arrives late). Build the pool anyway so people and buildings
+    // still get variety; instances already made keep their template.
 
     const task = (async () => {
       const candidates = [...configured];

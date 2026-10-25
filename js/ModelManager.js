@@ -85,6 +85,7 @@ const CATALOG = {
   // too heavy to draw several times in a phone keke, so they are the last resort.
   passenger: [
     'characters/passengers/Man.glb',
+    'characters/passengers/man-2.glb',
     'characters/passengers/Man in Suit.glb',
     'characters/passengers/women_in_hijab.glb',
     'characters/passengers/hijab_muslim_woman.glb',
@@ -99,9 +100,8 @@ const CATALOG = {
 
   passengerMan: [
     'characters/passengers/Man.glb',
-    'characters/passengers/Man-fjHyMd5Wxw.glb',
-    'characters/passengers/handsome_man_in_casual_clothes_in_a-pose_86.glb',
-    'characters/passengers/tekamist_mens.glb',
+    'characters/passengers/man-2.glb',
+    'characters/pedestrians/Man-Long-Sleeves.glb',
   ],
 
   passengerVIP: [
