@@ -47,3 +47,28 @@ test('automatic routing rejects unknown nodes and can be disabled', () => {
   assert.equal(bridge.configureAutoRouting({ enabled: false }).ok, true);
   assert.equal(bridge.audit().autoRouting.enabled, false);
 });
+
+test('completed routes continue onto a connected exit without teleporting to an unrelated path', () => {
+  const game = new AutoRouteGame();
+  const bridge = createKanoTrafficRoadNetworkBridge({ GameClass: AutoRouteGame, windowObject: { __KANO_ACTIVE_GAME__: game } });
+  const points = {
+    south: { x: 0, y: 0, z: 0 },
+    junction: { x: 0, y: 0, z: 50 },
+    north: { x: 0, y: 0, z: 100 },
+  };
+  assert.equal(bridge.registerPath({ path: straightPath('south-junction', points.south, points.junction), fromNode: 'south', toNode: 'junction' }).ok, true);
+  assert.equal(bridge.registerPath({ path: straightPath('junction-north', points.junction, points.north), fromNode: 'junction', toNode: 'north' }).ok, true);
+  assert.equal(bridge.registerPath({ path: straightPath('north-south', points.north, points.south), fromNode: 'north', toNode: 'south' }).ok, true);
+  assert.equal(bridge.configureAutoRouting({ enabled: true, entryNodes: ['south'], exitNodes: ['north', 'south'], seed: 'loop' }).ok, true);
+  const vehicle = { id: 'loop-car', type: 'car', lane: 1, depth: -100 / 88, direction: 1, visualOffsetX: 0 };
+  game.s.traffic.push(vehicle);
+  const initial = bridge.assignVehicleRoute({ vehicleId: 'loop-car', fromNode: 'south', toNode: 'north', progress: 1 });
+  assert.equal(initial.ok, true);
+  vehicle.kanoRoadPathIndex = vehicle.kanoRoadRoute.pathIds.length - 1;
+  vehicle.kanoRoadPathProgress = 1;
+  vehicle.kanoRoadPose = { ...vehicle.kanoRoadPose, position: { x: 0, y: 0, z: 100 } };
+  const continued = bridge.continueCompletedRoutes(game.s.traffic);
+  assert.equal(continued.continued, 1);
+  assert.equal(vehicle.kanoRoadRoute.nodeIds[0], 'north');
+  assert.equal(vehicle.kanoRoadPose.position.z, 100);
+});

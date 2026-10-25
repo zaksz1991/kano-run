@@ -48,7 +48,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
   let rendererInstalled = false;
   let originalMoveTraffic = null;
   let originalSyncTraffic = null;
-  let autoRouting = { enabled: false, entryNodes: [], exitNodes: [], seed: 'kano-traffic' };
+  let autoRouting = { enabled: false, continueRoutes: true, entryNodes: [], exitNodes: [], seed: 'kano-traffic' };
 
   function activeGame() {
     return windowObject?.__KANO_ACTIVE_GAME__ || windowObject?.__KANO_ACTIVE_UI__?.game || null;
@@ -74,7 +74,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
     return network.planRoute(options);
   }
 
-  function configureAutoRouting({ enabled = true, entryNodes = [], exitNodes = [], seed = 'kano-traffic' } = {}) {
+  function configureAutoRouting({ enabled = true, continueRoutes = true, entryNodes = [], exitNodes = [], seed = 'kano-traffic' } = {}) {
     if (!Array.isArray(entryNodes) || !Array.isArray(exitNodes)) {
       return { ok: false, reason: 'entry-and-exit-nodes-must-be-arrays' };
     }
@@ -89,7 +89,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
     if (enabled && !entries.some(from => exits.some(to => from !== to && network.planRoute({ fromNode: from, toNode: to }).ok))) {
       return { ok: false, reason: 'no-reachable-entry-exit-pair' };
     }
-    autoRouting = { enabled: Boolean(enabled), entryNodes: entries, exitNodes: exits, seed: String(seed || 'kano-traffic') };
+    autoRouting = { enabled: Boolean(enabled), continueRoutes: Boolean(continueRoutes), entryNodes: entries, exitNodes: exits, seed: String(seed || 'kano-traffic') };
     return { ok: true, ...autoRouting };
   }
 
@@ -123,6 +123,37 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
       else skipped += 1;
     }
     return { assigned, skipped };
+  }
+
+  function continueCompletedRoutes(traffic) {
+    if (!autoRouting.enabled || !autoRouting.continueRoutes || !Array.isArray(traffic)) return { continued: 0, skipped: 0 };
+    const snapshot = network.snapshot();
+    const pathById = new Map(snapshot.paths.map(path => [path.id, path]));
+    let continued = 0;
+    let skipped = 0;
+    for (const vehicle of traffic) {
+      const route = vehicle?.kanoRoadRoute;
+      if (!route?.ok || !Array.isArray(route.pathIds) || !route.pathIds.length) continue;
+      const lastIndex = route.pathIds.length - 1;
+      if (Number(vehicle.kanoRoadPathIndex) !== lastIndex || Number(vehicle.kanoRoadPathProgress) < 0.999) continue;
+      const lastPath = pathById.get(route.pathIds[lastIndex]);
+      const currentNode = route.nodeIds?.at(-1) || lastPath?.toNode;
+      if (!currentNode) { skipped += 1; continue; }
+      const key = String(vehicle.id ?? `${vehicle.type ?? 'traffic'}:${vehicle.lane ?? 0}:${vehicle.depth ?? 0}`);
+      const candidateExits = autoRouting.exitNodes.filter(node => node !== currentNode);
+      const startIndex = stableIndex(`${autoRouting.seed}:continue:${key}:${currentNode}`, candidateExits.length);
+      let next = null;
+      for (let offset = 0; offset < candidateExits.length; offset += 1) {
+        const destination = candidateExits[(startIndex + offset) % candidateExits.length];
+        const planned = network.planRoute({ fromNode: currentNode, toNode: destination, seed: `${key}:continue` });
+        if (planned.ok && planned.pathIds.length) { next = planned; break; }
+      }
+      if (!next) { skipped += 1; continue; }
+      const assigned = runtime.assignRoute(vehicle, next, { progress: 0 });
+      if (!assigned.ok || !runtime.updateVehicle(vehicle).ok) { skipped += 1; continue; }
+      continued += 1;
+    }
+    return { continued, skipped };
   }
 
   function assignVehicleRoute({ vehicleId, fromNode, toNode, seed, progress = 0 } = {}) {
@@ -192,6 +223,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
         for (const vehicle of traffic) {
           if (vehicle.kanoRoadRoute?.ok) runtime.updateVehicle(vehicle);
         }
+        continueCompletedRoutes(traffic);
         return result;
       };
       Object.defineProperty(GameClass.prototype, BRIDGE_PATCH, { value: true });
@@ -234,6 +266,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
     assignVehicleRoute,
     configureAutoRouting,
     assignUnroutedTraffic,
+    continueCompletedRoutes,
     unassignVehicleRoute,
     audit,
     install,
