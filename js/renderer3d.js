@@ -124,9 +124,9 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
-    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 40 : 60, mobile ? 220 : 280);
+    this.scene.fog = new THREE.Fog(0x8ccde5, 150, 600); // shops + road fully visible
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 280 : 360);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 500 : 600);
     this.camera.position.set(0, 3.85, 10.5);
 
     this.renderer = new THREE.WebGLRenderer({
@@ -5025,7 +5025,7 @@ export class Renderer3D {
     this._nextMobileDistanceCullAt = now + 100;
 
     const cameraZ = Number(this.camera.position.z) || 0;
-    const fogFar = Math.max(65, Number(this.scene.fog.far) || 105);
+    const fogFar = Math.max(300, Number(this.scene.fog.far) || 600);
     // At this point the fog has concealed most detail. Cutting hidden objects
     // here avoids drawing far scenery without shortening the visible road.
     const horizon = Math.min(100, fogFar * 0.90);
@@ -5385,13 +5385,9 @@ export class Renderer3D {
           : 0x8ccde5,
     );
 
-    this.scene.fog.near = this.mobile
-      ? (state.environment === 'harmattan' ? 28 : 45)
-      : (state.environment === 'harmattan' ? 30 : 60);
-
-    this.scene.fog.far = this.mobile
-      ? (state.environment === 'harmattan' ? 160 : 240)
-      : (state.environment === 'harmattan' ? 180 : 300);
+    // Shops and road fully visible — no distance washout
+    this.scene.fog.near = 200;
+    this.scene.fog.far = 600;
 
     // --------------------------------------------------------
     // PLAYER POSITION AND STEERING
