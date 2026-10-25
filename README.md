@@ -1,16 +1,16 @@
-# Kano Run — AI Traffic Junction Turn (Next 11)
+# Kano Run — AI Traffic Junction Turn (Next 12)
 
-## New in Next 11
-- Added a mobile-instancing bridge for explicitly routed traffic vehicles.
-- After the renderer's normal traffic placement, routed fallback instances receive the road-network sampled XYZ position and heading, including elevation on ramps or overpasses.
-- Ordinary, non-routed traffic instances are left untouched by this adapter.
-- Added focused tests for elevated mobile instance transforms and for preserving ordinary traffic instances.
+## New in Next 12
+- Added opt-in automatic route assignment for newly spawned and existing traffic vehicles, using only registered road-network nodes and paths.
+- Added `configureAutoRouting({ enabled, entryNodes, exitNodes, seed })`; the configuration is rejected if nodes are missing or no entry-to-exit route exists.
+- Added `assignUnroutedTraffic(traffic)` for explicit batch assignment and exposed auto-routing configuration in the network audit.
+- Automatic assignment remains disabled until the caller supplies real, registered entry and exit nodes.
 
 ## Verification
-Run `node --test tests/*.test.mjs` from this package to execute the focused test suite. These tests do not establish full-repository or browser gameplay correctness.
+Run `node --test tests/*.test.mjs` from this package for focused tests. These do not establish full-repository or browser gameplay correctness.
 
 ## Important boundary
-This adapter only affects traffic vehicles explicitly assigned to a registered road path. Real scene-space paths still must be registered and routes assigned; the package does not invent junction coordinates or automatically route all spawned traffic. Full repository tests and live browser gameplay remain unverified.
+The bridge does not invent road coordinates or register real Kano junction paths. Automatic assignment only works after valid scene-space paths and connected nodes have been registered and auto-routing has been configured. Full repository tests and live browser gameplay remain unverified.
 
 ## Additive scope
-This ZIP contains the navigation/traffic add-on modules and focused tests only. It does not replace protected game/rendering files or anything under `public/`.
+This ZIP contains navigation/traffic add-on modules and focused tests only. It does not replace protected game/rendering files or anything under `public/`.
