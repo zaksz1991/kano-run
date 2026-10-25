@@ -1,16 +1,16 @@
-# Kano Run — AI Traffic Junction Turn (Next 10)
+# Kano Run — AI Traffic Junction Turn (Next 11)
 
-## New in Next 10
-- Added an optional `Renderer3D.syncTraffic` bridge alongside the existing `Game.moveTraffic` bridge.
-- After the normal renderer placement, explicitly routed GLB actors now receive the same sampled road-path XYZ position and yaw used by the road-network runtime.
-- Added a focused integration test for elevated road paths, checking actor X/Y/Z and heading against the runtime's sampled pose.
-- Added `rendererInstalled` to the bridge audit so the caller can see whether the renderer hook was installed.
+## New in Next 11
+- Added a mobile-instancing bridge for explicitly routed traffic vehicles.
+- After the renderer's normal traffic placement, routed fallback instances receive the road-network sampled XYZ position and heading, including elevation on ramps or overpasses.
+- Ordinary, non-routed traffic instances are left untouched by this adapter.
+- Added focused tests for elevated mobile instance transforms and for preserving ordinary traffic instances.
 
 ## Verification
-`node --test tests/*.test.mjs` is the focused test suite for this package. Its results do not establish full-repository or browser gameplay correctness.
+Run `node --test tests/*.test.mjs` from this package to execute the focused test suite. These tests do not establish full-repository or browser gameplay correctness.
 
 ## Important boundary
-The bridge remains opt-in for traffic routes: real scene-space paths must be registered and assigned. This update aligns GLB actor poses with registered route geometry, but does not invent road coordinates, auto-route every vehicle, or independently verify the full game. The mobile instanced renderer continues to use the existing traffic-turn adapter; this new actor-pose hook is for `trafficActors` GLB actors.
+This adapter only affects traffic vehicles explicitly assigned to a registered road path. Real scene-space paths still must be registered and routes assigned; the package does not invent junction coordinates or automatically route all spawned traffic. Full repository tests and live browser gameplay remain unverified.
 
 ## Additive scope
-Only the navigation/traffic add-on modules and focused tests in this package are included. Protected game/rendering files and assets are not replaced.
+This ZIP contains the navigation/traffic add-on modules and focused tests only. It does not replace protected game/rendering files or anything under `public/`.

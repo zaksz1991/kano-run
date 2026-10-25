@@ -8,6 +8,36 @@ import { createKanoTrafficRoadRuntime } from './KanoTrafficRoadNetworkRuntime.js
 
 const BRIDGE_PATCH = Symbol.for('kano.life.trafficRoadNetworkBridge.v1');
 
+
+function applyInstancedRoadPoses(renderer, traffic) {
+  if (!renderer?.mobile || !renderer._mobileTrafficBatches || !renderer._mobileFallbackTrafficByType) return 0;
+  const transform = renderer._mobileTrafficInstanceTransform;
+  if (!transform?.position?.set || !transform?.rotation || !transform?.scale?.set || typeof transform.updateMatrix !== 'function') return 0;
+  let updated = 0;
+  for (const [type, vehicles] of renderer._mobileFallbackTrafficByType) {
+    const batch = renderer._mobileTrafficBatches.get(type);
+    if (!batch?.mesh || !Array.isArray(vehicles) || !vehicles.length) continue;
+    const count = Math.min(vehicles.length, Number(batch.mesh.count) || vehicles.length);
+    let batchUpdated = false;
+    for (let index = 0; index < count; index += 1) {
+      const vehicle = vehicles[index];
+      const pose = vehicle?.kanoRoadPose;
+      if (!vehicle?.kanoRoadRoute?.ok || !pose?.position) continue;
+      const { x, y, z } = pose.position;
+      if (![x, y, z, pose.yaw].every(value => Number.isFinite(Number(value)))) continue;
+      transform.position.set(Number(x), Number(y), Number(z));
+      transform.rotation.set(0, Number(pose.yaw), 0);
+      transform.scale.set(1, 1, 1);
+      transform.updateMatrix();
+      batch.mesh.setMatrixAt(index, transform.matrix);
+      batchUpdated = true;
+      updated += 1;
+    }
+    if (batchUpdated) batch.mesh.instanceMatrix.needsUpdate = true;
+  }
+  return updated;
+}
+
 export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, windowObject = globalThis.window, connectionTolerance = 0.75 } = {}) {
   if (!GameClass?.prototype) return { ok: false, reason: 'game-class-required' };
   const network = createKanoTrafficRoadNetwork({ connectionTolerance });
@@ -131,6 +161,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
             const actor = this.trafficActors?.get?.(vehicle.id);
             runtime.applyActorPose(actor, vehicle);
           }
+          applyInstancedRoadPoses(this, traffic);
           return result;
         };
         Object.defineProperty(RendererClass.prototype, rendererPatch, { value: true });
