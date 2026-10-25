@@ -142,5 +142,50 @@
   })();
 </script>
 <script type="module" src="/js/main.js"></script>
+
+<script>
+/* Sharper world on phone: raise resolution a bit, soften fog */
+(function () {
+  function fix() {
+    try {
+      var canvas = document.querySelector('canvas');
+      if (!canvas) return;
+      var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      if (dpr < 1.15) dpr = 1.15;
+      // Three.js renderer often on game.renderer.renderer or similar
+      var r =
+        (window.game && window.game.renderer && (window.game.renderer.renderer || window.game.renderer)) ||
+        window.__kanoRenderer3d ||
+        null;
+      if (r && r.setPixelRatio) {
+        r.setPixelRatio(dpr);
+        var w = canvas.clientWidth || window.innerWidth;
+        var h = canvas.clientHeight || window.innerHeight;
+        if (r.setSize) r.setSize(w, h, false);
+      }
+      var scene =
+        (r && r.scene) ||
+        (window.game && window.game.renderer && window.game.renderer.scene) ||
+        null;
+      if (scene && scene.fog) {
+        // Less milky distance — keep near road readable
+        if (typeof scene.fog.near === 'number') scene.fog.near = Math.min(scene.fog.near, 14);
+        if (typeof scene.fog.far === 'number') scene.fog.far = Math.max(scene.fog.far, 70);
+      }
+      // Ask adaptive quality not to crush resolution if API exists
+      var aq = window.kanoAdaptiveQuality || window.__kanoAdaptiveQuality;
+      if (aq && typeof aq.setLevel === 'function') {
+        try { aq.setLevel(Math.max(1, aq.level || 1)); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  setTimeout(fix, 800);
+  setTimeout(fix, 2000);
+  setTimeout(fix, 4500);
+  window.addEventListener('resize', function () { setTimeout(fix, 150); });
+  console.info('[Clarity] sharper phone world armed');
+})();
+</script>
+
 </body>
 </html>
