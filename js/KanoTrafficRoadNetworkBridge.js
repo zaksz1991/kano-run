@@ -2,7 +2,6 @@
  * Optional live bridge between explicitly authored road paths and existing AI traffic.
  * The caller must provide real scene-space coordinates; this module never guesses anchors.
  */
-import { Game } from './game.js';
 import { createKanoRoadPath, createKanoJunctionPath } from './KanoDriveableRoadGeometry.js';
 import { createKanoTrafficRoadNetwork } from './KanoTrafficRoadNetwork.js';
 import { createKanoTrafficRoadRuntime } from './KanoTrafficRoadNetworkRuntime.js';
@@ -136,4 +135,3 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, windowObject = g
   return api;
 }
 
-export const kanoTrafficRoadNetworkBridge = createKanoTrafficRoadNetworkBridge({ GameClass: Game });

@@ -1,23 +1,16 @@
-# Kano Run — AI Traffic Junction Turn (Next 8)
+# Kano Run — AI Traffic Junction Turn (Next 9)
 
-## New in Next 8
-- Fixed road-network connection validation to compare every incident path endpoint at a junction, including incoming one-way approaches. The previous validator checked only outgoing edges, so it could miss a disconnected approach when the outgoing branches aligned.
-- Connection audit issues now identify which endpoint (`start` or `end`) failed validation.
-
-## Included from Next 7
-- Route plans retain per-path traversal direction (`pathSteps`), not only path IDs.
-- Bidirectional routes can start by travelling along a path in reverse; sampling starts at the correct endpoint and reverses the tangent and heading.
-- The route planner avoids an immediate reversal over the same path after a vehicle has entered the network, without incorrectly rejecting a valid reverse-direction route at the start node.
-- Runtime progress now carries travelled scene distance across connected paths using each path's actual length. This supports branches of different lengths and frames that cross multiple short paths.
-- Added focused runtime tests for reverse traversal, progress carry, and agreement between sampled road X and the existing collision-position formula.
+## New in Next 9
+- Connected `KanoTrafficRoadNetworkBridge` to `KanoRoadNavigationUpgrade.js`, so loading the navigation upgrade now installs the road-network movement hook on the existing `Game` class.
+- Removed the bridge module's implicit direct dependency on `game.js`; navigation supplies the real `Game` class explicitly. This also makes the bridge independently testable with a mock game class.
+- Added an integration test that registers connected road paths, assigns a live traffic object to a route, runs the original `moveTraffic` method, and verifies that the vehicle advances along the registered geometry while its collision X coordinate remains aligned.
+- Exposed the instantiated bridge as `kanoTrafficRoadNetworkBridge` from the navigation module, alongside the browser audit global already published by the bridge.
 
 ## Verification
-`node --test tests/*.test.mjs` — **25/25 focused tests passed**.
+`node --test tests/*.test.mjs` — **26/26 focused tests passed**. This includes a new test of the bridge's Game hook and routed vehicle movement.
 
-This is not a full repository test run and does not verify live browser/mobile gameplay.
+## Important boundary
+This fixes a missing integration connection, but it does not by itself create surveyed road anchors or assign arbitrary live traffic automatically. The network still needs explicit scene-space paths registered through `window.kanoTrafficRoadNetwork` before traffic can take real branch turns. Full repository `npm test` and browser/mobile gameplay remain unverified.
 
-## Scope boundary
-This is an additive road-network/runtime increment, not proof of live-game junction turns. The live scene has not supplied authoritative junction entry/exit coordinates, so this package does not fabricate road anchors. The live application loop and renderer are not modified, and the road-network bridge still requires real authored paths to be registered before traffic can follow them.
-
-## Protected files
-No changes to `game.js`, `renderer3d.js`, `main.js`, `ui.js`, `index.html`, `ModelManager.js`, the regression guard, or any `public/` asset. Test files remain in `tests/`.
+## Additive scope
+This package contains additive navigation/traffic modules and focused tests. It does not modify protected game/rendering source files or assets. Merge these files into the current project without replacing protected files with the snapshots used for analysis.

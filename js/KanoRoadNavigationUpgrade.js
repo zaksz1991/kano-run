@@ -7,9 +7,16 @@
 import { Game } from './game.js';
 import { Renderer3D } from './renderer3d.js';
 import './KanoTrafficJunctionTurnUpgrade.js';
+// Install the authored road-network runtime alongside the existing navigation hooks.
+// The network stays empty until real scene-space road paths are registered.
+import { createKanoTrafficRoadNetworkBridge } from './KanoTrafficRoadNetworkBridge.js';
 import { Renderer2D } from './renderer2d.js';
 import { ROUTES } from './config.js';
 import { save, persist } from './storage.js';
+
+// The bridge installs the road-network movement hook; real scene-space paths
+// must still be registered before any vehicle is assigned to the network.
+export const kanoTrafficRoadNetworkBridge = createKanoTrafficRoadNetworkBridge({ GameClass: Game });
 
 const PATCH_KEY = Symbol.for('kano.life.roadNavigation.step95');
 const JUNCTION_INTERVAL_KM = 0.46;
