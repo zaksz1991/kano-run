@@ -107,3 +107,35 @@ test('turning AI traffic enters the perpendicular branch and keeps moving sidewa
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+test('an in-progress AI turn stays attached to its original junction after navigation advances', async () => {
+  const fixture = await loadAdapterFixture();
+  try {
+    const game = new fixture.Game();
+    const junctionKey = '3600:0';
+    const vehicle = makeVehicle(findTurningId(junctionKey));
+    game.kanoWorldDistanceKm = 0.36;
+    game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
+    game.s = { traffic: [vehicle], distance: 0.36 };
+    const junctionDepth = (0 * 1008 - 2) / 88;
+    vehicle.depth = junctionDepth + 0.10;
+
+    game.moveTraffic(0.016);
+    assert.equal(vehicle.kanoTurn?.phase, 'approach');
+    const originalTarget = vehicle.kanoTurn.junctionWorldKm;
+    const progressBeforeAdvance = vehicle.kanoTurnProgress;
+
+    // This mirrors the navigation module advancing its target immediately
+    // after the player chooses a branch, then finishing its own turn animation.
+    game.kanoNavigationState.nextJunctionAt += 0.46;
+    game.kanoNavigationState.junctionIndex += 1;
+    game.kanoNavigationState.turn = null;
+    game.moveTraffic(0.016);
+
+    assert.equal(vehicle.kanoTurn?.junctionWorldKm, originalTarget, 'vehicle retains its committed junction');
+    assert.equal(vehicle.kanoTurn?.phase, 'approach', 'global target change must not force an early branch transition');
+    assert.ok(vehicle.kanoTurnProgress >= progressBeforeAdvance, 'turn progress continues smoothly');
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});

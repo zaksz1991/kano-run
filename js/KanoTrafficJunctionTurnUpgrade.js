@@ -106,10 +106,21 @@ function updateVehicleTurn(game, vehicle, depthAtJunction, dt) {
     return;
   }
 
-  const relativeDepth = computeKanoTrafficRelativeDepth(vehicle.depth, depthAtJunction);
   const nav = game.kanoNavigationState;
-  const targetKm = junctionWorldKm(game);
-  const junctionKey = `${Math.round((Number(targetKm) || 0) * 10000)}:${nav?.junctionIndex ?? 0}`;
+  const globalTargetKm = junctionWorldKm(game);
+  // Navigation advances nextJunctionAt as soon as the player selects a turn.
+  // Traffic already committed to the old junction must keep tracking that same
+  // world position while its approach curve is in progress.
+  const committedTargetKm = Number.isFinite(Number(vehicle.kanoTurn?.junctionWorldKm))
+    ? Number(vehicle.kanoTurn.junctionWorldKm)
+    : globalTargetKm;
+  const committedJunctionDepth = Number.isFinite(committedTargetKm)
+    ? depthForWorldJunction(game, committedTargetKm)
+    : depthAtJunction;
+  const relativeDepth = computeKanoTrafficRelativeDepth(vehicle.depth, committedJunctionDepth);
+  const targetKm = committedTargetKm;
+  const junctionKey = vehicle.kanoTurn?.key
+    || `${Math.round((Number(targetKm) || 0) * 10000)}:${nav?.junctionIndex ?? 0}`;
 
   if (!vehicle.kanoTurn && vehicle.kanoTurnCompletedKey !== junctionKey
       && relativeDepth <= TURN_APPROACH_DEPTH && relativeDepth >= TURN_EXIT_DEPTH) {
