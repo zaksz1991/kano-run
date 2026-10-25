@@ -143,47 +143,78 @@
 </script>
 <script type="module" src="/js/main.js"></script>
 
+
+
+
 <script>
-/* Sharper world on phone: raise resolution a bit, soften fog */
+/* View fix: smaller keke, camera further back, clearer world */
 (function () {
-  function fix() {
-    try {
-      var canvas = document.querySelector('canvas');
-      if (!canvas) return;
-      var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      if (dpr < 1.15) dpr = 1.15;
-      // Three.js renderer often on game.renderer.renderer or similar
-      var r =
-        (window.game && window.game.renderer && (window.game.renderer.renderer || window.game.renderer)) ||
-        window.__kanoRenderer3d ||
-        null;
-      if (r && r.setPixelRatio) {
-        r.setPixelRatio(dpr);
-        var w = canvas.clientWidth || window.innerWidth;
-        var h = canvas.clientHeight || window.innerHeight;
-        if (r.setSize) r.setSize(w, h, false);
+  var patched = false;
+
+  function applyPatch(renderer) {
+    if (!renderer || patched || typeof renderer.draw !== 'function') return false;
+    var origDraw = renderer.draw.bind(renderer);
+    renderer.draw = function (state, dt) {
+      var webgl = this.renderer;
+      if (!webgl || typeof webgl.render !== 'function') {
+        return origDraw(state, dt);
       }
-      var scene =
-        (r && r.scene) ||
-        (window.game && window.game.renderer && window.game.renderer.scene) ||
-        null;
-      if (scene && scene.fog) {
-        // Less milky distance — keep near road readable
-        if (typeof scene.fog.near === 'number') scene.fog.near = Math.min(scene.fog.near, 14);
-        if (typeof scene.fog.far === 'number') scene.fog.far = Math.max(scene.fog.far, 70);
+      var origRender = webgl.render.bind(webgl);
+      webgl.render = function (scene, camera) {
+        try {
+          if (camera && this.lifeScene !== 'garage') {
+            // Pull camera back + up so road and lower view are visible
+            if (camera.position.z < 12) camera.position.z = 12.5;
+            if (camera.position.y < 4) camera.position.y = 4.3;
+            if (camera.fov < 64) {
+              camera.fov = 66;
+              camera.updateProjectionMatrix();
+            }
+            var px = (this.player && this.player.position) ? this.player.position.x : 0;
+            var pz = (this.player && this.player.position) ? this.player.position.z : 0;
+            camera.lookAt(px * 0.25, 0.85, pz - 7);
+          }
+          // Shrink oversized player keke
+          if (this.player && this.player.scale) {
+            this.player.scale.setScalar(0.7);
+          }
+          // Clearer air — less blurry wash
+          if (scene && scene.fog) {
+            scene.fog.near = 10;
+            scene.fog.far = 95;
+          }
+          // Sharper pixels
+          if (typeof webgl.setPixelRatio === 'function') {
+            var dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+            if (dpr < 1.25) dpr = 1.25;
+            webgl.setPixelRatio(dpr);
+          }
+        } catch (e) {}
+        return origRender(scene, camera);
+      }.bind(this);
+      try {
+        return origDraw(state, dt);
+      } finally {
+        webgl.render = origRender;
       }
-      // Ask adaptive quality not to crush resolution if API exists
-      var aq = window.kanoAdaptiveQuality || window.__kanoAdaptiveQuality;
-      if (aq && typeof aq.setLevel === 'function') {
-        try { aq.setLevel(Math.max(1, aq.level || 1)); } catch (e) {}
-      }
-    } catch (e) {}
+    };
+    patched = true;
+    console.info('[ViewFix] camera back, keke smaller, clearer fog');
+    return true;
   }
-  setTimeout(fix, 800);
-  setTimeout(fix, 2000);
-  setTimeout(fix, 4500);
-  window.addEventListener('resize', function () { setTimeout(fix, 150); });
-  console.info('[Clarity] sharper phone world armed');
+
+  function tryPatch() {
+    var r =
+      (window.game && window.game.renderer) ||
+      window.__kanoRenderer3d ||
+      null;
+    if (applyPatch(r)) return;
+  }
+
+  setInterval(tryPatch, 500);
+  setTimeout(tryPatch, 300);
+  setTimeout(tryPatch, 1500);
+  setTimeout(tryPatch, 4000);
 })();
 </script>
 
