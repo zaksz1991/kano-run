@@ -157,7 +157,7 @@ test('asset catalog points to real, case-sensitive Kano Run GLB filenames', () =
     'vehicles/cars/quaternius_cc0-suv-1402.glb',
     'vehicles/special/karota.glb',
     'characters/passengers/hijab_muslim_woman.glb',
-    'characters/pedestrians/muslim_girl.glb',
+    'characters/passengers/women_in_hijab.glb',
     'world/buildings-suburban/building-type-d.glb',
     'world/buildings-industrial/building-a.glb',
     'world/roads/kano_urban_flyover.glb',

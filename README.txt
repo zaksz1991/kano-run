@@ -1,6 +1,5 @@
-Copy js/ and tests/ (replace). Includes the haggling import too, so it works even if you skipped kano-haggle.zip
-(KanoFareHagglingBridge.js itself is in kano-haggle.zip).
-FUEL STATION QUEUE: refuelling is no longer free. At a fuel stop you see how many cars are ahead (0-3, 3-5 on fuel-queue days),
-wait a few seconds (LEAVE QUEUE any time), then buy 1/4, 1/2 or FULL tank. Price per litre varies through the day and is higher
-on fuel-queue days. The cost comes out of run earnings; if you cannot afford a full fill you get what you can pay for.
-Tests 1503/1503.
+Copy these files over your repo (same paths). Contains:
+- Character pose fix (T-pose arms lowered at load) wired into js/ModelManager.js
+- hijab woman GLBs reduced from ~37,700 to ~7,100 triangles (about 80% lighter, same look at game size)
+- removed the white-haired girl (muslim_girl) and bare-midriff women from the pedestrian/passenger pools
+- sharper phone render ratios + LOD easing instead of blurring (KanoDeviceTier, AdaptiveQuality, PhonePlayProfile, PhoneRenderGuard) with matching tests

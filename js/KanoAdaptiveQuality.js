@@ -376,9 +376,8 @@ export class KanoAdaptiveQuality {
     const raw = [
       this.baseRatio,
       this.baseRatio * 0.94,
-      this.baseRatio * 0.87,
-      this.baseRatio * 0.81,
-      this.baseRatio * 0.75,
+      this.baseRatio * 0.88,
+      this.baseRatio * 0.82,
       Math.min(this.baseRatio, this.startupRatio),
       this.minRatio,
     ];
@@ -390,6 +389,12 @@ export class KanoAdaptiveQuality {
       }
     }
     unique.sort((a, b) => b - a);
+    // Once resolution reaches its floor (never blurrier than ~1 pixel per CSS
+    // pixel), keep easing the load by shortening scene LOD instead of softening.
+    if (this.mobile && unique.length) {
+      const floor = unique[unique.length - 1];
+      unique.push(floor, floor, floor);
+    }
     return unique.length ? unique : [this.baseRatio];
   }
 

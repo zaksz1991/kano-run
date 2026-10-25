@@ -22,9 +22,9 @@ function tier() {
 
 /** Longest canvas edge in CSS*DPR pixels */
 function maxEdge(t) {
-  if (t === 'low') return 960;
-  if (t === 'mid') return 1120;
-  return 1280;
+  if (t === 'low') return 1100;
+  if (t === 'mid') return 1300;
+  return 1500;
 }
 
 function findWebGLRenderer() {
@@ -60,7 +60,7 @@ function clampRenderer(renderer, t) {
   );
   // If CSS size * ratio exceeds edge budget, cut ratio
   if (long * ratio > edge) {
-    ratio = Math.max(0.85, edge / long);
+    ratio = Math.max(0.95, edge / long);
   }
   try {
     renderer.setPixelRatio(ratio);

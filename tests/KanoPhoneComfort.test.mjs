@@ -9,8 +9,8 @@ globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null)
 test('sharpness defaults to standard and leaves device budgets unchanged', () => {
   store.clear();
   assert.equal(getRenderSharpness(), 'standard');
-  assert.deepEqual(getMobileRatios('mid'), { max: 1.25, start: 1.15, min: 0.62 });
-  assert.deepEqual(getMobileRenderBudget('low'), { max: 1.10, start: 0.92, min: 0.58 });
+  assert.deepEqual(getMobileRatios('mid'), { max: 1.5, start: 1.35, min: 1 });
+  assert.deepEqual(getMobileRenderBudget('low'), { max: 1.25, start: 1.1, min: 0.9 });
 });
 
 test('sharp and max raise start and floor for every tier and stay ordered', () => {

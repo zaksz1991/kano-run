@@ -22,9 +22,9 @@ test('every tier keeps min <= start <= max and weak phones start at a reduced GP
     const r = getMobileRatios(tier);
     assert.ok(r.min <= r.start && r.start <= r.max, tier);
   }
-  assert.deepEqual(getMobileRatios('low'), { max: 1.10, start: 0.92, min: 0.58 });
-  assert.deepEqual(getMobileRatios('mid'), { max: 1.25, start: 1.15, min: 0.62 });
-  assert.deepEqual(getMobileRatios('high'), { max: 1.45, start: 1.40, min: 0.72 });
+  assert.deepEqual(getMobileRatios('low'), { max: 1.25, start: 1.1, min: 0.9 });
+  assert.deepEqual(getMobileRatios('mid'), { max: 1.5, start: 1.35, min: 1 });
+  assert.deepEqual(getMobileRatios('high'), { max: 1.75, start: 1.6, min: 1 });
 });
 
 test('anti-aliasing stays off on phones (resolution does the sharpening) and on for desktop', () => {

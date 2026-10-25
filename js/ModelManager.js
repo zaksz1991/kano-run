@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
+import { fixCharacterPose } from './KanoCharacterPoseFix.js';
 import { resolveKanoGlbPath } from './KanoGlbPathResolver.js';
 
 // ============================================================
@@ -83,7 +84,6 @@ const CATALOG = {
   // about 38k triangles with 14 materials each and a T-pose (arms held out), which is
   // too heavy to draw several times in a phone keke, so they are the last resort.
   passenger: [
-    'characters/passengers/woman with her arms crossed.glb',
     'characters/passengers/Man.glb',
     'characters/passengers/Man in Suit.glb',
     'characters/passengers/women_in_hijab.glb',
@@ -91,7 +91,6 @@ const CATALOG = {
   ],
 
   passengerWoman: [
-    'characters/passengers/woman with her arms crossed.glb',
     'characters/passengers/women_in_hijab.glb',
     'characters/passengers/free_download_attractive_african_woman_236.glb',
     'characters/passengers/hijab_muslim_woman.glb',
@@ -131,11 +130,8 @@ const CATALOG = {
   ],
 
   pedestrianWoman: [
-    'characters/pedestrians/keke female.glb',
-    'characters/pedestrians/muslim_girl.glb',
     'characters/passengers/women_in_hijab.glb',
     'characters/passengers/hijab_muslim_woman.glb',
-    'characters/pedestrians/low_poly_people_free_sample_pack.glb',
   ],
 
   building: [
@@ -1276,6 +1272,9 @@ export class ModelManager {
           }
 
           const source = gltf.scene;
+
+          // People GLBs that ship in a T-pose get their arms lowered once, at load.
+          fixCharacterPose(gltf, key, THREE);
 
           source.updateMatrixWorld(true);
 

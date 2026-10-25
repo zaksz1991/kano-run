@@ -33,9 +33,9 @@ function applySharpness(base) {
 /** Capability ratios relative to CSS pixels. The adaptive controller may step
  * down from the startup value when sustained frame timings require it. */
 export function getMobileRatios(tier) {
-  if (tier === 'high') return applySharpness({ max: 1.45, start: 1.40, min: 0.72 });
-  if (tier === 'mid') return applySharpness({ max: 1.25, start: 1.15, min: 0.62 });
-  return applySharpness({ max: 1.10, start: 0.92, min: 0.58 });
+  if (tier === 'high') return applySharpness({ max: 1.75, start: 1.60, min: 1.0 });
+  if (tier === 'mid') return applySharpness({ max: 1.5, start: 1.35, min: 1.0 });
+  return applySharpness({ max: 1.25, start: 1.1, min: 0.9 });
 }
 
 /**
@@ -46,9 +46,9 @@ export function getMobileRatios(tier) {
 export function getMobileRenderBudget(tier) {
   // Start with sharper Kano street rendering; the existing adaptive controller
   // lowers these ratios only when sustained frame-time measurements require it.
-  if (tier === 'high') return applySharpness({ max: 1.45, start: 1.40, min: 0.72 });
-  if (tier === 'mid') return applySharpness({ max: 1.25, start: 1.15, min: 0.62 });
-  return applySharpness({ max: 1.10, start: 0.92, min: 0.58 });
+  if (tier === 'high') return applySharpness({ max: 1.75, start: 1.60, min: 1.0 });
+  if (tier === 'mid') return applySharpness({ max: 1.5, start: 1.35, min: 1.0 });
+  return applySharpness({ max: 1.25, start: 1.1, min: 0.9 });
 }
 
 
