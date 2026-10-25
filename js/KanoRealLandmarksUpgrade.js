@@ -16,6 +16,8 @@ export const KANO_LANDMARK_ROUTES = {
   'Kofar Famfo': 'kofarFamfoGate',
   'Kano City Centre': 'iLoveKano',
   'Murtala Muhammad Way': 'iLoveKano',
+  // Sunken underpass with tiled retaining walls (editable: change the route name if the real site differs).
+  'Zoo Road': 'underpass',
 };
 
 const mat = (color, rough = 0.95) => new THREE.MeshStandardMaterial({ color, roughness: rough });
@@ -142,6 +144,53 @@ function buildKofarFamfoGate() {
 }
 
 // Pedestrian footbridge: pink/white deck on pink piers with stair towers (seen over Kano dual carriageways).
+function zigzagTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#e9e6dc'; g.fillRect(0, 0, 256, 128);
+  g.strokeStyle = '#2f8f4a'; g.lineWidth = 10; g.lineJoin = 'miter';
+  for (const y of [28, 64, 100]) {
+    g.beginPath();
+    for (let x = 0; x <= 256; x += 32) g.lineTo(x, y + ((x / 32) % 2 ? 14 : -14));
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(6, 1);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function buildUnderpass() {
+  const root = new THREE.Group();
+  root.name = 'KANO_UNDERPASS';
+  const tile = new THREE.MeshStandardMaterial({ map: zigzagTexture(), roughness: 0.9 });
+  const concrete = mat(0xb9b5aa, 0.95);
+  const dark = mat(0x3a3a3a, 0.95);
+  for (const side of [-1, 1]) {
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(0.5, 3.4, 60), tile);
+    wall.position.set(side * 6.6, 1.7, 0);
+    root.add(wall);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 60), concrete);
+    cap.position.set(side * 6.6, 3.55, 0);
+    root.add(cap);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 60), dark);
+    rail.position.set(side * 6.95, 4.2, 0);
+    root.add(rail);
+  }
+  const board = new THREE.Mesh(new THREE.BoxGeometry(8, 1.4, 0.2), mat(0x1f6b3a, 0.8));
+  board.position.set(0, 5.6, -30);
+  root.add(board);
+  for (const x of [-3.6, 3.6]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 5.6, 0.25), concrete);
+    post.position.set(x, 2.8, -30);
+    root.add(post);
+  }
+  root.userData.spacing = 420;
+  return root;
+}
+
 function buildFootbridge() {
   const root = new THREE.Group();
   root.name = 'KANO_PINK_FOOTBRIDGE';
@@ -188,7 +237,8 @@ function update(system, dt, snap) {
       if (!st.actors[key]) {
         st.actors[key] = key === 'kofarMataGate' ? buildKofarMataGate()
           : key === 'kofarFamfoGate' ? buildKofarFamfoGate()
-          : key === 'footbridge' ? buildFootbridge() : buildILoveKano();
+          : key === 'footbridge' ? buildFootbridge()
+          : key === 'underpass' ? buildUnderpass() : buildILoveKano();
         st.group.add(st.actors[key]);
       }
       const actor = st.actors[key];
