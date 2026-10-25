@@ -38,12 +38,16 @@ function applyInstancedRoadPoses(renderer, traffic) {
   return updated;
 }
 
-export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, windowObject = globalThis.window, connectionTolerance = 0.75 } = {}) {
+export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, windowObject = globalThis.window, connectionTolerance = 0.75, spawnAlignmentTolerance = 8 } = {}) {
   if (!GameClass?.prototype) return { ok: false, reason: 'game-class-required' };
   const network = createKanoTrafficRoadNetwork({ connectionTolerance });
   if (!network.ok) return network;
   const runtime = createKanoTrafficRoadRuntime(network);
   if (!runtime.ok) return runtime;
+  const spawnTolerance = Number(spawnAlignmentTolerance);
+  if (!Number.isFinite(spawnTolerance) || spawnTolerance < 0 || spawnTolerance > 100) {
+    return { ok: false, reason: 'spawn-alignment-tolerance-invalid' };
+  }
   let installed = false;
   let rendererInstalled = false;
   let originalMoveTraffic = null;
@@ -105,6 +109,24 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
     return { ok: true, ...autoRouting };
   }
 
+  function isSpawnAligned(vehicle, route, progress) {
+    // Automatic routing must not snap a live vehicle from an unrelated lane or
+    // road onto the authored path. Compare its current renderer-space X/Z with
+    // the requested initial pose before attaching the route runtime.
+    const pose = network.sampleRoutePose(route, 0, progress);
+    if (!pose.ok || !pose.position) return false;
+    const lane = Number(vehicle?.lane);
+    const depth = Number(vehicle?.depth);
+    const offset = Number(vehicle?.visualOffsetX) || 0;
+    if (![lane, depth].every(Number.isFinite)) return false;
+    const currentX = (lane - 1) * 3 + offset;
+    const currentZ = -depth * 88;
+    const targetX = Number(pose.position.x);
+    const targetZ = Number(pose.position.z);
+    if (![currentX, currentZ, targetX, targetZ].every(Number.isFinite)) return false;
+    return Math.hypot(currentX - targetX, currentZ - targetZ) <= spawnTolerance;
+  }
+
   function assignUnroutedTraffic(traffic) {
     if (!autoRouting.enabled || !Array.isArray(traffic)) return { assigned: 0, skipped: traffic?.length || 0 };
     let assigned = 0;
@@ -131,7 +153,9 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
           const route = network.planRoute({ fromNode, toNode, seed: key });
           if (!route.ok) continue;
           const requestedProgress = Number(vehicle.kanoRoadInitialProgress);
-          const assignedRoute = runtime.assignRoute(vehicle, route, { progress: Number.isFinite(requestedProgress) ? Math.max(0, Math.min(1, requestedProgress)) : 0 });
+          const initialProgress = Number.isFinite(requestedProgress) ? Math.max(0, Math.min(1, requestedProgress)) : 0;
+          if (!isSpawnAligned(vehicle, route, initialProgress)) continue;
+          const assignedRoute = runtime.assignRoute(vehicle, route, { progress: initialProgress });
           if (assignedRoute.ok) {
             const pose = runtime.updateVehicle(vehicle);
             if (pose.ok) result = { ok: true, fromNode, toNode, route };
@@ -232,6 +256,7 @@ export function createKanoTrafficRoadNetworkBridge({ GameClass, RendererClass, w
       network: snapshot,
       connections,
       autoRouting: { ...autoRouting },
+      spawnAlignmentTolerance: spawnTolerance,
     };
   }
 

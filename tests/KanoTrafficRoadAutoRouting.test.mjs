@@ -105,3 +105,33 @@ test('automatic routing refuses graph-connected paths whose scene-space endpoint
   assert.ok(configured.issueCount > 0);
   assert.equal(bridge.audit().autoRouting.enabled, false);
 });
+
+test('automatic routing leaves a tagged vehicle on its current road when the authored spawn pose is too far away', () => {
+  const game = new AutoRouteGame();
+  const vehicle = {
+    id: 'misaligned-car', type: 'car', lane: 2, depth: -4, direction: 1,
+    visualOffsetX: 0, kanoRoadEntryNode: 'south', kanoRoadExitNode: 'north',
+  };
+  game.s.traffic.push(vehicle);
+  const bridge = createKanoTrafficRoadNetworkBridge({
+    GameClass: AutoRouteGame,
+    windowObject: { __KANO_ACTIVE_GAME__: game },
+    spawnAlignmentTolerance: 8,
+  });
+  assert.equal(bridge.registerPath({
+    path: straightPath('aligned-road', { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 50 }),
+    fromNode: 'south', toNode: 'north',
+  }).ok, true);
+  assert.equal(bridge.configureAutoRouting({ enabled: true, entryNodes: ['south'], exitNodes: ['north'] }).ok, true);
+
+  const before = { lane: vehicle.lane, depth: vehicle.depth, visualOffsetX: vehicle.visualOffsetX };
+  const result = bridge.assignUnroutedTraffic(game.s.traffic);
+  assert.deepEqual(result, { assigned: 0, skipped: 1 });
+  assert.equal(vehicle.kanoRoadRoute, undefined);
+  assert.deepEqual({ lane: vehicle.lane, depth: vehicle.depth, visualOffsetX: vehicle.visualOffsetX }, before);
+});
+
+test('spawn alignment tolerance rejects invalid values', () => {
+  const result = createKanoTrafficRoadNetworkBridge({ GameClass: AutoRouteGame, windowObject: {}, spawnAlignmentTolerance: 101 });
+  assert.deepEqual(result, { ok: false, reason: 'spawn-alignment-tolerance-invalid' });
+});
