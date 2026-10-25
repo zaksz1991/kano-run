@@ -77,7 +77,7 @@ export function createKanoTrafficRoadNetwork({ connectionTolerance = 0.75 } = {}
     const bestDepth = new Map([[fromNode, 0]]);
     while (queue.length) {
       const current = queue.shift();
-      const edges = (outgoing.get(current.nodeId) || []).filter(edge => !(avoidImmediateUTurn && edge.reverse && current.pathIds.length === 0));
+      const edges = (outgoing.get(current.nodeId) || []).filter(edge => !(avoidImmediateUTurn && edge.reverse && current.pathIds.at(-1) === edge.pathId));
       // Stable per-vehicle tie-breaking: different traffic can choose different valid routes.
       edges.sort((a, b) => stableRank(`${seed}:${current.nodeId}:${a.pathId}`) - stableRank(`${seed}:${current.nodeId}:${b.pathId}`));
       for (const edge of edges) {
@@ -85,11 +85,18 @@ export function createKanoTrafficRoadNetwork({ connectionTolerance = 0.75 } = {}
         const nextDepth = current.pathIds.length + 1;
         if (bestDepth.has(edge.toNode) && bestDepth.get(edge.toNode) < nextDepth) continue;
         const pathIds = [...current.pathIds, edge.pathId];
+        const pathSteps = [...(current.pathSteps || []), {
+          pathId: edge.pathId,
+          fromNode: edge.fromNode,
+          toNode: edge.toNode,
+          turn: edge.turn,
+          reverse: Boolean(edge.reverse),
+        }];
         const nodeIds = [...current.nodeIds, edge.toNode];
         const length = current.length + record.path.length;
-        if (edge.toNode === toNode) return { ok: true, pathIds, nodeIds, length };
+        if (edge.toNode === toNode) return { ok: true, pathIds, pathSteps, nodeIds, length };
         bestDepth.set(edge.toNode, nextDepth);
-        queue.push({ nodeId: edge.toNode, pathIds, nodeIds, length });
+        queue.push({ nodeId: edge.toNode, pathIds, pathSteps, nodeIds, length });
       }
     }
     return { ok: false, reason: 'destination-unreachable' };
@@ -97,11 +104,35 @@ export function createKanoTrafficRoadNetwork({ connectionTolerance = 0.75 } = {}
 
   function sampleRoutePose(route, pathIndex, progress) {
     if (!route?.ok || !Array.isArray(route.pathIds)) return { ok: false, reason: 'route-invalid' };
+    if (!Number.isInteger(pathIndex) || pathIndex < 0 || pathIndex >= route.pathIds.length) {
+      return { ok: false, reason: 'route-path-index-invalid', pathIndex };
+    }
     const pathId = route.pathIds[pathIndex];
     const record = paths.get(pathId);
     if (!record) return { ok: false, reason: 'route-path-not-found', pathId };
-    const sampled = sampleKanoRoadPath(record.path, record.bidirectional && route.reverse ? 1 - Number(progress) : progress);
-    return sampled.ok ? { ...sampled, networkPathId: pathId, fromNode: record.fromNode, toNode: record.toNode, turn: record.turn } : sampled;
+    const step = Array.isArray(route.pathSteps) ? route.pathSteps[pathIndex] : null;
+    const reverse = Boolean(step?.reverse);
+    const t = Math.max(0, Math.min(1, Number(progress)));
+    const sampled = sampleKanoRoadPath(record.path, reverse ? 1 - t : t);
+    if (!sampled.ok) return sampled;
+    if (reverse) {
+      let yaw = sampled.yaw + Math.PI;
+      while (yaw > Math.PI) yaw -= Math.PI * 2;
+      while (yaw < -Math.PI) yaw += Math.PI * 2;
+      return {
+        ...sampled,
+        distance: record.path.length - sampled.distance,
+        progress: t,
+        tangent: { x: -sampled.tangent.x, y: -sampled.tangent.y, z: -sampled.tangent.z },
+        yaw,
+        networkPathId: pathId,
+        fromNode: step?.fromNode ?? record.toNode,
+        toNode: step?.toNode ?? record.fromNode,
+        turn: step?.turn ?? 'u-turn',
+        reverse: true,
+      };
+    }
+    return { ...sampled, progress: t, networkPathId: pathId, fromNode: step?.fromNode ?? record.fromNode, toNode: step?.toNode ?? record.toNode, turn: step?.turn ?? record.turn, reverse: false };
   }
 
   function snapshot() {
