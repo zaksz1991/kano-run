@@ -21,12 +21,12 @@ test('left and right turns produce mirrored curves and yaw', () => {
   assert.equal(Math.abs(left.lateralOffset), Math.abs(right.lateralOffset));
 });
 
-test('turn exits in the target lane with zero residual yaw', () => {
+test('turn reaches the branch with a 90-degree heading and no transition snap', () => {
   const frame = computeKanoTrafficTurnFrame(-0.15, 1);
   assert.equal(frame.progress, 1);
   assert.equal(frame.complete, true);
   assert.equal(frame.lateralOffset, 3);
-  assert.equal(frame.yawDelta, 0);
+  assert.ok(Math.abs(frame.yawDelta + Math.PI / 2) < 1e-12);
 });
 
 test('turn progress is clamped for positions outside the turn envelope', () => {
@@ -34,11 +34,14 @@ test('turn progress is clamped for positions outside the turn envelope', () => {
   assert.equal(computeKanoTrafficTurnFrame(-10, 1).progress, 1);
 });
 
-test('yaw peaks during the turn and returns to zero at the exit', () => {
-  const frame = computeKanoTrafficTurnFrame(0.065, 1);
-  assert.ok(frame.yawDelta < 0);
-  assert.ok(Math.abs(frame.yawDelta) <= Math.PI / 2);
-  assert.equal(computeKanoTrafficTurnFrame(-0.15, 1).yawDelta, 0);
+test('turn heading progresses monotonically from straight to the branch heading', () => {
+  const start = computeKanoTrafficTurnFrame(0.28, 1);
+  const middle = computeKanoTrafficTurnFrame(0.065, 1);
+  const end = computeKanoTrafficTurnFrame(-0.15, 1);
+  assert.equal(start.yawDelta, 0);
+  assert.ok(middle.yawDelta < 0);
+  assert.ok(Math.abs(middle.yawDelta) < Math.PI / 2);
+  assert.ok(Math.abs(end.yawDelta + Math.PI / 2) < 1e-12);
 });
 
 

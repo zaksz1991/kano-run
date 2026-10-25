@@ -21,10 +21,11 @@ export function computeKanoTrafficTurnFrame(relativeDepth, side, travelDirection
   const eased = smoothstep(progress);
   const direction = Number(side) < 0 ? -1 : 1;
   const travelSign = Number(travelDirection) < 0 ? -1 : 1;
-  // Lateral offset is shared world X; yaw is relative to each vehicle's
-  // forward axis, which reverses for oncoming traffic.
-  const yawEnvelope = progress <= 0 || progress >= 1 ? 0 : Math.sin(progress * Math.PI);
-  const rawYawDelta = -direction * travelSign * (Math.PI / 2) * yawEnvelope;
+  // This is a real branch turn, not a lane change: heading must arrive at
+  // +/-90 degrees at the end of the approach so branch movement does not snap.
+  // The same eased curve drives lateral offset and heading, keeping both
+  // position and orientation continuous at the approach-to-branch boundary.
+  const rawYawDelta = -direction * travelSign * (Math.PI / 2) * eased;
   const yawDelta = Math.abs(rawYawDelta) < 1e-12 ? 0 : rawYawDelta;
   return {
     progress,

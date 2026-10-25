@@ -165,3 +165,26 @@ test('AI traffic does not miss a junction when a large frame step crosses the wh
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+
+test('AI vehicle heading is continuous when the approach phase becomes a perpendicular branch', async () => {
+  const fixture = await loadAdapterFixture();
+  try {
+    const game = new fixture.Game();
+    const junctionKey = '3600:0';
+    const vehicle = makeVehicle(findTurningId(junctionKey));
+    game.kanoWorldDistanceKm = 0.36;
+    game.kanoNavigationState = { nextJunctionAt: 0.36, junctionIndex: 0, turn: null };
+    game.s = { traffic: [vehicle], distance: 0.36 };
+    const junctionDepth = (0 * 1008 - 2) / 88;
+    vehicle.depth = junctionDepth - 0.15;
+
+    game.moveTraffic(0.016);
+    assert.equal(vehicle.kanoTurn?.phase, 'branch');
+    const branchYaw = -vehicle.kanoTurn.side * Math.PI / 2;
+    assert.ok(Math.abs(vehicle.kanoVisualYawDelta - branchYaw) < 1e-9,
+      'the completed approach and branch share the same final heading');
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
