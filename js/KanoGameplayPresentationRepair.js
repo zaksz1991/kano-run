@@ -5,6 +5,7 @@
  * Game, UI and Renderer3D. This module is loaded by index.html and imports
  * main.js only after its compatibility hooks are registered.
  */
+import { mergeChildMeshes } from './KanoMergeStaticMeshes.js';
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
 import { chooseKanoTrafficType } from './KanoTrafficMix.js';
@@ -360,9 +361,8 @@ const KANO_EXISTING_ENVIRONMENT_ASSETS = [
     placements: [
       { x: -4.65, z: -57 }, { x: 4.55, z: -128 }, { x: -4.75, z: -205 },
     ],
-    mobilePlacements: [
-      { x: -4.65, z: -57 }, { x: 4.55, z: -151 },
-    ],
+    // The photoscan is ~29,000 triangles for a 2.7 m road decal: desktop only.
+    mobilePlacements: [],
   },
 ];
 
@@ -1069,7 +1069,10 @@ if (typeof originalMakePothole === 'function') {
       rock.rotation.set(random(-0.3, 0.3), random(0, Math.PI), random(-0.3, 0.3));
       rock.userData.kanoPotholePhase = i * 0.7;
     }
+    // The rocks are static: merge them (and the pothole body) so each pothole costs a handful of draws, not ~23.
+    mergeChildMeshes(fxRoot);
     actor.add(fxRoot);
+    mergeChildMeshes(actor);
     actor.userData.kanoRepairPotholeFX = { root: fxRoot, time: random(0, 8) };
     potholeActors.add(actor);
     return actor;
