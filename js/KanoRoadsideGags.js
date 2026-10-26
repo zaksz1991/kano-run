@@ -83,8 +83,10 @@ function buildState(system) {
     group, chase, runner, capHolder, cap, pushed, pusher, cart, t: 0,
     chaseSide: side, pushSide: -side,
   };
-  chase.position.set(side * 6.9, 0, -85);
-  pushed.position.set(-side * 7.1, 0, -170);
+  chase.scale.setScalar(1.3);
+  pushed.scale.setScalar(1.3);
+  chase.position.set(side * 6.5, 0, -85);
+  pushed.position.set(-side * 6.6, 0, -170);
   return state;
 }
 
@@ -92,6 +94,7 @@ function update(system, dt, snap) {
   if (!system?.renderer?.world || system.renderer.disposed) return;
   let state = states.get(system);
   if (!state) { state = buildState(system); states.set(system, state); }
+  if (typeof window !== 'undefined') window.__KANO_GAGS__ = state;
   const visible = !system.renderer.lifeScene || system.renderer.lifeScene === 'road';
   state.group.visible = visible;
   if (!visible) return;
@@ -107,7 +110,7 @@ function update(system, dt, snap) {
   state.runner.position.y = Math.abs(Math.sin(state.t * 13)) * 0.04;
   state.cap.rotation.z = -state.t * 9;
   state.capHolder.position.x = Math.sin(state.t * 1.7) * 0.4;
-  if (state.chase.position.z > 12) { state.chase.position.z = -rand(150, 190); state.chase.position.x = state.chaseSide * rand(6.7, 7.6); }
+  if (state.chase.position.z > 12) { state.chase.position.z = -rand(150, 190); state.chase.position.x = state.chaseSide * rand(6.4, 6.9); }
   else if (state.chase.position.z < -230) state.chase.position.z = -(150 + rand(0, 30));
 
   // Handcart: slow, wobbly push away from the camera at ~0.9 u/s.
@@ -115,7 +118,7 @@ function update(system, dt, snap) {
   animatePerson(state.pusher, state.t, 5.5);
   state.cart.rotation.z = Math.sin(state.t * 4) * 0.025;
   state.cart.position.y = Math.abs(Math.sin(state.t * 5)) * 0.015;
-  if (state.pushed.position.z > 12) { state.pushed.position.z = -rand(160, 210); state.pushed.position.x = state.pushSide * rand(6.9, 7.5); }
+  if (state.pushed.position.z > 12) { state.pushed.position.z = -rand(160, 210); state.pushed.position.x = state.pushSide * rand(6.5, 6.9); }
   else if (state.pushed.position.z < -240) state.pushed.position.z = -(160 + rand(0, 30));
 }
 
