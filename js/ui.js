@@ -177,18 +177,7 @@ export class UI {
       return element;
     };
 
-    on('start-btn', 'click', () => {
-      // Direct start — morning routine was blocking play on phone
-      const routeId = this.el('route-select')?.value || save.routeId;
-      const driverId = this.el('driver-select')?.value || save.driverId;
-      if (routeId) save.routeId = routeId;
-      if (driverId) save.driverId = driverId;
-      try { persist(); } catch (e) {}
-      this.hide('start-screen');
-      this.hide('life-routine-screen');
-      this.hide('menu-screen');
-      this.game.start(this.el('mode-select')?.value || 'career');
-    });
+    on('start-btn', 'click', () => this.beginMorningRoutine());
 
     on('help-btn', 'click', () => this.show('help-screen'));
     on('garage-btn', 'click', () => this.openGarage());

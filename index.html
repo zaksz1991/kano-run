@@ -101,50 +101,152 @@
   <!-- Boot main first; the life/career/social upgrades below are inert <template> content that an idle loader activates in the same order. -->
   <template id="kano-deferred-modules">
   <!-- A dependency-free local audit starts first, before app and simulation modules load. -->
-  <!-- Fast boot: main.js first; life upgrades after idle -->
-<script>
-  window.__KANO_DEFER_SCRIPTS = [
-    '/js/KanoLifeRuntimeAudit.js',
-    '/js/KanoAppLaunchRecovery.js',
-    '/js/KanoNorthernDriverSeasonalEnvironmentBridge.js',
-    '/js/KanoCulturalStreetEventsUpgrade.js',
-    '/js/KanoWorldPerformanceInstancingUpgrade.js',
-    '/js/KanoLifeRootCauseRepair.js',
-    '/js/KanoNorthernDriverSkillsPathwaysUpgrade.js',
-    '/js/KanoNorthernDriverEmploymentMarketUpgrade.js',
-    '/js/KanoNorthernDriverEmploymentScheduleUpgrade.js',
-    '/js/KanoNorthernDriverDigitalLifeUpgrade.js',
-    '/js/KanoNorthernDriverCareerProgressionUpgrade.js',
-    '/js/KanoNorthernDriverAureJourneyUpgrade.js',
-    '/js/KanoNorthernDriverLefeNegotiationUpgrade.js',
-    '/js/KanoNorthernDriverParenthoodUpgrade.js',
-    '/js/KanoNorthernDriverSeasonalResilienceUpgrade.js',
-    '/js/KanoNorthernDriverAdashiSupportUpgrade.js',
-    '/js/KanoNorthernDriverCivicProjectsUpgrade.js',
-    '/js/KanoNorthernDriverSocialDramaUpgrade.js',
-    '/js/KanoNorthernDriverSocialNetworkUpgrade.js',
-    '/js/KanoLifeCareerSettingsHub.js',
-    '/js/KanoPhoneComfortUpgrade.js',
-    '/js/KanoModelAssetVisualUpgrade.js'
-  ];
+  <script type="module" src="/js/KanoLifeRuntimeAudit.js"></script>
+  <!-- Launch recovery keeps the existing main.js/Game/UI authoritative. -->
+  <script type="module" src="/js/KanoAppLaunchRecovery.js"></script>
+  <!-- The existing systems are registered before the application entry where possible. -->
+  <script type="module" src="/js/KanoNorthernDriverSeasonalEnvironmentBridge.js"></script>
+  <script type="module" src="/js/KanoCulturalStreetEventsUpgrade.js"></script>
+  <script type="module" src="/js/KanoWorldPerformanceInstancingUpgrade.js"></script>
+  <script type="module" src="/js/KanoLifeRootCauseRepair.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverSkillsPathwaysUpgrade.js"></script>
+  <!-- These are explicit roots for independent screens; shared module URLs are evaluated once by ES module caching. -->
+  <script type="module" src="/js/KanoNorthernDriverEmploymentMarketUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverEmploymentScheduleUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverDigitalLifeUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverCareerProgressionUpgrade.js"></script>
+  <!-- Longitudinal social systems register before the renderer bootstrap. -->
+  <script type="module" src="/js/KanoNorthernDriverAureJourneyUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverLefeNegotiationUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverParenthoodUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverSeasonalResilienceUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverAdashiSupportUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverCivicProjectsUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverSocialDramaUpgrade.js"></script>
+  <script type="module" src="/js/KanoNorthernDriverSocialNetworkUpgrade.js"></script>
+  <script type="module" src="/js/KanoLifeCareerSettingsHub.js"></script>
+  <script type="module" src="/js/KanoPhoneComfortUpgrade.js"></script>
+  <!-- This wrapper installs visual repair hooks and imports main.js. A separate direct entry below is intentional: ES module caching prevents a second game instance and recovers if this optional wrapper fails. -->
+  <script type="module" src="/js/KanoModelAssetVisualUpgrade.js"></script>
+    </template>
+  <script>
   (function () {
     var loaded = false;
     function loadAll() {
       if (loaded) return;
       loaded = true;
-      (window.__KANO_DEFER_SCRIPTS || []).forEach(function (src) {
+      var tpl = document.getElementById('kano-deferred-modules');
+      var tags = tpl && tpl.content ? tpl.content.querySelectorAll('script[src]') : [];
+      var chain = Promise.resolve();
+      Array.prototype.forEach.call(tags, function (tag) {
         var el = document.createElement('script');
         el.type = 'module';
-        el.src = src;
+        el.src = tag.getAttribute('src');
         document.head.appendChild(el);
       });
-      console.info('[Boot] main first; deferred', (window.__KANO_DEFER_SCRIPTS || []).length);
+      console.info('[Boot] deferred modules loading', tags.length);
     }
-    if (window.requestIdleCallback) requestIdleCallback(loadAll, { timeout: 4000 });
-    else setTimeout(loadAll, 2000);
+    if (window.requestIdleCallback) requestIdleCallback(loadAll, { timeout: 5000 });
+    else setTimeout(loadAll, 2500);
   })();
+  </script>
+  <script type="module" src="/js/main.js"></script>
+
+
+
+
+
+
+
+
+
+
+<script>
+/* ENV CLEAR — remove milky fog wash on buildings/road (not camera) */
+(function () {
+  var patched = false;
+
+  function clearEnvironment(scene, webgl) {
+    if (!scene) return;
+    // Kill the grey soup: fog is what blurs distant shops/road
+    if (scene.fog) {
+      scene.fog.near = 80;
+      scene.fog.far = 400;
+      // Prefer no fog if API allows
+      try { scene.fog = null; } catch (e) {}
+    }
+    // Sharpen materials / textures already on meshes
+    try {
+      scene.traverse(function (obj) {
+        if (!obj.isMesh || !obj.material) return;
+        var mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(function (m) {
+          if (!m) return;
+          if (m.map) {
+            m.map.anisotropy = 8;
+            m.map.needsUpdate = true;
+          }
+          if (m.roughness !== undefined) m.roughness = Math.min(m.roughness, 0.85);
+          m.needsUpdate = true;
+        });
+      });
+    } catch (e) {}
+  }
+
+  function wrap(r) {
+    if (!r || patched || typeof r.draw !== 'function') return false;
+    var orig = r.draw.bind(r);
+    r.draw = function (state, dt) {
+      var webgl = this.renderer;
+      var self = this;
+      if (webgl && webgl.render) {
+        var or = webgl.render.bind(webgl);
+        webgl.render = function (scene, camera) {
+          try {
+            // Game sets fog every frame in draw() — clear it right before paint
+            if (scene) {
+              scene.fog = null;
+            }
+          } catch (e) {}
+          return or(scene, camera);
+        };
+        try {
+          var out = orig(state, dt);
+          // Also clear after their draw assigned fog
+          try {
+            if (self.scene) self.scene.fog = null;
+          } catch (e) {}
+          return out;
+        } finally {
+          webgl.render = or;
+        }
+      }
+      var out2 = orig(state, dt);
+      try { if (this.scene) this.scene.fog = null; } catch (e) {}
+      return out2;
+    };
+    patched = true;
+    console.info('[ENV CLEAR] fog removed — world should look sharp not milky');
+    return true;
+  }
+
+  function tick() {
+    var r = (window.game && window.game.renderer) || window.__kanoRenderer3d;
+    if (wrap(r)) return;
+    if (window.game) {
+      for (var k in window.game) {
+        try {
+          var v = window.game[k];
+          if (v && v.draw && v.scene) { if (wrap(v)) return; }
+        } catch (e) {}
+      }
+    }
+  }
+  setInterval(tick, 400);
+  setTimeout(tick, 300);
+  setTimeout(tick, 1500);
+})();
 </script>
-<script type="module" src="/js/main.js"></script>
 
 </body>
 </html>

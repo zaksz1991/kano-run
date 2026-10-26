@@ -124,10 +124,10 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
-    this.scene.fog = new THREE.Fog(0x8ccde5, 150, 600); // shops + road fully visible
+    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 24 : 48, mobile ? 105 : 195);
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 500 : 600);
-    this.camera.position.set(0, 4.8, 14.5);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 125 : 260);
+    this.camera.position.set(0, 3.85, 10.5);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -225,7 +225,6 @@ export class Renderer3D {
 
     this.player = this.makeKeke();
     this.player.position.set(0, 0, 2);
-    this.player.scale.setScalar(0.62);
     this.scene.add(this.player);
 
     // Garage and life-scene geometry is created only when that scene is first
@@ -423,8 +422,8 @@ export class Renderer3D {
     this.laneDashRecords = laneDashRecords;
     laneDashGeometry.computeBoundingSphere();
 
-    const buildingCount = this.mobile ? 6 : 20;
-    const buildingSpacing = this.mobile ? 18 : 9;
+    const buildingCount = this.mobile ? 10 : 24;
+    const buildingSpacing = this.mobile ? 14 : 9;
 
     this.buildingLoopDistance =
       buildingCount * buildingSpacing + 15;
@@ -1723,10 +1722,10 @@ export class Renderer3D {
 
   buildSidewalkLife() {
     const count = this.mobile
-      ? (this.mobileTier === 'low' ? 6 : this.mobileTier === 'mid' ? 8 : 10)
-      : 18;
+      ? (this.mobileTier === 'low' ? 10 : this.mobileTier === 'mid' ? 14 : 16)
+      : 22;
     const pedestrianSpacing = this.mobile
-      ? (this.mobileTier === 'low' ? 22 : this.mobileTier === 'mid' ? 18 : 15)
+      ? (this.mobileTier === 'low' ? 19 : this.mobileTier === 'mid' ? 15 : 13)
       : 12;
 
     // On phones, each pair is one row: one walker on each sidewalk at the
@@ -5026,7 +5025,7 @@ export class Renderer3D {
     this._nextMobileDistanceCullAt = now + 100;
 
     const cameraZ = Number(this.camera.position.z) || 0;
-    const fogFar = Math.max(300, Number(this.scene.fog.far) || 600);
+    const fogFar = Math.max(65, Number(this.scene.fog.far) || 105);
     // At this point the fog has concealed most detail. Cutting hidden objects
     // here avoids drawing far scenery without shortening the visible road.
     const horizon = Math.min(100, fogFar * 0.90);
@@ -5386,9 +5385,13 @@ export class Renderer3D {
           : 0x8ccde5,
     );
 
-    // Shops and road fully visible — no distance washout
-    this.scene.fog.near = 200;
-    this.scene.fog.far = 600;
+    this.scene.fog.near = this.mobile
+      ? (state.environment === 'harmattan' ? 14 : 24)
+      : (state.environment === 'harmattan' ? 18 : 48);
+
+    this.scene.fog.far = this.mobile
+      ? (state.environment === 'harmattan' ? 70 : 105)
+      : (state.environment === 'harmattan' ? 100 : 195);
 
     // --------------------------------------------------------
     // PLAYER POSITION AND STEERING
@@ -5415,7 +5418,6 @@ export class Renderer3D {
       -(state.steer || 0) * 0.075;
 
     this.player.rotation.y = this.driveFacingY;
-    this.player.scale.setScalar(0.62);
 
     this.player.position.y =
       Math.sin((state.distance || 0) * 2.2) * 0.025;
@@ -5564,8 +5566,8 @@ export class Renderer3D {
 
     // Raise and pull the driver camera behind the keke canopy. The old low,
     // close position looked through the bodywork and could fill the viewport.
-    this.camera.position.y = driverView ? 4.4 : 4.9;
-    this.camera.position.z = driverView ? 13.5 : 15.0;
+    this.camera.position.y = driverView ? 2.9 : 3.35;
+    this.camera.position.z = driverView ? 7.2 : 8.6;
 
     const shake = Math.max(
       0,
