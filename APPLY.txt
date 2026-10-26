@@ -1,0 +1,4 @@
+ONE complete set of every file changed since your repo at commit ed4a9f2.
+Copy the folders (index.html, js, tests, public) over your repo, same paths, replacing files.
+It supersedes the earlier small ZIPs (ai-turns, ads-turn-chatter, characters-sharp, people-variety, drawcalls, drawcalls2, phone-decal, funny-props, gags, underpass, tests-deferred).
+Then run the tests: node --test tests/*.test.js tests/*.test.mjs (1503 pass in my environment).

@@ -1,3 +1,4 @@
+import { mergeChildMeshes } from './KanoMergeStaticMeshes.js';
 import * as THREE from 'three';
 import { getMobileTier, getMobileRenderBudget, getMobileTrafficModelBudget } from './KanoDeviceTier.js';
 import { disposeOwnedZoneLabelTexture } from './KanoZoneTextureLifecycle.js';
@@ -1915,6 +1916,7 @@ export class Renderer3D {
             lamp.position.set(arm * 1.2, 5.96, 0);
             pole.add(lamp);
           }
+          mergeChildMeshes(pole); // pole, arms and panels become one draw; the glowing lamps stay unlit
           pole.position.set(side * 7.6, 0, -24 - index * spacing);
           pole.userData.proceduralStreetLight = true;
           this.world.add(pole);
