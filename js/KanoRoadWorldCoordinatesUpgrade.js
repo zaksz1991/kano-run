@@ -1,3 +1,4 @@
+import { mergeChildMeshes } from './KanoMergeStaticMeshes.js';
 import * as THREE from 'three';
 import { Game } from './game.js';
 import { Renderer3D } from './renderer3d.js';
@@ -259,6 +260,7 @@ function makeJunction(index, mobile) {
     }
   }
 
+  mergeChildMeshes(group); // many small coloured parts -> one draw call
   return group;
 }
 

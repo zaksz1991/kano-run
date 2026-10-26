@@ -21,7 +21,7 @@ function sharedMaterial(source) {
 export function mergeChildMeshes(group) {
   if (!group || !group.children) return null;
   const meshes = group.children.filter((c) => c.isMesh && !c.isSkinnedMesh && c.geometry?.attributes?.position
-    && !Array.isArray(c.material) && !c.material?.map && !c.material?.transparent);
+    && !Array.isArray(c.material) && !c.material?.map && !c.material?.transparent && !c.material?.isMeshBasicMaterial);
   if (meshes.length < 2) return null;
   group.updateMatrixWorld(true);
   const inverse = new THREE.Matrix4().copy(group.matrixWorld).invert();

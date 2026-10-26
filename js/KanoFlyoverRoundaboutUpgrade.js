@@ -1,3 +1,4 @@
+import { mergeChildMeshes } from './KanoMergeStaticMeshes.js';
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
 import { getKanoSignboardTextureProfile } from './KanoSignboardClarityRules.js';
@@ -296,6 +297,8 @@ function createRoundabout(renderer, side, z, index) {
     addSignFace(group, placardTex, 1.75, 0.7, [x, 1.49, boardZ + 0.09], `roundabout_direction_face_${direction}`);
   }
 
+  // Fold the ~60 small coloured parts (curb blocks, dashes, shrubs, fronds) into one mesh.
+  mergeChildMeshes(group);
   group.position.set(centreX, 0, z);
   renderer.world.add(group);
   ROUNDABOUTS.push(group);
