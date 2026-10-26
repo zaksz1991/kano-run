@@ -25,6 +25,7 @@ import './KanoStreetAnimalsOfficerUpgrade.js';
 import './KanoRealLandmarksUpgrade.js';
 import './KanoRoadsideAdsUpgrade.js';
 import './KanoFunnyChatterBridge.js';
+import './KanoFunnyPickupProps.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
 const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
