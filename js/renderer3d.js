@@ -114,7 +114,7 @@ function disposeSceneTree(root, { disposeTextures = false } = {}) {
   visit(root);
 }
 
-export class Renderer3D {
+class Renderer3DBase {
   constructor(canvas, models, { mobile = false } = {}) {
     this.canvas = canvas;
     this.models = models;
@@ -125,14 +125,14 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
-    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 24 : 48, mobile ? 105 : 195);
+    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 38 : 48, mobile ? 120 : 195);
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 125 : 260);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 140 : 260);
     this.camera.position.set(0, 3.85, 10.5);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: !mobile,
+      antialias: !mobile || ((window.devicePixelRatio || 1) < 2 && this.mobileTier !== 'low'),
       alpha: false,
       powerPreference: 'high-performance',
       failIfMajorPerformanceCaveat: false,
@@ -268,6 +268,7 @@ export class Renderer3D {
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.repeat.set(repeat[0], repeat[1]);
+          texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
           texture.colorSpace = THREE.SRGBColorSpace;
 
           material.map = texture;
@@ -5388,12 +5389,12 @@ export class Renderer3D {
     );
 
     this.scene.fog.near = this.mobile
-      ? (state.environment === 'harmattan' ? 14 : 24)
-      : (state.environment === 'harmattan' ? 18 : 48);
+      ? (state.environment === 'harmattan' ? 22 : 38)
+      : (state.environment === 'harmattan' ? 30 : 48);
 
     this.scene.fog.far = this.mobile
-      ? (state.environment === 'harmattan' ? 70 : 105)
-      : (state.environment === 'harmattan' ? 100 : 195);
+      ? (state.environment === 'harmattan' ? 90 : 120)
+      : (state.environment === 'harmattan' ? 130 : 195);
 
     // --------------------------------------------------------
     // PLAYER POSITION AND STEERING
@@ -5652,3 +5653,100 @@ export class Renderer3D {
     this.scene.clear();
   }
 }
+// =====================================================================
+// Clarity + speed layer. Only adds things; the game still imports Renderer3D.
+//  - Adaptive resolution: climbs toward a sharper image while the frame rate
+//    is healthy and backs off when it drops (never below the starting ratio).
+//  - Soft blob shadow under the player's keke.
+//  - ?perf in the page URL logs fps, draw calls and triangle counts.
+// =====================================================================
+export class Renderer3D extends Renderer3DBase {
+  constructor(canvas, models, opts = {}) {
+    super(canvas, models, opts);
+
+    const dpr = window.devicePixelRatio || 1;
+    this._pr = this.renderer.getPixelRatio();
+    this._prMin = Math.min(this._pr, 1);
+    this._prMax = Math.max(this._pr, Math.min(dpr, this.mobile ? 1.5 : 2));
+    this._frameAvg = 16.7;
+    this._prTimer = 0;
+    this._perf = /[?&]perf\b/.test(window.location?.search || '');
+    this._perfAt = 0;
+
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+    grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grad.addColorStop(0.6, 'rgba(0,0,0,0.28)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+
+    this._blob = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.9, 2.9).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      }),
+    );
+    this._blob.renderOrder = 1;
+    this._blob.visible = false;
+    this.scene.add(this._blob);
+
+    // Runs right before every render so the shadow never lags the keke.
+    const r = this.renderer;
+    const render = r.render.bind(r);
+    r.render = (scene, camera) => {
+      try { this._beforeRender(); } catch { /* cosmetic only */ }
+      render(scene, camera);
+    };
+  }
+
+  _beforeRender() {
+    const p = this.player;
+    const show = this.lifeScene === 'road' && p && p.visible;
+    this._blob.visible = Boolean(show);
+    if (show) this._blob.position.set(p.position.x, 0.045, p.position.z);
+  }
+
+  _adaptResolution(rawDelta) {
+    if (!(rawDelta > 0) || rawDelta > 0.1) return; // ignore tab-switch spikes
+    this._frameAvg += (rawDelta * 1000 - this._frameAvg) * 0.05;
+    this._prTimer += rawDelta;
+    if (this._prTimer < 1) return;
+    this._prTimer = 0;
+
+    let pr = this._pr;
+    if (this._frameAvg > 30) pr -= 0.25;        // below ~33 fps: ease off
+    else if (this._frameAvg < 18) pr += 0.125;  // above ~55 fps: sharpen
+    pr = Math.min(this._prMax, Math.max(this._prMin, pr));
+    if (pr !== this._pr) {
+      this._pr = pr;
+      this.renderer.setPixelRatio(pr);
+      this.resize();
+    }
+  }
+
+  draw(state, deltaSeconds) {
+    if (this.ready && !this.disposed) this._adaptResolution(Number(deltaSeconds) || 0);
+    super.draw(state, deltaSeconds);
+
+    if (this._perf) {
+      const now = performance.now();
+      if (now - this._perfAt > 2000) {
+        this._perfAt = now;
+        const i = this.renderer.info;
+        console.info(`[perf] fps≈${(1000 / this._frameAvg).toFixed(0)} calls=${i.render.calls} tris=${i.render.triangles} geo=${i.memory.geometries} tex=${i.memory.textures} pr=${this._pr}`);
+      }
+    }
+  }
+}
+
+export default Renderer3D;
