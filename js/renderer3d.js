@@ -5636,7 +5636,30 @@ export class Renderer3D extends Renderer3DBase {
       this._pr = forcePr;
       this.renderer.setPixelRatio(forcePr);
     }
-    if (this._perf) {
+    const params = new URLSearchParams(window.location.search);
+    this._drawAvg = 0;
+    this._lastDrawAt = 0;
+    try { if (params.has('resetpr')) localStorage.removeItem('kanoBestPr'); } catch { /* ignore */ }
+
+    this._bench = params.has('bench')
+      ? { stage: 0, steps: [0.75, 1, 1.5, 2], t0: 0, intervals: [], draws: [], results: [], done: false, pick: null }
+      : null;
+    if (this._bench) this._perf = false;
+
+    // A saved benchmark result (from ?bench) becomes this phone's sharpness setting.
+    if (!this._fixedPr && !this._bench) {
+      try {
+        const saved = parseFloat(localStorage.getItem('kanoBestPr'));
+        if (Number.isFinite(saved) && saved >= 0.5 && saved <= 3) {
+          this._pr = saved;
+          this._prMax = saved;
+          this._prMin = Math.max(0.75, saved - 0.5);
+          this.renderer.setPixelRatio(saved);
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (this._perf || this._bench) {
       const box = document.createElement('div');
       box.style.cssText = 'position:fixed;left:6px;bottom:150px;z-index:99999;padding:5px 8px;'
         + 'background:rgba(0,0,0,.72);color:#7dffb0;font:12px/1.35 monospace;border-radius:6px;pointer-events:none;white-space:pre';
@@ -5914,10 +5937,11 @@ export class Renderer3D extends Renderer3DBase {
     if (show) this._blob.position.set(p.position.x, 0.045, p.position.z);
   }
 
-  _adaptResolution(rawDelta) {
-    if (this._fixedPr || !(rawDelta > 0) || rawDelta > 0.1) return;
-    this._frameAvg += (rawDelta * 1000 - this._frameAvg) * 0.05;
-    this._prTimer += rawDelta;
+  _adaptResolution(intervalMs) {
+    if (!(intervalMs > 0) || intervalMs > 250) return;
+    this._frameAvg += (intervalMs - this._frameAvg) * 0.05;   // real time between frames
+    if (this._fixedPr) return;
+    this._prTimer += intervalMs / 1000;
     if (this._prTimer < 1) return;
     this._prTimer = 0;
 
@@ -5925,28 +5949,84 @@ export class Renderer3D extends Renderer3DBase {
     if (this._frameAvg > 30) pr -= 0.25;
     else if (this._frameAvg < 18) pr += 0.125;
     pr = Math.min(this._prMax, Math.max(this._prMin, pr));
-    if (pr !== this._pr) {
-      this._pr = pr;
-      this.renderer.setPixelRatio(pr);
-      this.resize();
+    if (pr !== this._pr) this._setPr(pr);
+  }
+
+  _setPr(pr) {
+    this._pr = pr;
+    this.renderer.setPixelRatio(pr);
+    this.resize();
+  }
+
+  // ---------- one-tap benchmark: ?bench ----------
+  _benchStep(interval, drawMs, now) {
+    const b = this._bench;
+    if (b.done || this.lifeScene !== 'road') { return; }       // only measure while driving
+    if (!b.t0) { b.t0 = now; this._fixedPr = true; this._setPr(b.steps[b.stage]); }
+
+    const elapsed = now - b.t0;
+    if (elapsed > 1500 && interval > 0 && interval < 1000) {   // skip 1.5 s warm-up
+      b.intervals.push(interval);
+      b.draws.push(drawMs);
     }
+    if (elapsed >= 5500) {
+      const avg = (arr) => arr.reduce((x, y) => x + y, 0) / Math.max(1, arr.length);
+      b.results.push({ pr: b.steps[b.stage], fps: 1000 / avg(b.intervals), draw: avg(b.draws) });
+      b.intervals = [];
+      b.draws = [];
+      b.t0 = now;
+      b.stage += 1;
+      if (b.stage >= b.steps.length) { this._benchFinish(); return; }
+      this._setPr(b.steps[b.stage]);
+    }
+    this._benchShow();
+  }
+
+  _benchFinish() {
+    const b = this._bench;
+    b.done = true;
+    const best = Math.max(...b.results.map((r) => r.fps));
+    // Sharpest setting that still keeps at least 85% of the best speed.
+    const pick = [...b.results].reverse().find((r) => r.fps >= best * 0.85) || b.results[0];
+    b.pick = pick.pr;
+    try { localStorage.setItem('kanoBestPr', String(pick.pr)); } catch { /* ignore */ }
+    this._setPr(pick.pr);
+    this._benchShow();
+  }
+
+  _benchShow() {
+    const b = this._bench;
+    if (!this._perfBox) return;
+    const lines = [b.done
+      ? 'BENCHMARK DONE'
+      : `BENCHMARK ${b.stage + 1}/${b.steps.length}: testing pr ${b.steps[b.stage]} (do not touch)`];
+    for (const r of b.results) lines.push(`pr ${r.pr}: ${r.fps.toFixed(0)} fps · draw ${r.draw.toFixed(0)}ms`);
+    if (b.done) lines.push(`SAVED pr ${b.pick}. Open the game normally now.`);
+    this._perfBox.textContent = lines.join('\n');
   }
 
   draw(state, deltaSeconds) {
-    if (this.ready && !this.disposed) this._adaptResolution(Number(deltaSeconds) || 0);
+    const t0 = performance.now();
+    const interval = this._lastDrawAt ? t0 - this._lastDrawAt : 0;
+    this._lastDrawAt = t0;
+    if (this.ready && !this.disposed) this._adaptResolution(interval);
+
     super.draw(state, deltaSeconds);
 
+    const drawMs = performance.now() - t0;
+    this._drawAvg += (drawMs - this._drawAvg) * 0.05;
+    if (this._bench && this.ready && !this.disposed) this._benchStep(interval, drawMs, t0);
+
     if (this._perf) {
-      const now = performance.now();
-      if (now - this._perfAt > 2000) {
-        this._perfAt = now;
+      if (t0 - this._perfAt > 1000) {
+        this._perfAt = t0;
         const i = this.renderer.info;
         if (this._perfBox) {
           this._perfBox.textContent =
-            `fps ${(1000 / this._frameAvg).toFixed(0)}  calls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\n`
+            `fps ${(1000 / this._frameAvg).toFixed(0)}  frame ${this._frameAvg.toFixed(0)}ms  draw ${this._drawAvg.toFixed(0)}ms\n`
+            + `calls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\n`
             + `pr ${this._pr}${this._fixedPr ? ' (fixed)' : ''}  tier ${this.mobileTier}  dpr ${(window.devicePixelRatio || 1).toFixed(2)}`;
         }
-        console.info(`[perf] fps≈${(1000 / this._frameAvg).toFixed(0)} calls=${i.render.calls} tris=${i.render.triangles} geo=${i.memory.geometries} tex=${i.memory.textures} pr=${this._pr}`);
       }
     }
   }
