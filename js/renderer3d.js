@@ -119,7 +119,7 @@ class Renderer3DBase {
     this.canvas = canvas;
     this.models = models;
     this.mobile = mobile;
-    this.mobileTier = mobile ? getMobileTier() : 'desktop';
+    this.mobileTier = mobile ? (forcedTierFromUrl() || getMobileTier()) : 'desktop';
     this.ready = false;
     this.disposed = false;
 
@@ -5601,6 +5601,13 @@ class Renderer3DBase {
 //  - Adaptive resolution: starts sharp, backs off only if the phone is slow.
 //  - Soft blob shadow under the keke. ?perf in the URL logs fps/draw calls.
 // =====================================================================
+function forcedTierFromUrl() {
+  try {
+    const t = new URLSearchParams(window.location.search).get('tier');
+    return ['low', 'mid', 'high'].includes(t) ? t : null;
+  } catch { return null; }
+}
+
 const hashStr = (v) => {
   let h = 0;
   for (const ch of String(v)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -5622,6 +5629,20 @@ export class Renderer3D extends Renderer3DBase {
     this._prTimer = 0;
     this._perf = /[?&]perf\b/.test(window.location?.search || '');
     this._perfAt = 0;
+
+    const forcePr = parseFloat(new URLSearchParams(window.location.search).get('pr'));
+    if (Number.isFinite(forcePr) && forcePr >= 0.5 && forcePr <= 3) {
+      this._fixedPr = true;
+      this._pr = forcePr;
+      this.renderer.setPixelRatio(forcePr);
+    }
+    if (this._perf) {
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;left:6px;bottom:150px;z-index:99999;padding:5px 8px;'
+        + 'background:rgba(0,0,0,.72);color:#7dffb0;font:12px/1.35 monospace;border-radius:6px;pointer-events:none;white-space:pre';
+      document.body.appendChild(box);
+      this._perfBox = box;
+    }
 
     // ---- blob shadow under the player ----
     const c = document.createElement('canvas');
@@ -5894,7 +5915,7 @@ export class Renderer3D extends Renderer3DBase {
   }
 
   _adaptResolution(rawDelta) {
-    if (!(rawDelta > 0) || rawDelta > 0.1) return;
+    if (this._fixedPr || !(rawDelta > 0) || rawDelta > 0.1) return;
     this._frameAvg += (rawDelta * 1000 - this._frameAvg) * 0.05;
     this._prTimer += rawDelta;
     if (this._prTimer < 1) return;
@@ -5920,6 +5941,11 @@ export class Renderer3D extends Renderer3DBase {
       if (now - this._perfAt > 2000) {
         this._perfAt = now;
         const i = this.renderer.info;
+        if (this._perfBox) {
+          this._perfBox.textContent =
+            `fps ${(1000 / this._frameAvg).toFixed(0)}  calls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\n`
+            + `pr ${this._pr}${this._fixedPr ? ' (fixed)' : ''}  tier ${this.mobileTier}  dpr ${(window.devicePixelRatio || 1).toFixed(2)}`;
+        }
         console.info(`[perf] fps≈${(1000 / this._frameAvg).toFixed(0)} calls=${i.render.calls} tris=${i.render.triangles} geo=${i.memory.geometries} tex=${i.memory.textures} pr=${this._pr}`);
       }
     }
