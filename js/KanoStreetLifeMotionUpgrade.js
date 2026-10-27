@@ -238,9 +238,98 @@ function addCheckpointPassengerCrowd(renderer, zone, actor) {
   if (sign) sign.position.y = 2.05;
 }
 
+
+// ---------------------------------------------------------------------------
+// Real GLB people. The capsule figures above are only a fallback while the
+// models stream in (or if none load). Once the pedestrian / passenger GLBs the
+// project ships are cached, each street person is swapped for one of them.
+// ---------------------------------------------------------------------------
+const PEOPLE_MODEL_KEYS = ['passengerMan', 'pedestrianWoman', 'pedestrian', 'passengerWoman'];
+const REAL_PEOPLE_BUDGET = { mobile: 6, desktop: 12 };
+const CROWD_REAL_BUDGET = { mobile: 2, desktop: 4 };
+
+function availablePeopleKeys(renderer) {
+  const cache = renderer.models?.cache;
+  return cache ? PEOPLE_MODEL_KEYS.filter((key) => cache.has(key)) : [];
+}
+
+function makeRealPerson(renderer, keys, index, height) {
+  if (!keys.length) return null;
+  const model = renderer.models.getInstance(keys[index % keys.length]);
+  if (!model) return null;
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  if (!(size.y > 0.05) || !Number.isFinite(size.y)) return null;
+  const k = height / size.y;
+  model.scale.multiplyScalar(k);
+  box.setFromObject(model);
+  model.position.y -= box.min.y; // feet on the ground
+  const holder = new THREE.Group();
+  holder.name = 'kano_real_person';
+  holder.add(model);
+  return holder;
+}
+
+function swapForRealPerson(renderer, root, keys, index, height) {
+  const real = makeRealPerson(renderer, keys, index, height);
+  if (!real) return false;
+  for (const child of [...root.children]) {
+    root.remove(child);
+    disposeRemovedTree(child);
+  }
+  root.add(real);
+  root.userData.kanoAnimationParts = { arms: [], legs: [], headCover: null, isWoman: false, waiting: false, variant: 0, phase: 0 };
+  root.userData.kanoRealPerson = true;
+  return true;
+}
+
+function promoteRealPeople(renderer) {
+  const keys = availablePeopleKeys(renderer);
+  if (!keys.length) return;
+  const tier = renderer.mobile ? 'mobile' : 'desktop';
+  let used = (renderer.pedestrians || []).filter((p) => p.actor?.userData?.kanoRealPerson).length;
+  for (const person of [...(renderer.pedestrians || [])]) {
+    if (!person.kanoStreetPerson || person.actor?.userData?.kanoRealPerson) continue;
+    if (used >= REAL_PEOPLE_BUDGET[tier]) {
+      // Over budget: drop the capsule figure rather than keep a blocky one.
+      person.actor.visible = false;
+      person.kanoStreetPerson = false;
+      person.dropped = true;
+      if (person.actor.parent) person.actor.parent.remove(person.actor);
+      disposeRemovedTree(person.actor);
+      continue;
+    }
+    if (swapForRealPerson(renderer, person.actor, keys, person.index, 1.68)) used += 1;
+  }
+  renderer.pedestrians = (renderer.pedestrians || []).filter((p) => !p.dropped);
+
+  for (const zoneActor of renderer.zoneActors?.values?.() || []) {
+    const crowd = zoneActor.userData?.kanoPassengerCrowd;
+    if (!crowd) continue;
+    let crowdUsed = crowd.filter((c) => c.root.userData.kanoRealPerson).length;
+    for (const [i, entry] of [...crowd.entries()]) {
+      if (entry.root.userData.kanoRealPerson || entry.removed) continue;
+      if (crowdUsed >= CROWD_REAL_BUDGET[tier]) {
+        entry.removed = true;
+        if (entry.root.parent) entry.root.parent.remove(entry.root);
+        disposeRemovedTree(entry.root);
+        continue;
+      }
+      if (swapForRealPerson(renderer, entry.root, keys, i + 1, 1.62)) crowdUsed += 1;
+    }
+    zoneActor.userData.kanoPassengerCrowd = crowd.filter((c) => !c.removed);
+    zoneActor.userData.kanoPassengerCrowdCount = zoneActor.userData.kanoPassengerCrowd.length;
+  }
+}
+
 function animateStreetLife(renderer, dt) {
   if (renderer.lifeScene && renderer.lifeScene !== 'road') return;
   renderer.kanoStreetClock = (renderer.kanoStreetClock || 0) + dt;
+  renderer.kanoRealPeopleTimer = (renderer.kanoRealPeopleTimer || 0) - dt;
+  if (renderer.kanoRealPeopleTimer <= 0) {
+    renderer.kanoRealPeopleTimer = 0.75;
+    promoteRealPeople(renderer);
+  }
   const time = renderer.kanoStreetClock;
 
   for (const pedestrian of renderer.pedestrians || []) {
@@ -261,6 +350,7 @@ function animateStreetLife(renderer, dt) {
       leg.pivot.rotation.x = Math.sin(phase + (leg.side > 0 ? Math.PI : 0)) * 0.28;
     }
     if (parts.headCover) parts.headCover.rotation.y = Math.sin(phase * 0.32) * 0.045;
+    if (actor.userData.kanoRealPerson) actor.rotation.z = Math.sin(phase) * 0.028; // walking sway for the static GLB pose
   }
 
   for (const zoneActor of renderer.zoneActors?.values?.() || []) {
