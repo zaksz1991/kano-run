@@ -440,16 +440,6 @@ export class Game {
               : 'pothole';
     }
 
-    // Cap how many potholes can be on the road at the same time. Each one is
-    // a collision hazard and a draw cost; the "BAD ROAD" event can still add its own.
-    if (type === 'pothole') {
-      const maxPotholes = this.mode === 'potholes' ? 5 : 2;
-      const current = this.s.zones.filter((zone) => zone.type === 'pothole').length;
-      if (current >= maxPotholes) {
-        type = roll < 0.5 ? 'pickup' : 'drop';
-      }
-    }
-
     const side = Math.random() < 0.5 ? -1 : 1;
 
     const hub =

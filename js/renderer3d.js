@@ -114,25 +114,25 @@ function disposeSceneTree(root, { disposeTextures = false } = {}) {
   visit(root);
 }
 
-class Renderer3DBase {
+export class Renderer3D {
   constructor(canvas, models, { mobile = false } = {}) {
     this.canvas = canvas;
     this.models = models;
     this.mobile = mobile;
-    this.mobileTier = mobile ? (forcedTierFromUrl() || getMobileTier()) : 'desktop';
+    this.mobileTier = mobile ? getMobileTier() : 'desktop';
     this.ready = false;
     this.disposed = false;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
-    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 38 : 48, mobile ? 120 : 195);
+    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 24 : 48, mobile ? 105 : 195);
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 140 : 260);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 125 : 260);
     this.camera.position.set(0, 3.85, 10.5);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: !mobile || ((window.devicePixelRatio || 1) < 2 && this.mobileTier !== 'low'),
+      antialias: !mobile,
       alpha: false,
       powerPreference: 'high-performance',
       failIfMajorPerformanceCaveat: false,
@@ -268,7 +268,6 @@ class Renderer3DBase {
           texture.wrapS = THREE.RepeatWrapping;
           texture.wrapT = THREE.RepeatWrapping;
           texture.repeat.set(repeat[0], repeat[1]);
-          texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
           texture.colorSpace = THREE.SRGBColorSpace;
 
           material.map = texture;
@@ -4524,10 +4523,70 @@ class Renderer3DBase {
             actor.add(pump);
           }
 
-          actor.add(this.makeStopSign(zone));
+          const labelCanvas = document.createElement('canvas');
+          labelCanvas.width = 512;
+          labelCanvas.height = 128;
+
+          const labelCtx = labelCanvas.getContext('2d');
+
+          if (labelCtx) {
+            labelCtx.fillStyle =
+              zone.type === 'drop'
+                ? '#6d5016'
+                : zone.type === 'fuel'
+                  ? '#145a43'
+                  : '#13533c';
+
+            labelCtx.fillRect(0, 0, 512, 128);
+
+            labelCtx.strokeStyle = '#f5d77b';
+            labelCtx.lineWidth = 8;
+            labelCtx.strokeRect(4, 4, 504, 120);
+
+            labelCtx.fillStyle = '#fff4d0';
+            labelCtx.font = '900 30px Arial, sans-serif';
+            labelCtx.textAlign = 'center';
+
+            const labelText = zone.hub
+              ? `${String(zone.stopName || 'KEKE STOP').toUpperCase()} · KEKE STOP`
+              : zone.type === 'pickup'
+                ? 'ROADSIDE PICK-UP'
+                : zone.type === 'drop'
+                  ? 'ROADSIDE DROP-OFF'
+                  : 'FUEL STOP';
+
+            labelCtx.fillText(labelText, 256, 51, 486);
+
+            labelCtx.font = '700 24px Arial, sans-serif';
+
+            labelCtx.fillText(
+              String(zone.dest || zone.label || '').slice(0, 36),
+              256,
+              91,
+              486,
+            );
+          }
+
+          const labelTexture = new THREE.CanvasTexture(labelCanvas);
+          labelTexture.colorSpace = THREE.SRGBColorSpace;
+
+          const sign = new THREE.Mesh(
+            new THREE.PlaneGeometry(
+              zone.hub ? 3.0 : 2.3,
+              zone.hub ? 0.76 : 0.58,
+            ),
+            new THREE.MeshBasicMaterial({
+              map: labelTexture,
+              side: THREE.DoubleSide,
+            }),
+          );
+
+          sign.position.set(0, 1.4, 0.15);
+          actor.add(sign);
+          actor.userData.labelTexture = labelTexture;
 
           if (zone.type === 'pickup') {
-            const waiting = this.makeWaitingPassenger(zone.hub || zone.id.length % 2 ? 'woman' : 'man', zone.id);
+            const waiting = this.makeSecurityPlaceholder();
 
             waiting.scale.setScalar(zone.hub ? 0.86 : 0.78);
 
@@ -5329,12 +5388,12 @@ class Renderer3DBase {
     );
 
     this.scene.fog.near = this.mobile
-      ? (state.environment === 'harmattan' ? 22 : 38)
-      : (state.environment === 'harmattan' ? 30 : 48);
+      ? (state.environment === 'harmattan' ? 14 : 24)
+      : (state.environment === 'harmattan' ? 18 : 48);
 
     this.scene.fog.far = this.mobile
-      ? (state.environment === 'harmattan' ? 90 : 120)
-      : (state.environment === 'harmattan' ? 130 : 195);
+      ? (state.environment === 'harmattan' ? 70 : 105)
+      : (state.environment === 'harmattan' ? 100 : 195);
 
     // --------------------------------------------------------
     // PLAYER POSITION AND STEERING
@@ -5593,456 +5652,3 @@ class Renderer3DBase {
     this.scene.clear();
   }
 }
-// =====================================================================
-// Clarity + speed layer (only adds; game code still imports Renderer3D)
-//  - Potholes: 3 draw calls each instead of ~24, no allocation on spawn.
-//  - Roadside pick-up / drop-off: proper pole sign with a sharp cached label.
-//  - Waiting passengers: proper placeholder people (until the GLB loads).
-//  - Adaptive resolution: starts sharp, backs off only if the phone is slow.
-//  - Soft blob shadow under the keke. ?perf in the URL logs fps/draw calls.
-// =====================================================================
-function forcedTierFromUrl() {
-  try {
-    const t = new URLSearchParams(window.location.search).get('tier');
-    return ['low', 'mid', 'high'].includes(t) ? t : null;
-  } catch { return null; }
-}
-
-const hashStr = (v) => {
-  let h = 0;
-  for (const ch of String(v)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return h;
-};
-
-export class Renderer3D extends Renderer3DBase {
-  constructor(canvas, models, opts = {}) {
-    super(canvas, models, opts);
-
-    // ---- resolution ----
-    const dpr = window.devicePixelRatio || 1;
-    const start = this.renderer.getPixelRatio();
-    this._prMin = Math.min(start, 1);
-    this._prMax = Math.max(start, Math.min(dpr, this.mobile ? 1.75 : 2));
-    this._pr = Math.min(this._prMax, Math.max(start, this.mobile ? 1.5 : start));
-    if (this._pr !== start) this.renderer.setPixelRatio(this._pr);
-    this._frameAvg = 16.7;
-    this._prTimer = 0;
-    this._perf = /[?&]perf\b/.test(window.location?.search || '');
-    this._perfAt = 0;
-
-    const forcePr = parseFloat(new URLSearchParams(window.location.search).get('pr'));
-    if (Number.isFinite(forcePr) && forcePr >= 0.5 && forcePr <= 3) {
-      this._fixedPr = true;
-      this._pr = forcePr;
-      this.renderer.setPixelRatio(forcePr);
-    }
-    const params = new URLSearchParams(window.location.search);
-    this._drawAvg = 0;
-    this._lastDrawAt = 0;
-    try { if (params.has('resetpr')) localStorage.removeItem('kanoBestPr'); } catch { /* ignore */ }
-
-    this._bench = params.has('bench')
-      ? { stage: 0, steps: [0.75, 1, 1.5, 2], t0: 0, intervals: [], draws: [], results: [], done: false, pick: null }
-      : null;
-    if (this._bench) this._perf = false;
-
-    // A saved benchmark result (from ?bench) becomes this phone's sharpness setting.
-    if (!this._fixedPr && !this._bench) {
-      try {
-        const saved = parseFloat(localStorage.getItem('kanoBestPr'));
-        if (Number.isFinite(saved) && saved >= 0.5 && saved <= 3) {
-          this._pr = saved;
-          this._prMax = saved;
-          this._prMin = Math.max(0.75, saved - 0.5);
-          this.renderer.setPixelRatio(saved);
-        }
-      } catch { /* ignore */ }
-    }
-
-    if (this._perf || this._bench) {
-      const box = document.createElement('div');
-      box.style.cssText = 'position:fixed;left:6px;bottom:150px;z-index:99999;padding:5px 8px;'
-        + 'background:rgba(0,0,0,.72);color:#7dffb0;font:12px/1.35 monospace;border-radius:6px;pointer-events:none;white-space:pre';
-      document.body.appendChild(box);
-      this._perfBox = box;
-    }
-
-    // ---- blob shadow under the player ----
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
-    grad.addColorStop(0, 'rgba(0,0,0,0.55)');
-    grad.addColorStop(0.6, 'rgba(0,0,0,0.28)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 128, 128);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    this._blob = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.9, 2.9).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({
-        map: tex, transparent: true, depthWrite: false,
-        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-      }),
-    );
-    this._blob.renderOrder = 1;
-    this._blob.visible = false;
-    this.scene.add(this._blob);
-
-    const r = this.renderer;
-    const render = r.render.bind(r);
-    r.render = (scene, camera) => {
-      try { this._beforeRender(); } catch { /* cosmetic only */ }
-      render(scene, camera);
-    };
-  }
-
-  // ---------- shared resource helpers (never freed by actor disposal) ----------
-  _shared(key, make) {
-    this._sh ??= new Map();
-    let v = this._sh.get(key);
-    if (!v) { v = make(); this._sh.set(key, v); }
-    return v;
-  }
-  _geo(key, make) { return this._shared(`g:${key}`, make); }
-  _mat(key, make) {
-    return this._shared(`m:${key}`, () => {
-      const m = make();
-      m.dispose = () => {};
-      return m;
-    });
-  }
-  _lambert(color) {
-    return this._mat(`l:${color}`, () => new THREE.MeshLambertMaterial({ color }));
-  }
-  _part(geo, mat, x, y, z) {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
-    m.userData.sharedGeometry = true;
-    return m;
-  }
-
-  // ---------- potholes: one baked decal + warning stick (3 draws) ----------
-  _potholeTexture(variant) {
-    return this._shared(`pt:${variant}`, () => {
-      const W = 256, H = 208, cx = W / 2, cy = H / 2, ppr = 61;
-      const c = document.createElement('canvas');
-      c.width = W; c.height = H;
-      const g = c.getContext('2d');
-      let seed = variant * 7919 + 13;
-      const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
-      const blob = (sx, sy, wob, ox = 0) => {
-        g.beginPath();
-        const n = 14;
-        for (let i = 0; i < n; i += 1) {
-          const a = (i / n) * Math.PI * 2;
-          const k = 1 + (rnd() - 0.5) * wob;
-          const x = cx + ox + Math.cos(a) * sx * k;
-          const y = cy + Math.sin(a) * sy * k;
-          if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-        }
-        g.closePath();
-        g.fill();
-      };
-      g.strokeStyle = '#1b1a18';
-      g.lineWidth = 1.6;
-      for (let i = 0; i < 6; i += 1) {
-        const a = rnd() * Math.PI * 2;
-        const len = ppr * (0.5 + rnd() * 0.5);
-        const mid = a + (rnd() - 0.5) * 0.5;
-        g.beginPath();
-        g.moveTo(cx + Math.cos(a) * ppr, cy + Math.sin(a) * ppr * 0.8);
-        g.lineTo(cx + Math.cos(mid) * (ppr + len * 0.5), cy + Math.sin(mid) * (ppr + len * 0.5) * 0.8);
-        g.lineTo(cx + Math.cos(a) * (ppr + len), cy + Math.sin(a) * (ppr + len) * 0.8);
-        g.stroke();
-      }
-      g.fillStyle = 'rgba(74,71,66,0.92)';  blob(1.28 * 1.12 * ppr, 1.28 * 0.86 * ppr, 0.35);
-      g.fillStyle = '#14120f';              blob(0.92 * 1.12 * ppr, 0.92 * 0.86 * ppr, 0.5);
-      g.fillStyle = '#050505';              blob(0.55 * 1.12 * ppr, 0.55 * 0.86 * ppr, 0.45);
-      g.fillStyle = '#2a2218';              blob(0.32 * 1.12 * ppr, 0.32 * 0.86 * ppr, 0.4, ppr * 0.1);
-      g.fillStyle = '#6a665d';
-      for (let i = 0; i < 10; i += 1) {
-        const a = rnd() * Math.PI * 2;
-        const d = ppr * (1.0 + rnd() * 0.35);
-        g.beginPath();
-        g.ellipse(cx + Math.cos(a) * d * 1.1, cy + Math.sin(a) * d * 0.88, 3 + rnd() * 5, 2 + rnd() * 3, rnd() * 3, 0, Math.PI * 2);
-        g.fill();
-      }
-      const t = new THREE.CanvasTexture(c);
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
-      return t;
-    });
-  }
-
-  makePotholeActor(zone) {
-    const group = new THREE.Group();
-    const radius = zone.hub ? 1.25 : 0.82;
-    const variant = hashStr(zone.id || 'p') % 3;
-
-    const decalGeo = this._geo(`pot:${radius}`, () =>
-      new THREE.PlaneGeometry(radius * 4.2, radius * 3.4).rotateX(-Math.PI / 2));
-    const decalMat = this._mat(`pot:${variant}`, () => new THREE.MeshBasicMaterial({
-      map: this._potholeTexture(variant), transparent: true, depthWrite: false,
-      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
-    }));
-    const decal = this._part(decalGeo, decalMat, 0, 0.02, 0);
-    decal.renderOrder = 1;
-    group.add(decal);
-
-    // Leaning stick with a rag: the roadside warning for a bad hole.
-    const stick = this._part(
-      this._geo('pot:stick', () => new THREE.CylinderGeometry(0.02, 0.025, 0.9, 5)),
-      this._lambert(0x6b4a2a), radius * 0.9, 0.42, -radius * 0.6);
-    stick.rotation.z = 0.12;
-    group.add(stick);
-    group.add(this._part(
-      this._geo('pot:rag', () => new THREE.PlaneGeometry(0.28, 0.2)),
-      this._mat('pot:rag', () => new THREE.MeshBasicMaterial({ color: 0xd9381e, side: THREE.DoubleSide })),
-      radius * 0.9 + 0.15, 0.82, -radius * 0.6));
-
-    group.userData.zoneType = 'pothole';
-    return group;
-  }
-
-  // ---------- waiting passenger (placeholder until the GLB model loads) ----------
-  makeWaitingPassenger(kind = 'man', seedKey = '') {
-    const h = hashStr(seedKey);
-    const skin = this._lambert([0x8d5537, 0x6d402d, 0xa66a45, 0x5a3528][h % 4]);
-    const group = new THREE.Group();
-    const add = (m) => { group.add(m); return m; };
-
-    if (kind === 'woman') {
-      const hijab = [0x7a3b6e, 0x2b6f8a, 0xc7943a, 0x3f7a55][h % 4];
-      const wrapper = [0x99472e, 0x42749a, 0x2b8067, 0x8a4f7d][(h >> 2) % 4];
-      add(this._part(this._geo('pw:skirt', () => new THREE.CylinderGeometry(0.22, 0.34, 0.8, 10)), this._lambert(wrapper), 0, 0.4, 0));
-      add(this._part(this._geo('pw:blouse', () => new THREE.CylinderGeometry(0.2, 0.23, 0.5, 10)), this._lambert(hijab), 0, 1.05, 0));
-      add(this._part(this._geo('pw:head', () => new THREE.SphereGeometry(0.16, 12, 10)), skin, 0, 1.46, 0.02));
-      const cover = add(this._part(this._geo('pw:hijab', () => new THREE.SphereGeometry(0.22, 12, 10)), this._lambert(hijab), 0, 1.5, -0.02));
-      cover.scale.set(1, 1.1, 0.95);
-      const cape = add(this._part(this._geo('pw:cape', () => new THREE.ConeGeometry(0.3, 0.5, 10)), this._lambert(hijab), 0, 1.28, -0.02));
-      cape.rotation.x = Math.PI;
-      const bag = add(this._part(this._geo('pw:bag', () => new THREE.BoxGeometry(0.26, 0.22, 0.12)), this._lambert(0x6b4a2a), 0.3, 0.62, 0.05));
-      bag.rotation.z = 0.15;
-    } else {
-      const robe = [0xefe6d0, 0x9fb7cf, 0xb8b2a2, 0xd9cfae][h % 4];
-      const cap = [0xf2efe6, 0xa63a2c, 0x2e3f5a, 0xe8dfc4][(h >> 2) % 4];
-      add(this._part(this._geo('pm:robe', () => new THREE.CylinderGeometry(0.2, 0.3, 1.25, 10)), this._lambert(robe), 0, 0.68, 0));
-      add(this._part(this._geo('pm:head', () => new THREE.SphereGeometry(0.17, 12, 10)), skin, 0, 1.52, 0.02));
-      add(this._part(this._geo('pm:cap', () => new THREE.CylinderGeometry(0.17, 0.2, 0.12, 10)), this._lambert(cap), 0, 1.68, 0.02));
-      for (const x of [-0.27, 0.27]) {
-        const arm = add(this._part(this._geo('pm:arm', () => new THREE.CylinderGeometry(0.06, 0.075, 0.62, 8)), this._lambert(robe), x, 1.05, 0.02));
-        arm.rotation.z = x < 0 ? 0.18 : -0.18;
-      }
-      add(this._part(this._geo('pm:bag', () => new THREE.BoxGeometry(0.3, 0.24, 0.12)), this._lambert(0x4a4f56), -0.34, 0.62, 0.08));
-    }
-    group.userData.waitingPassengerPlaceholder = true;
-    return group;
-  }
-
-  // ---------- roadside pick-up / drop-off / fuel sign ----------
-  _stopSignAsset(zone) {
-    const hub = Boolean(zone.hub);
-    const header = hub
-      ? `${String(zone.stopName || 'KEKE STOP').toUpperCase()} · KEKE STOP`
-      : zone.type === 'pickup' ? 'ROADSIDE PICK-UP'
-        : zone.type === 'drop' ? 'ROADSIDE DROP-OFF' : 'FUEL STOP';
-    const dest = String(zone.dest || zone.label || '').slice(0, 36);
-    const key = `${zone.type}|${header}|${dest}`;
-
-    this._signCache ??= new Map();
-    let hit = this._signCache.get(key);
-    if (hit) return hit;
-
-    const W = 1024, H = 256;
-    const c = document.createElement('canvas');
-    c.width = W; c.height = H;
-    const g = c.getContext('2d');
-    const bg = zone.type === 'drop' ? ['#8a6414', '#5f430c']
-      : zone.type === 'fuel' ? ['#1b7a58', '#0f5440'] : ['#12805a', '#0b4f38'];
-
-    const rr = (x, y, w, h, r) => {
-      g.beginPath();
-      g.moveTo(x + r, y);
-      g.arcTo(x + w, y, x + w, y + h, r);
-      g.arcTo(x + w, y + h, x, y + h, r);
-      g.arcTo(x, y + h, x, y, r);
-      g.arcTo(x, y, x + w, y, r);
-      g.closePath();
-    };
-    const fit = (text, maxW, size, weight) => {
-      let s = size;
-      g.font = `${weight} ${s}px Arial, sans-serif`;
-      while (g.measureText(text).width > maxW && s > 26) { s -= 2; g.font = `${weight} ${s}px Arial, sans-serif`; }
-    };
-
-    const grad = g.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, bg[0]); grad.addColorStop(1, bg[1]);
-    g.fillStyle = grad;
-    rr(6, 6, W - 12, H - 12, 36); g.fill();
-    g.lineWidth = 10; g.strokeStyle = '#f5d77b';
-    rr(6, 6, W - 12, H - 12, 36); g.stroke();
-    g.lineWidth = 3; g.strokeStyle = 'rgba(255,244,208,0.45)';
-    rr(24, 24, W - 48, H - 48, 24); g.stroke();
-
-    g.textAlign = 'center';
-    g.fillStyle = '#fff4d0';
-    fit(header, W - 120, 84, 900);
-    g.fillText(header, W / 2, dest ? 118 : 150, W - 120);
-    if (dest) {
-      g.fillStyle = '#ffe9a8';
-      fit(dest, W - 140, 62, 700);
-      g.fillText(dest, W / 2, 198, W - 140);
-    }
-
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
-    const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
-    mat.dispose = () => {};
-    hit = { tex, mat };
-    this._signCache.set(key, hit);
-    if (this._signCache.size > 24) {                      // keep GPU memory bounded
-      const oldest = this._signCache.keys().next().value;
-      this._signCache.get(oldest).tex.dispose();
-      this._signCache.delete(oldest);
-    }
-    return hit;
-  }
-
-  makeStopSign(zone) {
-    const hub = Boolean(zone.hub);
-    const w = hub ? 3.0 : 2.3;
-    const hgt = w / 4;
-    const side = zone.side || (zone.lane === 0 ? -1 : 1);
-    const group = new THREE.Group();
-
-    const panel = this._part(
-      this._geo(`sign:${w}`, () => new THREE.PlaneGeometry(w, hgt)),
-      this._stopSignAsset(zone).mat, 0, 1.78, 0.15);
-    group.add(panel);
-
-    group.add(this._part(
-      this._geo('sign:pole', () => new THREE.CylinderGeometry(0.045, 0.055, 1.9, 8)),
-      this._lambert(0x39434a), side * (w / 2 - 0.15), 0.95, 0.08));
-    return group;
-  }
-
-  // ---------- per-frame ----------
-  _beforeRender() {
-    const p = this.player;
-    const show = this.lifeScene === 'road' && p && p.visible;
-    this._blob.visible = Boolean(show);
-    if (show) this._blob.position.set(p.position.x, 0.045, p.position.z);
-  }
-
-  _adaptResolution(intervalMs) {
-    if (!(intervalMs > 0) || intervalMs > 250) return;
-    this._frameAvg += (intervalMs - this._frameAvg) * 0.05;   // real time between frames
-    if (this._fixedPr) return;
-    this._prTimer += intervalMs / 1000;
-    if (this._prTimer < 1) return;
-    this._prTimer = 0;
-
-    let pr = this._pr;
-    if (this._frameAvg > 30) pr -= 0.25;
-    else if (this._frameAvg < 18) pr += 0.125;
-    pr = Math.min(this._prMax, Math.max(this._prMin, pr));
-    if (pr !== this._pr) this._setPr(pr);
-  }
-
-  _setPr(pr) {
-    this._pr = pr;
-    this.renderer.setPixelRatio(pr);
-    this.resize();
-  }
-
-  // ---------- one-tap benchmark: ?bench ----------
-  _benchStep(interval, drawMs, now) {
-    const b = this._bench;
-    if (b.done || this.lifeScene !== 'road') { return; }       // only measure while driving
-    if (!b.t0) { b.t0 = now; this._fixedPr = true; this._setPr(b.steps[b.stage]); }
-
-    const elapsed = now - b.t0;
-    if (elapsed > 1500 && interval > 0 && interval < 1000) {   // skip 1.5 s warm-up
-      b.intervals.push(interval);
-      b.draws.push(drawMs);
-    }
-    if (elapsed >= 5500) {
-      const avg = (arr) => arr.reduce((x, y) => x + y, 0) / Math.max(1, arr.length);
-      b.results.push({ pr: b.steps[b.stage], fps: 1000 / avg(b.intervals), draw: avg(b.draws) });
-      b.intervals = [];
-      b.draws = [];
-      b.t0 = now;
-      b.stage += 1;
-      if (b.stage >= b.steps.length) { this._benchFinish(); return; }
-      this._setPr(b.steps[b.stage]);
-    }
-    this._benchShow();
-  }
-
-  _benchFinish() {
-    const b = this._bench;
-    b.done = true;
-    const best = Math.max(...b.results.map((r) => r.fps));
-    // Sharpest setting that still keeps at least 85% of the best speed.
-    const pick = [...b.results].reverse().find((r) => r.fps >= best * 0.85) || b.results[0];
-    b.pick = pick.pr;
-    try { localStorage.setItem('kanoBestPr', String(pick.pr)); } catch { /* ignore */ }
-    this._setPr(pick.pr);
-    this._benchShow();
-  }
-
-  _benchShow() {
-    const b = this._bench;
-    if (!this._perfBox) return;
-    const lines = [b.done
-      ? 'BENCHMARK DONE'
-      : `BENCHMARK ${b.stage + 1}/${b.steps.length}: testing pr ${b.steps[b.stage]} (do not touch)`];
-    for (const r of b.results) lines.push(`pr ${r.pr}: ${r.fps.toFixed(0)} fps · draw ${r.draw.toFixed(0)}ms`);
-    if (b.done) lines.push(`SAVED pr ${b.pick}. Open the game normally now.`);
-    this._perfBox.textContent = lines.join('\n');
-  }
-
-  draw(state, deltaSeconds) {
-    const t0 = performance.now();
-    const interval = this._lastDrawAt ? t0 - this._lastDrawAt : 0;
-    this._lastDrawAt = t0;
-    if (this.ready && !this.disposed) this._adaptResolution(interval);
-
-    super.draw(state, deltaSeconds);
-
-    const drawMs = performance.now() - t0;
-    this._drawAvg += (drawMs - this._drawAvg) * 0.05;
-    if (this._bench && this.ready && !this.disposed) this._benchStep(interval, drawMs, t0);
-
-    if (this._perf) {
-      if (t0 - this._perfAt > 1000) {
-        this._perfAt = t0;
-        const i = this.renderer.info;
-        if (this._perfBox) {
-          this._perfBox.textContent =
-            `fps ${(1000 / this._frameAvg).toFixed(0)}  frame ${this._frameAvg.toFixed(0)}ms  draw ${this._drawAvg.toFixed(0)}ms\n`
-            + `calls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\n`
-            + `pr ${this._pr}${this._fixedPr ? ' (fixed)' : ''}  tier ${this.mobileTier}  dpr ${(window.devicePixelRatio || 1).toFixed(2)}`;
-        }
-      }
-    }
-  }
-
-  dispose() {
-    if (this.disposed) return;
-    super.dispose();
-    for (const v of this._sh?.values() || []) {
-      if (v?.isBufferGeometry || v?.isTexture) v.dispose();
-      else if (v?.isMaterial) THREE.Material.prototype.dispose.call(v);
-    }
-    for (const { tex, mat } of this._signCache?.values() || []) {
-      tex.dispose();
-      THREE.Material.prototype.dispose.call(mat);
-    }
-  }
-}
-
-export default Renderer3D;
