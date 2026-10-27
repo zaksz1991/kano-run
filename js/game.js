@@ -930,7 +930,9 @@ export class Game {
     const steeringRate = (
       s.environment === 'muddy'
         ? 4.1
-        : 6.6
+        : s.environment === 'rainPuddles'
+          ? 5.2 // wet road: the keke is slower to answer the wheel
+          : 6.6
     ) * tyreHandling * steeringResponse;
 
     s.steer +=
