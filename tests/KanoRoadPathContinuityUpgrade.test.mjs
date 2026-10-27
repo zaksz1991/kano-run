@@ -25,7 +25,7 @@ test('Reverse travel repositions the active target to a previous junction and ke
   assert.match(navSource, /function reverseJunctionAtOrBehind\(worldKm\)/);
   assert.match(navSource, /nav\.nextJunctionAt = reverse\s*\? reverseJunctionAtOrBehind\(worldKm\)/);
   assert.match(navSource, /nav\.windowOpen = false;\s*return \{ worldKm, reverse, direction \}/);
-  assert.match(navSource, /windowOpen: !reverse && remaining <= CHOICE_WINDOW_BEFORE_KM/);
+  assert.match(navSource, /windowOpen: false/);
 });
 
 test('Forward navigation re-arms missed junctions only beyond the passing band', () => {

@@ -120,13 +120,13 @@ function createKwankwasiyyaFlyoverSign(renderer, flyover, index) {
 
   // The sign sits above the flyover deck on its approach-facing parapet.
   // It is intentionally above deck height, not a low gantry blocking traffic.
-  addBox(sign, [9.6, 1.42, 0.25], 0xf7f2e7, [0, 5.62, 2.76], { name: 'kwankwasiyya_sign_backing' });
-  addBox(sign, [9.78, 0.16, 0.31], 0xc63b37, [0, 6.33, 2.76], { name: 'kwankwasiyya_red_top_stripe' });
-  addBox(sign, [9.78, 0.16, 0.31], 0xf7f2e7, [0, 6.16, 2.76], { name: 'kwankwasiyya_white_top_stripe' });
-  addBox(sign, [9.78, 0.16, 0.31], 0xc63b37, [0, 4.91, 2.76], { name: 'kwankwasiyya_red_bottom_stripe' });
-  addBox(sign, [9.78, 0.16, 0.31], 0xf7f2e7, [0, 5.08, 2.76], { name: 'kwankwasiyya_white_bottom_stripe' });
+  addBox(sign, [9.6, 1.42, 0.25], 0xf7f2e7, [0, 5.62, 7.76], { name: 'kwankwasiyya_sign_backing' });
+  addBox(sign, [9.78, 0.16, 0.31], 0xc63b37, [0, 6.33, 7.76], { name: 'kwankwasiyya_red_top_stripe' });
+  addBox(sign, [9.78, 0.16, 0.31], 0xf7f2e7, [0, 6.16, 7.76], { name: 'kwankwasiyya_white_top_stripe' });
+  addBox(sign, [9.78, 0.16, 0.31], 0xc63b37, [0, 4.91, 7.76], { name: 'kwankwasiyya_red_bottom_stripe' });
+  addBox(sign, [9.78, 0.16, 0.31], 0xf7f2e7, [0, 5.08, 7.76], { name: 'kwankwasiyya_white_bottom_stripe' });
   const texture = makeSignTexture('KWANKWASIYYA', 'FLYOVER  •  KANO STATE', `kwankwasiyya-flyover-${index + 1}`);
-  const signFace = addSignFace(sign, texture, 9.25, 1.12, [0, 5.68, 2.635], 'kwankwasiyya_sign_face');
+  const signFace = addSignFace(sign, texture, 9.25, 1.12, [0, 5.68, 7.635], 'kwankwasiyya_sign_face');
   signFace.rotation.y = Math.PI; // title panel faces the approach-facing side
 
   // Two robust brackets make the sign visibly belong to the flyover structure.

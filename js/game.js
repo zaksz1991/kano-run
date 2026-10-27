@@ -1510,32 +1510,6 @@ export class Game {
         vehicle.visualOffsetX = 0;
       }
 
-      // AI cars occasionally turn off at the visible junction. The sideways
-      // offset is added to visualOffsetX, which the collision code already uses,
-      // so what you see is what can hit you.
-      {
-        const jd = Number(s.kanoJunctionDepth);
-        if (vehicle.turnOff === undefined && Number.isFinite(jd) && jd > 0.35 && !s.kanoRoadTurn
-          && vehicle.depth > 0.3 && Math.abs(vehicle.depth - jd) < 0.02) {
-          vehicle.turnOff = Math.random() < 0.35
-            ? (vehicle.lane === 0 ? -1 : vehicle.lane === 2 ? 1 : (Math.random() < 0.5 ? -1 : 1))
-            : 0;
-          vehicle.turnT = 0;
-        }
-        if (vehicle.turnOff) {
-          vehicle.turnT = Math.min(1.6, (vehicle.turnT || 0) + dt);
-          const k = vehicle.turnT / 1.6;
-          vehicle.turnOffsetX = vehicle.turnOff * k * k * 10;
-          vehicle.turnYaw = -vehicle.turnOff * (vehicle.direction === -1 ? -1 : 1) * Math.min(1, k * 1.6) * (Math.PI / 2);
-          vehicle.visualOffsetX += vehicle.turnOffsetX;
-          if (vehicle.turnT >= 1.6) {
-            s.traffic.splice(index, 1);
-            this.spawnTraffic();
-            continue;
-          }
-        }
-      }
-
       const trafficSpeed =
         Number.isFinite(vehicle.speedKmh)
           ? vehicle.speedKmh

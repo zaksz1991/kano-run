@@ -550,14 +550,14 @@ export class Renderer3D {
       const width = this.mobile ? 22 : 26;
 
       const deck = new THREE.Mesh(
-        new THREE.BoxGeometry(width, 0.58, 5.2),
+        new THREE.BoxGeometry(width, 0.58, 15),
         this.material(index % 2 === 0 ? 0x858d92 : 0x777f84),
       );
 
       deck.position.y = 4.35;
       group.add(deck);
 
-      for (const sideZ of [-2.25, 2.25]) {
+      for (const sideZ of [-7.4, 7.4]) {
         const rail = new THREE.Mesh(
           new THREE.BoxGeometry(width, 0.3, 0.24),
           this.material(0xf0eee6),
@@ -594,7 +594,7 @@ export class Renderer3D {
       const stripeColor = new THREE.Color();
       let stripeInstance = 0;
 
-      for (const sideZ of [-2.25, 2.25]) {
+      for (const sideZ of [-7.4, 7.4]) {
         for (let stripeIndex = 0; stripeIndex < stripeCount; stripeIndex += 1) {
           stripePosition.set(
             -width / 2 + stripeWidth * (stripeIndex + 0.5),
@@ -616,7 +616,7 @@ export class Renderer3D {
 
       for (const x of [-8.4, 8.4]) {
         const pillar = new THREE.Mesh(
-          new THREE.BoxGeometry(0.85, 4.35, 0.95),
+          new THREE.BoxGeometry(0.85, 4.35, 15),
           this.material(0x777e83),
         );
 
@@ -625,7 +625,7 @@ export class Renderer3D {
 
         if (!this.mobile) {
           const base = new THREE.Mesh(
-            new THREE.BoxGeometry(1.25, 0.35, 1.35),
+            new THREE.BoxGeometry(1.25, 0.35, 15.4),
             this.material(0x6a7075),
           );
 
@@ -4858,7 +4858,6 @@ export class Renderer3D {
         -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
       );
       actor.rotation.y = vehicle.direction === -1 ? Math.PI : 0;
-      if (vehicle.turnYaw) actor.rotation.y += vehicle.turnYaw; // AI car turning off at a junction
       if (vehicle.type === 'motorcycle') this.ensureAchabaRiders(actor);
     }
 
@@ -4888,7 +4887,6 @@ export class Renderer3D {
             -Math.max(-0.05, Number(vehicle.depth) || 0) * 88,
           );
           transform.rotation.set(0, vehicle.direction === -1 ? Math.PI : 0, 0);
-          if (vehicle.turnYaw) transform.rotation.y += vehicle.turnYaw;
           transform.scale.set(1, 1, 1);
           transform.updateMatrix();
           batch.mesh.setMatrixAt(index, transform.matrix);

@@ -298,7 +298,7 @@ function getWindowState(game, nav) {
   const reverse = Boolean(game.s?.reverse) || Number(game.s?.signedSpeed) < -0.05;
   return {
     remaining,
-    windowOpen: !reverse && remaining <= CHOICE_WINDOW_BEFORE_KM && remaining >= -CHOICE_WINDOW_AFTER_KM,
+    windowOpen: false, // junction turning removed: the road is straight-only
   };
 }
 
@@ -456,7 +456,7 @@ function updateNavigationHUD(game, force) {
   const remaining = nav && Number.isFinite(nav.nextJunctionAt)
     ? nav.nextJunctionAt - navigationWorldDistance(game)
     : Infinity;
-  const visible = onRoad && (Boolean(nav?.turn) || remaining <= JUNCTION_PREVIEW_KM);
+  const visible = false; // turning removed
   panel.hidden = !visible;
   if (!visible) return;
 
