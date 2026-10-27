@@ -16,7 +16,7 @@ const bootstrap = fs.readFileSync(path.join(root, 'js/KanoModelAssetVisualUpgrad
 });
 
 test('sidewalk actors use distinct Hausa clothing silhouettes and low arm rests', () => {
-  assert.match(upgrade, /LatheGeometry\(profile, 12\)/);
+  assert.match(upgrade, /LatheGeometry\(profile, 24\)/);
   assert.match(upgrade, /hijab_head_wrap/);
   assert.match(upgrade, /hijab_scarf_drape/);
   assert.match(upgrade, /left_arm_pivot_down/);

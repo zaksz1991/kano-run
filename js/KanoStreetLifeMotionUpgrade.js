@@ -75,33 +75,33 @@ function makeStreetPerson(variant, { waiting = false } = {}) {
         new THREE.Vector2(0.205, 1.00), new THREE.Vector2(0.155, 1.22),
         new THREE.Vector2(0.12, 1.27),
       ];
-  const robe = addMesh(root, new THREE.LatheGeometry(profile, 12), robeMat);
+  const robe = addMesh(root, new THREE.LatheGeometry(profile, 24), robeMat);
   robe.name = isWoman ? 'abaya_body' : 'boubou_body';
 
   // Low-profile embroidered neckline: visible but not oversized.
-  const neckline = addMesh(root, new THREE.TorusGeometry(0.105, 0.012, 4, 12), trimMat, [0, 1.155, 0.012], [1, 1, 0.62]);
+  const neckline = addMesh(root, new THREE.TorusGeometry(0.105, 0.012, 6, 20), trimMat, [0, 1.155, 0.012], [1, 1, 0.62]);
   neckline.rotation.x = Math.PI / 2;
   neckline.name = 'embroidered_neckline';
 
   // Face is positioned forward (+Z), while the head covering sits slightly behind it.
-  addMesh(root, new THREE.SphereGeometry(0.145, 12, 9), skinMat, [0, 1.405, 0.075], [0.86, 1.04, 0.74]).name = 'face';
+  addMesh(root, new THREE.SphereGeometry(0.145, 20, 14), skinMat, [0, 1.405, 0.075], [0.86, 1.04, 0.74]).name = 'face';
   const eyeGeo = new THREE.SphereGeometry(0.018, 6, 5);
   addMesh(root, eyeGeo, darkMat, [-0.043, 1.438, 0.175], [1, 1, 0.7]).name = 'left_eye';
   addMesh(root, eyeGeo, darkMat, [0.043, 1.438, 0.175], [1, 1, 0.7]).name = 'right_eye';
 
   let headCover = null;
   if (isWoman) {
-    headCover = addMesh(root, new THREE.SphereGeometry(0.17, 12, 8), headCoverMat, [0, 1.48, -0.055], [1.03, 1.12, 0.68]);
+    headCover = addMesh(root, new THREE.SphereGeometry(0.17, 20, 12), headCoverMat, [0, 1.48, -0.055], [1.03, 1.12, 0.68]);
     headCover.name = 'hijab_head_wrap';
     // Narrow scarf drape behind the face; unlike the original GLB this has no outstretched arms.
-    addMesh(root, new THREE.ConeGeometry(0.205, 0.45, 10), headCoverMat, [0, 1.22, -0.12]).name = 'hijab_scarf_drape';
+    addMesh(root, new THREE.ConeGeometry(0.205, 0.45, 18), headCoverMat, [0, 1.22, -0.12]).name = 'hijab_scarf_drape';
   } else if (style.cap) {
-    addMesh(root, new THREE.CylinderGeometry(0.105, 0.125, 0.075, 12), headCoverMat, [0, 1.555, 0]).name = 'hausa_kufi_cap';
+    addMesh(root, new THREE.CylinderGeometry(0.105, 0.125, 0.075, 20), headCoverMat, [0, 1.555, 0]).name = 'hausa_kufi_cap';
   }
 
   const arms = [];
-  const armGeo = new THREE.CapsuleGeometry(0.052, 0.40, 2, 7);
-  const handGeo = new THREE.SphereGeometry(0.052, 7, 6);
+  const armGeo = new THREE.CapsuleGeometry(0.052, 0.40, 4, 12);
+  const handGeo = new THREE.SphereGeometry(0.052, 12, 9);
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.name = side < 0 ? 'left_arm_pivot_down' : 'right_arm_pivot_down';
@@ -114,8 +114,8 @@ function makeStreetPerson(variant, { waiting = false } = {}) {
   }
 
   const legs = [];
-  const legGeo = new THREE.CapsuleGeometry(0.058, 0.24, 2, 6);
-  const shoeGeo = new THREE.SphereGeometry(0.085, 7, 5);
+  const legGeo = new THREE.CapsuleGeometry(0.058, 0.24, 4, 12);
+  const shoeGeo = new THREE.SphereGeometry(0.085, 12, 8);
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.name = side < 0 ? 'left_leg_pivot' : 'right_leg_pivot';
