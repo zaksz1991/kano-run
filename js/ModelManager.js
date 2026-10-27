@@ -52,10 +52,10 @@ const CATALOG = {
     'vehicles/cars/2002_dodge_ram_2500.glb',
   ],
 
-  bus: [
-    'vehicles/special/bus.glb',
-    'vehicles/cars/quaternius_cc0-truck-1449.glb',
-  ],
+  // No usable bus model ships yet (the old bus.glb rendered black; the current
+  // file is an auto-rickshaw; the only truck is a food truck). Empty on purpose:
+  // buses use the built-in shape until a proper .glb is added here.
+  bus: [],
 
   motorcycle: [
     'vehicles/special/okada.glb',
@@ -77,7 +77,6 @@ const CATALOG = {
 
   ambulance: [
     'vehicles/special/ambulance.glb',
-    'vehicles/special/bus.glb',
   ],
 
   // Light models first (about 2-3k triangles). The hijab_muslim_woman GLBs are
