@@ -211,8 +211,8 @@ test('roadside zones pause when the keke stops and traffic scroll matches the ca
   const game = read('js/game.js');
   const renderer = read('js/renderer3d.js');
   assert.match(game, /const ROAD_DEPTH_SCALE = 316\.8/);
-  assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*150\s*:\s*this\.mode === 'freeRoam'\s*\?\s*72\s*:\s*68/);
-  assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*1\.8\s*:\s*1\.95/);
+  assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*150\s*:\s*this\.mode === 'freeRoam'\s*\?\s*95\s*:\s*90/);
+  assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*1\.8\s*:\s*2\.5/);
   assert.match(game, /const desiredSpeed =\s*s\.gas && s\.fuel > 0\s*\?\s*maxSpeed\s*:\s*0/);
   assert.match(game, /const closingSpeed =\s*s\.signedSpeed - trafficSignedSpeed/);
   assert.match(renderer, /const scroll = signedSpeed \* dt \* 0\.28/);

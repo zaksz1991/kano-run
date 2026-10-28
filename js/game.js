@@ -838,8 +838,8 @@ export class Game {
       this.mode === 'timeAttack'
         ? 150
         : this.mode === 'freeRoam'
-          ? 72
-          : 68;
+          ? 95
+          : 90;
 
     // Mechanical wear now has a practical effect on road performance.
     // A damaged engine reduces top speed; poor overall condition adds a
@@ -896,7 +896,7 @@ export class Game {
         : s.gas && s.fuel > 0
           ? this.mode === 'timeAttack'
             ? 1.8
-            : 1.95
+            : 2.5
           : 1.6;
 
       const engineResponse = 0.62 + 0.38 * engineHealth;
@@ -2272,7 +2272,6 @@ export class Game {
         'fuelQueueLife',
         'weddingLife',
         'waterSeller',
-        'goatCrossing',
       ];
 
       const next = activities.filter(

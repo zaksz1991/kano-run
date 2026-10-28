@@ -573,6 +573,39 @@ export class KanoSceneUpgrade {
     return !this.localBox.isEmpty();
   }
 
+  // The keke's driver is one of the project's own people GLBs. The generated
+  // capsule rig stays only as an invisible animation skeleton.
+  fillRealDriver() {
+    const player = this.renderer?.player;
+    if (!player?.isObject3D) return;
+    const pivot = player.getObjectByName('KANO_KEKE_DRIVER_PIVOT');
+    if (!pivot) return;
+    pivot.traverse((object) => {
+      if (object.isMesh && !object.userData.kanoRealDriverMesh) object.visible = false;
+    });
+    if (pivot.userData.kanoRealDriver) return;
+    const cache = this.renderer?.models?.cache;
+    const key = ['passengerMan', 'passenger', 'passengerWoman'].find((k) => cache?.has(k));
+    if (!key) return;
+    const model = this.renderer.models.getInstance(key);
+    if (!model) return;
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    if (!(size.y > 0.05)) return;
+    const k = 1.32 / size.y;
+    model.scale.multiplyScalar(k);
+    box.setFromObject(model);
+    const holder = new THREE.Group();
+    holder.name = 'KANO_REAL_KEKE_DRIVER';
+    model.position.y -= box.min.y;
+    holder.add(model);
+    holder.rotation.y = Math.PI; // face the road ahead (-z)
+    holder.position.set(0, -0.62, -0.02);
+    model.traverse((o) => { if (o.isMesh) o.userData.kanoRealDriverMesh = true; });
+    pivot.add(holder);
+    pivot.userData.kanoRealDriver = true;
+  }
+
   ensureSeatedDriver(force = false) {
     const player = this.renderer?.player;
     if (!player?.isObject3D || this.disposed) return;
@@ -967,6 +1000,11 @@ export class KanoSceneUpgrade {
 
     if (this.renderer.player !== this.driverPlayer) {
       this.ensureSeatedDriver(true);
+    }
+    this.driverFillTimer = (this.driverFillTimer || 0) - delta;
+    if (this.driverFillTimer <= 0) {
+      this.driverFillTimer = 0.6;
+      this.fillRealDriver();
     }
 
     const signedSpeed = Number.isFinite(state.signedSpeed)
