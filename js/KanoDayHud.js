@@ -126,8 +126,17 @@ export class KanoDayHud {
   setLanguage(lang) { this.lang = lang; this.last = ''; }
 
   show(visible) {
-    this.root.style.display = visible ? '' : 'none';
-    if (visible) this.#place();
+    // Called every frame while driving. Measuring the layout (getBoundingClientRect /
+    // getComputedStyle for several elements) each frame forces a reflow and is a
+    // big cost on phones, so only re-place when it appears or about once a second.
+    const display = visible ? '' : 'none';
+    if (this.root.style.display !== display) this.root.style.display = display;
+    if (!visible) { this.placedAt = 0; return; }
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (!this.placedAt || now - this.placedAt > 1000) {
+      this.placedAt = now;
+      this.#place();
+    }
   }
 
   /** Cheap: only touches the DOM when the displayed values change. */

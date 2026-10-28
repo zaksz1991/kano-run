@@ -5370,7 +5370,7 @@ export class Renderer3D {
 
     // Night stays readable on a phone in daylight; harmattan is a pale, dusty haze.
     const sky = state.night
-      ? 0x37465a
+      ? 0x4d6283
       : state.environment === 'harmattan'
         ? 0xbdb9aa
         : 0x8ccde5;
@@ -5379,7 +5379,7 @@ export class Renderer3D {
 
     this.scene.fog.color.set(
       state.night
-        ? 0x47566a
+        ? 0x6a7f9e
         : state.environment === 'harmattan'
           ? 0xbdb9aa
           : 0x8ccde5,

@@ -10,7 +10,7 @@ test('sharpness defaults to standard and leaves device budgets unchanged', () =>
   store.clear();
   assert.equal(getRenderSharpness(), 'standard');
   assert.deepEqual(getMobileRatios('mid'), { max: 1.5, start: 1.35, min: 1 });
-  assert.deepEqual(getMobileRenderBudget('low'), { max: 1.25, start: 1.1, min: 0.9 });
+  assert.deepEqual(getMobileRenderBudget('low'), { max: 1.5, start: 1.25, min: 1 });
 });
 
 test('sharp and max raise start and floor for every tier and stay ordered', () => {

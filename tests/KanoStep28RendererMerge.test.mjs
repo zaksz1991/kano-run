@@ -11,10 +11,10 @@ const renderer = readFileSync(resolve(root, 'js/renderer3d.js'), 'utf8');
 test('phone render targets restore audited sharpness and keep adaptive floors', () => {
   assert.deepEqual(getMobileRenderBudget('high'), { max: 1.75, start: 1.6, min: 1 });
   assert.deepEqual(getMobileRenderBudget('mid'), { max: 1.5, start: 1.35, min: 1 });
-  assert.deepEqual(getMobileRenderBudget('low'), { max: 1.25, start: 1.1, min: 0.9 });
+  assert.deepEqual(getMobileRenderBudget('low'), { max: 1.5, start: 1.25, min: 1 });
   assert.equal(getMobileRatios('high').max, 1.75);
   assert.equal(getMobileRatios('mid').start, 1.35);
-  assert.equal(getMobileRatios('low').start, 1.1);
+  assert.equal(getMobileRatios('low').start, 1.25);
   assert.match(renderer, /getMobileRenderBudget\(this\.mobileTier\)\.start/);
 });
 

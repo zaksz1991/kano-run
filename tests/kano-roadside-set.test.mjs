@@ -54,7 +54,7 @@ test('optional road and market textures use the asset manifest folder', () => {
 });
 
 test('night lighting is lifted and harmattan sky remains pale', () => {
-  assert.match(renderer, /state\.night\s*\? 0x37465a/);
-  assert.match(renderer, /state\.night\s*\? 0x47566a/);
+  assert.match(renderer, /state\.night\s*\? 0x4d6283/);
+  assert.match(renderer, /state\.night\s*\? 0x6a7f9e/);
   assert.match(renderer, /0xbdb9aa/);
 });

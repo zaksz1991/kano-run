@@ -1015,6 +1015,9 @@ function installGoatModel(actor) {
 const goatActorScanCache = new WeakMap();
 function goatActorsFor(renderer) {
   if (!renderer || typeof renderer !== 'object') return [];
+  // Goat crossings are disabled (no goat model ships), so skip the whole-scene
+  // traverse that used to run every 300 ms and caused periodic frame hitches.
+  if (!renderer.kanoGoatCrossingsEnabled) return [];
   const root = renderer.world || renderer.scene;
   const now = nowMs();
   const scanInterval = isMobile() ? 300 : 180;

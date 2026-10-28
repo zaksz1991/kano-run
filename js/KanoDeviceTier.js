@@ -62,7 +62,7 @@ function applySharpness(base) {
 export function getMobileRatios(tier) {
   if (tier === 'high') return applySharpness({ max: 1.75, start: 1.60, min: 1.0 });
   if (tier === 'mid') return applySharpness({ max: 1.5, start: 1.35, min: 1.0 });
-  return applySharpness({ max: 1.25, start: 1.1, min: 0.9 });
+  return applySharpness({ max: 1.5, start: 1.25, min: 1.0 });
 }
 
 /**
@@ -75,7 +75,7 @@ export function getMobileRenderBudget(tier) {
   // lowers these ratios only when sustained frame-time measurements require it.
   if (tier === 'high') return applySharpness({ max: 1.75, start: 1.60, min: 1.0 });
   if (tier === 'mid') return applySharpness({ max: 1.5, start: 1.35, min: 1.0 });
-  return applySharpness({ max: 1.25, start: 1.1, min: 0.9 });
+  return applySharpness({ max: 1.5, start: 1.25, min: 1.0 });
 }
 
 
