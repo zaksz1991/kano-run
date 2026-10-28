@@ -231,6 +231,14 @@ const CATALOG = {
 // MODEL DIMENSIONS
 // ============================================================
 
+const PEOPLE_AND_VEHICLE_TRIANGLE_CAP = 12000;
+const MAX_TRIANGLES_BY_KEY = {};
+for (const k of [
+  'keke', 'car', 'taxi', 'suv', 'truck', 'bus', 'motorcycle', 'police', 'karota', 'ambulance',
+  'passenger', 'passengerWoman', 'passengerMan', 'passengerVIP', 'security', 'karotaOfficer',
+  'pedestrian', 'pedestrianWoman',
+]) MAX_TRIANGLES_BY_KEY[k] = PEOPLE_AND_VEHICLE_TRIANGLE_CAP;
+
 const STATIC_MERGE_KEYS = new Set([
   'keke', 'car', 'taxi', 'suv', 'truck', 'bus', 'motorcycle', 'police', 'karota', 'ambulance',
   'building', 'industrialBuilding', 'roadlight', 'trafficLight', 'stopSign', 'cone', 'flyover',
@@ -1319,7 +1327,22 @@ export class ModelManager {
               ? 650
               : 120;
 
+          // Triangle budget: a single oversized model (for example a 48k-triangle
+          // car or a 38k-triangle person) can freeze a phone when several appear.
+          let sourceTriangles = 0;
+          source.traverse((node) => {
+            if (!node.isMesh || !node.geometry?.attributes?.position) return;
+            const geo = node.geometry;
+            sourceTriangles += (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
+          });
+          const triangleCap = MAX_TRIANGLES_BY_KEY[key] || 0;
+          const overTriangleBudget = triangleCap > 0 && sourceTriangles > triangleCap;
+          if (overTriangleBudget) {
+            console.warn(`[ModelManager] ${url} has ${Math.round(sourceTriangles)} triangles (limit ${triangleCap}); skipped`);
+          }
+
           const invalidDimensions =
+            overTriangleBudget ||
             !Number.isFinite(originalSize.x) ||
             !Number.isFinite(originalSize.y) ||
             !Number.isFinite(originalSize.z) ||
