@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { fixCharacterPose } from './KanoCharacterPoseFix.js';
+import { mergeTexturedByMaterial } from './KanoMergeStaticMeshes.js';
 import { resolveKanoGlbPath } from './KanoGlbPathResolver.js';
 
 // ============================================================
@@ -229,6 +230,11 @@ const CATALOG = {
 // ============================================================
 // MODEL DIMENSIONS
 // ============================================================
+
+const STATIC_MERGE_KEYS = new Set([
+  'keke', 'car', 'taxi', 'suv', 'truck', 'bus', 'motorcycle', 'police', 'karota', 'ambulance',
+  'building', 'industrialBuilding', 'roadlight', 'trafficLight', 'stopSign', 'cone', 'flyover',
+]);
 
 const TARGET_HEIGHT = {
   keke: 1.85,
@@ -1274,6 +1280,12 @@ export class ModelManager {
 
           // People GLBs that ship in a T-pose get their arms lowered once, at load.
           fixCharacterPose(gltf, key, THREE);
+
+          // Fewer draw calls: pieces of a static model that share a material
+          // become one mesh (textures kept; wheels and doors stay separate).
+          if (STATIC_MERGE_KEYS.has(key)) {
+            try { mergeTexturedByMaterial(source); } catch (error) { console.debug('[ModelManager] merge skipped', key, error?.message || error); }
+          }
 
           source.updateMatrixWorld(true);
 

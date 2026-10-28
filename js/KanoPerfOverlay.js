@@ -4,6 +4,7 @@
  * corner 5 times quickly). Shows FPS, draw calls, triangles, canvas size, pixel
  * ratio and the phone's GPU name, so a screenshot gives exact numbers.
  */
+import * as THREE from 'three';
 import { getMobileTier } from './KanoDeviceTier.js';
 
 const KEY = 'kano-perf-overlay';
@@ -35,6 +36,41 @@ function gpuName() {
   } catch (_) { return 'unknown'; }
 }
 
+
+let topLines = '';
+let breakdownAt = 0;
+function captureBreakdown() {
+  const renderer = typeof window !== 'undefined' ? window.__KANO_ACTIVE_RENDERER__ : null;
+  if (!renderer?.scene) return;
+  const seen = new Set();
+  const original = THREE.Frustum.prototype.intersectsObject;
+  THREE.Frustum.prototype.intersectsObject = function (object) { seen.add(object); return original.call(this, object); };
+  setTimeout(() => {
+    THREE.Frustum.prototype.intersectsObject = original;
+    const visible = (n) => { for (let p = n; p; p = p.parent) if (!p.visible) return false; return true; };
+    const groups = {};
+    for (const node of seen) {
+      if (!node.geometry || !visible(node)) continue;
+      let top = node;
+      while (top.parent && top.parent !== renderer.scene && top.parent !== renderer.world) top = top.parent;
+      let key = top.name || top.userData?.modelKey || top.type;
+      if (top.children?.length > 15) {
+        let q = node;
+        while (q.parent && q.parent !== top) q = q.parent;
+        key += '>' + (q.name || q.userData?.modelKey || q.type);
+      }
+      const geo = node.geometry;
+      const index = geo.index ? geo.index.count : geo.attributes.position.count;
+      const tris = (index / 3) * (node.isInstancedMesh ? node.count : 1);
+      const entry = groups[key] || (groups[key] = { tris: 0, meshes: 0 });
+      entry.tris += tris;
+      entry.meshes += Array.isArray(node.material) ? node.material.length : 1;
+    }
+    topLines = Object.entries(groups).sort((a, b) => b[1].tris - a[1].tris).slice(0, 6)
+      .map(([k, v]) => `${k.slice(0, 26)} ${Math.round(v.tris / 1000)}k/${v.meshes}`).join('\n');
+  }, 350);
+}
+
 function frame(now) {
   stats.frames += 1;
   if (!stats.last) stats.last = now;
@@ -43,9 +79,10 @@ function frame(now) {
     stats.drawsPerFrame = Math.round(stats.calls / Math.max(1, stats.frames));
     stats.trisPerFrame = Math.round(stats.tris / Math.max(1, stats.frames));
     stats.frames = 0; stats.calls = 0; stats.tris = 0; stats.last = now;
+    if (box && now - breakdownAt > 3000) { breakdownAt = now; captureBreakdown(); }
     if (box) {
       const canvas = document.querySelector('canvas');
-      box.textContent = `FPS ${stats.fps}\nDraws/frame ${stats.drawsPerFrame}\nTris/frame ${stats.trisPerFrame}\nCanvas ${canvas ? `${canvas.width}x${canvas.height}` : '?'}\nDPR ${window.devicePixelRatio}\nTier ${(() => { try { return getMobileTier(); } catch (_) { return '?'; } })()}\nGPU ${gpuName()}`;
+      box.textContent = `FPS ${stats.fps}\nDraws/frame ${stats.drawsPerFrame}\nTris/frame ${stats.trisPerFrame}\nCanvas ${canvas ? `${canvas.width}x${canvas.height}` : '?'}\nDPR ${window.devicePixelRatio}\nTier ${(() => { try { return getMobileTier(); } catch (_) { return '?'; } })()}\nGPU ${gpuName()}\nTOP (tris/draws)\n${topLines}`;
     }
   }
   timer = requestAnimationFrame(frame);

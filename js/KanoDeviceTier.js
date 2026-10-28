@@ -1,10 +1,37 @@
 // KANO LIFE — DEVICE TIER FOR PHONE RENDER BUDGETS.
-/** @param {{cores?: number, memory?: number}} [hardware] @returns {'high'|'mid'|'low'} */
+
+let cachedGpuName;
+/** Unmasked GPU name from a throw-away WebGL context (cached; '' when unknown). */
+function readGpuName() {
+  if (cachedGpuName !== undefined) return cachedGpuName;
+  cachedGpuName = '';
+  try {
+    if (typeof document === 'undefined' || typeof document.createElement !== 'function') return cachedGpuName;
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext?.('webgl2') || canvas.getContext?.('webgl');
+    const ext = gl?.getExtension?.('WEBGL_debug_renderer_info');
+    if (ext) cachedGpuName = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '');
+    gl?.getExtension?.('WEBGL_lose_context')?.loseContext?.();
+  } catch (_) { /* unknown GPU */ }
+  return cachedGpuName;
+}
+
+/** Entry/mid-range mobile GPUs that cannot hold 60k+ triangles with 200+ draws. */
+export function isWeakMobileGpu(name) {
+  return /Mali-(T\d+|G3\d|G5\d)\b|Adreno \(TM\) ?[2-5]\d\d\b|PowerVR|SGX/i.test(String(name || ''));
+}
+
+/** @param {{cores?: number, memory?: number, gpu?: string}} [hardware] @returns {'high'|'mid'|'low'} */
 export function getMobileTier(hardware = {}) {
   const nav = typeof navigator === 'undefined' ? {} : navigator;
   const cores = Number(hardware.cores ?? nav.hardwareConcurrency) || 4;
   // Chromium deviceMemory is optional; unknown memory is treated as mid-range.
   const memory = Number(hardware.memory ?? nav.deviceMemory) || 4;
+  // A phone can have many cores and lots of RAM and still carry a mid-range GPU
+  // (for example Mali-G52). Judge by the graphics chip too, otherwise it is
+  // given the heaviest scene and runs at ~15 FPS.
+  const gpu = hardware.gpu !== undefined ? String(hardware.gpu) : readGpuName();
+  if (isWeakMobileGpu(gpu)) return 'low';
   if (cores >= 8 && memory >= 8) return 'high';
   if (cores >= 6 && memory >= 4) return 'mid';
   return 'low';
