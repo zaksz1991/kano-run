@@ -53,7 +53,8 @@ function captureBreakdown() {
       if (!node.geometry || !visible(node)) continue;
       let top = node;
       while (top.parent && top.parent !== renderer.scene && top.parent !== renderer.world) top = top.parent;
-      let key = top.name || top.userData?.modelKey || top.type;
+      const found = (() => { for (let q = node; q; q = q.parent) { if (q.userData?.modelPath) return String(q.userData.modelPath).split('/').pop(); } return ''; })();
+      let key = found || top.name || top.userData?.modelKey || top.type;
       if (top.children?.length > 15) {
         let q = node;
         while (q.parent && q.parent !== top) q = q.parent;
@@ -66,7 +67,7 @@ function captureBreakdown() {
       entry.tris += tris;
       entry.meshes += Array.isArray(node.material) ? node.material.length : 1;
     }
-    topLines = Object.entries(groups).sort((a, b) => b[1].tris - a[1].tris).slice(0, 6)
+    topLines = Object.entries(groups).sort((a, b) => b[1].tris - a[1].tris).slice(0, 8)
       .map(([k, v]) => `${k.slice(0, 26)} ${Math.round(v.tris / 1000)}k/${v.meshes}`).join('\n');
   }, 350);
 }
