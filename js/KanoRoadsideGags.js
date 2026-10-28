@@ -96,7 +96,7 @@ function update(system, dt, snap) {
   if (!state) { state = buildState(system); states.set(system, state); }
   if (typeof window !== 'undefined') window.__KANO_GAGS__ = state;
   const visible = !system.renderer.lifeScene || system.renderer.lifeScene === 'road';
-  state.group.visible = visible;
+  state.group.visible = visible && !(window.kanoFrameGovernorLevel >= 1);
   if (!visible) return;
   const delta = clamp(dt, 0, 0.05);
   state.t += delta;

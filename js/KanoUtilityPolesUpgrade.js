@@ -70,7 +70,7 @@ function update(system, dt, snap) {
     states.set(system, st);
   }
   const road = !renderer.lifeScene || renderer.lifeScene === 'road';
-  st.group.visible = road;
+  st.group.visible = road && !(window.kanoFrameGovernorLevel >= 1);
   if (!road) return;
   const delta = clamp(dt, 0, 0.05);
   const signed = Number.isFinite(snap?.signedSpeed) ? snap.signedSpeed

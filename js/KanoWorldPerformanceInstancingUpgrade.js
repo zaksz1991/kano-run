@@ -29,6 +29,7 @@ import './KanoFunnyPickupProps.js';
 import './KanoRoadsideGags.js';
 import './KanoUtilityPolesUpgrade.js';
 import './KanoPerfOverlay.js';
+import './KanoFrameGovernor.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
 const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
