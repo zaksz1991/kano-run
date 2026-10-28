@@ -986,7 +986,8 @@ function createWaterSeller(renderer) {
 }
 
 function buildEventVisual(renderer, type) {
-  if (type === 'goatCrossing') return createGoatCrossing(renderer);
+  // No goat model ships with the project: the generated goats were removed.
+  if (type === 'goatCrossing') return null;
   if (type === 'karota') return createKarotaCheckpoint(renderer);
   if (type === 'waterSeller') return createWaterSeller(renderer);
   return null;

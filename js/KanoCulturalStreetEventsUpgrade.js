@@ -175,7 +175,7 @@ function makeRoadsideChildren(system) {
     goatAction: null,
     goatStarted: false,
     goatCrossing: null,
-    goatNextAt: 20,
+    goatNextAt: Infinity, // generated goats removed (no goat model in the project)
     goatLoadStarted: false,
     disposed: false,
     vendorGestureTicks: 0,
@@ -324,7 +324,11 @@ export function createProceduralGoat() {
 }
 
 function installProceduralGoatFallback(system, state, reason) {
+  // No goat GLB ships with the project and procedural goats are not drawn.
   if (state.disposed || state.goatRoot || system.renderer?.disposed || !system.renderer?.world) return false;
+  cultureAudit.goatAssetStatus = `none-${reason}`;
+  return false;
+  // eslint-disable-next-line no-unreachable
   const goat = createProceduralGoat();
   system.renderer.world.add(goat.root);
   state.goatRoot = goat.root;
@@ -464,7 +468,7 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
       goatFallbackLegs: [],
       goatStarted: false,
       goatCrossing: null,
-      goatNextAt: 20,
+      goatNextAt: Infinity, // generated goats removed (no goat model in the project)
       goatLoadStarted: false,
       goatClips: [],
       disposed: false,
@@ -534,7 +538,7 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
       if (crossing.progress >= 1) {
         state.goatRoot.visible = false;
         state.goatCrossing = null;
-        state.goatNextAt = state.elapsed + rand(43, 67);
+        state.goatNextAt = Infinity;
       }
     }
   }
