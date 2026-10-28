@@ -45,7 +45,9 @@ function addMesh(parent, geometry, material, position = [0, 0, 0], scale = [1, 1
   return mesh;
 }
 
-function makeStreetPerson(variant, { waiting = false } = {}) {
+// Legacy capsule figure. No longer used: every person is now one of the project's own GLBs.
+// eslint-disable-next-line no-unused-vars
+function legacyCapsulePerson(variant, { waiting = false } = {}) {
   const style = PERSON_STYLES[((variant % PERSON_STYLES.length) + PERSON_STYLES.length) % PERSON_STYLES.length];
   const isWoman = style.kind === 'woman';
   const root = new THREE.Group();
@@ -133,6 +135,25 @@ function makeStreetPerson(variant, { waiting = false } = {}) {
   // The tiny head-wrap sway is dropped because that mesh is merged into the body.
   mergeActor(root);
   root.userData.kanoAnimationParts = { arms, legs, headCover: null, isWoman, waiting, variant, phase: variant * 1.13 };
+  return root;
+}
+
+
+const PENDING_PEOPLE = new Set();
+
+/**
+ * A person is an empty holder that is filled with one of the project's own
+ * pedestrian / passenger GLBs as soon as they are cached. Nothing procedural is
+ * ever drawn as a person.
+ */
+function makeStreetPerson(variant, { waiting = false } = {}) {
+  const root = new THREE.Group();
+  root.name = `KANO_STREET_PERSON_${variant + 1}`;
+  root.userData.kanoStreetPerson = true;
+  root.userData.kanoWaitingPassenger = waiting;
+  root.userData.kanoPersonVariant = variant;
+  root.userData.kanoAnimationParts = { arms: [], legs: [], headCover: null, isWoman: false, waiting, variant, phase: variant * 1.13 };
+  PENDING_PEOPLE.add(root);
   return root;
 }
 
@@ -283,6 +304,16 @@ function swapForRealPerson(renderer, root, keys, index, height) {
   return true;
 }
 
+function fillPendingPeople(renderer, keys) {
+  for (const root of [...PENDING_PEOPLE]) {
+    if (root.userData.kanoRealPerson) { PENDING_PEOPLE.delete(root); continue; }
+    if (root.userData.kanoPersonDisposed) { PENDING_PEOPLE.delete(root); continue; }
+    if (swapForRealPerson(renderer, root, keys, root.userData.kanoPersonVariant || 0, root.userData.kanoWaitingPassenger ? 1.62 : 1.68)) {
+      PENDING_PEOPLE.delete(root);
+    }
+  }
+}
+
 function promoteRealPeople(renderer) {
   const keys = availablePeopleKeys(renderer);
   if (!keys.length) return;
@@ -295,6 +326,7 @@ function promoteRealPeople(renderer) {
       person.actor.visible = false;
       person.kanoStreetPerson = false;
       person.dropped = true;
+      person.actor.userData.kanoPersonDisposed = true;
       if (person.actor.parent) person.actor.parent.remove(person.actor);
       disposeRemovedTree(person.actor);
       continue;
@@ -311,6 +343,7 @@ function promoteRealPeople(renderer) {
       if (entry.root.userData.kanoRealPerson || entry.removed) continue;
       if (crowdUsed >= CROWD_REAL_BUDGET[tier]) {
         entry.removed = true;
+        entry.root.userData.kanoPersonDisposed = true;
         if (entry.root.parent) entry.root.parent.remove(entry.root);
         disposeRemovedTree(entry.root);
         continue;
@@ -320,6 +353,7 @@ function promoteRealPeople(renderer) {
     zoneActor.userData.kanoPassengerCrowd = crowd.filter((c) => !c.removed);
     zoneActor.userData.kanoPassengerCrowdCount = zoneActor.userData.kanoPassengerCrowd.length;
   }
+  fillPendingPeople(renderer, keys);
 }
 
 function animateStreetLife(renderer, dt) {

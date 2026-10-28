@@ -301,7 +301,8 @@ export class KanoSceneUpgrade {
     this.marketRoot.add(root);
     this.crowdRoot = root;
 
-    const count = this.mobile ? 24 : 44;
+    // Procedural capsule people removed: only the project's own GLB people are shown.
+    const count = 0;
     this.walkers = Array.from({ length: count }, (_, index) => ({
       index,
       side: index % 2 ? 1 : -1,
