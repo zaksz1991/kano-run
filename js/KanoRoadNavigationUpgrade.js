@@ -542,6 +542,7 @@ function ensureCrossroad(renderer) {
 }
 
 function updateCrossroad(renderer, state) {
+  return; // junction turning was removed: no cross road is drawn (saves ~44 draw calls)
   if (!renderer?.world) return;
   const game = activeNavGame;
   const group = ensureCrossroad(renderer);
