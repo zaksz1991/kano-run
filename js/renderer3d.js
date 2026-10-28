@@ -125,7 +125,7 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8ccde5);
-    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 24 : 48, mobile ? 105 : 195);
+    this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 38 : 60, mobile ? 105 : 195);
 
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 125 : 260);
     this.camera.position.set(0, 3.85, 10.5);
@@ -488,13 +488,13 @@ export class Renderer3D {
 
     const hemi = new THREE.HemisphereLight(
       0xeaf7ff,
-      0x75634d,
-      1.8,
+      0x8a7760,
+      2.1,
     );
 
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffedca, 1.75);
+    const sun = new THREE.DirectionalLight(0xfff1d6, 2.05);
     sun.position.set(-8, 14, 5);
     this.scene.add(sun);
 
@@ -5386,8 +5386,8 @@ export class Renderer3D {
     );
 
     this.scene.fog.near = this.mobile
-      ? (state.environment === 'harmattan' ? 14 : 24)
-      : (state.environment === 'harmattan' ? 18 : 48);
+      ? (state.environment === 'harmattan' ? 16 : 38)
+      : (state.environment === 'harmattan' ? 20 : 60);
 
     this.scene.fog.far = this.mobile
       ? (state.environment === 'harmattan' ? 70 : 105)

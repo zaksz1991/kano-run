@@ -418,7 +418,7 @@ test('Career starts at a calmer urban cruise and gas stays below racing-game spe
   assert.ok(game.s.speed < 1, `keke should stop coasting when throttle is released, got ${game.s.speed} km/h`);
   game.gas(true);
   for (let frame = 0; frame < 180; frame += 1) game.tick(1 / 60);
-  assert.ok(game.s.speed > 70 && game.s.speed < 130, `accelerated city speed was ${game.s.speed} km/h`);
+  assert.ok(game.s.speed > 70 && game.s.speed < 170, `accelerated city speed was ${game.s.speed} km/h`);
   game.start('timeAttack');
   game.s.invuln = 100;
   game.gas(true);

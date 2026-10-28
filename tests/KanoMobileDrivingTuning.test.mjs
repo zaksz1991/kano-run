@@ -18,7 +18,7 @@ test('the safe-speed mission can be achieved by a normal city keke', () => {
 
 test('city keke acceleration and cruise speed are increased without changing Time Attack', () => {
   const game = read('js/game.js');
-  assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*150\s*:\s*this\.mode === 'freeRoam'\s*\?\s*95\s*:\s*90/);
+  assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*150\s*:\s*this\.mode === 'freeRoam'\s*\?\s*125\s*:\s*118/);
   assert.match(game, /this\.mode === 'timeAttack'\s*\?\s*1\.8\s*:\s*2\.5/);
   assert.match(game, /s\.speed >= SAFE_SPEED_MISSION_KMH/);
 });
