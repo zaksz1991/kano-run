@@ -415,7 +415,7 @@ export class Game {
       type = 'pickup';
     } else if (
       this.s.environment === 'rainPuddles' &&
-      roll < 0.42
+      roll < 0.12
     ) {
       type = 'pothole';
     } else if (this.s.environment === 'fuelQueue') {
@@ -431,11 +431,11 @@ export class Game {
       // Potholes were ~24% of everything spawned, so the road felt like an
       // obstacle course. They are now ~8%; the "BAD ROAD" event still adds more.
       type =
-        roll < 0.40
+        roll < 0.42
           ? 'pickup'
-          : roll < 0.72
+          : roll < 0.76
             ? 'drop'
-            : roll < 0.92
+            : roll < 0.98
               ? 'fuel'
               : 'pothole';
     }

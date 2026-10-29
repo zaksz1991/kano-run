@@ -28,11 +28,18 @@ const COIN_ROUTE = [
 // short breather gap. Each step is [lane, gapToNext]. Respawned coins are queued
 // at the far end of the road so the trail spacing is preserved while driving.
 const COIN_PATTERN = [
-  [2, 0.075], [2, 0.075], [2, 0.075], [2, 0.075], [2, 0.34],
-  [2, 0.08], [1, 0.08], [0, 0.08], [0, 0.08], [0, 0.34],
-  [0, 0.075], [0, 0.075], [0, 0.34],
-  [1, 0.09], [2, 0.09], [1, 0.09], [0, 0.09], [1, 0.09], [2, 0.09], [1, 0.34],
-  [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.34],
+  // 1) centre-lane line of five
+  [1, 0.085], [1, 0.085], [1, 0.085], [1, 0.085], [1, 0.42],
+  // 2) smooth sweep right: centre -> right, four coins
+  [1, 0.09], [1.5, 0.09], [2, 0.09], [2, 0.45],
+  // 3) right-lane line of four
+  [2, 0.085], [2, 0.085], [2, 0.085], [2, 0.42],
+  // 4) smooth sweep back to the left, five coins
+  [2, 0.09], [1.5, 0.09], [1, 0.09], [0.5, 0.09], [0, 0.45],
+  // 5) left-lane line of four
+  [0, 0.085], [0, 0.085], [0, 0.085], [0, 0.42],
+  // 6) gentle wave through the centre
+  [1, 0.09], [1.5, 0.09], [1, 0.09], [0.5, 0.09], [1, 0.5],
 ];
 const COIN_FAR_LIMIT = 1.18;
 

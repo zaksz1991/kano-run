@@ -488,13 +488,13 @@ export class Renderer3D {
 
     const hemi = new THREE.HemisphereLight(
       0xeaf7ff,
-      0x8a7760,
-      2.1,
+      0x6d5d4a,
+      1.7,
     );
 
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xfff1d6, 2.05);
+    const sun = new THREE.DirectionalLight(0xfff1d6, 2.5);
     sun.position.set(-8, 14, 5);
     this.scene.add(sun);
 
@@ -2524,7 +2524,8 @@ export class Renderer3D {
       slot.replaced = true;
     }
 
-    if (!this.mobile && this.models.cache.has('flyover')) {
+    // The flyover GLB is now mounted by KanoFlyoverDriveabilityUpgrade (all devices).
+    if (false && this.models.cache.has('flyover')) {
       for (let index = 0; index < this.flyovers.length; index += 1) {
         const fallback = this.flyovers[index];
 
@@ -5370,7 +5371,7 @@ export class Renderer3D {
 
     // Night stays readable on a phone in daylight; harmattan is a pale, dusty haze.
     const sky = state.night
-      ? 0x4d6283
+      ? 0x45638f
       : state.environment === 'harmattan'
         ? 0xbdb9aa
         : 0x8ccde5;
@@ -5379,7 +5380,7 @@ export class Renderer3D {
 
     this.scene.fog.color.set(
       state.night
-        ? 0x6a7f9e
+        ? 0x5a78a3
         : state.environment === 'harmattan'
           ? 0xbdb9aa
           : 0x8ccde5,

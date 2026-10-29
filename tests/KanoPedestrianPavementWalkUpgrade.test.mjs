@@ -62,8 +62,8 @@ test('nearby leg selection is bounded and excludes GLBs and authored static legs
 test('the current traffic selector imports the walker module without changing category weights', async () => {
   const trafficMix = await readFile(new URL('../js/KanoTrafficMix.js', import.meta.url), 'utf8');
   assert.match(trafficMix, /^import '\.\/KanoPedestrianPavementWalkUpgrade\.js';/);
-  assert.match(trafficMix, /if \(roll < 0\.4\) return 'keke';/);
-  assert.match(trafficMix, /if \(roll < 0\.7\) return 'motorcycle';/);
+  assert.match(trafficMix, /if \(roll < 0\.5\) return 'keke';/);
+  assert.match(trafficMix, /if \(roll < 0\.8\) \{/);
 });
 
 test('runtime module hooks the existing renderer and keeps movement additive', async () => {

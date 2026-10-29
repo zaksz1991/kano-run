@@ -195,6 +195,96 @@ function createApproachGroup(renderer, flyover, index) {
   return { index, group, flyover, deckHeight, sourceHeight: deckHeight };
 }
 
+
+// ---------------------------------------------------------------------------
+// The player's own flyover GLB (world/roads/kano_urban_flyover.glb) replaces the
+// built-in white/red boxes on every device. The drivable height profile is sampled
+// from the GLB's real road surface, so the visible deck and the car always agree.
+// ---------------------------------------------------------------------------
+const GLB_SPAN = KANO_FLYOVER_RAMP_END * 2;
+const GLB_WIDTH = 10.5;
+
+function sampleDeck(wrapper) {
+  wrapper.updateMatrixWorld(true);
+  const raycaster = new THREE.Raycaster();
+  const down = new THREE.Vector3(0, -1, 0);
+  const heights = [];
+  for (let z = -KANO_FLYOVER_RAMP_END; z <= KANO_FLYOVER_RAMP_END; z += 1) {
+    raycaster.set(new THREE.Vector3(0, 200, z), down);
+    const hit = raycaster.intersectObject(wrapper, true)[0];
+    heights.push(hit ? hit.point.y : null);
+  }
+  let last = null;
+  for (let i = 0; i < heights.length; i += 1) { if (heights[i] === null) heights[i] = last; else last = heights[i]; }
+  last = null;
+  for (let i = heights.length - 1; i >= 0; i -= 1) { if (heights[i] === null) heights[i] = last; else last = heights[i]; }
+  return heights;
+}
+
+function skinWithGlb(renderer, record) {
+  if (record.glbSkinTried) return;
+  if (!renderer.models?.cache?.has?.('flyover')) {
+    // Phones only preload the keke at start; ask for the flyover once, then retry.
+    if (!renderer._kanoFlyoverGlbRequested && typeof renderer.models?.load === 'function') {
+      renderer._kanoFlyoverGlbRequested = true;
+      Promise.resolve(renderer.models.load('flyover')).catch(() => {});
+    }
+    return;
+  }
+  record.glbSkinTried = true;
+  try {
+    const model = renderer.models.getInstance('flyover');
+    if (!model) return;
+    model.updateMatrixWorld(true);
+    const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+    const lengthAxisIsX = size.x >= size.z;
+    const wrapper = new THREE.Group();
+    wrapper.name = 'KANO_FLYOVER_GLB_DECK';
+    wrapper.add(model);
+    // Put the long axis along the road (z).
+    wrapper.rotation.y = lengthAxisIsX ? Math.PI / 2 : 0;
+    const length = Math.max(size.x, size.z);
+    const width = Math.min(size.x, size.z);
+    const lengthScale = GLB_SPAN / length;
+    const widthScale = GLB_WIDTH / width;
+    // Local x is the long axis when rotated, local z otherwise.
+    if (lengthAxisIsX) wrapper.scale.set(lengthScale, lengthScale, widthScale);
+    else wrapper.scale.set(widthScale, lengthScale, lengthScale);
+    let heights = sampleDeck(wrapper);
+    const endsOf = (list) => (list[0] + list[list.length - 1]) / 2;
+    const rise = Math.max(...heights) - endsOf(heights);
+    if (!(rise > 0.8)) return; // flat or unreadable: keep the built-in flyover
+    wrapper.scale.y *= KANO_FLYOVER_DECK_HEIGHT / rise;
+    heights = sampleDeck(wrapper);
+    const base = endsOf(heights);
+    wrapper.position.y = -base;
+    const profile = heights.map((h) => Math.max(0, h - base));
+    profile[0] = 0;
+    profile[profile.length - 1] = 0;
+
+    // Hide the built-in boxes, rails, ramps and stripes.
+    const hideAll = (root) => root?.traverse?.((o) => { if (o.isMesh) o.visible = false; });
+    hideAll(record.flyover);
+    record.group.children.slice().forEach((child) => hideAll(child));
+    record.group.add(wrapper);
+    record.profile = profile;
+    record.glbSkinned = true;
+    AUDIT.glbFlyoverSkins = (AUDIT.glbFlyoverSkins || 0) + 1;
+    console.info('[Kano Life] Flyover GLB active as the drivable deck.');
+  } catch (error) {
+    console.warn('[Kano Life] Flyover GLB skin skipped safely.', error);
+  }
+}
+
+function profileHeight(profile, relativeZ) {
+  const z = Number(relativeZ);
+  if (!Number.isFinite(z) || Math.abs(z) > KANO_FLYOVER_RAMP_END) return 0;
+  const f = z + KANO_FLYOVER_RAMP_END;
+  const i = Math.min(profile.length - 2, Math.floor(f));
+  const t = f - i;
+  return profile[i] * (1 - t) + profile[i + 1] * t;
+}
+
 function ensureApproachGroups(renderer) {
   if (!renderer?.world || !Array.isArray(renderer.flyovers)) return;
   renderer.kanoFlyoverApproachRecords ||= [];
@@ -218,6 +308,7 @@ function ensureApproachGroups(renderer) {
         record.group.userData.deckHeight = currentHeight;
       }
     }
+    skinWithGlb(renderer, record);
     flyover.userData ||= {};
     flyover.userData.kanoDriveableFlyover = true;
     flyover.userData.kanoDriveableDeckHeight = record.deckHeight;
@@ -235,7 +326,7 @@ function nearestSurfaceForZ(renderer, z) {
     if (!flyover) continue;
     const deckHeight = record.deckHeight || getSurfaceHeight(flyover);
     const relativeZ = z - flyover.position.z;
-    const height = kanoFlyoverHeightAt(relativeZ, deckHeight);
+    const height = record.profile ? profileHeight(record.profile, relativeZ) : kanoFlyoverHeightAt(relativeZ, deckHeight);
     if (height <= 0) continue;
     if (Math.abs(relativeZ) < closest) {
       closest = Math.abs(relativeZ);

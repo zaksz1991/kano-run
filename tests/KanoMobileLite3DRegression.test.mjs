@@ -34,7 +34,8 @@ test('mobile traffic uses stable, bounded imported GLB instances with procedural
 
 test('mobile keeps procedural flyover and lightweight props while preserving market-stall GLBs', () => {
   const renderer = read('js/renderer3d.js');
-  assert.match(renderer, /if \(!this\.mobile && this\.models\.cache\.has\('flyover'\)\)/);
+  // The flyover GLB is now mounted on every device by KanoFlyoverDriveabilityUpgrade.
+  assert.match(renderer, /if \(false && this\.models\.cache\.has\('flyover'\)\)/);
   assert.match(renderer, /!\['marketStall', 'busStop'\]\.includes\(slot\.key\)/);
 });
 
