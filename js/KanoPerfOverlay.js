@@ -83,7 +83,7 @@ function frame(now) {
     if (box && now - breakdownAt > 3000) { breakdownAt = now; captureBreakdown(); }
     if (box) {
       const canvas = document.querySelector('canvas');
-      box.textContent = `FPS ${stats.fps}\nDraws/frame ${stats.drawsPerFrame}\nTris/frame ${stats.trisPerFrame}\nCanvas ${canvas ? `${canvas.width}x${canvas.height}` : '?'}\nDPR ${window.devicePixelRatio}\nTier ${(() => { try { return getMobileTier(); } catch (_) { return '?'; } })()}\nGPU ${gpuName()}\nTOP (tris/draws)\n${topLines}`;
+      box.textContent = `FPS ${stats.fps}\nDraws/frame ${stats.drawsPerFrame}\nTris/frame ${stats.trisPerFrame}\nCanvas ${canvas ? `${canvas.width}x${canvas.height}` : '?'}\nDPR ${window.devicePixelRatio}\nTier ${(() => { try { return getMobileTier(); } catch (_) { return '?'; } })()}\nGPU ${gpuName()}\nBOUNCED ${(window.kanoBouncerLog||[]).length}\nTOP (tris/draws)\n${topLines}`;
     }
   }
   timer = requestAnimationFrame(frame);

@@ -31,6 +31,7 @@ import './KanoUtilityPolesUpgrade.js';
 import './KanoPerfOverlay.js';
 import './KanoPhoneCssLite.js';
 import './KanoFrameGovernor.js';
+import './KanoTriangleBouncer.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
 const PATCH = Symbol.for('kano.life.worldPerformanceInstancing.v1');
