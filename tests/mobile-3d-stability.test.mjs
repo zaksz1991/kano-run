@@ -35,7 +35,7 @@ test('performance monitor is telemetry-only and adaptive quality changes LOD/res
 });
 
 test('service worker rotates both code and model/texture caches after asset repairs', () => {
-  assert.match(sw, /const VERSION = 'kano-life-v2'/);
+  assert.match(sw, /const VERSION = 'kano-life-v3'/);
   assert.match(sw, /const MODELS = `\$\{VERSION\}-models`/);
   assert.match(sw, /url\.pathname\.startsWith\('\/assets\/models\/'\)/);
 });

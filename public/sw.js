@@ -5,7 +5,7 @@
  *   and changed files are picked up on the following visit without bumping a version.
  * - Audio (large, uses Range requests), /api/ and cross-origin requests are left to the network.
  */
-const VERSION = 'kano-life-v2';
+const VERSION = 'kano-life-v3';
 const SHELL = `${VERSION}-shell`;
 const STATIC = `${VERSION}-static`;
 const MODELS = `${VERSION}-models`; // versioned so asset repairs cannot be hidden by an old model/texture cache
@@ -44,18 +44,22 @@ async function trim(cacheName, max) {
   for (let i = 0; i < keys.length - max; i += 1) await cache.delete(keys[i]);
 }
 
+// Network first (revalidated, so unchanged files cost only a 304); the cached copy is used
+// only when offline. This stops old models/scripts being served after a deploy.
 async function staleWhileRevalidate(request, cacheName, trimTo) {
   const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-  const refresh = fetch(request).then(async (response) => {
+  try {
+    const response = await fetch(request, { cache: 'no-cache' });
     if (cacheable(response)) {
       await cache.put(request, response.clone());
       if (trimTo) trim(cacheName, trimTo);
     }
     return response;
-  });
-  if (cached) { refresh.catch(() => {}); return cached; }
-  return refresh;
+  } catch (error) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw error;
+  }
 }
 
 async function cacheFirst(request, cacheName) {
