@@ -91,7 +91,6 @@ function frame(now) {
 
 export function showPerfOverlay(on = true) {
   if (typeof document === 'undefined') return;
-  try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (_) { /* optional */ }
   if (!on) { if (box) box.remove(); box = null; cancelAnimationFrame(timer); return; }
   if (box) return;
   hookGl();
@@ -105,7 +104,9 @@ export function showPerfOverlay(on = true) {
 function init() {
   if (typeof window === 'undefined') return;
   let want = false;
-  try { want = /[?&]perf=1/.test(location.search) || localStorage.getItem(KEY) === '1'; } catch (_) { /* optional */ }
+  // Only shown for this visit when the address has ?perf=1. Never saved, so normal players never see it.
+  try { localStorage.removeItem(KEY); } catch (_) { /* optional */ }
+  try { want = /[?&]perf=1/.test(location.search); } catch (_) { /* optional */ }
   if (want) showPerfOverlay(true);
   let taps = [];
   window.addEventListener('pointerdown', (e) => {
