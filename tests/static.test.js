@@ -200,7 +200,7 @@ test('morning routine contains wake-up, roadside akara and pap, guarded garage a
 
 test('flyovers repeat along the drive and swap procedural spans for loaded GLBs', () => {
   const renderer = read('js/renderer3d.js');
-  assert.match(renderer, /const positions = this\.mobile \? \[-72, -202\] : \[-72, -174, -276\]/);
+  assert.match(renderer, /const positions = this\.mobile\s*\? \[-72, -202\]\s*: \[-72, -225\]/);
   assert.match(renderer, /for \(const flyover of this\.flyovers\)/);
   assert.match(renderer, /getInstance\('flyover'\)/);
   assert.match(renderer, /model\.scale\.x \*= horizontalScale/);

@@ -20,7 +20,7 @@ test('only lengthens the existing flyover driveability constants', async () => {
 });
 test('aligns the title panel to the approach-facing side', async () => {
   const diff = await read('../js/KanoFlyoverRoundaboutUpgrade.js');
-  assert.match(diff, /\[0, 5\.68, 7\.635\]/);
+  assert.match(diff, /\[7\.3, 2\.45, -52\]/);
   assert.match(diff, /signFace\.rotation\.y = Math\.PI/);
 });
 test('Keke validation exception is limited to the known bundled asset path', async () => {

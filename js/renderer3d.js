@@ -335,8 +335,8 @@ export class Renderer3D {
       this.world.add(dustyShoulderEdge);
 
       const edge = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.075, 250),
-        this.material(0xe8d5a4),
+        new THREE.PlaneGeometry(0.13, 250),
+        this.material(0xf2c200),
       );
       edge.rotation.x = -Math.PI / 2;
       edge.position.set(side * 4.54, 0.026, -92);
@@ -541,7 +541,7 @@ export class Renderer3D {
   buildFlyover() {
     const positions = this.mobile
       ? [-72, -202]
-      : [-72, -174, -276];
+      : [-72, -225];
 
     this.flyoverLoopDistance = this.mobile ? 260 : 306;
 

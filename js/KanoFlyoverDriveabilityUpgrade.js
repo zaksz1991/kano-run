@@ -201,7 +201,9 @@ function createApproachGroup(renderer, flyover, index) {
 // built-in white/red boxes on every device. The drivable height profile is sampled
 // from the GLB's real road surface, so the visible deck and the car always agree.
 // ---------------------------------------------------------------------------
-const GLB_SPAN = KANO_FLYOVER_RAMP_END * 2;
+const GLB_HALF = 72; // a much longer flyover than the old 44 m ramps (144 m total)
+const GLB_DECK_HEIGHT = 5.2;
+const GLB_SPAN = GLB_HALF * 2;
 const GLB_WIDTH = 10.5;
 
 function sampleDeck(wrapper) {
@@ -209,7 +211,7 @@ function sampleDeck(wrapper) {
   const raycaster = new THREE.Raycaster();
   const down = new THREE.Vector3(0, -1, 0);
   const heights = [];
-  for (let z = -KANO_FLYOVER_RAMP_END; z <= KANO_FLYOVER_RAMP_END; z += 1) {
+  for (let z = -GLB_HALF; z <= GLB_HALF; z += 1) {
     raycaster.set(new THREE.Vector3(0, 200, z), down);
     const hit = raycaster.intersectObject(wrapper, true)[0];
     heights.push(hit ? hit.point.y : null);
@@ -254,7 +256,7 @@ function skinWithGlb(renderer, record) {
     const endsOf = (list) => (list[0] + list[list.length - 1]) / 2;
     const rise = Math.max(...heights) - endsOf(heights);
     if (!(rise > 0.8)) return; // flat or unreadable: keep the built-in flyover
-    wrapper.scale.y *= KANO_FLYOVER_DECK_HEIGHT / rise;
+    wrapper.scale.y *= GLB_DECK_HEIGHT / rise;
     heights = sampleDeck(wrapper);
     const base = endsOf(heights);
     wrapper.position.y = -base;
@@ -263,10 +265,9 @@ function skinWithGlb(renderer, record) {
     profile[profile.length - 1] = 0;
 
     // Hide the built-in boxes, rails, ramps and stripes.
-    const hideAll = (root) => root?.traverse?.((o) => { if (o.isMesh) o.visible = false; });
-    hideAll(record.flyover);
-    record.group.children.slice().forEach((child) => hideAll(child));
     record.group.add(wrapper);
+    record.wrapper = wrapper;
+    purgeBuiltInFlyover(record);
     record.profile = profile;
     record.glbSkinned = true;
     AUDIT.glbFlyoverSkins = (AUDIT.glbFlyoverSkins || 0) + 1;
@@ -276,10 +277,26 @@ function skinWithGlb(renderer, record) {
   }
 }
 
+// Remove (not just hide) the built-in white/red boxes, ramps and stripes, so nothing can show them again.
+function purgeBuiltInFlyover(record) {
+  const keep = (child) => child === record.wrapper || /SIGN|ROUNDABOUT/i.test(String(child.name || ''));
+  for (const holder of [record.flyover, record.group]) {
+    if (!holder?.children) continue;
+    for (const child of holder.children.slice()) {
+      if (keep(child)) continue;
+      holder.remove(child);
+      child.traverse?.((o) => {
+        o.visible = false;
+        if (o.geometry && !o.isInstancedMesh) { try { o.geometry.dispose(); } catch (_) { /* optional */ } }
+      });
+    }
+  }
+}
+
 function profileHeight(profile, relativeZ) {
   const z = Number(relativeZ);
-  if (!Number.isFinite(z) || Math.abs(z) > KANO_FLYOVER_RAMP_END) return 0;
-  const f = z + KANO_FLYOVER_RAMP_END;
+  if (!Number.isFinite(z) || Math.abs(z) > GLB_HALF) return 0;
+  const f = z + GLB_HALF;
   const i = Math.min(profile.length - 2, Math.floor(f));
   const t = f - i;
   return profile[i] * (1 - t) + profile[i + 1] * t;
@@ -309,6 +326,7 @@ function ensureApproachGroups(renderer) {
       }
     }
     skinWithGlb(renderer, record);
+    if (record.glbSkinned) purgeBuiltInFlyover(record);
     flyover.userData ||= {};
     flyover.userData.kanoDriveableFlyover = true;
     flyover.userData.kanoDriveableDeckHeight = record.deckHeight;
@@ -425,7 +443,7 @@ function syncApproachMotion(renderer, state, deltaSeconds) {
     const predictedZ = kanoWrapFlyoverZ(flyover.position.z + scroll * 0.72, loop);
     record.group.position.set(flyover.position.x, 0, predictedZ);
     record.group.visible = flyover.visible !== false
-      && Math.abs(predictedZ - (renderer.camera?.position?.z || 0)) < (renderer.mobile ? 100 : 178);
+      && Math.abs(predictedZ - (renderer.camera?.position?.z || 0)) < (record.glbSkinned ? 190 : renderer.mobile ? 100 : 178);
   }
 }
 

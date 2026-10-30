@@ -118,21 +118,14 @@ function createKwankwasiyyaFlyoverSign(renderer, flyover, index) {
   sign.userData.kanoKwankwasiyyaFlyoverSign = true;
   sign.userData.signStyle = 'red-white-stripe';
 
-  // The sign sits above the flyover deck on its approach-facing parapet.
-  // It is intentionally above deck height, not a low gantry blocking traffic.
-  addBox(sign, [9.6, 1.42, 0.25], 0xf7f2e7, [0, 5.62, 7.76], { name: 'kwankwasiyya_sign_backing' });
-  addBox(sign, [9.78, 0.16, 0.31], 0xc63b37, [0, 6.33, 7.76], { name: 'kwankwasiyya_red_top_stripe' });
-  addBox(sign, [9.78, 0.16, 0.31], 0xf7f2e7, [0, 6.16, 7.76], { name: 'kwankwasiyya_white_top_stripe' });
-  addBox(sign, [9.78, 0.16, 0.31], 0xc63b37, [0, 4.91, 7.76], { name: 'kwankwasiyya_red_bottom_stripe' });
-  addBox(sign, [9.78, 0.16, 0.31], 0xf7f2e7, [0, 5.08, 7.76], { name: 'kwankwasiyya_white_bottom_stripe' });
+  // A slim roadside board on two posts beside the approach, at ground level.
+  // (It used to be a big white gantry hanging over the deck.)
   const texture = makeSignTexture('KWANKWASIYYA', 'FLYOVER  •  KANO STATE', `kwankwasiyya-flyover-${index + 1}`);
-  const signFace = addSignFace(sign, texture, 9.25, 1.12, [0, 5.68, 7.635], 'kwankwasiyya_sign_face');
-  signFace.rotation.y = Math.PI; // title panel faces the approach-facing side
-
-  // Two robust brackets make the sign visibly belong to the flyover structure.
-  for (const x of [-4.25, 4.25]) {
-    addBox(sign, [0.22, 0.84, 0.2], 0xd6d4ca, [x, 4.98, 2.73], { name: 'kwankwasiyya_sign_bracket' });
-    addBox(sign, [0.38, 0.12, 0.31], 0xc63b37, [x, 4.56, 2.73], { name: 'kwankwasiyya_sign_bracket_red_cap' });
+  const signFace = addSignFace(sign, texture, 3.4, 0.95, [7.3, 2.45, -52], 'kwankwasiyya_sign_face');
+  if (signFace) signFace.rotation.y = Math.PI;
+  addBox(sign, [3.5, 1.05, 0.12], 0xf7f2e7, [7.3, 2.45, -51.9], { name: 'kwankwasiyya_sign_backing' });
+  for (const x of [6.0, 8.6]) {
+    addBox(sign, [0.12, 2.0, 0.12], 0x5b5d5e, [x, 1.0, -51.9], { name: 'kwankwasiyya_sign_post' });
   }
 
   sign.position.copy(flyover.position);

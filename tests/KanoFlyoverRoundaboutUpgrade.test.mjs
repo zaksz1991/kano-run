@@ -22,10 +22,9 @@ test('Step 94 loads after infrastructure and before the production gameplay entr
 test('Kwankwasiyya flyover identity uses readable sign text and red-white visual bands', () => {
   assert.match(moduleSource, /KWANKWASIYYA/);
   assert.match(moduleSource, /FLYOVER\s+•\s+KANO STATE/);
-  assert.match(moduleSource, /kwankwasiyya_red_top_stripe/);
-  assert.match(moduleSource, /kwankwasiyya_white_top_stripe/);
-  assert.match(moduleSource, /kwankwasiyya_red_bottom_stripe/);
-  assert.match(moduleSource, /kwankwasiyya_white_bottom_stripe/);
+  // The old white gantry with red/white bands was replaced by a slim roadside board on two posts.
+  assert.match(moduleSource, /kwankwasiyya_sign_backing/);
+  assert.match(moduleSource, /kwankwasiyya_sign_post/);
   assert.match(moduleSource, /kanoFlyoverSignRecords/);
   assert.match(moduleSource, /Some model loaders swap a procedural flyover for a GLB/);
 });
