@@ -34,6 +34,7 @@ import './KanoFrameGovernor.js';
 import './KanoTriangleBouncer.js';
 import './KanoRoadFeel.js';
 import './KanoCurvedWorld.js';
+import './KanoTwoWayRoad.js';
 import './KanoPhoneMaterialLite.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';

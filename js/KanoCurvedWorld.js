@@ -12,17 +12,26 @@ import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
 
 const SHARED = { value: 0 };
+// Two-way road: everything left of the keke's carriageway is pushed this many metres further left,
+// opening room for the median and the oncoming carriageway (see KanoTwoWayRoad.js).
+const SHIFT = { value: 0 };
+const NO_SHIFT = { value: 0 };
+export const KANO_LEFT_SHIFT = 9.5;
+export const KANO_SHIFT_UNIFORM = SHIFT;
 const PATCHED = Symbol.for('kano.life.curvedWorld.v1');
 
 if (!THREE.ShaderChunk[PATCHED] && THREE.ShaderChunk.project_vertex && THREE.ShaderChunk.fog_pars_vertex) {
-  THREE.ShaderChunk.fog_pars_vertex += '\nuniform float kanoCurve;\n';
+  THREE.ShaderChunk.fog_pars_vertex += '\nuniform float kanoCurve;\nuniform float kanoShift;\n';
   THREE.ShaderChunk.project_vertex = THREE.ShaderChunk.project_vertex.replace(
     'mvPosition = modelViewMatrix * mvPosition;',
-    'mvPosition = modelViewMatrix * mvPosition;\n\tmvPosition.x += kanoCurve * mvPosition.z * mvPosition.z;',
+    'if (kanoShift > 0.0) { vec4 kwp = modelMatrix * mvPosition; if (kwp.x < -5.7) { mvPosition.xyz += inverse(mat3(modelMatrix)) * vec3(-kanoShift, 0.0, 0.0); } }\n\tmvPosition = modelViewMatrix * mvPosition;\n\tmvPosition.x += kanoCurve * mvPosition.z * mvPosition.z;',
   );
   const original = THREE.Material.prototype.onBeforeCompile;
   THREE.Material.prototype.onBeforeCompile = function kanoCurveBeforeCompile(shader, renderer) {
-    if (shader?.uniforms) shader.uniforms.kanoCurve = SHARED;
+    if (shader?.uniforms) {
+      shader.uniforms.kanoCurve = SHARED;
+      shader.uniforms.kanoShift = this?.userData?.kanoNoShift ? NO_SHIFT : SHIFT;
+    }
     return original.call(this, shader, renderer);
   };
   Object.defineProperty(THREE.ShaderChunk, PATCHED, { value: true, enumerable: false });
@@ -56,6 +65,7 @@ if (!Renderer3D.prototype[PATCHED]) {
         const shaped = Math.sign(wave) * Math.max(0, Math.abs(wave) - 0.25) / 0.95;
         const target = road ? Math.max(-1, Math.min(1, shaped)) * MAX_BEND : 0;
         eased += (target - eased) * Math.min(1, dt * 1.2);
+        SHIFT.value = road && this.world?.visible !== false && !window.kanoOneWayRoad ? KANO_LEFT_SHIFT : 0;
         SHARED.value = typeof window !== 'undefined' && typeof window.kanoCurvedWorld?.force === 'number' ? window.kanoCurvedWorld.force : eased;
       } catch (_) { SHARED.value = 0; }
       return draw.call(this, state, deltaSeconds, ...args);
