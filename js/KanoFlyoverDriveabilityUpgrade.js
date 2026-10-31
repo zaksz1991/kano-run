@@ -204,7 +204,8 @@ function createApproachGroup(renderer, flyover, index) {
 const GLB_HALF = 72; // a much longer flyover than the old 44 m ramps (144 m total)
 const GLB_DECK_HEIGHT = 5.2;
 const GLB_SPAN = GLB_HALF * 2;
-const GLB_WIDTH = 10.5;
+const GLB_WIDTH = 7.2; // deck covers the middle + right lanes; the LEFT lane is the road down beside the flyover
+const GLB_CENTER_X = 1.75;
 
 function sampleDeck(wrapper) {
   wrapper.updateMatrixWorld(true);
@@ -260,6 +261,7 @@ function skinWithGlb(renderer, record) {
     heights = sampleDeck(wrapper);
     const base = endsOf(heights);
     wrapper.position.y = -base;
+    wrapper.position.x = GLB_CENTER_X;
     const profile = heights.map((h) => Math.max(0, h - base));
     profile[0] = 0;
     profile[profile.length - 1] = 0;
@@ -358,7 +360,8 @@ function nearestSurfaceForZ(renderer, z) {
 function elevateActor(renderer, actor) {
   if (!actor?.position) return 0;
   const surface = nearestSurfaceForZ(renderer, actor.position.z);
-  const height = surface?.height || 0;
+  // The left lane is the ground-level road beside the flyover.
+  const height = actor.position.x < -1.8 ? 0 : (surface?.height || 0);
   actor.position.y = height;
   return height;
 }
@@ -387,9 +390,10 @@ function updateMobileTrafficBatchElevations(renderer, state) {
       const z = -Math.max(-0.05, Number(vehicle.depth) || 0) * 88;
       const surface = nearestSurfaceForZ(renderer, z);
       if (!surface) continue;
+      const groundLane = vehicle.lane === 0;
       mesh.getMatrixAt(index, tempMatrix);
       tempMatrix.decompose(tempPosition, tempQuaternion, tempScale);
-      tempPosition.y = surface.height;
+      tempPosition.y = groundLane ? 0 : surface.height;
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
       mesh.setMatrixAt(index, tempMatrix);
       changed = true;
@@ -404,7 +408,8 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   if (!renderer.player?.position) return 0;
 
   const playerSurface = nearestSurfaceForZ(renderer, renderer.player.position.z);
-  const height = playerSurface?.height || 0;
+  let height = playerSurface?.height || 0;
+  if (renderer._kanoForkLock === 'ground') height = 0;
   if (height > 0) {
     renderer.player.position.y += height;
     camera.position.y += height;
@@ -444,6 +449,42 @@ function syncApproachMotion(renderer, state, deltaSeconds) {
     record.group.position.set(flyover.position.x, 0, predictedZ);
     record.group.visible = flyover.visible !== false
       && Math.abs(predictedZ - (renderer.camera?.position?.z || 0)) < (record.glbSkinned ? 190 : renderer.mobile ? 100 : 178);
+  }
+}
+
+let forkBanner = null;
+function showForkBanner(text) {
+  if (typeof document === 'undefined') return;
+  if (!forkBanner) {
+    forkBanner = document.createElement('div');
+    forkBanner.id = 'kano-flyover-fork';
+    forkBanner.style.cssText = 'position:fixed;left:50%;top:19%;transform:translateX(-50%);z-index:30;padding:5px 10px;border-radius:10px;background:rgba(10,30,24,.8);border:1px solid #f5c431;color:#fff;font:700 12px system-ui,sans-serif;text-align:center;pointer-events:none;display:none;max-width:88vw';
+    document.body.appendChild(forkBanner);
+  }
+  forkBanner.textContent = text || '';
+  forkBanner.style.display = text ? 'block' : 'none';
+}
+
+// Fork: centre/right lanes climb the flyover, the LEFT lane stays on the road below.
+function updateFork(renderer, state) {
+  if (!state || !renderer.player?.position || !renderer.kanoFlyoverApproachRecords?.length) return;
+  let rz = Infinity;
+  for (const record of renderer.kanoFlyoverApproachRecords) {
+    if (!record.profile) continue;
+    const flyover = renderer.flyovers?.[record.index] || record.flyover;
+    if (!flyover) continue;
+    const d = renderer.player.position.z - flyover.position.z;
+    if (Math.abs(d) < Math.abs(rz)) rz = d;
+  }
+  const abs = Math.abs(rz);
+  if (abs < GLB_HALF) {
+    if (!renderer._kanoForkLock) renderer._kanoForkLock = state.targetLane < 0 ? 'ground' : 'deck';
+    if (renderer._kanoForkLock === 'ground') state.targetLane = -1;
+    else state.targetLane = Math.max(0, state.targetLane);
+    showForkBanner(renderer._kanoForkLock === 'ground' ? 'ROAD BELOW the flyover' : 'ON THE FLYOVER');
+  } else {
+    renderer._kanoForkLock = null;
+    showForkBanner(abs < GLB_HALF + 55 ? 'Flyover ahead · middle/right lane ▲ · left lane ▼ road below' : '');
   }
 }
 
@@ -491,6 +532,7 @@ if (!Renderer3D.prototype[PATCH]) {
         this._kanoFlyoverCurrentState = state;
         installRenderHook(this);
         syncApproachMotion(this, state, deltaSeconds);
+        updateFork(this, state);
       }
       return originalDraw.call(this, state, deltaSeconds, ...args);
     };

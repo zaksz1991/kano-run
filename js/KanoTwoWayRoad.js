@@ -10,6 +10,7 @@
  */
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
+import { createGLTFLoader } from './createGLTFLoader.js';
 import { KANO_LEFT_SHIFT } from './KanoCurvedWorld.js';
 
 const LOOP_FAR = 215;      // metres of road built ahead
@@ -99,9 +100,24 @@ function build(renderer) {
 
   const treePositions = [];
   for (let z = 7.5; z > -LOOP_FAR; z -= 13) treePositions.push([MEDIAN_X, 2.55, z, 0, 0, 0, 1, 1, 1]);
-  roots.push(scrollingInstances(group, new THREE.ConeGeometry(0.7, 4.2, 7), mat(0x2f6b34, 1), treePositions, 13));
-  roots.push(scrollingInstances(group, new THREE.CylinderGeometry(0.11, 0.14, 1.2, 6), mat(0x5a4632, 1),
-    treePositions.map((p) => [p[0], 0.6, p[2]]), 13));
+  // Trees come from the project's own Tree.glb (no generated cones). Until it loads the median stays clear.
+  createGLTFLoader().load('/assets/models/world/props/Tree.glb', (gltf) => {
+    const root = gltf.scene;
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root);
+    const height = Math.max(0.01, box.max.y - box.min.y);
+    const fit = 5.4 / height;
+    root.traverse((child) => {
+      if (!child.isMesh) return;
+      const geometry = child.geometry.clone();
+      geometry.applyMatrix4(child.matrixWorld);
+      geometry.translate(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+      geometry.scale(fit, fit, fit);
+      const material = noShift(child.material.clone());
+      const treeRoot = scrollingInstances(group, geometry, material, treePositions.map((p) => [p[0], 0.1, p[2], 0, p[2] * 1.7, 0]), 13);
+      roots.push(treeRoot);
+    });
+  }, undefined, () => {});
 
   // --- oncoming lane dashes (centre of the oncoming carriageway)
   const dashPositions = [];

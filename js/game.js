@@ -440,6 +440,17 @@ export class Game {
               : 'pothole';
     }
 
+    if (
+      type !== 'drop' &&
+      this.s.passengers.length &&
+      !this.s.zones.some((z) => z.type === 'drop' && this.s.passengers.some((p) => p.dest === z.dest)) &&
+      Math.random() < 0.6
+    ) {
+      type = 'drop';
+    } else if (type === 'pickup' && this.s.fuel < 30 && Math.random() < 0.45) {
+      type = 'fuel';
+    }
+
     const side = Math.random() < 0.5 ? -1 : 1;
 
     const hub =
@@ -464,17 +475,17 @@ export class Game {
       ? 0.52 + initialIndex * 0.15
       : randomBetween(1.05, 1.30);
 
-    const stopName = hub
+    const stopName = (hub || type === 'pickup')
       ? KANO_KEKE_STOP_NAMES[Math.floor(Math.random() * KANO_KEKE_STOP_NAMES.length)]
       : '';
     const label = hub
       ? `${stopName.toUpperCase()} KEKE STOP · ${dest}`
       : type === 'pickup'
-        ? `PICK UP · ${dest}`
+        ? `PICK UP · ${stopName} → ${dest}`
         : type === 'drop'
           ? `DROP OFF · ${dest}`
           : type === 'fuel'
-            ? 'FUEL STOP'
+            ? 'FUEL STATION · NNPC / MRS'
             : 'BAD ROAD';
 
     this.s.zones.push({
@@ -503,9 +514,7 @@ export class Game {
       type === 'drop' &&
       this.s.passengers.length
     ) {
-      const matchChance = this.mode === 'matchDrop'
-        ? 0.82
-        : 0.68;
+      const matchChance = 1;
 
       if (Math.random() < matchChance) {
         return choose(this.s.passengers).dest;
@@ -1341,7 +1350,7 @@ export class Game {
         if (zone.type === 'pickup') {
           handled = this.pickup(zone);
         } else if (zone.type === 'drop') {
-          this.drop(zone);
+          handled = this.drop(zone) !== false;
         } else if (zone.type === 'fuel') {
           handled = this.refuel(zone);
         }
@@ -1950,7 +1959,7 @@ export class Game {
       );
     } else {
       this.ui.toast(
-        `${passenger.name} boarded · ${passenger.dest}`,
+        `${passenger.name}: "Driver, drop me at ${passenger.dest}"`,
       );
     }
 
@@ -2001,10 +2010,26 @@ export class Game {
       return true;
     }
 
+    // The passenger told the driver exactly where to stop. Find whoever asked for THIS place.
+    const askedHere = s.passengers.findIndex((p) => p.dest === zone.dest);
+    if (askedHere > 0) {
+      s.passengers.unshift(s.passengers.splice(askedHere, 1)[0]);
+    }
+
     const passenger = s.passengers[0];
 
     const matched =
       passenger.dest === zone.dest;
+
+    if (!matched && this.mode !== 'matchDrop') {
+      if (s.toastCooldown <= 0) {
+        this.ui.toast(
+          `${passenger.name}: "Ba nan ba! Not ${zone.dest}. Take me to ${passenger.dest}!"`,
+        );
+        s.toastCooldown = 3;
+      }
+      return false;
+    }
 
     let fare = passenger.fare;
     let destinationMasteryBonus = 0;
