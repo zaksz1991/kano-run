@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
-import './KanoFlyoverRoundaboutUpgrade.js';
+import { KANO_FLYOVER_SITES } from './KanoFlyoverRoundaboutUpgrade.js';
 import {
   KANO_FLYOVER_DECK_HEIGHT,
   KANO_FLYOVER_DECK_HALF_LENGTH,
@@ -201,7 +201,8 @@ function createApproachGroup(renderer, flyover, index) {
 // built-in white/red boxes on every device. The drivable height profile is sampled
 // from the GLB's real road surface, so the visible deck and the car always agree.
 // ---------------------------------------------------------------------------
-const GLB_HALF = 72; // a much longer flyover than the old 44 m ramps (144 m total)
+const GLB_HALF = 150; // 300 m flyover with long, gentle ramps (was 144 m)
+const FLYOVER_SPACING = 1700; // real flyovers are kilometres apart, not one every 260 m
 const GLB_DECK_HEIGHT = 5.2;
 const GLB_SPAN = GLB_HALF * 2;
 const GLB_WIDTH = 7.2; // deck covers the middle + right lanes; the LEFT lane is the road down beside the flyover
@@ -448,7 +449,7 @@ function syncApproachMotion(renderer, state, deltaSeconds) {
     const predictedZ = kanoWrapFlyoverZ(flyover.position.z + scroll * 0.72, loop);
     record.group.position.set(flyover.position.x, 0, predictedZ);
     record.group.visible = flyover.visible !== false
-      && Math.abs(predictedZ - (renderer.camera?.position?.z || 0)) < (record.glbSkinned ? 190 : renderer.mobile ? 100 : 178);
+      && Math.abs(predictedZ - (renderer.camera?.position?.z || 0)) < (record.glbSkinned ? 330 : renderer.mobile ? 100 : 178);
   }
 }
 
@@ -481,10 +482,16 @@ function updateFork(renderer, state) {
     if (!renderer._kanoForkLock) renderer._kanoForkLock = state.targetLane < 0 ? 'ground' : 'deck';
     if (renderer._kanoForkLock === 'ground') state.targetLane = -1;
     else state.targetLane = Math.max(0, state.targetLane);
-    showForkBanner(renderer._kanoForkLock === 'ground' ? 'ROAD BELOW the flyover' : 'ON THE FLYOVER');
+    const onRoad = Boolean(document.getElementById('drive-controls')?.offsetParent) && !document.querySelector('.screen:not(.hidden)');
+    showForkBanner(!onRoad ? '' : renderer._kanoForkLock === 'ground' ? 'ROAD BELOW the flyover' : 'ON THE FLYOVER');
   } else {
     renderer._kanoForkLock = null;
-    showForkBanner(abs < GLB_HALF + 55 ? 'Flyover ahead · middle/right lane ▲ · left lane ▼ road below' : '');
+    const metres = Math.round(rz - GLB_HALF);
+    const driving = Boolean(document.getElementById('drive-controls')?.offsetParent) && !document.querySelector('.screen:not(.hidden)');
+    const name = KANO_FLYOVER_SITES[renderer.__kanoFlyoverSiteKey]?.title || 'FLYOVER';
+    showForkBanner(driving && rz > 0 && abs < GLB_HALF + 650
+      ? (metres > 20 ? `${name} ahead · ${metres} m` : 'Flyover now · middle/right lane ▲ · left lane ▼ road below')
+      : '');
   }
 }
 
@@ -519,6 +526,8 @@ if (!Renderer3D.prototype[PATCH]) {
   if (typeof originalBuildFlyover === 'function') {
     Renderer3D.prototype.buildFlyover = function buildDriveableFlyovers(...args) {
       const result = originalBuildFlyover.apply(this, args);
+      this.flyoverLoopDistance = FLYOVER_SPACING;
+      (this.flyovers || []).forEach((flyover, index) => { if (flyover) flyover.position.z = -420 - index * (FLYOVER_SPACING / 2); });
       ensureApproachGroups(this);
       installRenderHook(this);
       return result;
@@ -533,6 +542,8 @@ if (!Renderer3D.prototype[PATCH]) {
         installRenderHook(this);
         syncApproachMotion(this, state, deltaSeconds);
         updateFork(this, state);
+      } else {
+        showForkBanner('');
       }
       return originalDraw.call(this, state, deltaSeconds, ...args);
     };

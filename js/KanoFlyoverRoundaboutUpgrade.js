@@ -329,6 +329,16 @@ function signedScroll(state, deltaSeconds) {
 export const KANO_FLYOVER_SITES = {
   'Kofar Mata': { title: 'KOFAR MATA', subtitle: 'FLYOVER  •  KANO' },
   'Kofar Dan Agundi': { title: 'DAN AGUNDI', subtitle: 'INTERCHANGE  •  KANO' },
+  // Real Kano flyovers mapped onto the routes that pass them.
+  'Kofar Nassarawa': { title: 'KWANKWASIYYA', subtitle: 'SILVER JUBILEE - KOFAR NASSARAWA' },
+  'Nassarawa': { title: 'KWANKWASIYYA', subtitle: 'SILVER JUBILEE - KOFAR NASSARAWA' },
+  'Gidan Murtala': { title: 'BUK ROAD FLYOVER', subtitle: 'GIDAN MURTALA - SHARADA' },
+  'Sharada': { title: 'BUK ROAD FLYOVER', subtitle: 'GIDAN MURTALA - SHARADA' },
+  'BUK Gate': { title: 'BUK ROAD FLYOVER', subtitle: 'GIDAN MURTALA - SHARADA' },
+  'Bayero University': { title: 'BUK ROAD FLYOVER', subtitle: 'GIDAN MURTALA - SHARADA' },
+  'Murtala Muhammad Way': { title: 'MURTALA MOHAMMED', subtitle: 'FLYOVER  •  KANO' },
+  'Kano City Centre': { title: 'SHAHUCI FLYOVER', subtitle: 'MURTALA MOHAMMED HOSPITAL' },
+  'Zaria Road': { title: 'DANGI INTERCHANGE', subtitle: '3-LAYER  •  KANO' },
 };
 
 function applyFlyoverSite(renderer, routeName) {

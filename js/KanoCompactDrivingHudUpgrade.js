@@ -9,6 +9,7 @@ import { Game } from './game.js';
 import { formatFareAmount, isDrivingScreenVisible, compactPassengerText } from './KanoCompactDrivingHudRules.mjs';
 
 const INSTALL_KEY = Symbol.for('kano.life.compactDrivingHud.v1');
+const TICK_KEY = Symbol.for('kano.life.compactHud.tick.v1');
 const STYLE_ID = 'kano-compact-driving-hud-style';
 const ROOT_ID = 'kano-compact-driving-hud';
 const UPDATE_INTERVAL_MS = 120;
@@ -261,7 +262,7 @@ function install() {
   function sync(now = performance.now(), game = activeGame) {
     if (now - lastSync < UPDATE_INTERVAL_MS) return;
     lastSync = now;
-    setValue('speed', `${sourceText('speed', '0')} km/h`);
+    setValue('speed', sourceText('speed', '0'));
     setValue('fuel', `${sourceText('fuel', '100')}%`);
     setValue('pax', compactPassengerText(sourceText('pax', '0'), sourceText('capacity', '5')));
     setValue('fares', formatFareAmount(game?.s?.fares || 0));
@@ -284,6 +285,19 @@ function install() {
       root.style.display = stateVisible ? '' : 'none';
       lastScreenState = stateVisible;
     }
+  }
+
+  // Game has no update() method (the loop calls tick()), so the old hook never ran and the
+  // compact HUD stayed frozen at its start values. Hook tick() instead.
+  const originalTick = Game.prototype.tick;
+  if (typeof originalTick === 'function' && !Game.prototype[TICK_KEY]) {
+    Game.prototype.tick = function tickWithCompactHud(...args) {
+      activeGame = this;
+      const result = originalTick.apply(this, args);
+      sync(performance.now(), this);
+      return result;
+    };
+    Object.defineProperty(Game.prototype, TICK_KEY, { value: true });
   }
 
   const originalUpdate = Game.prototype.update;
