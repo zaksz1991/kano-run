@@ -1,0 +1,22 @@
+KANO LIFE — STEP 109 UPDATE
+
+This is a small GitHub overlay ZIP. Keep the existing project and all public assets. Preserve the js/, tests/ and docs/ folders when uploading.
+
+REPLACE:
+- js/KanoPerfLab.js
+- js/KanoAnimationTrafficUpgrade.js
+
+ADD:
+- tests/KanoPerfLabReliability.test.mjs
+- docs/KanoLife-Step109-PerformanceLabReliability.md
+
+Do not replace index.html, main.js, game.js, renderer3d.js, ui.js, KanoDeviceTier.js, KanoPhoneComfortUpgrade.js, ModelManager.js, KanoGameplayPresentationRepair.js, KanoModelAssetVisualUpgrade.js, tests/KanoRegressionGuard.test.mjs, or anything in public/.
+
+Graphical GitHub upload:
+1. Open the kano-run repository and select main.
+2. Choose Add file > Upload files.
+3. Upload the two replacement files and the two new files, keeping their folders.
+4. Commit the change to main. Vercel should build from the new main commit.
+5. After deployment, open kano-run.vercel.app/?lab=1, start driving, and keep the tab visible until the report is complete.
+
+This update was built from the supplied project snapshot with the Step 106–108 overlays applied. It was not compared against the live GitHub main branch during this run. Compare the two replacement files with current main before uploading if main has received other changes since the Step 108 package.

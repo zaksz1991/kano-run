@@ -1,9 +1,9 @@
-KANO LIFE — CUMULATIVE PERFORMANCE UPGRADES (STEPS 106–108)
+KANO LIFE — STEP 109 OVERLAY
 
-This archive carries the source changes for Adaptive Quality (106), Skinned Character Render LOD (107), and Traffic GLB Instancing (108).
+This ZIP contains two JavaScript replacements, one new test, and the step notes. It is not a complete project archive and does not contain public/ assets.
 
-The ZIP contains only changed/new source, test and documentation files. It does not include public/ model/audio assets, package manifests, node_modules, or unrelated game source.
+Read APPLY-STEP109.txt before uploading. Preserve the supplied js/, tests/, and docs/ paths. Do not replace other project files.
 
-Follow APPLY-STEP108.txt. Upload paths at the ZIP root (js/, tests/, docs/) must remain unchanged.
+The archive was built from the supplied project snapshot with Steps 106–108 overlaid. It was not independently compared with live GitHub main. Compare the two replacement files with the current repository versions before uploading if main has changed since Step 108.
 
-This archive was assembled from the uploaded repository snapshot, not a fresh checkout of the current GitHub main branch. Compare replacement files against your latest main before committing so newer changes are not overwritten.
+No physical-device FPS result is claimed. After deployment, run the Performance Lab on the phone with the tab visible until it completes.

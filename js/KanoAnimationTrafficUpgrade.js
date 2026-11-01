@@ -762,6 +762,8 @@ export class KanoGLBAnimationManager {
           mobileDistanceSquared: NaN,
           staticPoseActive: false,
           staticPoseMeshCount: 0,
+          staticPoseBakeAttempted: false,
+          staticPoseBakeFailure: null,
         });
         root.userData.kanoAnimationState = 'playing';
       } catch (error) {
@@ -887,13 +889,25 @@ export class KanoGLBAnimationManager {
           restoreSkinnedCharacterPose(root);
           entry.staticPoseActive = false;
           entry.staticPoseMeshCount = 0;
+          entry.staticPoseBakeAttempted = false;
+          entry.staticPoseBakeFailure = null;
           entry.pendingElapsed = 0;
-        } else if (renderMode === 'static-pose' && !entry.staticPoseActive) {
+        } else if (
+          renderMode === 'static-pose' &&
+          !entry.staticPoseActive &&
+          !entry.staticPoseBakeAttempted
+        ) {
+          // A rejected GLB (for example, a normal-mapped or morph-target rig)
+          // must not trigger an expensive failed bake on every 120 ms update.
+          entry.staticPoseBakeAttempted = true;
           const result = bakeSkinnedCharacterStaticPose(root, THREE);
           if (result.applied) {
             entry.staticPoseActive = true;
             entry.staticPoseMeshCount = result.meshes;
+            entry.staticPoseBakeFailure = null;
             entry.pendingElapsed = 0;
+          } else {
+            entry.staticPoseBakeFailure = result.reason || 'unknown-bake-failure';
           }
         }
 
@@ -962,21 +976,83 @@ export class KanoGLBAnimationManager {
   }
 
   getCharacterRenderLodDiagnostics() {
+    // This inventory is intentionally collected only when the Performance Lab
+    // requests a report. It is not added to the per-frame mobile update path.
+    const roots = this.collectAnimatedRoots();
     const stats = {
       enabled: this.mobile,
       activeCharacterRoots: 0,
+      idleCharacterRoots: 0,
+      walkCharacterRoots: 0,
       staticPoseCharacterRoots: 0,
       staticPoseMeshes: 0,
       remainingSkinnedMeshes: 0,
+      farIdleRoots: 0,
+      nearIdleRoots: 0,
+      hysteresisIdleRoots: 0,
+      idleWithoutMixerRoots: 0,
+      idleLoadingRoots: 0,
+      idleNoClipRoots: 0,
+      idleFailedRoots: 0,
+      idleWaitingForMixerRoots: 0,
+      idleAwaitingDistanceRoots: 0,
+      idleBakeNotAttemptedRoots: 0,
+      staticPoseBakeFailures: 0,
+      staticPoseBakeFailureReasons: {},
+      nearestIdleDistance: null,
+      farthestIdleDistance: null,
     };
-    for (const root of this.lastActiveRoots) {
+
+    const idleDistances = [];
+    for (const [root, role] of roots) {
       if (!root?.parent) continue;
       stats.activeCharacterRoots += 1;
-      if (root.userData?.kanoCharacterStaticPoseLodActive) stats.staticPoseCharacterRoots += 1;
+      if (role === 'idle') stats.idleCharacterRoots += 1;
+      else stats.walkCharacterRoots += 1;
+
+      const entry = this.mixers.get(root);
+      if (root.userData?.kanoCharacterStaticPoseLodActive) {
+        stats.staticPoseCharacterRoots += 1;
+      }
+      if (role === 'idle') {
+        if (!entry) {
+          stats.idleWithoutMixerRoots += 1;
+          const animationState = root.userData?.kanoAnimationState;
+          if (animationState === 'loading') stats.idleLoadingRoots += 1;
+          else if (animationState === 'no-clips') stats.idleNoClipRoots += 1;
+          else if (animationState === 'failed') stats.idleFailedRoots += 1;
+          else stats.idleWaitingForMixerRoots += 1;
+        } else if (!Number.isFinite(entry.mobileDistanceSquared)) {
+          stats.idleAwaitingDistanceRoots += 1;
+        } else {
+          const distance = Math.sqrt(Math.max(0, entry.mobileDistanceSquared));
+          idleDistances.push(distance);
+          if (distance >= 40) {
+            stats.farIdleRoots += 1;
+            if (entry.staticPoseBakeAttempted && entry.staticPoseBakeFailure) {
+              stats.staticPoseBakeFailures += 1;
+              const reason = entry.staticPoseBakeFailure;
+              stats.staticPoseBakeFailureReasons[reason] = (stats.staticPoseBakeFailureReasons[reason] || 0) + 1;
+            } else if (!entry.staticPoseActive && !entry.staticPoseBakeAttempted) {
+              stats.idleBakeNotAttemptedRoots += 1;
+            }
+          } else if (distance <= 32) {
+            stats.nearIdleRoots += 1;
+          } else {
+            stats.hysteresisIdleRoots += 1;
+          }
+        }
+      }
+
       root.traverse?.((object) => {
         if (object?.isSkinnedMesh) stats.remainingSkinnedMeshes += 1;
         if (object?.userData?.kanoStaticPoseLod === true) stats.staticPoseMeshes += 1;
       });
+    }
+
+    if (idleDistances.length) {
+      stats.nearestIdleDistance = Math.min(...idleDistances);
+      stats.farthestIdleDistance = Math.max(...idleDistances);
     }
     return stats;
   }

@@ -1,0 +1,37 @@
+KANO LIFE — STEP 109 VERIFICATION
+
+SOURCE BASE
+- Built from the supplied kano-run.zip snapshot with the Step 106, Step 107, and Step 108 delivery overlays applied.
+- The live GitHub main branch was not fetched or independently compared during this run. The overlay instructions explicitly state this limitation.
+- The supplied snapshot has no root package.json and omits public/. No public model or audio assets are included in this overlay.
+
+FULL NODE TEST SUITE
+Before Step 109:
+- 1,395 tests
+- 1,379 passed
+- 16 failed
+
+After Step 109:
+- 1,408 tests
+- 1,392 passed
+- 16 failed
+- All 13 new Step 109 tests passed.
+- The same 16 existing failures remained. No additional full-suite failures were introduced.
+- The unchanged failures are tied to this incomplete source snapshot: omitted public assets, Node/browser shim limitations, and environment-dependent integration checks.
+
+STEP 109 FOCUSED TESTS
+- 13 passed, 0 failed.
+- Covers timestamp-based FPS/p95/slow-frame calculations, null-safe missing measurements, paired baseline comparison, drift rejection, asynchronous GPU timing guards, temporary renderer/scene restoration, and expanded character LOD diagnostics.
+
+OTHER CHECKS
+- JavaScript syntax: 527/527 source files passed.
+- Protected files verified byte-for-byte unchanged: index.html, js/main.js, js/game.js, js/renderer3d.js, js/ui.js, js/KanoGameplayPresentationRepair.js, js/KanoModelAssetVisualUpgrade.js, js/KanoDeviceTier.js, js/KanoPhoneComfortUpgrade.js, js/ModelManager.js, and tests/KanoRegressionGuard.test.mjs.
+- No file under public/ was included or modified.
+
+NPM TEST LIMITATION
+- `npm test` was attempted before and after Step 109 but could not start because the supplied project snapshot has no root package.json (ENOENT).
+- The full Node test suite and syntax scan were run directly against the supplied source snapshot instead.
+
+DEVICE LIMITATION
+- No physical Android/Mali-G52 MC2 browser session was available here.
+- No FPS improvement is claimed. The purpose of this step is to make the next phone benchmark repeatable and diagnostic.
