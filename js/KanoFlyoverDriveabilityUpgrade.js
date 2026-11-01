@@ -205,8 +205,8 @@ const GLB_HALF = 150; // 300 m flyover with long, gentle ramps (was 144 m)
 const FLYOVER_SPACING = 1700; // real flyovers are kilometres apart, not one every 260 m
 const GLB_DECK_HEIGHT = 5.2;
 const GLB_SPAN = GLB_HALF * 2;
-const GLB_WIDTH = 7.2; // deck covers the middle + right lanes; the LEFT lane is the road down beside the flyover
-const GLB_CENTER_X = 1.75;
+const GLB_WIDTH = 9; // wider deck: lanes at x=0 and x=3 now have room on both sides // deck covers the middle + right lanes; the LEFT lane is the road down beside the flyover
+const GLB_CENTER_X = 2.6;
 
 function sampleDeck(wrapper) {
   wrapper.updateMatrixWorld(true);
@@ -424,7 +424,16 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   renderer._kanoFlyoverCurrentIndex = playerSurface?.record.index ?? null;
 
   for (const actor of renderer.trafficActors?.values?.() || []) elevateActor(renderer, actor);
-  for (const actor of renderer.zoneActors?.values?.() || []) elevateActor(renderer, actor);
+  // Keep passengers and roadside markers on the verge, clear of the keke body.
+  for (const actor of renderer.zoneActors?.values?.() || []) {
+    if (actor?.position && Math.abs(actor.position.x) > 4 && Math.abs(actor.position.x) < 5.5) {
+      actor.position.x = Math.sign(actor.position.x) * 5.8;
+    }
+    elevateActor(renderer, actor);
+  }
+  // The keke may pull over, but never onto the verge where people stand.
+  if (renderer.player.position.x > 3.1) renderer.player.position.x = 3.1;
+  else if (renderer.player.position.x < -3.1) renderer.player.position.x = -3.1;
   updateMobileTrafficBatchElevations(renderer, renderer._kanoFlyoverCurrentState);
   return height;
 }
@@ -453,15 +462,31 @@ function syncApproachMotion(renderer, state, deltaSeconds) {
   }
 }
 
+// offsetParent / querySelector force layout; sample it a couple of times a second, not every frame.
+let drivingCache = { at: 0, value: false };
+function isDriving() {
+  const now = performance.now();
+  if (now - drivingCache.at > 500) {
+    drivingCache = {
+      at: now,
+      value: Boolean(document.getElementById('drive-controls')?.offsetParent) && !document.querySelector('.screen:not(.hidden)'),
+    };
+  }
+  return drivingCache.value;
+}
+
 let forkBanner = null;
 function showForkBanner(text) {
   if (typeof document === 'undefined') return;
+  if (!forkBanner && !text) return;
   if (!forkBanner) {
     forkBanner = document.createElement('div');
     forkBanner.id = 'kano-flyover-fork';
     forkBanner.style.cssText = 'position:fixed;left:50%;top:19%;transform:translateX(-50%);z-index:30;padding:5px 10px;border-radius:10px;background:rgba(10,30,24,.8);border:1px solid #f5c431;color:#fff;font:700 12px system-ui,sans-serif;text-align:center;pointer-events:none;display:none;max-width:88vw';
     document.body.appendChild(forkBanner);
   }
+  if (forkBanner.dataset.t === (text || '')) return;
+  forkBanner.dataset.t = text || '';
   forkBanner.textContent = text || '';
   forkBanner.style.display = text ? 'block' : 'none';
 }
@@ -477,17 +502,30 @@ function updateFork(renderer, state) {
     const d = renderer.player.position.z - flyover.position.z;
     if (Math.abs(d) < Math.abs(rz)) rz = d;
   }
+  // A flyover deck has no roadside stops: move stops and potholes that land on the deck
+  // down to the road beside it (left lane) so nobody stands on, or is run over on, the deck.
+  if (Array.isArray(state.zones)) {
+    for (const zone of state.zones) {
+      const z = -Math.max(-0.05, Number(zone.depth) || 0) * 88;
+      const onDeck = (nearestSurfaceForZ(renderer, z)?.height || 0) > 0.3;
+      if (!onDeck) continue;
+      if (zone.type === 'pothole' ? zone.lane >= 1 : (zone.side || (zone.lane === 0 ? -1 : 1)) > 0) {
+        zone.side = -1;
+        zone.lane = 0;
+      }
+    }
+  }
   const abs = Math.abs(rz);
   if (abs < GLB_HALF) {
     if (!renderer._kanoForkLock) renderer._kanoForkLock = state.targetLane < 0 ? 'ground' : 'deck';
     if (renderer._kanoForkLock === 'ground') state.targetLane = -1;
     else state.targetLane = Math.max(0, state.targetLane);
-    const onRoad = Boolean(document.getElementById('drive-controls')?.offsetParent) && !document.querySelector('.screen:not(.hidden)');
+    const onRoad = isDriving();
     showForkBanner(!onRoad ? '' : renderer._kanoForkLock === 'ground' ? 'ROAD BELOW the flyover' : 'ON THE FLYOVER');
   } else {
     renderer._kanoForkLock = null;
     const metres = Math.round(rz - GLB_HALF);
-    const driving = Boolean(document.getElementById('drive-controls')?.offsetParent) && !document.querySelector('.screen:not(.hidden)');
+    const driving = isDriving();
     const name = KANO_FLYOVER_SITES[renderer.__kanoFlyoverSiteKey]?.title || 'FLYOVER';
     showForkBanner(driving && rz > 0 && abs < GLB_HALF + 650
       ? (metres > 20 ? `${name} ahead · ${metres} m` : 'Flyover now · middle/right lane ▲ · left lane ▼ road below')

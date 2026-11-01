@@ -42,7 +42,7 @@ function install() {
   for (const target of [window, document.getElementById('game-container')]) target?.addEventListener('scroll', reset, { passive: true });
   window.addEventListener('resize', reset, { passive: true });
   window.addEventListener('orientationchange', reset, { passive: true });
-  window.setInterval(reset, 1500);
+  window.setInterval(reset, 3000);
 }
 
 if (typeof document !== 'undefined') {
