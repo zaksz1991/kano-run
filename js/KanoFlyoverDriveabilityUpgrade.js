@@ -263,9 +263,20 @@ function skinWithGlb(renderer, record) {
     const base = endsOf(heights);
     wrapper.position.y = -base;
     wrapper.position.x = GLB_CENTER_X;
-    const profile = heights.map((h) => Math.max(0, h - base));
+    let profile = heights.map((h) => Math.max(0, h - base));
+    // The raw raycast height jitters (rails, seams, lamp posts). Smooth it so the keke and camera
+    // glide up and over the flyover instead of wobbling, then pin both ends to the ground.
+    for (let pass = 0; pass < 3; pass += 1) {
+      profile = profile.map((_, i) => {
+        let sum = 0; let count = 0;
+        for (let k = -6; k <= 6; k += 1) { const j = i + k; if (j >= 0 && j < profile.length) { sum += profile[j]; count += 1; } }
+        return sum / count;
+      });
+    }
     profile[0] = 0;
+    profile[1] = Math.min(profile[1], profile[2] * 0.5);
     profile[profile.length - 1] = 0;
+    profile[profile.length - 2] = Math.min(profile[profile.length - 2], profile[profile.length - 3] * 0.5);
 
     // Hide the built-in boxes, rails, ramps and stripes.
     record.group.add(wrapper);

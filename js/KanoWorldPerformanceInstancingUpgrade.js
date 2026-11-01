@@ -40,6 +40,8 @@ import './KanoScreenLock.js';
 import './KanoCrashPhysics.js';
 import './KanoPerfLab.js';
 import './KanoDropChip.js';
+import './KanoSceneryDiet.js';
+import './KanoRoadSidesFix.js';
 import './KanoPhoneMaterialLite.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
