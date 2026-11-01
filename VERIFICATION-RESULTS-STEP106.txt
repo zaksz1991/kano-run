@@ -1,0 +1,25 @@
+KANO LIFE — STEP 106 VERIFICATION
+
+Source snapshot:
+- Uploaded kano-run.zip extracted with the public/ directory omitted.
+- Root package.json and package-lock.json are also absent from that upload.
+
+Baseline before changes:
+- Node test suite: 1,360 total; 1,344 passed; 16 failed.
+- npm test: could not start because root package.json is absent.
+
+After changes:
+- Node test suite: 1,371 total; 1,355 passed; 16 failed.
+- All 11 new tests pass.
+- The same 16 baseline failures remain; no additional suite failures were introduced.
+- Focused adaptive/mobile test set: 18 passed; 0 failed.
+- Existing static-checks.py: 10 passed.
+- JavaScript syntax check: 275/275 .js files passed.
+- npm test: still cannot start because root package.json is absent from the uploaded snapshot.
+
+The unchanged baseline failures are due to the stripped snapshot and its existing test harness: absent public assets/service worker/asset manifest, absent installed `three` package, and incomplete browser globals in Node tests.
+
+Not verified:
+- No physical Android/Mali-G52 MC2 runtime benchmark was possible here.
+- FPS improvement is not claimed until the deployed version is tested on the target phone.
+- The uploaded snapshot was used as the local code base; the latest GitHub main branch was not independently fetched during this edit.

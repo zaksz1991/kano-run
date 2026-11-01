@@ -10,7 +10,8 @@
  * the separate life-scene dioramas are deliberately never culled by this file.
  */
 import * as THREE from 'three';
-import { getMobileTier, getMobileRatios, getMobileRenderBudget } from './KanoDeviceTier.js';
+import { getMobileTier, getMobileRatios, getMobileRenderBudget, getRenderSharpness } from './KanoDeviceTier.js';
+import { buildAdaptiveQualityPlan, chooseAdaptiveQualityAction, classifyAdaptivePerformance } from './KanoAdaptiveQualityPolicy.js';
 import { KanoSceneUpgrade } from './KanoSceneUpgrade.js';
 import { KanoGLBAnimationManager } from './KanoAnimationTrafficUpgrade.js';
 
@@ -327,23 +328,34 @@ export class KanoAdaptiveQuality {
     const mobileRatios = this.mobile ? getMobileRatios(this.mobileTier) : null;
     const mobileRenderBudget = this.mobile ? getMobileRenderBudget(this.mobileTier) : null;
 
-    // Start at a legible CSS-pixel scale. Under load, this controller lowers
-    // decorative LOD and resolution gradually; it must not make the whole game
-    // blurry just to keep a high frame-rate estimate in software-rendered tests.
+    // Keep the normal phone floor at 1:1 CSS pixels. On a weak mobile GPU,
+    // permit a separate emergency ladder below 1:1 only when the player has
+    // left the display setting at Standard. Explicit Sharp/Max choices remain
+    // respected, while sustained critical FPS can still shed distant scene LOD.
     this.maximumRatio = this.mobile ? Math.min(mobileRatios.max, mobileRenderBudget.max) : 1.72;
     this.minimumRatio = this.mobile ? mobileRenderBudget.min : 0.84;
     this.startupRatio = this.mobile ? mobileRenderBudget.start : 1.30;
+    this.emergencyResolutionAllowed = Boolean(
+      this.mobile &&
+      this.mobileTier === 'low' &&
+      getRenderSharpness() === 'standard'
+    );
+    this.emergencyResolutionFloor = this.emergencyResolutionAllowed ? 0.82 : null;
     this.maxSupportedRatio = Math.max(
       this.minimumRatio,
       Math.min(this.deviceRatio, this.maximumRatio),
     );
     this.baseRatio = this.maxSupportedRatio;
-    this.minRatio = Math.min(this.baseRatio, this.minimumRatio);
-
-    this.levels = this.buildLevels();
-    this.lodDistances = this.mobile
-      ? [Infinity, 190, 165, 140, 118, 95, 75]
-      : [Infinity, 270, 245, 220, 195, 175];
+    this.qualityPlan = buildAdaptiveQualityPlan({
+      baseRatio: this.baseRatio,
+      minimumRatio: this.minimumRatio,
+      startupRatio: this.startupRatio,
+      mobile: this.mobile,
+      emergencyFloor: this.emergencyResolutionFloor,
+    });
+    this.minRatio = Math.min(this.baseRatio, this.qualityPlan.minimumRatio);
+    this.levels = this.qualityPlan.levels;
+    this.lodDistances = this.qualityPlan.lodDistances;
 
     const targetStart = Math.min(this.baseRatio, this.startupRatio);
     let startIndex = this.levels.findIndex(
@@ -357,45 +369,29 @@ export class KanoAdaptiveQuality {
 
     this.windowStart = nowTime();
     this.windowFrames = 0;
+    this.lastFrameSampleAt = null;
+    this.frameTimeEma = 0;
     this.slowWindows = 0;
     this.fastWindows = 0;
     this.lastChangeAt = 0;
     this.lastFps = 60;
+    this.lastPerformanceClass = 'stable';
+    this.lastGameState = null;
     this.lastTierEventAt = 0;
     this.lastLodUpdateAt = 0;
 
     this.worldPosition = new THREE.Vector3();
     this.cameraPosition = new THREE.Vector3();
     this.visibilityRecords = new Map();
+    this.lodVisibilityStates = new Map();
+    this._lodActorScratch = [];
 
     this.applyRatio(this.currentRatio);
     this.applySceneLod(true);
   }
 
   buildLevels() {
-    const raw = [
-      this.baseRatio,
-      this.baseRatio * 0.94,
-      this.baseRatio * 0.88,
-      this.baseRatio * 0.82,
-      Math.min(this.baseRatio, this.startupRatio),
-      this.minRatio,
-    ];
-    const unique = [];
-    for (const value of raw) {
-      const ratio = clamp(value, this.minRatio, this.baseRatio);
-      if (!unique.some((previous) => Math.abs(previous - ratio) < 0.025)) {
-        unique.push(ratio);
-      }
-    }
-    unique.sort((a, b) => b - a);
-    // Once resolution reaches its floor (never blurrier than ~1 pixel per CSS
-    // pixel), keep easing the load by shortening scene LOD instead of softening.
-    if (this.mobile && unique.length) {
-      const floor = unique[unique.length - 1];
-      unique.push(floor, floor, floor);
-    }
-    return unique.length ? unique : [this.baseRatio];
+    return [...(this.qualityPlan?.levels || [this.baseRatio])];
   }
 
   distanceForLevel(index) {
@@ -408,6 +404,11 @@ export class KanoAdaptiveQuality {
     if (this.disposed || !this.webgl) return false;
     const next = clamp(Number(ratio) || 1, this.minRatio, this.baseRatio);
     try {
+      const actualRatio = Number(this.webgl.getPixelRatio?.());
+      if (Number.isFinite(actualRatio) && Math.abs(next - actualRatio) < 0.008) {
+        this.currentRatio = next;
+        return true;
+      }
       this.webgl.setPixelRatio(next);
       this.renderer3d?.resize?.();
       this.currentRatio = next;
@@ -445,11 +446,13 @@ export class KanoAdaptiveQuality {
     const originalVisible = this.visibilityRecords.get(actor);
     if (!originalVisible) {
       actor.visible = false;
+      this.lodVisibilityStates.set(actor, false);
       return;
     }
 
     if (!Number.isFinite(maxDistance)) {
       actor.visible = true;
+      this.lodVisibilityStates.set(actor, true);
       return;
     }
 
@@ -466,7 +469,14 @@ export class KanoAdaptiveQuality {
     const dx = Number(position.x || 0) - this.cameraPosition.x;
     const dz = Number(position.z || 0) - this.cameraPosition.z;
     const distance = Math.sqrt(dx * dx + dz * dz);
-    actor.visible = distance <= maxDistance + extraBuffer;
+    const wasVisible = this.lodVisibilityStates.has(actor)
+      ? this.lodVisibilityStates.get(actor)
+      : actor.visible !== false;
+    const hysteresis = this.mobile ? 7 : 4;
+    const threshold = maxDistance + extraBuffer + (wasVisible ? hysteresis : -hysteresis);
+    const nextVisible = distance <= threshold;
+    actor.visible = nextVisible;
+    this.lodVisibilityStates.set(actor, nextVisible);
   }
 
   restoreRecordedVisibility() {
@@ -478,6 +488,8 @@ export class KanoAdaptiveQuality {
         // Scene objects can be disposed during a renderer transition.
       }
     }
+    this.visibilityRecords.clear();
+    this.lodVisibilityStates.clear();
   }
 
   collectDecorativeActors() {
@@ -494,8 +506,10 @@ export class KanoAdaptiveQuality {
       if (actor) actors.add(actor);
     }
 
-    // Only distant pedestrian models are LOD-managed. Their saved positions
-    // and game-state updates remain untouched; only visual draw visibility changes.
+    // Roadside pedestrians and waiting passenger GLBs are visual actors. Their
+    // simulation records, pickup-zone parents and collision/gameplay state are
+    // deliberately left active; only the character model's draw visibility is
+    // managed by this controller.
     for (const pedestrian of renderer?.pedestrians || []) {
       const actor = pedestrian?.actor;
       if (!actor) continue;
@@ -506,6 +520,18 @@ export class KanoAdaptiveQuality {
         actor.userData?.modelPath
       ) {
         actors.add(actor);
+      }
+    }
+    for (const zone of renderer?.zoneActors?.values?.() || []) {
+      const waitingActors = zone?.userData?.waitingActors;
+      if (!Array.isArray(waitingActors)) continue;
+      for (const actor of waitingActors) {
+        if (
+          actor?.isObject3D &&
+          (actor.userData?.modelPath || actor.userData?.characterType)
+        ) {
+          actors.add(actor);
+        }
       }
     }
 
@@ -528,13 +554,26 @@ export class KanoAdaptiveQuality {
       return;
     }
 
+    const actors = this.collectDecorativeActors();
+    // Dynamic passenger actors can be replaced during zone synchronisation.
+    // Release stale visibility records so the LOD map cannot retain removed GLBs.
+    for (const [actor, visible] of this.visibilityRecords) {
+      if (actors.has(actor)) continue;
+      try { actor.visible = visible; } catch { /* actor may already be disposed */ }
+      this.visibilityRecords.delete(actor);
+      this.lodVisibilityStates.delete(actor);
+    }
+
     const maxDistance = this.currentLodDistance;
+    const deepMobileLod = this.mobile && this.levelIndex >= Math.max(0, this.levels.length - 4);
+    const pedestrianFloor = deepMobileLod ? 42 : 88;
     const pedestrianDistance = Number.isFinite(maxDistance)
-      ? Math.max(88, maxDistance - (this.mobile ? 18 : 4))
+      ? Math.max(pedestrianFloor, maxDistance - (this.mobile ? 18 : 4))
       : Infinity;
 
-    for (const actor of this.collectDecorativeActors()) {
+    for (const actor of actors) {
       const isCharacter = Boolean(
+        actor.userData?.characterType ||
         actor.userData?.kanoAmbientCrowd ||
         actor.userData?.modelPath && /pedestrian|passenger|character/i.test(
           `${actor.userData?.characterType || ''} ${actor.userData?.modelPath || ''}`,
@@ -546,9 +585,6 @@ export class KanoAdaptiveQuality {
         isCharacter ? 0 : 8,
       );
     }
-
-    // The player keke, traffic, pickups, fuel stops and potholes are deliberately
-    // excluded from LOD, so gameplay and collision semantics cannot be altered.
   }
 
   update(now = nowTime(), renderMode = '3D', gameState = 'PLAY') {
@@ -562,6 +598,36 @@ export class KanoAdaptiveQuality {
       return;
     }
 
+    if (globalThis.document?.hidden) {
+      this.windowStart = now;
+      this.windowFrames = 0;
+      this.lastFrameSampleAt = null;
+      this.slowWindows = 0;
+      this.fastWindows = 0;
+      return;
+    }
+
+    // Do not mix menu, intro, event or life-scene frames into a driving sample.
+    if (this.lastGameState !== gameState) {
+      this.lastGameState = gameState;
+      this.windowStart = now;
+      this.windowFrames = 0;
+      this.slowWindows = 0;
+      this.fastWindows = 0;
+    }
+
+    if (this.lastFrameSampleAt !== null) {
+      const frameDelta = now - this.lastFrameSampleAt;
+      // Ignore tab-resume and long-stall samples. They are not representative
+      // of renderer capacity and otherwise force an unnecessary quality drop.
+      if (frameDelta > 0 && frameDelta <= 250) {
+        this.frameTimeEma = this.frameTimeEma > 0
+          ? this.frameTimeEma * 0.82 + frameDelta * 0.18
+          : frameDelta;
+      }
+    }
+    this.lastFrameSampleAt = now;
+
     this.applySceneLod();
     this.windowFrames += 1;
     if (now - this.windowStart < 1000) return;
@@ -570,6 +636,7 @@ export class KanoAdaptiveQuality {
     this.lastFps = (this.windowFrames * 1000) / duration;
     this.windowFrames = 0;
     this.windowStart = now;
+    this.lastPerformanceClass = classifyAdaptivePerformance(this.lastFps, { mobile: this.mobile });
 
     if (gameState !== 'PLAY') {
       this.slowWindows = 0;
@@ -577,11 +644,10 @@ export class KanoAdaptiveQuality {
       return;
     }
 
-    const sinceChange = now - this.lastChangeAt;
-    if (this.lastFps < (this.mobile ? 45 : 47)) {
+    if (this.lastPerformanceClass === 'critical' || this.lastPerformanceClass === 'slow') {
       this.slowWindows += 1;
       this.fastWindows = 0;
-    } else if (this.lastFps > 57) {
+    } else if (this.lastPerformanceClass === 'headroom') {
       this.fastWindows += 1;
       this.slowWindows = 0;
     } else {
@@ -589,21 +655,19 @@ export class KanoAdaptiveQuality {
       this.fastWindows = 0;
     }
 
-    const criticallySlow = this.mobile && this.lastFps < 36;
-    if (
-      (criticallySlow || this.slowWindows >= 2) &&
-      sinceChange >= (this.mobile ? 900 : 2200) &&
-      this.levelIndex < this.levels.length - 1
-    ) {
-      this.setLevel(this.levelIndex + 1, now, 'performance');
-      return;
-    }
+    const action = chooseAdaptiveQualityAction({
+      fps: this.lastFps,
+      slowWindows: this.slowWindows,
+      fastWindows: this.fastWindows,
+      sinceChangeMs: now - this.lastChangeAt,
+      levelIndex: this.levelIndex,
+      levelCount: this.levels.length,
+      mobile: this.mobile,
+    });
 
-    if (
-      this.fastWindows >= 7 &&
-      sinceChange >= 9000 &&
-      this.levelIndex > 0
-    ) {
+    if (action === 'reduce') {
+      this.setLevel(this.levelIndex + 1, now, 'performance');
+    } else if (action === 'restore') {
       this.setLevel(this.levelIndex - 1, now, 'headroom');
     }
   }
@@ -634,6 +698,9 @@ export class KanoAdaptiveQuality {
               level: this.levelIndex + 1,
               levels: this.levels.length,
               fps: Math.round(this.lastFps),
+              frameTimeMs: Number(this.frameTimeEma.toFixed(2)),
+              performanceClass: this.lastPerformanceClass,
+              emergencyResolution: this.emergencyResolutionAllowed,
               reason,
               lodDistance: Number.isFinite(this.currentLodDistance)
                 ? this.currentLodDistance
@@ -652,12 +719,16 @@ export class KanoAdaptiveQuality {
     return {
       enabled: this.enabled,
       fps: Math.round(this.lastFps),
+      frameTimeMs: Number(this.frameTimeEma.toFixed(2)),
+      performanceClass: this.lastPerformanceClass,
       ratio: Number(this.currentRatio.toFixed(2)),
       level: this.levelIndex + 1,
       levels: this.levels.length,
       minimumRatio: Number(this.minRatio.toFixed(2)),
       maximumRatio: Number(this.baseRatio.toFixed(2)),
       devicePixelRatio: Number(this.deviceRatio.toFixed(2)),
+      qualityProfile: this.currentRatio < 1 ? 'emergency-resolution' : 'standard-resolution',
+      emergencyResolution: this.emergencyResolutionAllowed,
       lodDistance: Number.isFinite(this.currentLodDistance)
         ? this.currentLodDistance
         : 'full',
@@ -669,6 +740,8 @@ export class KanoAdaptiveQuality {
     this.disposed = true;
     this.restoreRecordedVisibility();
     this.visibilityRecords.clear();
+    this.lodVisibilityStates.clear();
+    this._lodActorScratch.length = 0;
 
     try {
       if (this.webgl && !this.renderer3d?.disposed) {

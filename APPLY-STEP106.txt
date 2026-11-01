@@ -1,0 +1,16 @@
+KANO LIFE — STEP 106 UPDATE
+
+This is an overlay ZIP. Keep the archive's folders in their existing locations when uploading to GitHub.
+
+REPLACE:
+- js/KanoAdaptiveQuality.js
+
+ADD:
+- js/KanoAdaptiveQualityPolicy.js
+- tests/KanoAdaptiveQualityPolicy.test.mjs
+- tests/KanoAdaptiveQualityIntegration.test.mjs
+- docs/KanoLife-Step106-AdaptivePerformanceEngine.md
+
+Do not delete or replace any other project files. In particular, keep index.html, main.js, game.js, renderer3d.js, KanoDeviceTier.js, KanoPhoneComfortUpgrade.js, ModelManager.js, KanoGameplayPresentationRepair.js, KanoModelAssetVisualUpgrade.js, the regression guard, and all public assets unchanged.
+
+After the files are committed to the main branch and Vercel finishes deploying, test the game on the Mali-G52 MC2 phone with Performance Lab enabled. Record the baseline FPS, the adaptive quality level, current pixel ratio, and FPS after 20–30 seconds of continuous driving.
