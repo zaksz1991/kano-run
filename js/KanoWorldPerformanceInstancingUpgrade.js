@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import './KanoMobileWorldClarityUpgrade.js';
 import './KanoMobileGeometryBudgetUpgrade.js';
 import { Renderer3D } from './renderer3d.js';
+import './KanoTrafficInstancingUpgrade.js';
 import './KanoKekeGlbActivationRepair.js';
 import './KanoNorthernPedestrianGaitUpgrade.js';
 import './KanoFlyoverDriveabilityUpgrade.js';

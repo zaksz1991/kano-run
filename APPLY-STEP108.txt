@@ -1,0 +1,14 @@
+KANO LIFE — STEP 108 DEPLOYMENT
+
+This archive is cumulative for Steps 106, 107 and 108. It contains the previously delivered Step 106/107 updated files as well as the new Step 108 files. It does not contain or replace public/ assets.
+
+1. Extract this ZIP.
+2. In GitHub, open zaksz1991/kano-run, select the main branch, then choose Add file > Upload files.
+3. Upload the archive contents while preserving the js/, tests/ and docs/ paths. The ZIP has no top-level wrapper folder.
+4. Commit the uploaded changes to main. Vercel should start a deployment from that commit.
+5. After deployment, open kano-run.vercel.app/?lab=1 and start a road-driving session. Let the Performance Lab complete; note total calls, FPS, traffic GLB batches and avoided-call estimate.
+
+Important:
+- Do not upload this cumulative archive over newer GitHub files without first comparing the replacement versions. This build was made from the uploaded project snapshot, not a live checkout of GitHub main.
+- The new batcher only affects repeated compatible rigid GLB traffic mesh parts on non-mobile renderers. The Mali-G52 mobile path deliberately retains the current mobile InstancedMesh fallback and device-tier GLB limit.
+- If the game reports an asset or startup error after deployment, restore the previous commit through GitHub's file history/revert UI and provide the deployment log. Do not delete public/ assets.

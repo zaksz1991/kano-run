@@ -50,6 +50,7 @@ async function run() {
       const undo = [];
       for (const actor of R.trafficActors?.values?.() || []) if (actor.visible) { actor.visible = false; undo.push(actor); }
       for (const batch of R._mobileTrafficBatches?.values?.() || []) if (batch.mesh?.visible) { batch.mesh.visible = false; undo.push(batch.mesh); }
+      for (const batch of R.__kanoTrafficInstancingLOD?.batches?.values?.() || []) if (batch.mesh?.visible) { batch.mesh.visible = false; undo.push(batch.mesh); }
       return () => undo.forEach((n) => { n.visible = true; });
     }],
     ['two-way road + trees', () => hideWhere((n) => n.name === 'KANO_TWO_WAY_ROAD')],
@@ -122,7 +123,11 @@ async function run() {
   const characterLodLine = characterLod
     ? `\ncharacter LOD: ${characterLod.staticPoseCharacterRoots}/${characterLod.activeCharacterRoots} static roots, ${characterLod.staticPoseMeshes} static meshes, ${characterLod.remainingSkinnedMeshes} skinned meshes`
     : '';
-  show(`\n\nbaseline over time: ${drift.map((d) => d.toFixed(0)).join(' ')}\nrender() CPU: ${pr.cpu.toFixed(1)} ms  GPU wait: ${pr.wait.toFixed(1)} ms\ncalls ${info.calls} tris ${info.triangles}\nbest gain: ${best[0]} (${best[2] >= 0 ? '+' : ''}${best[2].toFixed(1)} fps)${characterLodLine}\n${gpu}\nSend this screenshot.`);
+  const trafficBatch = window.__KANO_TRAFFIC_INSTANCING__;
+  const trafficBatchLine = trafficBatch
+    ? `\ntraffic GLB batches: ${trafficBatch.activeBatches} batches, ${trafficBatch.batchedInstances} instances, ${trafficBatch.avoidedDrawCalls} calls avoided`
+    : '';
+  show(`\n\nbaseline over time: ${drift.map((d) => d.toFixed(0)).join(' ')}\nrender() CPU: ${pr.cpu.toFixed(1)} ms  GPU wait: ${pr.wait.toFixed(1)} ms\ncalls ${info.calls} tris ${info.triangles}\nbest gain: ${best[0]} (${best[2] >= 0 ? '+' : ''}${best[2].toFixed(1)} fps)${characterLodLine}${trafficBatchLine}\n${gpu}\nSend this screenshot.`);
 }
 
 if (enabled && typeof window !== 'undefined') {

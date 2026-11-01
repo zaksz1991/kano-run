@@ -1,0 +1,30 @@
+KANO LIFE — STEP 108 VERIFICATION
+
+Focused test command:
+node --experimental-default-type=module --test tests/KanoTrafficInstancingLOD.test.mjs
+
+Focused result:
+9 tests passed, 0 failed.
+
+Covered:
+- Matching rigid GLB mesh parts batch into THREE.InstancedMesh.
+- Instance matrices preserve nested actor and mesh transforms.
+- One matching vehicle remains on its original GLB mesh path.
+- Transparent glass remains on the original path.
+- A remaining actor's original mesh visibility is restored when a peer leaves traffic.
+- Mobile fallback traffic bypasses this desktop GLB batcher.
+- Skinned and morph-target meshes are excluded.
+- Prototype installation is idempotent and disposal cleans up batches.
+- Deferred bootstrap wiring is present in the existing index template.
+- Performance Lab hides and reports the new batches.
+
+Full project suite (same command on Step 107 baseline and Step 108 source):
+- Step 107 baseline: 1,386 tests; 1,373 passed; 13 failed.
+- After Step 108: 1,395 tests; 1,382 passed; 13 failed.
+- The same 13 failures reproduce unchanged with Step 108 removed. They are source-snapshot limitations, including missing public/ model and service-worker assets and Node tests that cannot resolve the absent root Three.js package. All 9 new Step 108 tests pass.
+
+Syntax:
+All JavaScript files in `js/`: 278/278 syntax checks passed. The repository static-check script passed 10/10 checks.
+
+Device performance:
+Not verified on physical Android or desktop hardware. No FPS improvement is claimed. The Mali-G52 MC2 path is intentionally not modified by this GLB instancing batcher because current mobile fallback traffic is already instanced and only up to one imported traffic GLB is allowed on supported mobile tiers.
