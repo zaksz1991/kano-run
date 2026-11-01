@@ -427,7 +427,7 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   // Keep passengers and roadside markers on the verge, clear of the keke body.
   for (const actor of renderer.zoneActors?.values?.() || []) {
     if (actor?.position && Math.abs(actor.position.x) > 4 && Math.abs(actor.position.x) < 5.5) {
-      actor.position.x = Math.sign(actor.position.x) * 5.8;
+      actor.position.x = actor.position.x < 0 ? -5.0 : 5.6;
     }
     elevateActor(renderer, actor);
   }

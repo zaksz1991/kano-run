@@ -139,6 +139,18 @@ function disposeGeometry(geometry) {
 }
 
 async function simplifyTemplate(manager, key, root) {
+  // SimplifyModifier runs on the main thread and froze phones for seconds each time a
+  // model loaded. Heavy models are now cut offline (decimated GLBs) and by the triangle
+  // cap/bouncer, so runtime simplification is off unless explicitly enabled for testing.
+  if (!globalThis.kanoAllowRuntimeSimplify) {
+    const total = countRootTriangles(root);
+    return {
+      version: 1, modelKey: String(key || root.userData?.modelKey || 'unknown'), modelPath: String(root.userData?.modelPath || ''),
+      mobile: true, targetTriangles: KANO_MOBILE_MODEL_TRIANGLE_TARGET, hardLimitTriangles: KANO_MOBILE_MODEL_TRIANGLE_LIMIT,
+      originalTriangles: total, finalTriangles: total, simplifiedGeometries: 0, simplifiedMeshUses: 0,
+      status: 'runtime-simplify-disabled', error: null,
+    };
+  }
   const source = collectGeometryEntries(root);
   const plan = planMobileGeometryReduction(source);
   const baseReport = {
