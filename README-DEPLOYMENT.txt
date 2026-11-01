@@ -1,9 +1,11 @@
-KANO LIFE — STEP 109 OVERLAY
+KANO LIFE — STEP 110 DELIVERY
 
-This ZIP contains two JavaScript replacements, one new test, and the step notes. It is not a complete project archive and does not contain public/ assets.
+Cumulative package: Step 109 + Step 110.
 
-Read APPLY-STEP109.txt before uploading. Preserve the supplied js/, tests/, and docs/ paths. Do not replace other project files.
+The Step 109 files are included so the paired Performance Lab and improved character LOD diagnostics are present alongside this step's simulation-side optimisation.
 
-The archive was built from the supplied project snapshot with Steps 106–108 overlaid. It was not independently compared with live GitHub main. Compare the two replacement files with the current repository versions before uploading if main has changed since Step 108.
+Apply the three complete replacement files and add the three new files listed in APPLY-STEP110.txt. Do not replace protected entrypoints or any public asset.
 
-No physical-device FPS result is claimed. After deployment, run the Performance Lab on the phone with the tab visible until it completes.
+After the site deploys, verify the Performance Lab first: open the game with ?lab=1 and keep the browser tab visible for the complete run. The newer report should show paired baseline stability, p95 frame interval, slow-frame percentage, render-submission timing, and either asynchronous GPU timing or an explicit unavailable status.
+
+Then compare a phone run on the Mali-G52 MC2 using the same route, traffic condition, game mode, device brightness, and approximate thermal state. Record at least two runs before and after. The source tests do not establish a physical-device FPS improvement.

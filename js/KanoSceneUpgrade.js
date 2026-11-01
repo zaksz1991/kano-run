@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { syncActiveLifeRigs } from './KanoLifeRigSceneScheduler.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -48,6 +49,9 @@ export class KanoSceneUpgrade {
     this.walkers = [];
     this.walkingPassengers = [];
     this.lifeRigs = [];
+    this.activeLifeRigs = [];
+    this.activeLifeScene = undefined;
+    this.lifeRigSceneReady = false;
     this.ownedMeshes = [];
     this.ownedGroups = [];
     this.originalMethods = [];
@@ -1015,7 +1019,9 @@ export class KanoSceneUpgrade {
     const scroll = signedSpeed * delta * 0.28;
 
     const isRoad = this.renderer.lifeScene === 'road' && this.renderer.world.visible;
-    if (this.marketRoot) this.marketRoot.visible = isRoad;
+    if (this.marketRoot && this.marketRoot.visible !== isRoad) {
+      this.marketRoot.visible = isRoad;
+    }
     if (isRoad) {
       for (const slot of this.shopSlots) {
         slot.z += scroll;
@@ -1028,20 +1034,33 @@ export class KanoSceneUpgrade {
         else if (walker.z < -this.loopLength - 5) walker.z += this.loopLength;
       }
       this.updateMarketMatrices();
-      this.updateCrowdMatrices();
-      this.updatePassengerWalkers(delta, scroll);
+      if (this.walkers.length) this.updateCrowdMatrices();
+      if (this.walkingPassengers.length) this.updatePassengerWalkers(delta, scroll);
     }
 
     this.updateLifeRigs(delta);
   }
 
+  refreshActiveLifeRigs() {
+    const scene = this.renderer.lifeScene;
+    if (this.lifeRigSceneReady && Object.is(this.activeLifeScene, scene)) return;
+
+    this.activeLifeScene = scene;
+    this.lifeRigSceneReady = true;
+    syncActiveLifeRigs(this.lifeRigs, this.activeLifeRigs, scene);
+  }
+
   updateLifeRigs(dt) {
-    for (const rig of this.lifeRigs) {
-      const active = rig.scene === this.renderer.lifeScene || (rig.scene === 'garage' && this.renderer.lifeScene === 'garage');
+    // The scene name changes only when the player enters/leaves a life stage.
+    // Rebuild the active list on that transition, not on every driving frame.
+    this.refreshActiveLifeRigs();
+
+    // On the road this list is empty. Bedroom, household, breakfast, garage,
+    // and other life-scene rigs continue to animate at their existing cadence.
+    for (const rig of this.activeLifeRigs) {
       const t = this.elapsed * 2.1 + rig.phase;
       const swing = Math.sin(t);
       const stride = Math.sin(t * 1.15);
-      rig.root.visible = active;
 
       if (rig.action === 'wake') {
         rig.root.position.y = Math.abs(swing) * 0.055;

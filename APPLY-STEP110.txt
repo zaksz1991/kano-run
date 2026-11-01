@@ -1,0 +1,30 @@
+KANO LIFE — STEP 110 (CUMULATIVE WITH STEP 109)
+
+WHAT THIS ZIP CONTAINS
+This is a cumulative overlay. It includes the Step 109 Performance Lab reliability files and the Step 110 active-life-rig scheduling optimisation.
+
+REPLACE THESE COMPLETE FILES
+1. js/KanoPerfLab.js
+2. js/KanoAnimationTrafficUpgrade.js
+3. js/KanoSceneUpgrade.js
+
+ADD THESE FILES
+4. js/KanoLifeRigSceneScheduler.js
+5. tests/KanoPerfLabReliability.test.mjs
+6. tests/KanoLifeRigSceneScheduler.test.mjs
+
+INTEGRATION
+KanoSceneUpgrade.js imports the new scheduler directly. The existing main.js already imports KanoSceneUpgrade.js, so no main.js or index.html integration change is required.
+
+WHAT STEP 110 CHANGES
+- Builds the active life-rig list only when renderer.lifeScene changes.
+- On the road, no bedroom, household, breakfast, garage, or other inactive life-stage rigs receive procedural animation updates.
+- When a life scene becomes active, only its own rigs are made visible and animated.
+- Avoids redundant market-root visibility assignments.
+- Skips empty ambient-crowd and walking-passenger update calls.
+- Leaves road traffic, collision, player physics, passenger/economy state, and active life-scene animation rules unchanged.
+
+DO NOT REPLACE OR EDIT
+index.html, js/main.js, js/game.js, js/renderer3d.js, js/ui.js, js/KanoGameplayPresentationRepair.js, js/KanoModelAssetVisualUpgrade.js, js/KanoDeviceTier.js, js/KanoPhoneComfortUpgrade.js, js/ModelManager.js, tests/KanoRegressionGuard.test.mjs, or anything under public/.
+
+No public assets are included in this ZIP. No deployment is performed by this package.
