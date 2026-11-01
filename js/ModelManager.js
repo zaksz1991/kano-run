@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { fixCharacterPose } from './KanoCharacterPoseFix.js';
 import { mergeTexturedByMaterial } from './KanoMergeStaticMeshes.js';
+import { mergeFlatSkinnedMeshes } from './KanoSkinnedMerge.js';
 import { resolveKanoGlbPath } from './KanoGlbPathResolver.js';
 
 // ============================================================
@@ -1293,6 +1294,11 @@ export class ModelManager {
           // become one mesh (textures kept; wheels and doors stay separate).
           if (STATIC_MERGE_KEYS.has(key)) {
             try { mergeTexturedByMaterial(source); } catch (error) { console.debug('[ModelManager] merge skipped', key, error?.message || error); }
+          }
+
+          // One draw call per person instead of one per body piece.
+          if (/^(passenger|pedestrian|security|karotaOfficer)/.test(key)) {
+            try { mergeFlatSkinnedMeshes(source); } catch (error) { console.debug('[ModelManager] skinned merge skipped', key, error?.message || error); }
           }
 
           source.updateMatrixWorld(true);
