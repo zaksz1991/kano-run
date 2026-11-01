@@ -205,8 +205,8 @@ const GLB_HALF = 150; // 300 m flyover with long, gentle ramps (was 144 m)
 const FLYOVER_SPACING = 1700; // real flyovers are kilometres apart, not one every 260 m
 const GLB_DECK_HEIGHT = 5.2;
 const GLB_SPAN = GLB_HALF * 2;
-const GLB_WIDTH = 9; // wider deck: lanes at x=0 and x=3 now have room on both sides // deck covers the middle + right lanes; the LEFT lane is the road down beside the flyover
-const GLB_CENTER_X = 2.6;
+const GLB_WIDTH = 8.4; // deck covers the middle + right lanes; the LEFT lane is the road down beside the flyover
+const GLB_CENTER_X = 1.8; // lanes sit at x=0 and x=3: keep the keke off the left kerb and rail
 
 function sampleDeck(wrapper) {
   wrapper.updateMatrixWorld(true);
