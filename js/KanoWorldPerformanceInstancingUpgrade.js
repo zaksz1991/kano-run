@@ -38,6 +38,7 @@ import './KanoTwoWayRoad.js';
 import './KanoFuelRescue.js';
 import './KanoScreenLock.js';
 import './KanoCrashPhysics.js';
+import './KanoPerfLab.js';
 import './KanoPhoneMaterialLite.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
