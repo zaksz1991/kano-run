@@ -9,6 +9,7 @@ import {
 
 const perfLabSource = fs.readFileSync(new URL('../js/KanoPerfLab.js', import.meta.url), 'utf8');
 const animationSource = fs.readFileSync(new URL('../js/KanoAnimationTrafficUpgrade.js', import.meta.url), 'utf8');
+const characterLodSource = fs.readFileSync(new URL('../js/KanoSkinnedCharacterRenderLOD.js', import.meta.url), 'utf8');
 
  test('frame summary reports elapsed-time FPS, median, p95 and slow-frame ratio', () => {
   const result = summarizeFrameTimestamps([0, 16, 32, 67, 83], 83);
@@ -107,10 +108,10 @@ test('character LOD report separates idle, walking, distance bands and bake fail
 
 test('failed static-pose bakes are memoized instead of retried every mobile update', () => {
   assert.match(animationSource, /staticPoseBakeAttempted: false/);
-  assert.match(animationSource, /!entry\.staticPoseBakeAttempted/);
-  assert.match(animationSource, /entry\.staticPoseBakeFailure = result\.reason/);
+  assert.match(characterLodSource, /!state\.staticPoseBakeAttempted/);
+  assert.match(characterLodSource, /state\.staticPoseBakeFailure = result\.reason/);
 });
 
 test('static-pose LOD can be retried after a previously baked character returns to full detail', () => {
-  assert.match(animationSource, /entry\.staticPoseBakeAttempted = false;\s*entry\.staticPoseBakeFailure = null;/);
+  assert.match(characterLodSource, /state\.staticPoseBakeAttempted = false;\s*state\.staticPoseBakeFailure = null;/);
 });

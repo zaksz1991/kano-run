@@ -1,0 +1,30 @@
+KANO LIFE — STEP 111 APPLY NOTES
+
+This is a cumulative replacement package based on the supplied Step 110 source snapshot. It carries forward the Step 109 Performance Lab and Step 110 active-life-rig changes, then adds no-clip idle character LOD.
+
+REPLACE THESE COMPLETE FILES:
+- js/KanoAnimationTrafficUpgrade.js
+- js/KanoPerfLab.js
+- js/KanoSkinnedCharacterRenderLOD.js
+- js/KanoSceneUpgrade.js
+
+ADD THIS COMPLETE FILE:
+- js/KanoLifeRigSceneScheduler.js
+
+TEST FILES INCLUDED:
+- tests/KanoIdleFallbackCharacterLOD.test.mjs (new)
+- tests/KanoSkinnedCharacterRenderLODBake.test.mjs (updated)
+- tests/KanoSkinnedCharacterRenderLODIntegration.test.mjs (updated)
+- tests/KanoPerfLabReliability.test.mjs (updated)
+
+The ZIP contains the full contents of every listed replacement file, not snippets. Keep the directory paths exactly as shown. Do not delete the existing public/ folder or model assets. Do not replace index.html, main.js, game.js, renderer3d.js, ui.js, ModelManager.js, KanoDeviceTier.js, KanoPhoneComfortUpgrade.js, KanoGameplayPresentationRepair.js, KanoModelAssetVisualUpgrade.js, or KanoRegressionGuard.test.mjs.
+
+GUI workflow:
+1. Extract the ZIP on your computer.
+2. Open the GitHub repository's main branch in the browser.
+3. Use the repository's Add file / Upload files control and upload the replacement and new files to their matching paths, preserving the directory structure. Existing files are replaced by the uploaded full files.
+4. Review the changed-file list before saving. It should contain only the paths listed above.
+5. Let the existing Vercel integration build the updated main branch.
+6. On the phone, open the deployed game with ?lab=1, drive for at least 30 seconds, then inspect the expanded character LOD line.
+
+Do not treat a source-test pass as proof of an FPS gain. The package was not built from a live GitHub checkout, and the supplied snapshot omitted package.json and public/.

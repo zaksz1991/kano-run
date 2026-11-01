@@ -31,17 +31,20 @@ test('original skinned nodes remain in the hierarchy and are restored on approac
   assert.match(lodSource, /source\.layers\.mask = state\.originalLayerMask/);
   assert.match(lodSource, /state\.mesh\?\.geometry\?\.dispose\?\.\(\)/);
   assert.match(update, /restoreSkinnedCharacterPose\(root\)/);
-  assert.match(update, /bakeSkinnedCharacterStaticPose\(root, THREE\)/);
+  assert.match(update, /updateSkinnedCharacterRenderLodState\(root, entry/);
+  assert.match(lodSource, /bakeSkinnedCharacterStaticPose\(root, THREE\)/);
 });
 
 test('only idle mobile character roots enter static-pose LOD and frozen mixers are skipped', () => {
   assert.match(managerSource, /role: entry\.role/);
   assert.match(managerSource, /mobile: true/);
+  assert.match(update, /updateSkinnedCharacterRenderLodState\(root, entry/);
   assert.match(update, /if \(entry\.staticPoseActive\) \{[\s\S]*?entry\.pendingElapsed = 0;\s*continue;/);
 });
 
 test('detached roots and manager disposal restore source character meshes', () => {
   assert.match(update, /if \(entry\.staticPoseActive\) restoreSkinnedCharacterPose\(root\)/);
+  assert.match(update, /if \(state\.staticPoseActive\) restoreSkinnedCharacterPose\(root\)/);
   assert.match(managerSource.slice(managerSource.indexOf('  dispose() {', managerSource.indexOf('getCharacterRenderLodDiagnostics')),), /if \(entry\.staticPoseActive\) restoreSkinnedCharacterPose\(root\)/);
 });
 
@@ -49,4 +52,7 @@ test('Performance Lab hides static-pose children in its character-cost test and 
   assert.match(perfLabSource, /people \(skinned \+ static LOD\)/);
   assert.match(perfLabSource, /n\.isSkinnedMesh \|\| n\.userData\?\.kanoStaticPoseLod === true/);
   assert.match(perfLabSource, /getCharacterRenderLodDiagnostics/);
+  assert.match(perfLabSource, /no-clip LOD/);
+  assert.match(perfLabSource, /skinned GPU/);
+  assert.match(perfLabSource, /source skinned/);
 });

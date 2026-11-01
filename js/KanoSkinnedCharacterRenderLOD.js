@@ -174,3 +174,61 @@ export function restoreSkinnedCharacterPose(root) {
   root.updateMatrixWorld?.(true);
   return { restored };
 }
+
+
+/**
+ * Apply the shared far-idle LOD state machine to either an animation-mixer
+ * entry or a no-clip fallback state. This lets stationary GLBs without an
+ * embedded idle animation receive the same static-pose render optimisation.
+ */
+export function updateSkinnedCharacterRenderLodState(
+  root,
+  state,
+  { mobile = false, role = 'walk', distanceSquared = NaN, THREE } = {},
+) {
+  if (!root || !state) {
+    return { mode: 'skinned', applied: false, reason: 'root-or-state-unavailable' };
+  }
+
+  const mode = chooseSkinnedCharacterRenderMode({
+    mobile,
+    role,
+    distanceSquared,
+    staticPoseActive: Boolean(state.staticPoseActive),
+  });
+
+  if (mode === 'skinned' && state.staticPoseActive) {
+    restoreSkinnedCharacterPose(root);
+    state.staticPoseActive = false;
+    state.staticPoseMeshCount = 0;
+    state.staticPoseBakeAttempted = false;
+    state.staticPoseBakeFailure = null;
+    state.pendingElapsed = 0;
+    return { mode, applied: false, restored: true };
+  }
+
+  if (mode === 'static-pose' && !state.staticPoseActive && !state.staticPoseBakeAttempted) {
+    // Cache rejected assets as well as successful conversions. A normal-mapped
+    // or morph-target rig must not trigger another costly bake attempt each
+    // time the camera-distance sample changes.
+    state.staticPoseBakeAttempted = true;
+    const result = bakeSkinnedCharacterStaticPose(root, THREE);
+    if (result.applied) {
+      state.staticPoseActive = true;
+      state.staticPoseMeshCount = result.meshes;
+      state.staticPoseBakeFailure = null;
+      state.pendingElapsed = 0;
+      return { mode, applied: true, meshes: result.meshes };
+    }
+    state.staticPoseBakeFailure = result.reason || 'unknown-bake-failure';
+    return { mode, applied: false, reason: state.staticPoseBakeFailure };
+  }
+
+  if (state.staticPoseActive) state.pendingElapsed = 0;
+  return {
+    mode,
+    applied: Boolean(state.staticPoseActive),
+    meshes: Number(state.staticPoseMeshCount) || 0,
+    reason: state.staticPoseBakeFailure || null,
+  };
+}

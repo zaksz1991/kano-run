@@ -2,9 +2,8 @@ import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import {
-  chooseSkinnedCharacterRenderMode,
-  bakeSkinnedCharacterStaticPose,
   restoreSkinnedCharacterPose,
+  updateSkinnedCharacterRenderLodState,
 } from './KanoSkinnedCharacterRenderLOD.js';
 
 const CHARACTER_KEYS = new Set([
@@ -413,6 +412,9 @@ export class KanoGLBAnimationManager {
     this.loader = createGLTFLoader();
     this.clipPromises = new Map();
     this.mixers = new Map();
+    // Idle GLBs without an embedded idle clip use a restrained root-level
+    // fallback motion. Keep their LOD state separately because they have no mixer.
+    this.fallbackLodStates = new Map();
     this.lastActiveRoots = new Set();
     this.cachedActiveRoots = null;
     this.lastRootDiscoveryElapsed = -Infinity;
@@ -878,38 +880,12 @@ export class KanoGLBAnimationManager {
 
       if (this.mobile) {
         this.mobileAnimationInterval(root, entry);
-        const renderMode = chooseSkinnedCharacterRenderMode({
+        updateSkinnedCharacterRenderLodState(root, entry, {
           mobile: true,
           role: entry.role,
           distanceSquared: entry.mobileDistanceSquared,
-          staticPoseActive: entry.staticPoseActive,
+          THREE,
         });
-
-        if (renderMode === 'skinned' && entry.staticPoseActive) {
-          restoreSkinnedCharacterPose(root);
-          entry.staticPoseActive = false;
-          entry.staticPoseMeshCount = 0;
-          entry.staticPoseBakeAttempted = false;
-          entry.staticPoseBakeFailure = null;
-          entry.pendingElapsed = 0;
-        } else if (
-          renderMode === 'static-pose' &&
-          !entry.staticPoseActive &&
-          !entry.staticPoseBakeAttempted
-        ) {
-          // A rejected GLB (for example, a normal-mapped or morph-target rig)
-          // must not trigger an expensive failed bake on every 120 ms update.
-          entry.staticPoseBakeAttempted = true;
-          const result = bakeSkinnedCharacterStaticPose(root, THREE);
-          if (result.applied) {
-            entry.staticPoseActive = true;
-            entry.staticPoseMeshCount = result.meshes;
-            entry.staticPoseBakeFailure = null;
-            entry.pendingElapsed = 0;
-          } else {
-            entry.staticPoseBakeFailure = result.reason || 'unknown-bake-failure';
-          }
-        }
 
         if (entry.staticPoseActive) {
           // A baked idle pose needs no mixer or GPU skinning work until the
@@ -938,6 +914,15 @@ export class KanoGLBAnimationManager {
       }
     }
 
+    // No-clip fallback rigs are not in this.mixers, so clean up their baked
+    // geometry separately when they leave the active actor inventory.
+    for (const [root, state] of this.fallbackLodStates) {
+      if (!this.lastActiveRoots.has(root) || !root.parent) {
+        if (state.staticPoseActive) restoreSkinnedCharacterPose(root);
+        this.fallbackLodStates.delete(root);
+      }
+    }
+
     // Subtle idle motion for valid GLB characters whose source asset has no
     // animation clips. This is intentionally restrained and never substitutes
     // more geometry for a failed/missing model.
@@ -960,6 +945,23 @@ export class KanoGLBAnimationManager {
       const fallback = root.userData.kanoFallbackAnimation;
       if (this.mobile) {
         const animationInterval = this.mobileAnimationInterval(root, fallback);
+        const role = activeRoots.get(root) || 'walk';
+        if (role === 'idle') {
+          // No-clip idle characters still have skinned GLB geometry. They were
+          // previously excluded from LOD because the mixer loop never saw them.
+          // Reuse the identical 40 m / 32 m policy used by animated idle roots.
+          this.fallbackLodStates.set(root, fallback);
+          fallback.staticPoseActive ??= false;
+          fallback.staticPoseMeshCount ??= 0;
+          fallback.staticPoseBakeAttempted ??= false;
+          fallback.staticPoseBakeFailure ??= null;
+          updateSkinnedCharacterRenderLodState(root, fallback, {
+            mobile: true,
+            role: 'idle',
+            distanceSquared: fallback.mobileDistanceSquared,
+            THREE,
+          });
+        }
         if (
           animationInterval > 0 &&
           this.elapsed - (fallback.lastUpdateElapsed ?? -Infinity) < animationInterval
@@ -987,6 +989,7 @@ export class KanoGLBAnimationManager {
       staticPoseCharacterRoots: 0,
       staticPoseMeshes: 0,
       remainingSkinnedMeshes: 0,
+      renderedSkinnedMeshes: 0,
       farIdleRoots: 0,
       nearIdleRoots: 0,
       hysteresisIdleRoots: 0,
@@ -997,6 +1000,9 @@ export class KanoGLBAnimationManager {
       idleWaitingForMixerRoots: 0,
       idleAwaitingDistanceRoots: 0,
       idleBakeNotAttemptedRoots: 0,
+      idleFallbackLodRoots: 0,
+      idleFallbackBakedRoots: 0,
+      idleFallbackBakeFailures: 0,
       staticPoseBakeFailures: 0,
       staticPoseBakeFailureReasons: {},
       nearestIdleDistance: null,
@@ -1022,18 +1028,28 @@ export class KanoGLBAnimationManager {
           else if (animationState === 'no-clips') stats.idleNoClipRoots += 1;
           else if (animationState === 'failed') stats.idleFailedRoots += 1;
           else stats.idleWaitingForMixerRoots += 1;
-        } else if (!Number.isFinite(entry.mobileDistanceSquared)) {
+        }
+
+        const idleState = entry || this.fallbackLodStates.get(root);
+        if (idleState && this.fallbackLodStates.has(root)) {
+          stats.idleFallbackLodRoots += 1;
+          if (idleState.staticPoseActive) stats.idleFallbackBakedRoots += 1;
+          if (idleState.staticPoseBakeAttempted && idleState.staticPoseBakeFailure) {
+            stats.idleFallbackBakeFailures += 1;
+          }
+        }
+        if (!idleState || !Number.isFinite(idleState.mobileDistanceSquared)) {
           stats.idleAwaitingDistanceRoots += 1;
         } else {
-          const distance = Math.sqrt(Math.max(0, entry.mobileDistanceSquared));
+          const distance = Math.sqrt(Math.max(0, idleState.mobileDistanceSquared));
           idleDistances.push(distance);
           if (distance >= 40) {
             stats.farIdleRoots += 1;
-            if (entry.staticPoseBakeAttempted && entry.staticPoseBakeFailure) {
+            if (idleState.staticPoseBakeAttempted && idleState.staticPoseBakeFailure) {
               stats.staticPoseBakeFailures += 1;
-              const reason = entry.staticPoseBakeFailure;
+              const reason = idleState.staticPoseBakeFailure;
               stats.staticPoseBakeFailureReasons[reason] = (stats.staticPoseBakeFailureReasons[reason] || 0) + 1;
-            } else if (!entry.staticPoseActive && !entry.staticPoseBakeAttempted) {
+            } else if (!idleState.staticPoseActive && !idleState.staticPoseBakeAttempted) {
               stats.idleBakeNotAttemptedRoots += 1;
             }
           } else if (distance <= 32) {
@@ -1045,7 +1061,12 @@ export class KanoGLBAnimationManager {
       }
 
       root.traverse?.((object) => {
-        if (object?.isSkinnedMesh) stats.remainingSkinnedMeshes += 1;
+        if (object?.isSkinnedMesh) {
+          stats.remainingSkinnedMeshes += 1;
+          // A baked source is intentionally retained for safe restoration, but
+          // its default camera layer is disabled and it is not GPU-skinned.
+          if (!object.userData?.kanoStaticPoseLodState) stats.renderedSkinnedMeshes += 1;
+        }
         if (object?.userData?.kanoStaticPoseLod === true) stats.staticPoseMeshes += 1;
       });
     }
@@ -1074,6 +1095,10 @@ export class KanoGLBAnimationManager {
       }
     }
 
+    for (const [root, state] of this.fallbackLodStates) {
+      if (state.staticPoseActive) restoreSkinnedCharacterPose(root);
+    }
+    this.fallbackLodStates.clear();
     this.mixers.clear();
     this.clipPromises.clear();
     this.cachedActiveRoots?.clear?.();

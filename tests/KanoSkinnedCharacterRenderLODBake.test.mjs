@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   bakeSkinnedCharacterStaticPose,
   restoreSkinnedCharacterPose,
+  updateSkinnedCharacterRenderLodState,
 } from '../js/KanoSkinnedCharacterRenderLOD.js';
 
 class FakeVector3 {
@@ -144,4 +145,74 @@ test('repeated bake requests are idempotent and do not duplicate static meshes',
   const second = bakeSkinnedCharacterStaticPose(root, THREE);
   assert.equal(second.alreadyApplied, true);
   assert.equal(source.children.length, 1);
+});
+
+
+test('far idle no-clip fallback can bake its current skeletal pose', () => {
+  const { root, source } = makeFakeScene();
+  const state = {
+    staticPoseActive: false,
+    staticPoseMeshCount: 0,
+    staticPoseBakeAttempted: false,
+    staticPoseBakeFailure: null,
+    pendingElapsed: 0.1,
+  };
+  const result = updateSkinnedCharacterRenderLodState(root, state, {
+    mobile: true,
+    role: 'idle',
+    distanceSquared: 45 * 45,
+    THREE,
+  });
+  assert.equal(result.applied, true);
+  assert.equal(state.staticPoseActive, true);
+  assert.equal(state.staticPoseMeshCount, 1);
+  assert.equal(state.pendingElapsed, 0);
+  assert.equal(source.layers.mask & 1, 0);
+});
+
+test('a no-clip fallback restores its untouched skinned source inside the exit distance', () => {
+  const { root, source } = makeFakeScene();
+  const state = { staticPoseActive: false, staticPoseMeshCount: 0, staticPoseBakeAttempted: false, staticPoseBakeFailure: null };
+  updateSkinnedCharacterRenderLodState(root, state, { mobile: true, role: 'idle', distanceSquared: 50 * 50, THREE });
+  const result = updateSkinnedCharacterRenderLodState(root, state, { mobile: true, role: 'idle', distanceSquared: 25 * 25, THREE });
+  assert.equal(result.restored, true);
+  assert.equal(state.staticPoseActive, false);
+  assert.equal(state.staticPoseBakeAttempted, false);
+  assert.equal(source.layers.mask, 1);
+  assert.equal(source.children.length, 0);
+});
+
+test('the 32–40 metre hysteresis band keeps an already baked idle pose stable', () => {
+  const { root } = makeFakeScene();
+  const state = { staticPoseActive: false, staticPoseMeshCount: 0, staticPoseBakeAttempted: false, staticPoseBakeFailure: null };
+  updateSkinnedCharacterRenderLodState(root, state, { mobile: true, role: 'idle', distanceSquared: 45 * 45, THREE });
+  const result = updateSkinnedCharacterRenderLodState(root, state, { mobile: true, role: 'idle', distanceSquared: 36 * 36, THREE });
+  assert.equal(result.applied, true);
+  assert.equal(state.staticPoseActive, true);
+});
+
+test('walking roles and non-mobile devices never enter static-pose LOD', () => {
+  const walking = makeFakeScene();
+  const walkingState = { staticPoseActive: false, staticPoseBakeAttempted: false };
+  const walkingResult = updateSkinnedCharacterRenderLodState(walking.root, walkingState, { mobile: true, role: 'walk', distanceSquared: 80 * 80, THREE });
+  assert.equal(walkingResult.applied, false);
+  assert.equal(walking.source.children.length, 0);
+
+  const desktop = makeFakeScene();
+  const desktopState = { staticPoseActive: false, staticPoseBakeAttempted: false };
+  const desktopResult = updateSkinnedCharacterRenderLodState(desktop.root, desktopState, { mobile: false, role: 'idle', distanceSquared: 80 * 80, THREE });
+  assert.equal(desktopResult.applied, false);
+  assert.equal(desktop.source.children.length, 0);
+});
+
+test('unsupported no-clip assets cache their bake failure instead of retrying', () => {
+  const { root, source } = makeFakeScene({ morph: true });
+  const state = { staticPoseActive: false, staticPoseBakeAttempted: false, staticPoseBakeFailure: null };
+  const first = updateSkinnedCharacterRenderLodState(root, state, { mobile: true, role: 'idle', distanceSquared: 60 * 60, THREE });
+  const second = updateSkinnedCharacterRenderLodState(root, state, { mobile: true, role: 'idle', distanceSquared: 70 * 70, THREE });
+  assert.equal(first.reason, 'unsupported-skinned-mesh');
+  assert.equal(second.reason, 'unsupported-skinned-mesh');
+  assert.equal(state.staticPoseBakeAttempted, true);
+  assert.equal(source.children.length, 0);
+  assert.equal(source.layers.mask, 1);
 });
