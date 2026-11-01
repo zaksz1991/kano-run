@@ -261,7 +261,8 @@ function skinWithGlb(renderer, record) {
     wrapper.scale.y *= GLB_DECK_HEIGHT / rise;
     heights = sampleDeck(wrapper);
     const base = endsOf(heights);
-    wrapper.position.y = -base;
+    // Sink the deck 5 cm so the flat ground end of the GLB never covers (or z-fights with) the painted lane lines.
+    wrapper.position.y = -base - 0.05;
     wrapper.position.x = GLB_CENTER_X;
     let profile = heights.map((h) => Math.max(0, h - base));
     // The raw raycast height jitters (rails, seams, lamp posts). Smooth it so the keke and camera
