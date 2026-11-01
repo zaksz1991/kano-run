@@ -1,0 +1,32 @@
+KANO LIFE — STEP 107 DEPLOYMENT
+
+This is a GitHub overlay ZIP. Extract it and upload the included files to the repository, keeping the folder structure.
+
+REPLACE:
+- js/KanoAnimationTrafficUpgrade.js
+- js/KanoPerfLab.js
+
+ADD:
+- js/KanoSkinnedCharacterRenderLOD.js
+- tests/KanoSkinnedCharacterRenderLODPolicy.test.mjs
+- tests/KanoSkinnedCharacterRenderLODIntegration.test.mjs
+- tests/KanoSkinnedCharacterRenderLODBake.test.mjs
+- tests/KanoSkinnedCharacterRenderLODThreeRuntime.test.mjs
+- docs/KanoLife-Step107-SkinnedCharacterRenderLOD.md
+
+Do not delete other files. Do not upload or replace public/ assets.
+
+GitHub graphical deployment:
+1. Open the kano-run repository and select the main branch.
+2. Use Add file > Upload files.
+3. Upload the two replacement files and six added files from this ZIP, preserving their folders.
+4. Commit the changes to main with the message: Kano Life Step 107 skinned character render LOD.
+5. Allow Vercel to finish its deployment before testing.
+
+Phone verification:
+1. Open the deployed game with ?lab=1 appended to the URL.
+2. Start a driving session and continue driving for at least 30 seconds.
+3. Record the new people (skinned + static LOD) FPS row and the character LOD counts at the bottom of the Performance Lab report.
+4. Check nearby waiting passengers and pedestrians. They should return to their animated GLB state when approached.
+
+If static-pose counts stay at zero, the visible character assets may use unsupported morph targets, tangent attributes, normal maps, or a role other than idle. The original skinned rendering remains active in that case.

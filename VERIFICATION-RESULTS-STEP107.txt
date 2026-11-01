@@ -1,0 +1,44 @@
+KANO LIFE — STEP 107 VERIFICATION
+
+SOURCE BASE
+- Built from the uploaded kano-run.zip source snapshot, with the Step 106 adaptive-quality source already present in that snapshot.
+- The uploaded snapshot omitted public/ and has no root package.json or package-lock.json.
+- This package is an incremental overlay; the latest live GitHub main revision could not be fetched independently in this session.
+
+FULL NODE TEST SUITE
+Baseline immediately before Step 107:
+- 1,371 tests
+- 1,355 passed
+- 16 failed
+
+After Step 107:
+- 1,386 tests
+- 1,370 passed
+- 16 failed
+- All 15 newly added tests passed.
+- The exact same 16 failures were present before and after Step 107; no new suite failures were introduced.
+
+NEW STEP 107 COVERAGE
+- Mobile/idle eligibility and distance thresholds.
+- 40 m entry / 32 m exit hysteresis.
+- Missing-camera fail-safe.
+- Static pose geometry cloned from the original GLB.
+- Skin attributes removed only from temporary pose geometry.
+- Original skeleton source geometry left unchanged.
+- Layer restoration and temporary geometry disposal.
+- Unsupported morph-target model remains fully skinned.
+- Idempotent conversion.
+- Runtime bake/restore against the repository's actual vendored Three.js r170 classes.
+- Performance Lab isolates both skinned source meshes and static-pose LOD meshes.
+
+OTHER CHECKS
+- JavaScript/module syntax: 523/523 files passed.
+- Existing static checks: 10/10 passed.
+- Real Three.js r170 SkinnedMesh bake/restore test: passed.
+
+LIMITATIONS
+- `npm test` cannot start because the supplied snapshot has no root package.json.
+- The 16 unchanged full-suite failures are already present in the baseline; several depend on omitted public assets or incomplete Node/browser test setup.
+- No Android device or Mali-G52 MC2 benchmark was available in this environment.
+- No claim is made that FPS has improved on the deployed game. Verify after deployment with `?lab=1` and the character LOD metrics.
+- The full live GitHub main branch and current Vercel deployment were not changed from this session.

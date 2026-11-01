@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
+import {
+  chooseSkinnedCharacterRenderMode,
+  bakeSkinnedCharacterStaticPose,
+  restoreSkinnedCharacterPose,
+} from './KanoSkinnedCharacterRenderLOD.js';
 
 const CHARACTER_KEYS = new Set([
   'passenger',
@@ -422,6 +427,7 @@ export class KanoGLBAnimationManager {
     this.installSkeletonSafeCloning();
     this.installPedestrianModelFallbacks();
     this.installRoadsidePassengerModelFallbacks();
+    if (typeof window !== 'undefined') window.__KANO_GLB_ANIMATION_MANAGER__ = this;
   }
 
   installSkeletonSafeCloning() {
@@ -753,6 +759,9 @@ export class KanoGLBAnimationManager {
           lastMixerUpdateElapsed: -Infinity,
           nextDistanceCheckAt: -Infinity,
           mobileUpdateInterval: 0,
+          mobileDistanceSquared: NaN,
+          staticPoseActive: false,
+          staticPoseMeshCount: 0,
         });
         root.userData.kanoAnimationState = 'playing';
       } catch (error) {
@@ -775,6 +784,7 @@ export class KanoGLBAnimationManager {
 
     const cameraPosition = this.renderer.camera?.position;
     if (!cameraPosition || typeof root?.getWorldPosition !== 'function') {
+      entry.mobileDistanceSquared = NaN;
       entry.mobileUpdateInterval = 1 / 30;
       return entry.mobileUpdateInterval;
     }
@@ -787,6 +797,7 @@ export class KanoGLBAnimationManager {
     const dy = position.y - cameraPosition.y;
     const dz = position.z - cameraPosition.z;
     const distanceSquared = dx * dx + dy * dy + dz * dz;
+    entry.mobileDistanceSquared = distanceSquared;
 
     entry.mobileUpdateInterval = distanceSquared < 256
       ? 0
@@ -836,6 +847,7 @@ export class KanoGLBAnimationManager {
 
     for (const [root, entry] of this.mixers) {
       if (!this.lastActiveRoots.has(root) || !root.parent) {
+        if (entry.staticPoseActive) restoreSkinnedCharacterPose(root);
         entry.action.stop();
         entry.mixer.stopAllAction();
         entry.mixer.uncacheRoot(root);
@@ -862,12 +874,43 @@ export class KanoGLBAnimationManager {
         continue;
       }
 
+      if (this.mobile) {
+        this.mobileAnimationInterval(root, entry);
+        const renderMode = chooseSkinnedCharacterRenderMode({
+          mobile: true,
+          role: entry.role,
+          distanceSquared: entry.mobileDistanceSquared,
+          staticPoseActive: entry.staticPoseActive,
+        });
+
+        if (renderMode === 'skinned' && entry.staticPoseActive) {
+          restoreSkinnedCharacterPose(root);
+          entry.staticPoseActive = false;
+          entry.staticPoseMeshCount = 0;
+          entry.pendingElapsed = 0;
+        } else if (renderMode === 'static-pose' && !entry.staticPoseActive) {
+          const result = bakeSkinnedCharacterStaticPose(root, THREE);
+          if (result.applied) {
+            entry.staticPoseActive = true;
+            entry.staticPoseMeshCount = result.meshes;
+            entry.pendingElapsed = 0;
+          }
+        }
+
+        if (entry.staticPoseActive) {
+          // A baked idle pose needs no mixer or GPU skinning work until the
+          // actor returns to the full-detail distance band.
+          entry.pendingElapsed = 0;
+          continue;
+        }
+      }
+
       if (!this.mobile) {
         entry.mixer.update(dt);
         continue;
       }
 
-      const animationInterval = this.mobileAnimationInterval(root, entry);
+      const animationInterval = entry.mobileUpdateInterval;
       entry.pendingElapsed = Math.min(0.25, entry.pendingElapsed + dt);
       if (
         animationInterval <= 0 ||
@@ -918,11 +961,32 @@ export class KanoGLBAnimationManager {
     }
   }
 
+  getCharacterRenderLodDiagnostics() {
+    const stats = {
+      enabled: this.mobile,
+      activeCharacterRoots: 0,
+      staticPoseCharacterRoots: 0,
+      staticPoseMeshes: 0,
+      remainingSkinnedMeshes: 0,
+    };
+    for (const root of this.lastActiveRoots) {
+      if (!root?.parent) continue;
+      stats.activeCharacterRoots += 1;
+      if (root.userData?.kanoCharacterStaticPoseLodActive) stats.staticPoseCharacterRoots += 1;
+      root.traverse?.((object) => {
+        if (object?.isSkinnedMesh) stats.remainingSkinnedMeshes += 1;
+        if (object?.userData?.kanoStaticPoseLod === true) stats.staticPoseMeshes += 1;
+      });
+    }
+    return stats;
+  }
+
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
 
     for (const [root, entry] of this.mixers) {
+      if (entry.staticPoseActive) restoreSkinnedCharacterPose(root);
       entry.action.stop();
       entry.mixer.stopAllAction();
       entry.mixer.uncacheRoot(root);
@@ -939,6 +1003,9 @@ export class KanoGLBAnimationManager {
     this.cachedActiveRoots?.clear?.();
     this.cachedActiveRoots = null;
     this.lastActiveRoots.clear();
+    if (typeof window !== 'undefined' && window.__KANO_GLB_ANIMATION_MANAGER__ === this) {
+      delete window.__KANO_GLB_ANIMATION_MANAGER__;
+    }
 
     if (this.models.getInstance === this.getInstanceWrapper) {
       this.models.getInstance = this.originalGetInstance;

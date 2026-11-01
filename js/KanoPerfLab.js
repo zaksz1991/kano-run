@@ -45,7 +45,7 @@ async function run() {
   };
   const WORLD_CORE = /SAND_GROUND|VERGE|SHOULDER|KERB|LANE_MARKINGS|TWO_WAY_ROAD|FLYOVER/i;
   const tests = [
-    ['people (skinned)', () => hideWhere((n) => n.isSkinnedMesh)],
+    ['people (skinned + static LOD)', () => hideWhere((n) => n.isSkinnedMesh || n.userData?.kanoStaticPoseLod === true)],
     ['traffic vehicles', () => {
       const undo = [];
       for (const actor of R.trafficActors?.values?.() || []) if (actor.visible) { actor.visible = false; undo.push(actor); }
@@ -118,7 +118,11 @@ async function run() {
   const best = [...rows].sort((a, b) => b[2] - a[2])[0];
   const gpu = (() => { try { const c = document.createElement('canvas'); const g = c.getContext('webgl'); const e = g.getExtension('WEBGL_debug_renderer_info'); return g.getParameter(e.UNMASKED_RENDERER_WEBGL); } catch (_) { return '?'; } })();
   const info = R.renderer.info.render;
-  show(`\n\nbaseline over time: ${drift.map((d) => d.toFixed(0)).join(' ')}\nrender() CPU: ${pr.cpu.toFixed(1)} ms  GPU wait: ${pr.wait.toFixed(1)} ms\ncalls ${info.calls} tris ${info.triangles}\nbest gain: ${best[0]} (${best[2] >= 0 ? '+' : ''}${best[2].toFixed(1)} fps)\n${gpu}\nSend this screenshot.`);
+  const characterLod = window.__KANO_GLB_ANIMATION_MANAGER__?.getCharacterRenderLodDiagnostics?.();
+  const characterLodLine = characterLod
+    ? `\ncharacter LOD: ${characterLod.staticPoseCharacterRoots}/${characterLod.activeCharacterRoots} static roots, ${characterLod.staticPoseMeshes} static meshes, ${characterLod.remainingSkinnedMeshes} skinned meshes`
+    : '';
+  show(`\n\nbaseline over time: ${drift.map((d) => d.toFixed(0)).join(' ')}\nrender() CPU: ${pr.cpu.toFixed(1)} ms  GPU wait: ${pr.wait.toFixed(1)} ms\ncalls ${info.calls} tris ${info.triangles}\nbest gain: ${best[0]} (${best[2] >= 0 ? '+' : ''}${best[2].toFixed(1)} fps)${characterLodLine}\n${gpu}\nSend this screenshot.`);
 }
 
 if (enabled && typeof window !== 'undefined') {
