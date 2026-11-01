@@ -266,8 +266,8 @@ function addCheckpointPassengerCrowd(renderer, zone, actor) {
 // project ships are cached, each street person is swapped for one of them.
 // ---------------------------------------------------------------------------
 const PEOPLE_MODEL_KEYS = ['passengerMan', 'pedestrianWoman', 'pedestrian', 'passengerWoman'];
-const REAL_PEOPLE_BUDGET = { mobile: 6, desktop: 12 };
-const CROWD_REAL_BUDGET = { mobile: 2, desktop: 4 };
+const REAL_PEOPLE_BUDGET = { mobile: 4, desktop: 12 };
+const CROWD_REAL_BUDGET = { mobile: 1, desktop: 4 };
 
 function availablePeopleKeys(renderer) {
   const cache = renderer.models?.cache;
