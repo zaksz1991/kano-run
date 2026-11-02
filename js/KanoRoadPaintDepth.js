@@ -36,7 +36,8 @@ if (typeof window !== 'undefined' && !window.__kanoRoadPaintDepth) {
     const world = window.__KANO_ACTIVE_RENDERER__?.world;
     if (!world) return;
     world.traverse((node) => {
-      if (!node.isMesh || node.userData.kanoPaintBiased) return;
+      if (!node.isMesh || node.userData.kanoPaintChecked) return;
+      node.userData.kanoPaintChecked = true; // shape never changes, so each mesh is measured only once
       if (isPaint(node)) bias(node);
     });
   }, SWEEP_MS);
