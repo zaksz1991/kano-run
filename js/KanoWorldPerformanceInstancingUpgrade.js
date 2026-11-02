@@ -45,6 +45,7 @@ import './KanoRoadSidesFix.js';
 import './KanoSkeletonLeakGuard.js';
 import './KanoRoadPaintDepth.js';
 import './KanoDustyRoadLook.js';
+import './KanoFpsFloor.js';
 import './KanoPhoneMaterialLite.js';
 import './KanoKekeCatalogFailoverRepair.js';
 import { KanoAtmosphere } from './KanoAtmosphere.js';
