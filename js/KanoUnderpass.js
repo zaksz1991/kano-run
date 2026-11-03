@@ -1,7 +1,7 @@
 /**
- * Kano underpass, from the player's photo of the red-and-white tiled underpass: cream tiled
- * retaining walls with a red/white band on both sides of the road, a bridge slab with red and
- * cream parapets across the top, and short stepped wall ends. It repeats every 1900 m (flyovers
+ * Kano underpass, from the player's photo: tall beige ribbed concrete retaining walls with a
+ * black-and-white kerb band along the top on both sides of the road, a bridge slab with concrete
+ * parapets across the top, and short stepped wall ends. It repeats every 1900 m (flyovers
  * repeat every 1700 m, so the two drift apart). Visual only: the road stays level, lanes,
  * collisions, stops and fares are unchanged.
  */
@@ -20,16 +20,16 @@ function tileTexture(repeatX) {
   const w = 256; const h = 256;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
-  g.fillStyle = '#e4d9bd'; g.fillRect(0, 0, w, h);
-  g.strokeStyle = 'rgba(120,100,70,0.35)'; g.lineWidth = 2;
-  for (let y = 0; y <= h; y += 32) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
-  for (let x = 0; x <= w; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
-  // red/white band near the top (the signature Kano underpass trim)
-  g.fillStyle = '#b3262e'; g.fillRect(0, 0, w, 54);
-  g.fillStyle = '#f4efe2';
-  for (let x = -64; x < w + 64; x += 64) {
-    g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 32, 0); g.lineTo(x + 64, 54); g.lineTo(x + 32, 54); g.closePath(); g.fill();
+  // beige ribbed concrete retaining wall, as in the player's underpass photo
+  g.fillStyle = '#cfc5ae'; g.fillRect(0, 0, w, h);
+  for (let x = 0; x < w; x += 16) {
+    g.fillStyle = 'rgba(110,98,76,0.30)'; g.fillRect(x, 0, 3, h);
+    g.fillStyle = 'rgba(255,250,235,0.22)'; g.fillRect(x + 3, 0, 2, h);
   }
+  // black-and-white kerb band along the top edge of the wall
+  g.fillStyle = '#f4efe2'; g.fillRect(0, 0, w, 30);
+  g.fillStyle = '#1c1f22';
+  for (let x = 0; x < w; x += 64) g.fillRect(x, 0, 32, 30);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping;
   t.repeat.set(repeatX, 1);
@@ -75,7 +75,7 @@ function build(renderer) {
   const slab = new THREE.Mesh(new THREE.BoxGeometry(slabW, 0.9, 16), mat(0x8f8a80, 0.95));
   slab.position.set(slabX, SLAB_Y, 0);
   inner.add(slab);
-  for (const [dz, color] of [[7.7, 0xb3262e], [-7.7, 0xb3262e]]) {
+  for (const [dz, color] of [[7.7, 0xb9b3a4], [-7.7, 0xb9b3a4]]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(slabW, 0.55, 0.28), mat(color, 0.8));
     rail.position.set(slabX, SLAB_Y + 0.72, dz);
     inner.add(rail);
