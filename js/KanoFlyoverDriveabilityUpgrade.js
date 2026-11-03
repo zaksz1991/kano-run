@@ -294,7 +294,7 @@ function skinWithGlb(renderer, record) {
 
 // Remove (not just hide) the built-in white/red boxes, ramps and stripes, so nothing can show them again.
 function purgeBuiltInFlyover(record) {
-  const keep = (child) => child === record.wrapper || /SIGN|ROUNDABOUT/i.test(String(child.name || ''));
+  const keep = (child) => child === record.wrapper || /SIGN|ROUNDABOUT|PARAPET_TRIM/i.test(String(child.name || ''));
   for (const holder of [record.flyover, record.group]) {
     if (!holder?.children) continue;
     for (const child of holder.children.slice()) {
