@@ -50,6 +50,45 @@ function applyTexture(material, repeat) {
   material.needsUpdate = true;
 }
 
+const LOOP_FAR = 215;
+const KERB_STEP = 2.9;
+
+function buildFootpath(renderer, k) {
+  if (k.__kanoFootpath) return;
+  const mat = (color, rough) => {
+    const m = renderer.material(color, rough);
+    m.userData = m.userData || {};
+    m.userData.kanoNoShift = true;
+    return m;
+  };
+  // pale paved footpath beyond the oncoming carriageway (x -15.2 to -17.6), as in the photos
+  const path = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 250), mat(0xb8b4aa, 1));
+  path.rotation.x = -Math.PI / 2;
+  path.position.set(-16.4, 0.02, -92);
+  path.name = 'KANO_FOOTPATH_PAVING';
+  k.group.add(path);
+  // navy-and-white kerb blocks along the road edge of the footpath
+  const positions = [];
+  for (let z = 10; z > -LOOP_FAR; z -= KERB_STEP) positions.push(z);
+  const geometry = new THREE.BoxGeometry(0.26, 0.2, KERB_STEP - 0.06);
+  const mesh = new THREE.InstancedMesh(geometry, mat(0xffffff, 0.95), positions.length);
+  const dummy = new THREE.Object3D();
+  const navy = new THREE.Color(0x1d3557); const white = new THREE.Color(0xf1efe6);
+  positions.forEach((z, i) => {
+    dummy.position.set(-15.35, 0.1, z); dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix); mesh.setColorAt(i, i % 2 ? white : navy);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.frustumCulled = false;
+  const root = new THREE.Group();
+  root.add(mesh);
+  root.userData.period = KERB_STEP * 2;
+  k.group.add(root);
+  k.roots.push(root);   // scrolls with the rest of the two-way road
+  k.__kanoFootpath = true;
+}
+
 function recolour(renderer) {
   const world = renderer.world;
   if (!world) return;
@@ -60,6 +99,7 @@ function recolour(renderer) {
   if (k) {
     applyTexture(k.asphaltMaterial, [2.4, 64]);
     k.hasMap = true; // stop the original code from putting its dark texture back
+    buildFootpath(renderer, k);
   }
   const right = world.getObjectByName('KANO_RIGHT_SAND_VERGE');
   if (right?.material && right.material.color.getHex() !== 0xb4b1a8) { right.material.color.set(0xb4b1a8); if (right.material.map) right.material.map = null; right.material.needsUpdate = true; }
