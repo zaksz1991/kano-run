@@ -140,6 +140,16 @@ window.addEventListener('kano:life-scene', (event) => {
 // RENDERER STATUS
 // ============================================================
 
+// 4x MSAA is cheap on tile-based phone GPUs (Mali/Adreno) and removes the jagged edges.
+// Opt out with ?msaa=0 (remembered) if a phone struggles.
+function wantsMobileMsaa() {
+  try {
+    const q = new URLSearchParams(location.search).get('msaa');
+    if (q === '0' || q === '1') localStorage.setItem('kano.life.msaa', q);
+    return localStorage.getItem('kano.life.msaa') !== '0';
+  } catch { return true; }
+}
+
 function setRenderBadge(text) {
   const badge = document.getElementById('render-badge');
 
@@ -478,7 +488,7 @@ async function start3D() {
   try {
     gl = activeCanvas.getContext('webgl2', {
       alpha: false,
-      antialias: !mobile || getMobileTier() === 'high',
+      antialias: !mobile || wantsMobileMsaa(),
       depth: true,
       stencil: false,
       powerPreference: 'high-performance',
@@ -527,6 +537,7 @@ async function start3D() {
       { mobile },
     );
 
+    window.kanoRenderer = webglRenderer;
     renderer = webglRenderer;
 
     webglRenderer.resize?.();
@@ -933,6 +944,7 @@ function boot() {
 
   // Create the game before systems that depend on it.
   game = new Game(ui, audio, { mobile });
+  window.kanoGame = game;
 
   ui.bind?.(game);
 
