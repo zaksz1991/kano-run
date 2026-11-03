@@ -121,7 +121,11 @@ function build(renderer) {
 
   // --- oncoming lane dashes (centre of the oncoming carriageway)
   const dashPositions = [];
-  for (let z = 6; z > -LOOP_FAR; z -= 8.5) dashPositions.push([ONCOMING_CENTRE, 0.014, z, -Math.PI / 2]);
+  // three lanes on the oncoming carriageway, as on the Kano dual carriageways in the photos
+  const third = (ONCOMING_X0 - ONCOMING_X1) / 3;
+  for (const x of [ONCOMING_X0 - third, ONCOMING_X0 - 2 * third]) {
+    for (let z = 6; z > -LOOP_FAR; z -= 8.5) dashPositions.push([x, 0.014, z, -Math.PI / 2]);
+  }
   roots.push(scrollingInstances(group, new THREE.PlaneGeometry(0.1, 3.4), mat(0xe8e0c8, 0.8), dashPositions, 8.5));
 
   renderer.world.add(group);
