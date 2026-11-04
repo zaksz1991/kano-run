@@ -14,7 +14,7 @@ const renderer = read('js/renderer3d.js');
   assert.match(hud, /\.kano-day-hud\{position:absolute;right:8px;left:auto;/);
   assert.doesNotMatch(hud, /\.kano-day-hud\{[^}]*left:8px/);
   assert.match(hud, /#place\(\)/);
-  assert.match(hud, /\['#menu-btn', '\.minimap', '#hud \.hud-top', '#hud \.hud-bottom', '#hud \.mission-pill'\]/);
+  assert.match(hud, /\['#kano-compact-driving-hud', '\.kano-compact-driving-hud', '#menu-btn', '\.minimap', '#hud \.hud-top', '#hud \.hud-bottom', '#hud \.mission-pill'\]/);
   assert.match(hud, /removeEventListener\('resize', this\.onResize\)/);
   assert.match(hud, /removeEventListener\('orientationchange', this\.onResize\)/);
 });

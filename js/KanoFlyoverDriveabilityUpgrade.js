@@ -494,7 +494,7 @@ function showForkBanner(text) {
   if (!forkBanner) {
     forkBanner = document.createElement('div');
     forkBanner.id = 'kano-flyover-fork';
-    forkBanner.style.cssText = 'position:fixed;left:50%;top:19%;transform:translateX(-50%);z-index:30;padding:5px 10px;border-radius:10px;background:rgba(10,30,24,.8);border:1px solid #f5c431;color:#fff;font:700 12px system-ui,sans-serif;text-align:center;pointer-events:none;display:none;max-width:88vw';
+    forkBanner.style.cssText = 'position:fixed;left:8px;top:19%;z-index:30;padding:5px 10px;border-radius:10px;background:rgba(10,30,24,.8);border:1px solid #f5c431;color:#fff;font:700 12px system-ui,sans-serif;text-align:left;pointer-events:none;display:none;max-width:50vw';
     document.body.appendChild(forkBanner);
   }
   if (forkBanner.dataset.t === (text || '')) return;

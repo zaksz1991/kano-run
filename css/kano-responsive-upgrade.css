@@ -405,7 +405,7 @@
    Size it to its text and park it in the clear band under the HUD. */
 @media (max-width: 760px) {
   .toast {
-    top: clamp(166px, 19vh, 200px);
+    top: clamp(250px, 34vh, 320px);
     width: max-content;
     max-width: min(88vw, 340px);
     padding: 7px 12px;

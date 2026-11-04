@@ -97,7 +97,7 @@ export class KanoDayHud {
     const left = right - panelWidth;
     let occupiedBottom = host.top;
 
-    for (const selector of ['#menu-btn', '.minimap', '#hud .hud-top', '#hud .hud-bottom', '#hud .mission-pill']) {
+    for (const selector of ['#kano-compact-driving-hud', '.kano-compact-driving-hud', '#menu-btn', '.minimap', '#hud .hud-top', '#hud .hud-bottom', '#hud .mission-pill']) {
       const element = this.container.querySelector(selector);
       if (!element || element.hidden) continue;
       const style = window.getComputedStyle(element);
