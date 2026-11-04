@@ -43,6 +43,7 @@ import './KanoDropChip.js';
 import './KanoSceneryDiet.js';
 import './KanoRoadSidesFix.js';
 import './KanoSkeletonLeakGuard.js';
+import './KanoBoardingCamera.js';
 import './KanoRoadPaintDepth.js';
 import './KanoDustyRoadLook.js';
 import './KanoFpsFloor.js';
