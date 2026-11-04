@@ -345,7 +345,8 @@ export class KanoSceneUpgrade {
     });
 
     for (const mesh of [this.crowdTorso, this.crowdHead, this.crowdArms, this.crowdLegs]) {
-      mesh.instanceColor.needsUpdate = true;
+      // With zero procedural people there is no colour buffer; guard so the whole scene upgrade survives.
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
 
     this.updateCrowdMatrices();
