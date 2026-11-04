@@ -934,7 +934,7 @@ export class KanoSceneUpgrade {
 
     if (kind === 'board') {
       start = new THREE.Vector3(side * 6.55, 0, -clamp(Number(zone?.depth) || 0.12, 0.04, 1.8) * 88);
-      end = new THREE.Vector3(playerX + side * 0.48, 0, playerZ + 0.20);
+      end = new THREE.Vector3(playerX + side * 0.16, 0, playerZ + 0.02); // step right up to the seat inside the keke
     } else {
       start = new THREE.Vector3(playerX + side * 0.48, 0, playerZ + 0.28);
       end = new THREE.Vector3(side * 6.55, 0, -clamp(Number(zone?.depth) || 0.12, 0.04, 1.8) * 88);
@@ -952,7 +952,7 @@ export class KanoSceneUpgrade {
       start,
       end,
       elapsed: 0,
-      duration: clamp(start.distanceTo(end) / 6.8, 0.85, 2.35),
+      duration: clamp(start.distanceTo(end) / 2.8, 1.6, 3.2), // brisk walk, not a sprint
       worldScroll: 0,
       initialScale: 1,
     });
@@ -976,9 +976,11 @@ export class KanoSceneUpgrade {
       for (const leg of item.rig.legs) leg.pivot.rotation.x = -armSafe(stride, leg.side);
       item.rig.head.rotation.y = Math.sin(item.elapsed * 1.8) * 0.08;
 
-      if (item.kind === 'board' && t > 0.72) {
-        const fade = clamp((1 - t) / 0.28, 0, 1);
-        item.rig.root.scale.setScalar(Math.max(0.015, fade));
+      if (item.kind === 'board' && t > 0.8) {
+        // Duck under the canopy as they climb in, then disappear only once inside the body.
+        const climb = clamp((t - 0.8) / 0.2, 0, 1);
+        item.rig.root.position.y -= climb * 0.22;
+        item.rig.root.scale.setScalar(t > 0.97 ? 0.015 : 1 - climb * 0.08);
       } else if (item.kind === 'alight' && t > 0.84) {
         item.rig.root.scale.setScalar(clamp((1 - t) / 0.16, 0.015, 1));
       }
