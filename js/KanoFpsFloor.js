@@ -2,21 +2,21 @@
  * Frame-rate floor for phones. The lab showed the phone GPU is limited by how many pixels it
  * must fill, and that halving the resolution gave about +9 FPS. The existing adaptive quality
  * never goes below 1 pixel per CSS pixel, so a weak phone stays at 8-15 FPS. This steps the 3D
- * view down in small stages (0.85, then 0.72) only while the phone is truly struggling
+ * view down in small stages (0.85, then 0.72; up to 1.25 on a fast phone) only while the phone is truly struggling
  * (under 20 FPS for 6 seconds of real driving), and remembers the choice. The HUD and buttons are
  * normal page elements, so they stay sharp. It steps back up if the phone later holds 45+ FPS.
  */
 import * as THREE from 'three';
 
-const KEY = 'kano.life.pixelCap.v1';
-const STAGES = [1, 0.85, 0.72];
+const KEY = 'kano.life.pixelCap.v2'; // v2: forget the 0.85 that v1 saved on slow measurements
+const STAGES = [1.25, 1, 0.85, 0.72];
 const PATCH = Symbol.for('kano.life.fpsFloor.v1');
 
 const coarse = typeof window !== 'undefined'
   && (window.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || ''));
 
 function load() {
-  try { const v = Number(localStorage.getItem(KEY)); return STAGES.includes(v) ? Math.max(v, 0.85) : 1; } catch (_) { return 1; } // each session re-checks the deepest stage
+  try { const v = Number(localStorage.getItem(KEY)); return STAGES.includes(v) ? Math.min(1, Math.max(v, 0.85)) : 1; } catch (_) { return 1; } // each session re-checks the deepest stage
 }
 function save(v) { try { localStorage.setItem(KEY, String(v)); } catch (_) { /* optional */ } }
 
