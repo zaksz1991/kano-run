@@ -1,3 +1,4 @@
+import './KanoBootSelfCheck.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
 import { Controls } from './controls.js';
