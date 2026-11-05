@@ -18,11 +18,17 @@ const coarse = typeof window !== 'undefined'
 function load() {
   try { const v = Number(localStorage.getItem(KEY)); return STAGES.includes(v) ? Math.min(1, Math.max(v, 0.85)) : 1; } catch (_) { return 1; } // each session re-checks the deepest stage
 }
+const MODE_KEY = 'kano.life.qualityMode.v1';
+const MODES = ['auto', 'sharp', 'fast'];
+const MODE_CAP = { sharp: 1.25, fast: 0.72 };
+function loadMode() { try { const m = localStorage.getItem(MODE_KEY); return MODES.includes(m) ? m : 'auto'; } catch (_) { return 'auto'; } }
+function saveMode(m) { try { localStorage.setItem(MODE_KEY, m); } catch (_) { /* optional */ } }
 function save(v) { try { localStorage.setItem(KEY, String(v)); } catch (_) { /* optional */ } }
 
 if (coarse && !THREE.WebGLRenderer.prototype[PATCH]) {
   Object.defineProperty(THREE.WebGLRenderer.prototype, PATCH, { value: true });
-  const state = { cap: load(), samples: [], lastStep: performance.now(), highSince: 0 };
+  const state = { cap: load(), samples: [], lastStep: performance.now(), highSince: 0, mode: loadMode() };
+  if (state.mode !== 'auto') state.cap = MODE_CAP[state.mode];
   window.kanoFpsFloor = state;
 
   const original = THREE.WebGLRenderer.prototype.setPixelRatio;
@@ -52,7 +58,7 @@ if (coarse && !THREE.WebGLRenderer.prototype[PATCH]) {
         const full = state.samples.length === 6;
         const avg = state.samples.reduce((a, b) => a + b, 0) / state.samples.length;
         const idx = STAGES.indexOf(state.cap);
-        if (full && now - state.lastStep > 10000) {
+        if (state.mode === 'auto' && full && now - state.lastStep > 10000) {
           if (avg < 20 && idx < STAGES.length - 1) {
             state.cap = STAGES[idx + 1]; state.lastStep = now; state.samples = []; save(state.cap); apply();
           } else if (avg > 45 && idx > 0) {
@@ -68,4 +74,31 @@ if (coarse && !THREE.WebGLRenderer.prototype[PATCH]) {
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
+  // Small header button so the player can pick the picture/speed trade-off directly.
+  const LABEL = { auto: 'AUTO', sharp: 'SHARP', fast: 'FAST' };
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.id = 'kano-quality-chip';
+  chip.style.cssText = 'position:fixed;left:96px;top:calc(env(safe-area-inset-top,0px) + 9px);z-index:20;padding:2px 8px;border-radius:9px;border:1px solid #ffffff55;background:rgba(12,26,43,.85);color:#f6f8fb;font:800 10px system-ui,sans-serif;letter-spacing:.06em;display:none';
+  const paint = () => { chip.textContent = `PICTURE: ${LABEL[state.mode]}`; };
+  chip.addEventListener('click', () => {
+    state.mode = MODES[(MODES.indexOf(state.mode) + 1) % MODES.length];
+    saveMode(state.mode);
+    state.samples = [];
+    state.cap = state.mode === 'auto' ? 1 : MODE_CAP[state.mode];
+    const r = window.__KANO_ACTIVE_RENDERER__?.renderer;
+    if (r?.setPixelRatio) r.setPixelRatio(Math.min(window.devicePixelRatio || 1, state.cap));
+    window.dispatchEvent(new Event('resize'));
+    paint();
+  });
+  paint();
+  const mountChip = () => {
+    if (!document.body) return requestAnimationFrame(mountChip);
+    document.body.appendChild(chip);
+    setInterval(() => {
+      const driving = Boolean(document.getElementById('drive-controls')?.offsetParent) && !document.querySelector('.screen:not(.hidden)');
+      chip.style.display = driving ? 'block' : 'none';
+    }, 600);
+  };
+  mountChip();
 }
