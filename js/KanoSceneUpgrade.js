@@ -215,7 +215,7 @@ export class KanoSceneUpgrade {
       toneMapped: false,
     }));
 
-    const base = new THREE.PlaneGeometry(2.18, 0.52);
+    const base = new THREE.PlaneGeometry(1.62, 0.4); // was 2.18 x 0.52: read as oversized green billboards
     const uv = base.attributes.uv;
     this.signMeshes = [];
 

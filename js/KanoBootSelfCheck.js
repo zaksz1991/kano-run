@@ -24,11 +24,11 @@ function render() {
     badge = document.createElement('button');
     badge.id = 'kano-boot-issues';
     badge.type = 'button';
-    badge.style.cssText = 'position:fixed;left:8px;top:8px;z-index:60;padding:3px 8px;border-radius:10px;border:1px solid #f5c431;background:rgba(40,20,10,.85);color:#ffd9a0;font:700 11px system-ui,sans-serif;opacity:.85';
+    badge.style.cssText = 'position:fixed;left:234px;top:calc(env(safe-area-inset-top,0px) + 9px);z-index:60;padding:3px 8px;border-radius:10px;border:1px solid #f5c431;background:rgba(40,20,10,.85);color:#ffd9a0;font:700 11px system-ui,sans-serif;opacity:.85';
     badge.addEventListener('click', () => {
       if (!panel) {
         panel = document.createElement('div');
-        panel.style.cssText = 'position:fixed;left:8px;right:8px;top:36px;z-index:61;max-height:60vh;overflow:auto;padding:8px;border-radius:10px;background:rgba(10,14,20,.95);border:1px solid #f5c431;color:#fff;font:12px/1.35 system-ui,sans-serif';
+        panel.style.cssText = 'position:fixed;left:8px;right:8px;top:calc(env(safe-area-inset-top,0px) + 36px);z-index:61;max-height:60vh;overflow:auto;padding:8px;border-radius:10px;background:rgba(10,14,20,.95);border:1px solid #f5c431;color:#fff;font:12px/1.35 system-ui,sans-serif';
         panel.addEventListener('click', () => { panel.style.display = 'none'; });
         document.body.appendChild(panel);
       }
@@ -37,7 +37,7 @@ function render() {
     });
     document.body.appendChild(badge);
   }
-  badge.textContent = `⚠ ${issues.length} feature issue${issues.length > 1 ? 's' : ''}`;
+  badge.textContent = `⚠ ${issues.length}`;
 }
 
 if (typeof window !== 'undefined' && !window[KEY]) {
