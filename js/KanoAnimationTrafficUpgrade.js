@@ -1,10 +1,6 @@
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
-import {
-  restoreSkinnedCharacterPose,
-  updateSkinnedCharacterRenderLodState,
-} from './KanoSkinnedCharacterRenderLOD.js';
 
 const CHARACTER_KEYS = new Set([
   'passenger',
@@ -412,9 +408,6 @@ export class KanoGLBAnimationManager {
     this.loader = createGLTFLoader();
     this.clipPromises = new Map();
     this.mixers = new Map();
-    // Idle GLBs without an embedded idle clip use a restrained root-level
-    // fallback motion. Keep their LOD state separately because they have no mixer.
-    this.fallbackLodStates = new Map();
     this.lastActiveRoots = new Set();
     this.cachedActiveRoots = null;
     this.lastRootDiscoveryElapsed = -Infinity;
@@ -429,7 +422,6 @@ export class KanoGLBAnimationManager {
     this.installSkeletonSafeCloning();
     this.installPedestrianModelFallbacks();
     this.installRoadsidePassengerModelFallbacks();
-    if (typeof window !== 'undefined') window.__KANO_GLB_ANIMATION_MANAGER__ = this;
   }
 
   installSkeletonSafeCloning() {
@@ -761,11 +753,6 @@ export class KanoGLBAnimationManager {
           lastMixerUpdateElapsed: -Infinity,
           nextDistanceCheckAt: -Infinity,
           mobileUpdateInterval: 0,
-          mobileDistanceSquared: NaN,
-          staticPoseActive: false,
-          staticPoseMeshCount: 0,
-          staticPoseBakeAttempted: false,
-          staticPoseBakeFailure: null,
         });
         root.userData.kanoAnimationState = 'playing';
       } catch (error) {
@@ -788,7 +775,6 @@ export class KanoGLBAnimationManager {
 
     const cameraPosition = this.renderer.camera?.position;
     if (!cameraPosition || typeof root?.getWorldPosition !== 'function') {
-      entry.mobileDistanceSquared = NaN;
       entry.mobileUpdateInterval = 1 / 30;
       return entry.mobileUpdateInterval;
     }
@@ -801,7 +787,6 @@ export class KanoGLBAnimationManager {
     const dy = position.y - cameraPosition.y;
     const dz = position.z - cameraPosition.z;
     const distanceSquared = dx * dx + dy * dy + dz * dz;
-    entry.mobileDistanceSquared = distanceSquared;
 
     entry.mobileUpdateInterval = distanceSquared < 256
       ? 0
@@ -851,7 +836,6 @@ export class KanoGLBAnimationManager {
 
     for (const [root, entry] of this.mixers) {
       if (!this.lastActiveRoots.has(root) || !root.parent) {
-        if (entry.staticPoseActive) restoreSkinnedCharacterPose(root);
         entry.action.stop();
         entry.mixer.stopAllAction();
         entry.mixer.uncacheRoot(root);
@@ -878,29 +862,12 @@ export class KanoGLBAnimationManager {
         continue;
       }
 
-      if (this.mobile) {
-        this.mobileAnimationInterval(root, entry);
-        updateSkinnedCharacterRenderLodState(root, entry, {
-          mobile: true,
-          role: entry.role,
-          distanceSquared: entry.mobileDistanceSquared,
-          THREE,
-        });
-
-        if (entry.staticPoseActive) {
-          // A baked idle pose needs no mixer or GPU skinning work until the
-          // actor returns to the full-detail distance band.
-          entry.pendingElapsed = 0;
-          continue;
-        }
-      }
-
       if (!this.mobile) {
         entry.mixer.update(dt);
         continue;
       }
 
-      const animationInterval = entry.mobileUpdateInterval;
+      const animationInterval = this.mobileAnimationInterval(root, entry);
       entry.pendingElapsed = Math.min(0.25, entry.pendingElapsed + dt);
       if (
         animationInterval <= 0 ||
@@ -911,15 +878,6 @@ export class KanoGLBAnimationManager {
         entry.mixer.update(entry.pendingElapsed);
         entry.pendingElapsed = 0;
         entry.lastMixerUpdateElapsed = this.elapsed;
-      }
-    }
-
-    // No-clip fallback rigs are not in this.mixers, so clean up their baked
-    // geometry separately when they leave the active actor inventory.
-    for (const [root, state] of this.fallbackLodStates) {
-      if (!this.lastActiveRoots.has(root) || !root.parent) {
-        if (state.staticPoseActive) restoreSkinnedCharacterPose(root);
-        this.fallbackLodStates.delete(root);
       }
     }
 
@@ -945,23 +903,6 @@ export class KanoGLBAnimationManager {
       const fallback = root.userData.kanoFallbackAnimation;
       if (this.mobile) {
         const animationInterval = this.mobileAnimationInterval(root, fallback);
-        const role = activeRoots.get(root) || 'walk';
-        if (role === 'idle') {
-          // No-clip idle characters still have skinned GLB geometry. They were
-          // previously excluded from LOD because the mixer loop never saw them.
-          // Reuse the identical 40 m / 32 m policy used by animated idle roots.
-          this.fallbackLodStates.set(root, fallback);
-          fallback.staticPoseActive ??= false;
-          fallback.staticPoseMeshCount ??= 0;
-          fallback.staticPoseBakeAttempted ??= false;
-          fallback.staticPoseBakeFailure ??= null;
-          updateSkinnedCharacterRenderLodState(root, fallback, {
-            mobile: true,
-            role: 'idle',
-            distanceSquared: fallback.mobileDistanceSquared,
-            THREE,
-          });
-        }
         if (
           animationInterval > 0 &&
           this.elapsed - (fallback.lastUpdateElapsed ?? -Infinity) < animationInterval
@@ -977,113 +918,11 @@ export class KanoGLBAnimationManager {
     }
   }
 
-  getCharacterRenderLodDiagnostics() {
-    // This inventory is intentionally collected only when the Performance Lab
-    // requests a report. It is not added to the per-frame mobile update path.
-    const roots = this.collectAnimatedRoots();
-    const stats = {
-      enabled: this.mobile,
-      activeCharacterRoots: 0,
-      idleCharacterRoots: 0,
-      walkCharacterRoots: 0,
-      staticPoseCharacterRoots: 0,
-      staticPoseMeshes: 0,
-      remainingSkinnedMeshes: 0,
-      renderedSkinnedMeshes: 0,
-      farIdleRoots: 0,
-      nearIdleRoots: 0,
-      hysteresisIdleRoots: 0,
-      idleWithoutMixerRoots: 0,
-      idleLoadingRoots: 0,
-      idleNoClipRoots: 0,
-      idleFailedRoots: 0,
-      idleWaitingForMixerRoots: 0,
-      idleAwaitingDistanceRoots: 0,
-      idleBakeNotAttemptedRoots: 0,
-      idleFallbackLodRoots: 0,
-      idleFallbackBakedRoots: 0,
-      idleFallbackBakeFailures: 0,
-      staticPoseBakeFailures: 0,
-      staticPoseBakeFailureReasons: {},
-      nearestIdleDistance: null,
-      farthestIdleDistance: null,
-    };
-
-    const idleDistances = [];
-    for (const [root, role] of roots) {
-      if (!root?.parent) continue;
-      stats.activeCharacterRoots += 1;
-      if (role === 'idle') stats.idleCharacterRoots += 1;
-      else stats.walkCharacterRoots += 1;
-
-      const entry = this.mixers.get(root);
-      if (root.userData?.kanoCharacterStaticPoseLodActive) {
-        stats.staticPoseCharacterRoots += 1;
-      }
-      if (role === 'idle') {
-        if (!entry) {
-          stats.idleWithoutMixerRoots += 1;
-          const animationState = root.userData?.kanoAnimationState;
-          if (animationState === 'loading') stats.idleLoadingRoots += 1;
-          else if (animationState === 'no-clips') stats.idleNoClipRoots += 1;
-          else if (animationState === 'failed') stats.idleFailedRoots += 1;
-          else stats.idleWaitingForMixerRoots += 1;
-        }
-
-        const idleState = entry || this.fallbackLodStates.get(root);
-        if (idleState && this.fallbackLodStates.has(root)) {
-          stats.idleFallbackLodRoots += 1;
-          if (idleState.staticPoseActive) stats.idleFallbackBakedRoots += 1;
-          if (idleState.staticPoseBakeAttempted && idleState.staticPoseBakeFailure) {
-            stats.idleFallbackBakeFailures += 1;
-          }
-        }
-        if (!idleState || !Number.isFinite(idleState.mobileDistanceSquared)) {
-          stats.idleAwaitingDistanceRoots += 1;
-        } else {
-          const distance = Math.sqrt(Math.max(0, idleState.mobileDistanceSquared));
-          idleDistances.push(distance);
-          if (distance >= 40) {
-            stats.farIdleRoots += 1;
-            if (idleState.staticPoseBakeAttempted && idleState.staticPoseBakeFailure) {
-              stats.staticPoseBakeFailures += 1;
-              const reason = idleState.staticPoseBakeFailure;
-              stats.staticPoseBakeFailureReasons[reason] = (stats.staticPoseBakeFailureReasons[reason] || 0) + 1;
-            } else if (!idleState.staticPoseActive && !idleState.staticPoseBakeAttempted) {
-              stats.idleBakeNotAttemptedRoots += 1;
-            }
-          } else if (distance <= 32) {
-            stats.nearIdleRoots += 1;
-          } else {
-            stats.hysteresisIdleRoots += 1;
-          }
-        }
-      }
-
-      root.traverse?.((object) => {
-        if (object?.isSkinnedMesh) {
-          stats.remainingSkinnedMeshes += 1;
-          // A baked source is intentionally retained for safe restoration, but
-          // its default camera layer is disabled and it is not GPU-skinned.
-          if (!object.userData?.kanoStaticPoseLodState) stats.renderedSkinnedMeshes += 1;
-        }
-        if (object?.userData?.kanoStaticPoseLod === true) stats.staticPoseMeshes += 1;
-      });
-    }
-
-    if (idleDistances.length) {
-      stats.nearestIdleDistance = Math.min(...idleDistances);
-      stats.farthestIdleDistance = Math.max(...idleDistances);
-    }
-    return stats;
-  }
-
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
 
     for (const [root, entry] of this.mixers) {
-      if (entry.staticPoseActive) restoreSkinnedCharacterPose(root);
       entry.action.stop();
       entry.mixer.stopAllAction();
       entry.mixer.uncacheRoot(root);
@@ -1095,18 +934,11 @@ export class KanoGLBAnimationManager {
       }
     }
 
-    for (const [root, state] of this.fallbackLodStates) {
-      if (state.staticPoseActive) restoreSkinnedCharacterPose(root);
-    }
-    this.fallbackLodStates.clear();
     this.mixers.clear();
     this.clipPromises.clear();
     this.cachedActiveRoots?.clear?.();
     this.cachedActiveRoots = null;
     this.lastActiveRoots.clear();
-    if (typeof window !== 'undefined' && window.__KANO_GLB_ANIMATION_MANAGER__ === this) {
-      delete window.__KANO_GLB_ANIMATION_MANAGER__;
-    }
 
     if (this.models.getInstance === this.getInstanceWrapper) {
       this.models.getInstance = this.originalGetInstance;
