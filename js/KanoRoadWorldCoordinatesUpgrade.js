@@ -297,16 +297,21 @@ function upcomingJunction(worldKm, reverse) {
   return { index, distanceKm: FIRST_JUNCTION_KM + index * JUNCTION_INTERVAL_KM };
 }
 
-function setRepeatingAnchor(actor, baseKm, periodKm, worldKm) {
+// Flyovers are 300 m long drivable decks (centre +/-150 m). They must stay in place until the
+// whole deck is behind the keke, otherwise the road disappears under it and the keke snaps down.
+const DECK_RETIRE_KM = 0.185;
+const DECK_FRONT_Z = 190;
+
+function setRepeatingAnchor(actor, baseKm, periodKm, worldKm, deck = false) {
   if (!actor || !(periodKm > 0)) return null;
   let occurrence = baseKm;
   if (worldKm > baseKm) {
     occurrence = baseKm + Math.floor((worldKm - baseKm) / periodKm) * periodKm;
   }
-  if (occurrence < worldKm - 0.026) occurrence += periodKm;
+  if (occurrence < worldKm - (deck ? DECK_RETIRE_KM : 0.026)) occurrence += periodKm;
   const z = 2 - (occurrence - worldKm) * WORLD_UNITS_PER_KM;
   actor.position.z = z;
-  const inViewBand = z >= -255 && z <= 23;
+  const inViewBand = z >= -255 && z <= (deck ? DECK_FRONT_Z : 23);
   actor.visible = inViewBand;
   return { occurrenceKm: occurrence, z, visible: inViewBand };
 }
@@ -347,7 +352,7 @@ function syncDistanceAnchors(renderer, state) {
   ensureAnchorSchedules(renderer);
 
   for (const actor of renderer.flyovers || []) {
-    const result = setRepeatingAnchor(actor, actor.userData.kanoWorldAnchorBaseKm, actor.userData.kanoWorldAnchorPeriodKm, worldKm);
+    const result = setRepeatingAnchor(actor, actor.userData.kanoWorldAnchorBaseKm, actor.userData.kanoWorldAnchorPeriodKm, worldKm, true);
     actor.userData.kanoWorldAnchorCurrentKm = result?.occurrenceKm ?? null;
   }
   const signs = renderer.kanoFlyoverSignRecords || [];

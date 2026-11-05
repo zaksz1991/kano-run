@@ -965,6 +965,9 @@ export class KanoSceneUpgrade {
       item.worldScroll += scroll;
       const t = clamp(item.elapsed / item.duration, 0, 1);
       const eased = t * t * (3 - 2 * t);
+      // Show nothing until the real GLB person is attached: the placeholder body used to flash
+      // for a few frames at the roadside and then swap, which read as blinking.
+      item.rig.root.visible = Boolean(item.rig.kanoImportedActor);
       const startZ = item.kind === 'board' ? item.start.z + item.worldScroll : item.start.z;
       const endZ = item.kind === 'board' ? item.end.z : item.end.z + item.worldScroll;
       const x = THREE.MathUtils.lerp(item.start.x, item.end.x, eased);

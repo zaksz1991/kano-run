@@ -29,7 +29,10 @@ function withBoardingCamera(inner) {
         state.lastT = now;
         const list = walkers();
         const speed = Math.abs(Number(window.kanoGame?.s?.speed) || 0);
-        const active = list.length > 0 && speed < 6;
+        // Hysteresis: pickups only need <=12 km/h, so a hard 6 km/h cut-off made the camera flip
+        // on and off while the keke rolled to a stop (visible blinking).
+        const limit = state.w > 0.001 ? 30 : 16;
+        const active = list.length > 0 && speed < limit;
         if (active) state.side = list[list.length - 1].side || 1;
         state.w = Math.min(1, Math.max(0, state.w + (active ? 2.2 : -2.0) * dt));
         if (state.w > 0.001) {
