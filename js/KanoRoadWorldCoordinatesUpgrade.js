@@ -323,7 +323,7 @@ function ensureAnchorSchedules(renderer) {
     actor.userData ||= {};
     const alreadyAnchored = Boolean(actor.userData.kanoWorldAnchoredStep96);
     if (!alreadyAnchored || actor.userData.kanoWorldAnchorIndex !== index || actor.userData.kanoWorldAnchorPeriodKm !== flyoverPeriod) {
-      actor.userData.kanoWorldAnchorBaseKm = 0.10 + index * WORLD_ANCHOR_PERIOD_KM;
+      actor.userData.kanoWorldAnchorBaseKm = 0.55 + index * WORLD_ANCHOR_PERIOD_KM;
       actor.userData.kanoWorldAnchorPeriodKm = flyoverPeriod;
       actor.userData.kanoWorldAnchorIndex = index;
       actor.userData.kanoWorldAnchoredStep96 = true;
