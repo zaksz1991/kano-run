@@ -908,15 +908,26 @@ export class Game {
             : 2.5
           : 1.6;
 
+      // Passenger weight: a full keke pulls away slower and needs more road to
+      // stop. Top speed is unchanged; only response changes (about -22% pull and
+      // -14% braking with 4 seats full).
+      const seatsLoaded = Math.min(
+        4,
+        (s.passengers || []).reduce((t, p) => t + (Number(p?.seats) || 1), 0),
+      );
+      const loadPull = 1 - 0.055 * seatsLoaded;
+      const loadBrake = 1 / (1 + 0.04 * seatsLoaded);
+      s.loadFactor = 1 - 0.055 * seatsLoaded;
+
       const engineResponse = 0.62 + 0.38 * engineHealth;
       s.speed +=
         (desiredSpeed - s.speed) *
-        Math.min(1, acceleration * engineResponse * dt);
+        Math.min(1, acceleration * engineResponse * loadPull * dt);
 
       if (s.brake) {
         s.speed = Math.max(
           0,
-          s.speed - 31 * dt,
+          s.speed - 31 * loadBrake * dt,
         );
       }
     }
