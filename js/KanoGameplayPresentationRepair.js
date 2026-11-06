@@ -4475,7 +4475,12 @@ function applyPlayerKekeRideResponse(renderer, state, dt) {
       : state?.gas
         ? -speedFactor * 0.006
         : 0;
-  player.rotation.x = pitch + Math.sin(time * 31) * impact * 0.0025;
+  // Passenger load: the rear sags and the nose lifts (state.loadFactor from game.js),
+  // and weight makes the pitch on throttle/brake more pronounced.
+  const loadShare = clamp(1 - (Number(state?.loadFactor) || 1), 0, 0.3);
+  const loadSquat = -loadShare * 0.2;
+  player.rotation.x = pitch * (1 + loadShare * 6) * 2.2 + loadSquat + Math.sin(time * 31) * impact * 0.0025;
+  player.position.y -= loadShare * 0.18;
 
   // Imported keke models may not provide their wheels through the native driver
   // rig. Rotate only explicitly named wheels in that case to avoid double-spin.
