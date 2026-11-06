@@ -308,13 +308,15 @@ export class AudioManager {
 
     const throttle = clamp(input.throttle ?? (this.acceleration > 0 ? this.acceleration / 22 : 0), 0, 1);
     const braking = clamp(input.braking ?? 0, 0, 1);
-    const revLoad = clamp(throttle * 0.55 + Math.max(0, this.acceleration) / 48, 0, 1);
+    // Passenger weight (game.js loadFactor): a loaded keke labours, with more strain and a lower note.
+    const loadShare = clamp(1 - (Number(typeof window !== 'undefined' ? window.kanoGame?.s?.loadFactor : 1) || 1), 0, 0.3);
+    const revLoad = clamp(throttle * (0.55 + loadShare * 1.2) + Math.max(0, this.acceleration) / 48, 0, 1);
 
     // Stronger speed curve plus a transient RPM rise under acceleration.
     // At zero speed the engine remains at a lower idle pitch, not silent.
     const baseRate = 0.76 + Math.min(speed, 72) * 0.0102;
     const revBoost = revLoad * (speed < 14 ? 0.20 : 0.13);
-    const targetRate = clamp(baseRate + revBoost - braking * 0.035, 0.76, 1.72);
+    const targetRate = clamp(baseRate + revBoost - braking * 0.035 - loadShare * 0.22, 0.74, 1.72);
     const targetVolume = clamp(
       0.23 + Math.min(speed, 90) * 0.0030 + revLoad * 0.065,
       0.23,
