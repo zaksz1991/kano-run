@@ -89,7 +89,7 @@ function sweep() {
   for (const child of R.world.children) {
     if (child.userData?.fallbackPedestrian) { child.visible = false; continue; }
     if (DONE.has(child) || !child.isGroup && child.type !== 'Group') continue;
-    if (/^KANO_(TWO_WAY|INSTANCED|PROCEDURAL)|KWANKWASIYYA|COINS/.test(child.name || '')) { DONE.add(child); continue; }
+    if (/^KANO_(TWO_WAY|INSTANCED|PROCEDURAL|STREET_ANIMALS|ALMAJIRI|ROADSIDE_GAGS|NIGHT)|PURE_WATER_HAWKER|KWANKWASIYYA|COINS/.test(child.name || '')) { DONE.add(child); continue; }
     if (countMeshes(child) < 3) { if (child.children.length) DONE.add(child); continue; }
     // Wait until a model that is still loading has filled the holder.
     if (child.userData?.pendingModel || child.userData?.kanoPendingPerson) continue;
