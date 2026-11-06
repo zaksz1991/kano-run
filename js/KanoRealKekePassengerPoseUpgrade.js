@@ -287,11 +287,34 @@ function animateSinglePickupPassengers(renderer, dt) {
     const parts = root.userData?.kanoAnimationParts;
     if (!parts) continue;
     const phase = time * 0.74 + finite(parts.phase);
-    root.position.y = finite(zoneActor.userData.kanoStep99PassengerBaseY) + Math.abs(Math.sin(phase)) * 0.008;
-    root.rotation.y = finite(zoneActor.userData.kanoStep99PassengerBaseRotationY) + Math.sin(phase * 0.65) * 0.025;
+    // Reaction to the keke: hail it while it approaches, turn away once it has gone past.
+    const ahead = finite(renderer.player?.position?.z) - finite(zoneActor.position.z);
+    const hail = ahead > 3 && ahead < 42 ? 1 : 0;
+    const passed = ahead <= 3 ? 1 : 0;
+    const ud = root.userData;
+    ud.kanoHail = finite(ud.kanoHail) + (hail - finite(ud.kanoHail)) * Math.min(1, dt * 4);
+    ud.kanoPassed = finite(ud.kanoPassed) + (passed - finite(ud.kanoPassed)) * Math.min(1, dt * 2.5);
+    const toward = ahead > 0 ? 0.55 : -0.2;
+    root.position.y = finite(zoneActor.userData.kanoStep99PassengerBaseY) + Math.abs(Math.sin(phase)) * 0.008 + ud.kanoHail * Math.abs(Math.sin(time * 5.5)) * 0.05;
+    root.rotation.y = finite(zoneActor.userData.kanoStep99PassengerBaseRotationY)
+      + Math.sin(phase * 0.65) * 0.025
+      + ud.kanoHail * toward * (zoneActor.userData.kanoStep99PassengerBaseRotationY < 0 ? -1 : 1) * 0.5
+      + ud.kanoPassed * 0.35;
+    // Step out towards the road (along the facing direction) as the keke comes, step back once it has passed.
+    if (ud.kanoBaseX === undefined) { ud.kanoBaseX = root.position.x; ud.kanoBaseZ = root.position.z; }
+    const faceY = finite(zoneActor.userData.kanoStep99PassengerBaseRotationY);
+    const step = ud.kanoHail * 0.55 - ud.kanoPassed * 0.1;
+    root.position.x = ud.kanoBaseX + Math.sin(faceY) * step;
+    root.position.z = ud.kanoBaseZ + Math.cos(faceY) * step;
     for (const arm of parts.arms || []) {
-      // The hands remain beside the body; only a tiny relaxed idle sway is allowed.
-      arm.pivot.rotation.z = finite(arm.restZ) + Math.sin(phase + finite(arm.side)) * 0.018;
+      // Relaxed idle sway; the near arm swings up and waves while the keke is approaching.
+      const idle = finite(arm.restZ) + Math.sin(phase + finite(arm.side)) * 0.018;
+      if (finite(arm.side) > 0 && ud.kanoHail > 0.02) {
+        const raised = finite(arm.side) * (2.45 + Math.sin(time * 9) * 0.22);
+        arm.pivot.rotation.z = idle + (raised - idle) * ud.kanoHail;
+      } else {
+        arm.pivot.rotation.z = idle;
+      }
       arm.pivot.rotation.x = 0;
     }
     if (parts.headCover) parts.headCover.rotation.y = Math.sin(phase * 0.35) * 0.025;
