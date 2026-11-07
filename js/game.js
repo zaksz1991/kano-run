@@ -925,6 +925,18 @@ export class Game {
         Math.min(1, acceleration * engineResponse * loadPull * dt);
 
       if (s.brake) {
+        // Slamming the brakes at speed throws passengers forward. Each rider
+        // keeps their own tally; enough of it ends the gratitude tip.
+        if (s.speed > 60) {
+          for (const rider of s.passengers || []) {
+            if (!rider) continue;
+            rider.roughBraking = (rider.roughBraking || 0) + dt;
+            if (rider.roughBraking >= 1.4 && !rider.complainedBraking) {
+              rider.complainedBraking = true;
+              this.ui?.toast?.('Passenger: "Driver, easy on the brake! You want to throw us out?"');
+            }
+          }
+        }
         s.speed = Math.max(
           0,
           s.speed - 31 * loadBrake * dt,
@@ -2194,7 +2206,7 @@ export class Game {
     // A passenger may leave a small gratitude tip when the destination is
     // correct, the trip is incident-free, and trust has been earned. This is
     // intentionally deterministic and modest, avoiding surprise wallet costs.
-    if (matched && safeTrip && s.passengerTrust >= 65) {
+    if (matched && safeTrip && s.passengerTrust >= 65 && !((passenger.roughBraking || 0) >= 1.4)) {
       passengerGratitudeTip = Math.min(200, Math.max(20, Math.floor(passenger.fare * 0.04)));
       fare += passengerGratitudeTip;
       s.score += passengerGratitudeTip;
