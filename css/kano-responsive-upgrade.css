@@ -427,3 +427,16 @@
   z-index: 60;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
 }
+
+/* Run report: the payout breakdown, XP and tribe boards make this panel taller than a phone screen,
+   which pushed CONTINUE / DRIVE AGAIN / MAIN MENU out of reach. Keep the buttons pinned at the bottom. */
+#over-screen .over-panel > .menu-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 12px -4px 0;
+  padding: 12px 4px max(12px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(13, 24, 39, 0), rgba(13, 24, 39, 0.97) 22%);
+}
+#over-screen #continue-btn:not(.hidden) { min-height: 50px; }
+#over-screen #again-btn { grid-column: auto; }
