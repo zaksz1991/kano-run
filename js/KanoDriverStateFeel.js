@@ -19,7 +19,7 @@ function findCanvas() {
 }
 
 function tick(now) {
-  const game = window.__KANO_ACTIVE_GAME__;
+  const game = window.kanoGame || window.__KANO_ACTIVE_GAME__;
   const st = game?.dayCycle?.state;
   const el = findCanvas();
   if (!el) return;
