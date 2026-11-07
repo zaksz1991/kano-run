@@ -860,11 +860,25 @@ export class Game {
     const conditionPower =
       0.82 + 0.18 * vehicleCondition;
 
+    // Worn tyres can puncture at speed. A flat tyre caps the keke to a crawl
+    // and pulls it to one side until a vulcanizer repairs it.
+    if (!s.flatTyre && (s.tyres ?? 100) < 50 && s.speed > 25) {
+      const risk = (50 - (s.tyres ?? 50)) / 50 * 0.04;
+      if (Math.random() < risk * dt) {
+        s.flatTyre = true;
+        s.flatSide = Math.random() < 0.5 ? -1 : 1;
+        s.crashShake = Math.max(s.crashShake || 0, 0.5);
+        this.ui?.toast?.('PUNCTURE! Slow down and find a vulcanizer to fix the tyre.');
+      }
+    }
+    if (s.flatTyre) s.steer += (s.flatSide || 1) * 0.14 * dt;
+
     const maxSpeed =
       modeSpeed *
       (this.driver.speedMod || 1) *
       mechanicalPower *
-      conditionPower;
+      conditionPower *
+      (s.flatTyre ? 0.35 : 1);
 
     const reverseMax = Math.min(
       (s.reverseSpeed || REVERSE_MAX_SPEED) *
@@ -3146,6 +3160,11 @@ export class Game {
             100,
             s.tyres + 24,
           );
+
+          if (s.flatTyre) {
+            s.flatTyre = false;
+            this.ui?.toast?.('Puncture fixed. Back on the road.');
+          }
 
           s.condition = Math.min(
             100,
