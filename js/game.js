@@ -959,6 +959,28 @@ export class Game {
       (s.targetLane - s.steer) *
       Math.min(1, dt * steeringRate);
 
+    // Microsleep: an exhausted driver drifts toward the lane edge for about a
+    // second, with a rumble-strip shake, then the normal steering pulls back.
+    try {
+      const tired = Number(this.dayCycle?.state?.fatigue) || 0;
+      if (tired >= 85 && s.speed > 8) {
+        s.microsleepTimer = (s.microsleepTimer ?? (7 + Math.random() * 6)) - dt;
+        if (s.microsleepTimer <= 0 && !(s.microsleepLeft > 0)) {
+          s.microsleepLeft = 0.9;
+          s.microsleepDir = Math.random() < 0.5 ? -1 : 1;
+          s.microsleepTimer = 9 + Math.random() * 7 - (tired - 85) * 0.25;
+          this.ui?.toast?.('You dozed off! Steer back into your lane.');
+        }
+        if (s.microsleepLeft > 0) {
+          s.microsleepLeft -= dt;
+          s.steer += s.microsleepDir * 0.5 * dt;
+          s.crashShake = Math.max(s.crashShake || 0, 0.12);
+        }
+      } else {
+        s.microsleepLeft = 0;
+      }
+    } catch { /* optional day-cycle adapter */ }
+
     s.crashShake = Math.max(
       0,
       s.crashShake - dt * 2.5,
