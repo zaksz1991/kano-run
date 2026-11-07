@@ -36,6 +36,7 @@ import './KanoPhoneCssLite.js';
 import './KanoFrameGovernor.js';
 import './KanoTriangleBouncer.js';
 import './KanoRoadFeel.js';
+import './KanoDriverStateFeel.js';
 import './KanoCurvedWorld.js';
 import './KanoTwoWayRoad.js';
 import './KanoFuelRescue.js';
