@@ -1996,6 +1996,7 @@ export class Game {
         tyres: Number.isFinite(s.tyres) ? s.tyres : 100,
         engine: Number.isFinite(s.engine) ? s.engine : 100,
         condition: Number.isFinite(s.condition) ? s.condition : 100,
+        elapsed: Number.isFinite(s.elapsed) ? s.elapsed : 0,
       },
     };
 
@@ -2166,6 +2167,20 @@ export class Game {
     );
     const trustFareRate = 0.9 + (s.passengerTrust / 100) * 0.3;
     fare = Math.floor(fare * trustFareRate);
+
+    // Passengers have places to be. A trip that drags far beyond what the
+    // distance needs earns a cut fare (up to 30%) and a complaint.
+    if (Number.isFinite(tripStart.elapsed) && Number.isFinite(tripStart.distance)) {
+      const tripKm = Math.max(0, s.distance - tripStart.distance);
+      const tripSeconds = Math.max(0, (s.elapsed || 0) - tripStart.elapsed);
+      const allowed = 30 + tripKm * 75;
+      if (tripKm >= 0.05 && tripSeconds > allowed * 1.4) {
+        const cut = clamp((tripSeconds / allowed - 1.4) * 0.25, 0.05, 0.3);
+        const before = fare;
+        fare = Math.floor(fare * (1 - cut));
+        this.ui?.toast?.(`Passenger: "Driver, we have been on this road forever!" · fare cut by ₦${(before - fare).toLocaleString()}`);
+      }
+    }
 
     if (matched) {
       s.streak += 1;
