@@ -36,7 +36,7 @@ test('mobile keeps procedural flyover and lightweight props while preserving mar
   const renderer = read('js/renderer3d.js');
   // The flyover GLB is now mounted on every device by KanoFlyoverDriveabilityUpgrade.
   assert.match(renderer, /if \(false && this\.models\.cache\.has\('flyover'\)\)/);
-  assert.match(renderer, /!\['marketStall', 'busStop'\]\.includes\(slot\.key\)/);
+  assert.doesNotMatch(renderer, /this\.mobile && !\['marketStall', 'busStop'\]\.includes\(slot\.key\)/);
 });
 
 test('nonessential model batches pause during active driving', () => {

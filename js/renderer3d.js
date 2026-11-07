@@ -2645,7 +2645,7 @@ export class Renderer3D {
     }
 
     for (const slot of this.roadProps) {
-      if (this.mobile && !['marketStall', 'busStop'].includes(slot.key)) continue;
+      // Phones use the project's own GLB props too (all are tiny).
       if (slot.replaced || !this.models.cache.has(slot.key)) continue;
 
       const model = this.models.getInstance(slot.key);

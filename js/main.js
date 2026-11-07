@@ -819,6 +819,12 @@ async function start3D() {
         'cone',
         'dirtmound',
       ],
+      // Tiny roadside GLBs (<1.4k tris each): real bench, traffic light, stop sign.
+      [
+        'bench',
+        'trafficLight',
+        'stopSign',
+      ],
     ];
 
     void essentialLoad.then(async () => {

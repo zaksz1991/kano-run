@@ -26,7 +26,7 @@ test('mobile model queue skips imported flyover and roadlight categories', () =>
   const match = main.match(/const mobileAssetBatches = \[([\s\S]*?)\n    \];/);
   assert.ok(match, 'mobile asset queue must remain present');
   const mobileBatches = match[1];
-  for (const unused of ['flyover', 'roadlight', 'bench', 'trafficLight', 'stopSign', 'busStop', 'marketStall']) {
+  for (const unused of ['flyover', 'roadlight', 'busStop', 'marketStall']) {
     assert.doesNotMatch(mobileBatches, new RegExp(`['\"]${unused}['\"]`), `${unused} should not be preloaded on mobile`);
   }
   for (const retained of ['car', 'motorcycle', 'building', 'industrialBuilding', 'passengerWoman', 'passengerMan', 'karota', 'cone', 'dirtmound']) {
