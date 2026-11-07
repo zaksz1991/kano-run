@@ -364,7 +364,11 @@ function preferredClipPattern(mode) {
 function chooseEmbeddedClip(clips, mode) {
   if (!Array.isArray(clips) || !clips.length) return null;
   const pattern = preferredClipPattern(mode);
-  const named = clips.find((clip) => pattern.test(String(clip.name || '')));
+  // Seated people must use the sitting clip when the model has one (Man_Idle is a standing pose
+  // and appears earlier in the clip list).
+  const wantsSeat = /seated|sit|passengerseat/.test(String(mode || '').toLowerCase().replace(/[^a-z]/g, ''));
+  const sitting = wantsSeat ? clips.find((clip) => /sit/i.test(String(clip.name || ''))) : null;
+  const named = sitting || clips.find((clip) => pattern.test(String(clip.name || '')));
   if (named) return named;
   // A single embedded clip is better than a frozen pose. With several clips
   // and no meaningful names, prefer procedural motion rather than guessing.
@@ -727,6 +731,25 @@ function findPassengerSeatBase(player) {
   // Fallback is deliberately inside the keke footprint, not on the road.
   return { position: new THREE.Vector3(0, 0.42, -0.16), width: 0.52 };
 }
+// The keke's driver is a real GLB person added by KanoSceneUpgrade. Play the model's own
+// sitting clip so he sits at the handlebar instead of standing in the cab while driving.
+function seatRealDriver(renderer) {
+  const holder = renderer?.player?.getObjectByName?.('KANO_REAL_KEKE_DRIVER');
+  const model = holder?.children?.[0];
+  if (!model) return;
+  if (!model.userData.kanoDriverSeatRequested) {
+    model.userData.kanoDriverSeatRequested = true;
+    requestEmbeddedAnimation(model, 'seated');
+  }
+  if (model.userData.kanoEmbeddedAnimationActive) {
+    const lowered = holder.userData.kanoSeatedLowered;
+    if (!lowered) {
+      holder.userData.kanoSeatedLowered = true;
+      holder.position.y += SEATED_DRIVER_LOWER;
+    }
+  }
+}
+const SEATED_DRIVER_LOWER = -0.34;
 function syncSeatedPassengerModels(renderer, game) {
   const player = renderer?.player;
   const passengerList = Array.isArray(game?.s?.passengers) ? game.s.passengers : [];
@@ -782,8 +805,9 @@ function syncSeatedPassengerModels(renderer, game) {
       actor.name = `KanoLifeSeatedPassenger${index + 1}:${selectedKey}`;
       actor.scale.multiplyScalar(0.64);
       const seatedTargetScale = actor.scale.clone();
-      const seatTargetY = base.position.y;
+      const seatTargetY = base.position.y - 0.08;
       actor.scale.copy(seatedTargetScale).multiplyScalar(1.14);
+      actor.rotation.y = Math.PI; // GLB people face +z by default; the keke drives towards -z
       actor.position.set(base.position.x + (index - (desired - 1) / 2) * spacing, seatTargetY + 0.085, base.position.z);
       actor.userData.kanoSeatEntryTransition = {
         startedAt: nowMs(), durationMs: 360,
@@ -1217,6 +1241,7 @@ if (Renderer3D?.prototype) {
     const dt = clamp(args.find((arg) => Number.isFinite(arg)) ?? 1 / 60, 0, 0.05);
     const game = globalThis.window?.__KANO_LIFE_GAME__ || null;
     safeCall(() => syncSeatedPassengerModels(this, game));
+    safeCall(() => seatRealDriver(this));
     safeCall(() => applyDamageAppearance(this, game));
     if (typeof window !== 'undefined') {
       const queue = window.__KANO_LIFE_IMPACT_QUEUE__ || [];
