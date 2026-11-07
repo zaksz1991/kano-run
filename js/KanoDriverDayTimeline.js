@@ -133,12 +133,31 @@ if (typeof window !== 'undefined' && !window.__kanoDriverDayTimeline) {
     hideTimer = setTimeout(() => banner.classList.remove('show'), 5200);
   }
 
+  let base = null;
+
+  function showSummary(prev, now) {
+    if (!banner) return;
+    const trips = Math.max(0, now.drops - prev.drops);
+    const km = Math.max(0, now.distance - prev.distance);
+    const fares = Math.max(0, now.fares - prev.fares);
+    banner.innerHTML = scene('late') + `<div class="txt"><h4>Day ${prev.day} complete</h4>`
+      + `${trips} trip${trips === 1 ? '' : 's'} · ${km.toFixed(1)} km driven<br>Fares earned: ₦${Math.round(fares).toLocaleString()}`
+      + `<div class="fx">A new day in Kano begins. Check your tyres, fuel and stomach.</div></div>`;
+    banner.classList.add('show');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => banner.classList.remove('show'), 7000);
+  }
+
   setInterval(() => {
     try {
       build();
       const g = game();
       const st = g?.dayCycle?.state;
       if (!st || g.state !== 'PLAY') { arc.style.display = 'none'; plan.style.display = 'none'; banner.classList.remove('show'); return; }
+      const sv = g.s || {};
+      const now = { day: st.day, drops: Number(sv.drops) || 0, distance: Number(sv.distance) || 0, fares: Number(sv.fares) || 0 };
+      if (!base || now.drops < base.drops || now.distance < base.distance - 0.001) base = { ...now }; // new run
+      if (now.day > base.day) { showSummary(base, now); base = { ...now }; lastPeriod = periodAt(st.minuteOfDay).id; }
       const m = Math.floor(st.minuteOfDay);
       const p = periodAt(st.minuteOfDay);
       if (p.id !== lastPeriod) {
