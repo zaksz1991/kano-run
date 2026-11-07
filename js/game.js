@@ -213,6 +213,7 @@ export class Game {
       condition: 100,
       engine: 100,
       tyres: 100,
+      engineTemp: 45,
 
       passengers: [],
       capacity,
@@ -873,12 +874,33 @@ export class Game {
     }
     if (s.flatTyre) s.steer += (s.flatSide || 1) * 0.14 * dt;
 
+    // Engine temperature: throttle, speed and a full load heat it; airflow cools it.
+    // A healthy keke settles around 90 even flat out. A worn engine overheats.
+    {
+      const sp = clamp((s.speed || 0) / 118, 0, 1);
+      const seats = Math.min(4, (s.passengers || []).reduce((t, p) => t + (Number(p?.seats) || 1), 0));
+      const wear = 1 + (1 - clamp((s.engine ?? 100) / 100, 0, 1)) * 0.8;
+      const heatIn = 1.2 * (s.gas && s.fuel > 0 ? 1 : 0.3) * (0.4 + 0.6 * sp) * (1 + 0.12 * seats) * wear;
+      const cooling = 0.02 * ((s.engineTemp ?? 45) - 35) * (0.5 + 0.9 * sp);
+      s.engineTemp = clamp((s.engineTemp ?? 45) + (heatIn - cooling) * dt, 35, 140);
+      if (s.engineTemp >= 105 && !s.overheatWarned) {
+        s.overheatWarned = true;
+        this.ui?.toast?.('Engine is overheating! Ease off the throttle and let it cool.');
+      } else if (s.engineTemp < 92) {
+        s.overheatWarned = false;
+      }
+      if (s.engineTemp >= 115) {
+        s.engine = Math.max(0, (s.engine ?? 100) - 0.6 * dt);
+      }
+    }
+
     const maxSpeed =
       modeSpeed *
       (this.driver.speedMod || 1) *
       mechanicalPower *
       conditionPower *
-      (s.flatTyre ? 0.35 : 1);
+      (s.flatTyre ? 0.35 : 1) *
+      ((s.engineTemp ?? 45) >= 105 ? 0.85 : 1);
 
     const reverseMax = Math.min(
       (s.reverseSpeed || REVERSE_MAX_SPEED) *
