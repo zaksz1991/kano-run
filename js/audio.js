@@ -20,7 +20,7 @@ const RADIO_FILES = [
   ['rahama.mp3'],
   ['freedom.mp3'],
   ['cool.mp3'],
-  ['arewa.mp3'],
+  ['arewa.mp3', 'hausa-radio.mp3'],
   ['wazobia.mp3'],
 ];
 const KNOWN_RADIO_FILES = new Set(RADIO_FILES.flat());
@@ -546,6 +546,22 @@ export class AudioManager {
           const retry = player.play();
           retry?.catch?.(() => {});
           return;
+        }
+        // The station's own file failed (missing, blocked or corrupt on this host): try its
+        // backup programme on the same element before giving up, so the radio is never silent.
+        const alternates = RADIO_FILES[index] || [];
+        const nextName = alternates[(player.__kanoAltIndex || 0) + 1];
+        if (nextName) {
+          player.__kanoAltIndex = (player.__kanoAltIndex || 0) + 1;
+          const backup = resolveAudioAsset(nextName, AUDIO_VARIANTS, this.supportsOpus(), RADIO_ROOT);
+          if (backup?.url) {
+            player.__kanoAudioFallbackUrl = backup.fallbackUrl;
+            player.__kanoAudioFallbackUsed = false;
+            player.__kanoAudioUsingMp3Fallback = false;
+            player.src = backup.url;
+            player.play()?.catch?.(() => {});
+            return;
+          }
         }
         this.radioAudio = null;
         this.radioIndex = -1;

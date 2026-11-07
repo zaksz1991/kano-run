@@ -245,6 +245,17 @@ function skinWithGlb(renderer, record) {
     const wrapper = new THREE.Group();
     wrapper.name = 'KANO_FLYOVER_GLB_DECK';
     wrapper.add(model);
+    // Push the deck slightly back in depth so, where its ends meet the ground road, the road
+    // wins instead of the two coplanar surfaces shimmering (works at any depth-buffer precision).
+    wrapper.traverse((node) => {
+      if (!node.isMesh) return;
+      for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+        if (!material) continue;
+        material.polygonOffset = true;
+        material.polygonOffsetFactor = 1;
+        material.polygonOffsetUnits = 2;
+      }
+    });
     // Put the long axis along the road (z).
     wrapper.rotation.y = lengthAxisIsX ? Math.PI / 2 : 0;
     const length = Math.max(size.x, size.z);

@@ -127,7 +127,7 @@ export class Renderer3D {
     this.scene.background = new THREE.Color(0x8ccde5);
     this.scene.fog = new THREE.Fog(0x8ccde5, mobile ? 38 : 60, mobile ? 105 : 195);
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, mobile ? 125 : 260);
+    this.camera = new THREE.PerspectiveCamera(58, 1, mobile ? 0.5 : 0.3, mobile ? 125 : 260); // larger near plane = far better depth precision (no shimmer on flyover decks and road paint)
     this.camera.position.set(0, 3.85, 10.5);
 
     this.renderer = new THREE.WebGLRenderer({

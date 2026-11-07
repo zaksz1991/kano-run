@@ -60,10 +60,10 @@ if (coarse && !THREE.WebGLRenderer.prototype[PATCH]) {
         const idx = STAGES.indexOf(state.cap);
         if (state.mode === 'auto' && full && now - state.lastStep > 10000) {
           if (avg < 20 && idx < STAGES.length - 1) {
-            state.cap = STAGES[idx + 1]; state.lastStep = now; state.samples = []; save(state.cap); apply();
+            state.cap = STAGES[idx + 1]; state.steppedDown = true; state.lastStep = now; state.samples = []; save(state.cap); apply();
           } else if (avg > 45 && idx > 0) {
             if (!state.highSince) state.highSince = now;
-            if (now - state.highSince > 20000) { state.cap = STAGES[idx - 1]; state.lastStep = now; state.samples = []; state.highSince = 0; save(state.cap); }
+            if (now - state.highSince > 60000 && !state.steppedDown) { state.cap = STAGES[idx - 1]; state.lastStep = now; state.samples = []; state.highSince = 0; save(state.cap); }
           } else if (avg <= 45) state.highSince = 0;
         }
       } else {

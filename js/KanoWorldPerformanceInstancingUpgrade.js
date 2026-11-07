@@ -17,6 +17,7 @@ import './KanoNorthernPedestrianGaitUpgrade.js';
 import './KanoFlyoverDriveabilityUpgrade.js';
 import './KanoNightHeadlights.js';
 import './KanoNightStreetLife.js';
+import './KanoShaderWarmup.js';
 import './KanoCurrentMainExperienceRepair.js';
 import './KanoCompactDrivingHudUpgrade.js';
 import './KanoKnownKekeModelAcceptanceRepair.js';
