@@ -872,7 +872,7 @@ export class Game {
         this.ui?.toast?.('PUNCTURE! Slow down and find a vulcanizer to fix the tyre.');
       }
     }
-    if (s.flatTyre) s.steer += (s.flatSide || 1) * 0.14 * dt;
+    if (s.flatTyre) s.steer += (s.flatSide || 1) * 1.8 * dt;
 
     // Engine temperature: throttle, speed and a full load heat it; airflow cools it.
     // A healthy keke settles around 90 even flat out. A worn engine overheats.
