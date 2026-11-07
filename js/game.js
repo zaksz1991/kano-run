@@ -2302,7 +2302,7 @@ export class Game {
       if ((s.safeTripStreak || 0) >= 2) {
         this.ui.toast(`Safe-trip streak ended at ${s.safeTripStreak} · passenger trust ${s.passengerTrust}/100`);
       } else {
-        this.ui.toast(`Rough trip · passenger trust ${s.passengerTrust}/100 · drive more carefully`);
+        this.ui.toast(`Rough trip · passenger trust ${Math.round(s.passengerTrust)}/100 · drive more carefully`);
       }
       s.safeTripStreak = 0;
     }
