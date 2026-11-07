@@ -772,6 +772,21 @@ export class Game {
       ) <= 1
     ));
 
+    // Drivers ahead in your lane react to the horn: they speed up to clear
+    // your way (once each, capped), the way Kano drivers do when hooted.
+    for (const vehicle of this.s.traffic) {
+      if (
+        vehicle.direction !== -1 &&
+        !vehicle.hornBoosted &&
+        vehicle.depth > 0.6 &&
+        vehicle.depth < 1 &&
+        Math.abs(vehicle.lane - (this.s.targetLane + 1)) < 0.5
+      ) {
+        vehicle.hornBoosted = true;
+        vehicle.speedKmh = Math.min(52, vehicle.speedKmh * 1.35 + 3);
+      }
+    }
+
     if (close) {
       this.s.horns += 1;
 
