@@ -1,5 +1,6 @@
 import './KanoCanvasResizeGuard.js';
 import './KanoFuelBudgetChip.js';
+import './KanoKekeStatusChip.js';
 import './KanoBootSelfCheck.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
