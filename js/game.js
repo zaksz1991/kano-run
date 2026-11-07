@@ -879,7 +879,7 @@ export class Game {
     // Worn tyres can puncture at speed. A flat tyre caps the keke to a crawl
     // and pulls it to one side until a vulcanizer repairs it.
     if (!s.flatTyre && (s.tyres ?? 100) < 50 && s.speed > 25) {
-      const risk = (50 - (s.tyres ?? 50)) / 50 * 0.04;
+      const risk = (50 - (s.tyres ?? 50)) / 50 * 0.04 * (s.environment === 'rainPuddles' ? 1.6 : 1);
       if (Math.random() < risk * dt) {
         s.flatTyre = true;
         s.flatSide = Math.random() < 0.5 ? -1 : 1;
@@ -896,7 +896,7 @@ export class Game {
       const seats = Math.min(4, (s.passengers || []).reduce((t, p) => t + (Number(p?.seats) || 1), 0));
       const wear = 1 + (1 - clamp((s.engine ?? 100) / 100, 0, 1)) * 0.8;
       const heatIn = 1.2 * (s.gas && s.fuel > 0 ? 1 : 0.3) * (0.4 + 0.6 * sp) * (1 + 0.12 * seats) * wear;
-      const cooling = 0.02 * ((s.engineTemp ?? 45) - 35) * (0.5 + 0.9 * sp);
+      const cooling = 0.02 * ((s.engineTemp ?? 45) - 35) * (0.5 + 0.9 * sp) * (s.environment === 'rainPuddles' ? 1.25 : 1);
       s.engineTemp = clamp((s.engineTemp ?? 45) + (heatIn - cooling) * dt, 35, 140);
       if (s.engineTemp >= 105 && !s.overheatWarned) {
         s.overheatWarned = true;
