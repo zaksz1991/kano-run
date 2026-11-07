@@ -127,7 +127,14 @@ if (typeof window !== 'undefined' && !window.__kanoDriverDayTimeline) {
     if (i.fare !== 1) bits.push(`Fares ${i.fare > 1 ? '+' : ''}${Math.round((i.fare - 1) * 100)}%`);
     if (i.traffic !== 1) bits.push(`Traffic ${i.traffic > 1 ? 'heavier' : 'lighter'}`);
     if (i.vis < 1) bits.push('Poor visibility');
-    banner.innerHTML = scene(id) + `<div class="txt"><h4>${i.title} · ${formatClock(st.minuteOfDay)}</h4>${i.doing}${bits.length ? `<div class="fx">${bits.join(' · ')}</div>` : ''}</div>`;
+    const sv = game()?.s || {};
+    const check = [];
+    if (Number.isFinite(sv.fuel) && sv.fuel < 35) check.push(`Fuel ${Math.round(sv.fuel)}%: refill soon`);
+    if (st.hunger >= 60) check.push('Hungry: eat at a buka');
+    if (st.fatigue >= 60) check.push('Tired: take a tea break');
+    if (Number.isFinite(sv.tyres) && sv.tyres < 50) check.push('Tyres worn: visit the vulcanizer');
+    if (Number.isFinite(sv.engine) && sv.engine < 50) check.push('Engine weak: service it');
+    banner.innerHTML = scene(id) + `<div class="txt"><h4>${i.title} · ${formatClock(st.minuteOfDay)}</h4>${i.doing}${bits.length ? `<div class="fx">${bits.join(' · ')}</div>` : ''}${check.length ? `<div class="fx" style="color:#ffb27a">Your check: ${check.join(' · ')}</div>` : ''}</div>`;
     banner.classList.add('show');
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => banner.classList.remove('show'), 5200);
