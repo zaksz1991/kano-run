@@ -2194,6 +2194,32 @@ export class Renderer3D {
       'Kano neem canopy tops', neemCanopy, leafTopMaterial, treeCount,
     );
 
+    // Swap generated sphere trees for the project's own Tree.glb once it loads.
+    import('./createGLTFLoader.js').then(({ createGLTFLoader }) => {
+      createGLTFLoader().load('/assets/models/world/props/Tree.glb', (gltf) => {
+        const root = gltf.scene;
+        root.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(root);
+        const fit = 4.6 / Math.max(0.01, box.max.y - box.min.y);
+        const parts = [];
+        root.traverse((child) => {
+          if (!child.isMesh) return;
+          const geometry = child.geometry.clone();
+          geometry.applyMatrix4(child.matrixWorld);
+          geometry.translate(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+          geometry.scale(fit, fit, fit);
+          const material = Array.isArray(child.material) ? child.material[0] : child.material;
+          parts.push(makeInstances('Kano GLB neem tree', geometry, material, treeCount));
+        });
+        if (!parts.length) return;
+        this.kanoRoadsideMeshes.glbTrees = parts;
+        for (const key of ['neemTrunks', 'neemMainCanopy', 'neemSideCanopies', 'neemTopCanopy']) {
+          this.kanoRoadsideMeshes[key].visible = false;
+        }
+        this.updateKanoRoadsideMatrices();
+      }, undefined, () => {});
+    }).catch(() => {});
+
     const dividerCountPerSide = this.mobile ? 42 : 52;
     const dividerPitch = 2.4;
     this.kanoDividerLoopDistance = dividerCountPerSide * dividerPitch;
@@ -2241,6 +2267,10 @@ export class Renderer3D {
 
     this.kanoNeemTrees.forEach((tree, index) => {
       const scale = tree.scale;
+      if (meshes.glbTrees) {
+        for (const part of meshes.glbTrees) place(part, index, tree.x, 0, tree.z, scale, scale, scale, 0, index * 2.17, 0);
+        return;
+      }
       place(meshes.neemTrunks, index, tree.x, 1.12 * scale, tree.z, scale, scale, scale);
       place(meshes.neemMainCanopy, index, tree.x, 2.86 * scale, tree.z, 0.95 * scale, 0.86 * scale, 0.86 * scale);
       place(meshes.neemTopCanopy, index, tree.x - tree.side * 0.05, 3.47 * scale, tree.z + 0.03, 0.68 * scale, 0.68 * scale, 0.68 * scale);
@@ -2272,6 +2302,7 @@ export class Renderer3D {
     for (const mesh of Object.values(meshes)) {
       if (mesh?.instanceMatrix) mesh.instanceMatrix.needsUpdate = true;
     }
+    for (const part of meshes.glbTrees || []) part.instanceMatrix.needsUpdate = true;
   }
 
   updateKanoRoadsideSet(scroll) {
