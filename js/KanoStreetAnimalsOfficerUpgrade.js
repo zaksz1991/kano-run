@@ -14,6 +14,10 @@ const states = new WeakMap();
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
+// The project has no goat or dog GLB models, and generated shapes are not allowed as stand-ins.
+// Set to true only after real animal GLBs exist and replace createProceduralGoat/createDog.
+const ALLOW_GENERATED_ANIMALS = false;
+
 export const kanoStreetAnimalsAudit = { goats: 0, dogs: 0, officers: 0, errors: [] };
 
 const mat = (color, rough = 0.9) => new THREE.MeshStandardMaterial({ color, roughness: rough });
@@ -123,7 +127,7 @@ function buildState(system) {
   const state = { group, goats: [], dogs: [], officers: [], t: 0, disposed: false };
   const sideOf = (i) => (i % 2 ? 1 : -1);
   const mobile = Boolean(system.renderer?.mobile);
-  for (let i = 0; i < (mobile ? 3 : 5); i += 1) {
+  for (let i = 0; i < (!ALLOW_GENERATED_ANIMALS ? 0 : mobile ? 3 : 5); i += 1) {
     const goat = createProceduralGoat();
     mergeActor(goat.root);
     goat.root.visible = true;
@@ -135,7 +139,7 @@ function buildState(system) {
     group.add(goat.root);
     state.goats.push({ ...goat, side, phase: rand(0, 6), heading: goat.root.rotation.y, speed: rand(0.05, 0.25) });
   }
-  for (let i = 0; i < (mobile ? 2 : 3); i += 1) {
+  for (let i = 0; i < (!ALLOW_GENERATED_ANIMALS ? 0 : mobile ? 2 : 3); i += 1) {
     const dog = createDog();
     mergeActor(dog.root);
     const side = sideOf(i + 1);
