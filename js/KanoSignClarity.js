@@ -14,8 +14,15 @@ function sharpen() {
   if (!world || !gl) return;
   const max = Math.max(1, gl.capabilities?.getMaxAnisotropy?.() || 1);
   const level = Math.min(TARGET, max);
-  if (level <= 1) return;
   world.traverse((object) => {
+    // Make sign/billboard faces ~30% larger so lettering is readable from further away (once per mesh).
+    const w = object.geometry?.parameters?.width;
+    if (object.isMesh && !object.userData.kanoSignBoosted && object.material?.map?.isCanvasTexture
+        && object.geometry?.type === 'PlaneGeometry' && w >= 1.5 && w <= 8) {
+      object.userData.kanoSignBoosted = true;
+      object.scale.multiplyScalar(1.3);
+    }
+    if (level <= 1) return;
     const mats = object.material ? (Array.isArray(object.material) ? object.material : [object.material]) : [];
     for (const material of mats) {
       const map = material?.map;
