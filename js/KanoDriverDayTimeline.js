@@ -45,6 +45,13 @@ const CSS = `
 .kano-keke-run{animation:kano-keke-pass 3.6s linear infinite}
 .kano-orb{animation:kano-orb-rise 1.4s ease-out both}
 .kano-wh{transform-box:fill-box;transform-origin:center;animation:kano-wheel .5s linear infinite}
+@keyframes kano-steam{0%{transform:translateY(0);opacity:0}30%{opacity:.8}100%{transform:translateY(-22px);opacity:0}}
+@keyframes kano-zzz{0%{transform:translate(0,0);opacity:0}25%{opacity:1}100%{transform:translate(14px,-26px);opacity:0}}
+.kano-steam{animation:kano-steam 2.2s ease-out infinite}.kano-steam.b{animation-delay:.7s}.kano-steam.c{animation-delay:1.4s}
+.kano-zzz{animation:kano-zzz 2.6s ease-out infinite;font:900 14px system-ui;fill:#f1efe2}.kano-zzz.b{animation-delay:1.3s}
+.kano-break-scene{margin:-20px -20px 12px;border-radius:20px 20px 0 0;overflow:hidden}
+.kano-break-scene svg{display:block;width:100%;height:96px}
+@media (prefers-reduced-motion:reduce){.kano-steam,.kano-zzz{animation:none;opacity:.7}}
 @media (prefers-reduced-motion:reduce){.kano-keke-run,.kano-orb,.kano-wh{animation:none}}
 `;
 
@@ -80,6 +87,40 @@ function arcSvg(minute) {
     : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="#f1efe2"/><circle cx="${(x + 2).toFixed(1)}" cy="${(y - 1.5).toFixed(1)}" r="4.2" fill="#0e1826"/>`;
   return `<svg viewBox="0 0 140 36"><path d="M10 32Q70 -16 130 32" fill="none" stroke="${isDay ? '#f5c54266' : '#8aa0d066'}" stroke-width="1.5" stroke-dasharray="3 3"/>
 <line x1="4" y1="33" x2="136" y2="33" stroke="#ffffff30"/>${orb}</svg>`;
+}
+
+
+function breakScene(kind) {
+  const keke = '<g><rect x="196" y="58" width="42" height="17" rx="5" fill="#f2c230"/><path d="M202 58q5-14 17-14h10l5 14z" fill="#2b3a4d"/><circle cx="208" cy="76" r="6" fill="#111"/><circle cx="232" cy="76" r="6" fill="#111"/></g>';
+  if (kind === 'restBreak') {
+    return `<svg viewBox="0 0 300 96" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="300" height="96" fill="#0f1a33"/>
+<circle cx="256" cy="22" r="11" fill="#f1efe2"/><circle cx="261" cy="19" r="9" fill="#0f1a33"/><g fill="#fff" opacity=".8"><circle cx="40" cy="14" r="1"/><circle cx="110" cy="26" r="1.2"/><circle cx="170" cy="12" r="1"/></g>
+<g fill="#16301f"><rect x="62" y="48" width="8" height="32"/><circle cx="66" cy="38" r="22"/><circle cx="48" cy="48" r="14"/><circle cx="84" cy="48" r="14"/></g>
+<rect y="80" width="300" height="16" fill="#2b2f36"/>${keke}
+<text class="kano-zzz" x="228" y="46">Z</text><text class="kano-zzz b" x="236" y="40">z</text></svg>`;
+  }
+  return `<svg viewBox="0 0 300 96" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="300" height="96" fill="#e7b872"/>
+<rect y="80" width="300" height="16" fill="#8d6a3c"/>
+<g><rect x="50" y="34" width="110" height="6" fill="#b3332a"/><path d="M44 34l10-14h92l10 14z" fill="#d9463b"/><rect x="56" y="40" width="4" height="40" fill="#5a3b1c"/><rect x="150" y="40" width="4" height="40" fill="#5a3b1c"/>
+<rect x="56" y="62" width="98" height="18" fill="#6b4a27"/><ellipse cx="86" cy="60" rx="14" ry="6" fill="#3a3a3a"/><ellipse cx="124" cy="60" rx="12" ry="5" fill="#3a3a3a"/></g>
+<g stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"><path class="kano-steam" d="M82 54q-4-6 0-12"/><path class="kano-steam b" d="M90 54q4-6 0-12"/><path class="kano-steam c" d="M122 54q-4-6 0-12"/></g>
+${keke}</svg>`;
+}
+
+function syncBreakScene() {
+  const g = window.kanoGame || window.__KANO_ACTIVE_GAME__;
+  const card = document.getElementById('event-card');
+  const kind = g?.s?.event;
+  const wanted = card && !card.classList.contains('hidden') && (kind === 'mealBreak' || kind === 'restBreak') ? kind : null;
+  let host = card?.querySelector('.kano-break-scene');
+  if (!wanted) { host?.remove(); return; }
+  if (host && host.dataset.kind === wanted) return;
+  host?.remove();
+  host = document.createElement('div');
+  host.className = 'kano-break-scene';
+  host.dataset.kind = wanted;
+  host.innerHTML = breakScene(wanted);
+  card.insertBefore(host, card.firstChild);
 }
 
 if (typeof window !== 'undefined' && !window.__kanoDriverDayTimeline) {
@@ -154,6 +195,8 @@ if (typeof window !== 'undefined' && !window.__kanoDriverDayTimeline) {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => banner.classList.remove('show'), 7000);
   }
+
+  setInterval(() => { try { syncBreakScene(); } catch (e) { window.__kanoBreakErr = String(e && e.stack || e).slice(0, 300); } }, 400);
 
   setInterval(() => {
     try {
