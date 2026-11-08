@@ -10,6 +10,8 @@ const clamp = (value, min, max) => {
 
 const ENGINE_AUDIO_FILE = 'engine.mp3';
 const HORN_AUDIO_FILE = 'horn.mp3';
+// horn.mp3 holds about 0.8 s of silence before the horn itself, so start playback just before the sound.
+const HORN_START_OFFSET = 0.74;
 
 const RADIO_ROOT = '/assets/models/audio/';
 
@@ -442,7 +444,7 @@ export class AudioManager {
     this.ensureMediaAudio();
     if (this.hornAudio && !this.hornAudioFailed) {
       try {
-        this.hornAudio.currentTime = 0;
+        try { this.hornAudio.currentTime = HORN_START_OFFSET; } catch { /* metadata not loaded yet */ }
         this.hornAudio.volume = 0.92;
         const result = this.hornAudio.play();
         if (result?.catch) {

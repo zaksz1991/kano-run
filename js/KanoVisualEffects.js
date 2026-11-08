@@ -28,18 +28,18 @@ const COIN_ROUTE = [
 // short breather gap. Each step is [lane, gapToNext]. Respawned coins are queued
 // at the far end of the road so the trail spacing is preserved while driving.
 const COIN_PATTERN = [
-  // 1) centre-lane line of five
-  [1, 0.085], [1, 0.085], [1, 0.085], [1, 0.085], [1, 0.42],
-  // 2) smooth sweep right: centre -> right, four coins
-  [1, 0.09], [1.5, 0.09], [2, 0.09], [2, 0.45],
-  // 3) right-lane line of four
-  [2, 0.085], [2, 0.085], [2, 0.085], [2, 0.42],
-  // 4) smooth sweep back to the left, five coins
-  [2, 0.09], [1.5, 0.09], [1, 0.09], [0.5, 0.09], [0, 0.45],
-  // 5) left-lane line of four
-  [0, 0.085], [0, 0.085], [0, 0.085], [0, 0.42],
-  // 6) gentle wave through the centre
-  [1, 0.09], [1.5, 0.09], [1, 0.09], [0.5, 0.09], [1, 0.5],
+  // 1) straight line of six in the centre lane
+  [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.075], [1, 0.4],
+  // 2) smooth S-curve to the right lane (six coins)
+  [1, 0.075], [1.2, 0.075], [1.5, 0.075], [1.8, 0.075], [2, 0.075], [2, 0.4],
+  // 3) straight line of six in the right lane
+  [2, 0.075], [2, 0.075], [2, 0.075], [2, 0.075], [2, 0.075], [2, 0.4],
+  // 4) long smooth sweep across to the left lane (seven coins)
+  [2, 0.075], [1.7, 0.075], [1.35, 0.075], [1, 0.075], [0.65, 0.075], [0.3, 0.075], [0, 0.4],
+  // 5) straight line of six in the left lane
+  [0, 0.075], [0, 0.075], [0, 0.075], [0, 0.075], [0, 0.075], [0, 0.4],
+  // 6) back to the centre lane, then a clear breather gap before the pattern repeats
+  [0, 0.075], [0.3, 0.075], [0.65, 0.075], [1, 0.075], [1, 0.75],
 ];
 const COIN_FAR_LIMIT = 1.18;
 

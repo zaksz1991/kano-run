@@ -712,12 +712,10 @@ export class Game {
     if (applyingThrottle && s.reverse) {
       // Do not instantly change from reverse to forward while moving.
       if (s.speed > REVERSE_ENGAGE_SPEED) {
+        // Pressing GAS while reversing stops the reversing first, then drives forward.
         s.gas = false;
         s.brake = false;
-
-        this.ui.toast(
-          'Stop reversing before selecting forward gear',
-        );
+        s.reverseToForward = true;
 
         return;
       }
@@ -916,6 +914,51 @@ export class Game {
       conditionPower *
       (s.flatTyre ? 0.35 : 1) *
       ((s.engineTemp ?? 45) >= 105 ? 0.85 : 1);
+
+    // Why the keke is slower than the throttle suggests (shown by the status chip).
+    {
+      const reasons = [];
+      if (s.flatTyre) reasons.push('Flat tyre');
+      if ((s.engineTemp ?? 45) >= 105) reasons.push('Engine overheating');
+      if (engineHealth < 0.85) reasons.push(`Worn engine ${Math.round(engineHealth * 100)}%`);
+      if (vehicleCondition < 0.6) reasons.push(`Body damage ${Math.round(vehicleCondition * 100)}%`);
+      if ((s.loadFactor ?? 1) < 0.9) reasons.push('Heavy load');
+      if ((s.fuel ?? 100) <= 0) reasons.push('No fuel');
+      else if ((s.fuel ?? 100) < 8) reasons.push('Fuel nearly empty');
+      if (s.environment === 'rainPuddles') reasons.push('Wet road');
+      s.slowReasons = reasons;
+    }
+
+    if (s.reverseToForward) {
+      if (!s.reverse) {
+        s.reverseToForward = false;
+      } else {
+        s.speed = Math.max(0, s.speed - 45 * dt);
+        s.signedSpeed = -s.speed;
+        if (s.speed <= REVERSE_ENGAGE_SPEED) {
+          s.speed = 0;
+          s.signedSpeed = 0;
+          s.reverse = false;
+          s.reverseToForward = false;
+          s.gas = true;
+        }
+      }
+    }
+
+    // BRAKE is also the reverse pedal: hold it at a standstill and the keke
+    // engages reverse by itself. GAS brings it back to forward.
+    if (!s.reverse && s.brake && !s.gas && s.speed <= REVERSE_ENGAGE_SPEED) {
+      s.brakeHold = (s.brakeHold || 0) + dt;
+      if (s.brakeHold >= 0.3 && !s.event) {
+        s.reverse = true;
+        s.speed = 0;
+        s.signedSpeed = 0;
+        s.pullOverSide = 0;
+        s.brakeHold = 0;
+      }
+    } else {
+      s.brakeHold = 0;
+    }
 
     const reverseMax = Math.min(
       (s.reverseSpeed || REVERSE_MAX_SPEED) *

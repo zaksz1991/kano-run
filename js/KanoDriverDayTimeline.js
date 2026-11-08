@@ -20,14 +20,14 @@ const INFO = {
 };
 
 const CSS = `
-#kano-day-arc{position:fixed;left:8px;bottom:268px;z-index:41;width:150px;padding:5px 7px 6px;border-radius:12px;
+#kano-day-arc{position:fixed;left:8px;top:258px;z-index:41;width:150px;padding:5px 7px 6px;border-radius:12px;
   background:rgba(14,24,38,.86);border:1px solid rgba(255,255,255,.22);color:#fff;font:700 10px/1.25 system-ui,sans-serif;
   pointer-events:auto;touch-action:manipulation}
 #kano-day-arc svg{display:block;width:100%;height:36px}
 #kano-day-arc .row{display:flex;justify-content:space-between;gap:6px}
 #kano-day-arc .t{color:#f5c542;font-weight:900}
 #kano-day-arc .d{opacity:.85;margin-top:2px;max-height:2.6em;overflow:hidden}
-#kano-day-plan{position:fixed;left:8px;bottom:352px;z-index:42;width:min(78vw,300px);padding:9px 11px;border-radius:14px;
+#kano-day-plan{position:fixed;left:8px;top:350px;z-index:42;width:min(78vw,300px);padding:9px 11px;border-radius:14px;
   background:rgba(14,24,38,.96);border:1px solid rgba(245,197,66,.5);color:#fff;font:600 11px/1.4 system-ui,sans-serif;display:none}
 #kano-day-plan b{color:#f5c542}
 #kano-day-plan .now{background:rgba(245,197,66,.18);border-radius:7px;padding:2px 5px}
