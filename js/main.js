@@ -9,6 +9,7 @@ import './KanoKanoPolitics.js';
 import './KanoKanoSeason.js';
 import './KanoEveningLife.js';
 import './KanoPlayerTyres.js';
+import './KanoMobileRoadlightGlb.js';
 import './KanoKanoTrafficMix.js';
 import './KanoSignClarity.js';
 import './KanoGoSlow.js';
