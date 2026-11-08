@@ -6,6 +6,8 @@ import './KanoDriverDayTimeline.js';
 import './KanoKarotaCheckpoint.js';
 import './KanoCngMarket.js';
 import './KanoKanoPolitics.js';
+import './KanoKanoSeason.js';
+import './KanoEveningLife.js';
 import './KanoSignClarity.js';
 import './KanoGoSlow.js';
 import './KanoBootSelfCheck.js';

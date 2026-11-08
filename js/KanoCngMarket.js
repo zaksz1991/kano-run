@@ -10,7 +10,9 @@ const PETROL_PLAIN_FULL = 5000;
 const PETROL_DUAL_FULL = 10000;
 const KIT_PRICE = 30000;
 const KEY = 'kano-cng-converted';
-const STATIONS = ['Zoo Road CNG', 'Sabon Gari CNG', 'Kofar Mata CNG', 'Gyadi-Gyadi CNG', 'Hotoro CNG', 'Dawanau CNG'];
+const STATIONS = ['Jaen CNG', 'Hotoro CNG', 'Ring Road CNG', 'Zaria Road CNG', 'Gadon Kaya CNG', 'Dawanau CNG'];
+// Jaen is open the most and has a long queue every day.
+const JAEN = 0;
 const naira = (n) => `₦${Math.round(n).toLocaleString('en-NG')}`;
 const store = {
   get() { try { return localStorage.getItem(KEY); } catch (_) { return null; } },
@@ -23,10 +25,10 @@ function hasCngFlag() {
   return v === '1';
 }
 
-export function cngDemand(day, stationIndex, minuteOfDay) {
+export function cngDemand(day, stationIndex, minuteOfDay, seasonBoost = 0) {
   const base = 1 + 0.95 * Math.abs(Math.sin(day * 3.7 + stationIndex * 1.9));
   const rush = (minuteOfDay >= 360 && minuteOfDay <= 600) || (minuteOfDay >= 990 && minuteOfDay <= 1140) ? 0.25 : 0;
-  return base + rush;
+  return base + rush + seasonBoost + (stationIndex === JAEN ? 0.2 : 0);
 }
 
 function mirror(g) {
@@ -83,8 +85,9 @@ function openStation(g) {
   const minute = g.dayCycle?.state?.minuteOfDay ?? 600;
   const idx = Math.abs(Math.floor((s.distance || 0) * 2.5) + day) % STATIONS.length;
   const name = STATIONS[idx];
-  const demand = cngDemand(day, idx, minute);
-  const hoarding = demand >= 1.85;
+  const season = window.kanoSeason?.describe?.(day);
+  const demand = cngDemand(day, idx, minute, season?.cngBoost || 0);
+  const hoarding = demand >= 1.85 && idx !== JAEN; // Jaen is always open, just always queued
   const cngFull = Math.round(CNG_FULL * demand / 50) * 50;
   const blackFull = Math.round(cngFull * 1.5 / 50) * 50;
   const petrolFull = (s.hasCng ? PETROL_DUAL_FULL : PETROL_PLAIN_FULL) * (s.environment === 'fuelQueue' ? 1.3 : 1);
@@ -153,9 +156,9 @@ function openStation(g) {
     el.append(foot);
   };
 
-  const cars = Math.min(4, Math.floor(demand * 1.6));
+  const cars = Math.min(6, Math.floor(demand * 1.6) + (idx === JAEN ? 2 : 0));
   if (!cars) { render(); return; }
-  let remaining = Math.min(14, cars * 4);
+  let remaining = Math.min(20, cars * 4);
   const wait = () => {
     el.replaceChildren(); el.style.display = 'block';
     const h = document.createElement('div');
