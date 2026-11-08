@@ -1009,7 +1009,8 @@ function boot() {
           new_day: `A new day in Kano · day ${detail.day}`,
         };
 
-        if (messages[type]) ui.toast?.(messages[type]);
+        // The Driver's Day timeline shows its own scene for new days and day parts.
+        if (messages[type] && !(type === 'new_day' && window.__kanoDriverDayTimeline)) ui.toast?.(messages[type]);
 
         // Street-life cue when the day moves into a new period.
         if (type === 'period_change') {
@@ -1021,7 +1022,7 @@ function boot() {
             maghrib: 'Maghrib · dusk, light is going',
             isha: 'Night has come · drive carefully',
           };
-          if (periodMessages[detail?.period]) ui.toast?.(periodMessages[detail.period]);
+          if (periodMessages[detail?.period] && !window.__kanoDriverDayTimeline) ui.toast?.(periodMessages[detail.period]);
         }
 
         // Offer a real food or rest stop when the driver needs one.
