@@ -276,15 +276,23 @@ function skinWithGlb(renderer, record) {
     wrapper.position.y = -base - 0.05;
     wrapper.position.x = GLB_CENTER_X;
     let profile = heights.map((h) => Math.max(0, h - base));
-    // The raw raycast height jitters (rails, seams, lamp posts). Smooth it so the keke and camera
-    // glide up and over the flyover instead of wobbling, then pin both ends to the ground.
-    for (let pass = 0; pass < 3; pass += 1) {
+    // Rails and lamp posts make the raw raycast spike upward: take the local LOWER envelope (the road itself),
+    // then smooth lightly. Heavy smoothing rounded off the ramp-to-deck corners, which left the keke sunk
+    // inside the visible deck near the flyover exit.
+    profile = profile.map((_, i) => {
+      let low = Infinity;
+      for (let k = -3; k <= 3; k += 1) { const j = i + k; if (j >= 0 && j < profile.length) low = Math.min(low, profile[j]); }
+      return low;
+    });
+    for (let pass = 0; pass < 2; pass += 1) {
       profile = profile.map((_, i) => {
         let sum = 0; let count = 0;
-        for (let k = -6; k <= 6; k += 1) { const j = i + k; if (j >= 0 && j < profile.length) { sum += profile[j]; count += 1; } }
+        for (let k = -3; k <= 3; k += 1) { const j = i + k; if (j >= 0 && j < profile.length) { sum += profile[j]; count += 1; } }
         return sum / count;
       });
     }
+    // Small clearance so wheels never dip into the deck surface on the ramp corners.
+    profile = profile.map((h) => (h > 0.3 ? h + 0.07 : h));
     profile[0] = 0;
     profile[1] = Math.min(profile[1], profile[2] * 0.5);
     profile[profile.length - 1] = 0;
