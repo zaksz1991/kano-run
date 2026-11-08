@@ -8,6 +8,8 @@ import './KanoCngMarket.js';
 import './KanoKanoPolitics.js';
 import './KanoKanoSeason.js';
 import './KanoEveningLife.js';
+import './KanoPlayerTyres.js';
+import './KanoKanoTrafficMix.js';
 import './KanoSignClarity.js';
 import './KanoGoSlow.js';
 import './KanoBootSelfCheck.js';
