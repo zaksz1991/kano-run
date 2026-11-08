@@ -108,6 +108,7 @@ function frame() {
   try {
     const g = game();
     if (g) install(g);
+    if (g) document.body.classList.toggle('kano-karota-stop', g.s?.event === 'karota');
     if (staged && g) {
       const s = g.s;
       if (g.state === 'OVER' || g.state === 'MENU' || s.distance < staged.startKm - 0.05) { cleanup(); }

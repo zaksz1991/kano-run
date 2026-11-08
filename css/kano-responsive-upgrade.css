@@ -440,3 +440,17 @@
 }
 #over-screen #continue-btn:not(.hidden) { min-height: 50px; }
 #over-screen #again-btn { grid-column: auto; }
+
+/* KAROTA stop: keep the card compact at the bottom so you can see the officer, cones and vehicle ahead. */
+body.kano-karota-stop #event-card {
+  top: auto;
+  bottom: 68px;
+  transform: translateX(-50%);
+  padding: 10px 12px 12px;
+  border-radius: 16px;
+}
+body.kano-karota-stop #event-card #event-title { display: none; }
+body.kano-karota-stop #event-card #event-kicker { margin-bottom: 4px; }
+body.kano-karota-stop #event-card #event-copy { font-size: 12px; line-height: 1.35; margin: 0; }
+body.kano-karota-stop #event-card #event-actions { grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+body.kano-karota-stop #event-card #event-actions button { padding: 9px 6px; }
