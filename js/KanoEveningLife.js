@@ -12,13 +12,14 @@ const clamp = (v, a = 0, b = 100) => Math.max(a, Math.min(b, v));
 const hhmm = (m) => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
 
 const life = (() => {
-  let v = { family: 60, friends: 50, mood: 55 };
+  let v = { family: 60, friends: 50, mood: 55, debt: 0 };
   try { v = { ...v, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch (_) { /* optional */ }
   return v;
 })();
 const saveLife = () => { try { localStorage.setItem(KEY, JSON.stringify(life)); } catch (_) { /* optional */ } };
 window.kanoLife = life;
 
+const OWNER_DAILY = 5000; // the keke owner's daily remittance (hire purchase style)
 const done = { day: 0, dinner: false, maghrib: false, isha: false, family: false };
 const TIPS = [
   'A colleague says the CNG queue at Jaen is already long in the morning. Go early or go late.',
@@ -142,6 +143,7 @@ function render(g, story) {
   const h = document.createElement('h2'); h.textContent = story ? story.title : 'Keke parked. The shift is over.';
   const meta = document.createElement('div'); meta.className = 'meta';
   meta.textContent = `${hhmm(m)} · cash ${naira(s.score)} · hunger ${Math.round(g.dayCycle?.state?.hunger ?? 0)}% · tired ${Math.round(g.dayCycle?.state?.fatigue ?? 0)}%`
+    + ` · owner's daily ${naira(OWNER_DAILY + (life.debt || 0))}`
     + (se.fasting ? ' · Ramadan' : se.ramadan === 'prep' ? ' · Ramadan is near' : '') + (se.election === 'final' ? ' · election week' : se.election === 'campaign' ? ' · campaign season' : '');
   const stats = document.createElement('div'); stats.className = 'stats';
   for (const [k, v] of [['Mood', life.mood], ['Family', life.family], ['Friends', life.friends]]) { const sp = document.createElement('span'); sp.textContent = `${k} ${Math.round(v)}`; stats.append(sp); }
@@ -192,6 +194,15 @@ function sleep(g) {
     dc.save?.();
   }
   life.mood = clamp(life.mood - 6 + (done.family ? 6 : 0)); // moods settle overnight
+  // The owner's daily remittance comes out of the day's earnings; any shortfall becomes debt.
+  const due = OWNER_DAILY + (life.debt || 0);
+  const paid = Math.min(Math.max(0, s.score), due);
+  s.score = Math.max(0, s.score - paid);
+  life.debt = due - paid;
+  let ownerLine = '';
+  if (paid >= due) ownerLine = ` You hand the owner his ${naira(paid)} and keep the rest.`;
+  else if (life.debt > 12000) { ownerLine = ` The owner says he will take the keke back if you cannot clear ${naira(life.debt)}.`; life.mood = clamp(life.mood - 10); }
+  else ownerLine = ` You could only pay ${naira(paid)} of the owner's money. Owing ${naira(life.debt)}.`;
   if (life.family < 25) life.mood = clamp(life.mood - 8);
   saveLife();
   const lines = ['You wake before fajr to the call to prayer and the first achaba engines.'];
@@ -199,7 +210,7 @@ function sleep(g) {
   if (life.family < 25) lines.push('The house is quiet and cold. You owe your family some time.');
   if (life.family > 75) lines.push('The house feels warm. It is a good start.');
   closeOverlay();
-  g.ui?.toast?.(lines.join(' '));
+  g.ui?.toast?.(lines.join(' ') + ownerLine);
   Object.assign(done, { day: (dc?.state?.day || 0), dinner: false, maghrib: false, isha: false, family: false });
 }
 
