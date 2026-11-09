@@ -10,6 +10,7 @@ import './KanoKanoSeason.js';
 import './KanoEveningLife.js';
 import './KanoPlayerTyres.js';
 import './KanoSunkenRoadSection.js';
+import './KanoTrafficSignals.js';
 import './KanoMobileRoadlightGlb.js';
 import './KanoKanoTrafficMix.js';
 import './KanoSignClarity.js';
