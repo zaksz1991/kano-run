@@ -127,6 +127,33 @@ if (typeof window !== 'undefined' && !window.kanoSeason) {
       return r;
     };
     window.kanoSeason.travellerOffer = () => travellerOffer(g);
+    // Ramadan: at maghrib the road empties for a while as everyone stops to break the fast.
+    let iftarUntil = 0; let lastMinute = -1; let sahurDay = -1; let iftarDay = -1;
+    const origSpawn = g.spawnTraffic?.bind(g);
+    if (origSpawn) {
+      g.spawnTraffic = function (...a) {
+        if (performance.now() < iftarUntil) return undefined;
+        return origSpawn(...a);
+      };
+    }
+    setInterval(() => {
+      try {
+        const st = g.dayCycle?.state;
+        if (!st || g.state !== 'PLAY') return;
+        const d = describe(st.day);
+        const m = st.minuteOfDay;
+        if (d.fasting && m >= 1130 && m < 1180 && iftarDay !== st.day) {
+          iftarDay = st.day; iftarUntil = performance.now() + 45000;
+          g.s.traffic && g.s.traffic.splice(0, Math.floor(g.s.traffic.length * 0.7));
+          g.ui?.toast?.('Maghrib. The call to prayer rises from every mosque and the road goes quiet. Everyone stops to break the fast.');
+        }
+        if (d.fasting && m >= 300 && m < 360 && sahurDay !== st.day) {
+          sahurDay = st.day;
+          g.ui?.toast?.('Fajr in Ramadan: some riders finished sahur only minutes ago. The fast begins.');
+        }
+        lastMinute = m;
+      } catch (_) { /* optional */ }
+    }, 2000);
     let acc = 0; let last = performance.now();
     let accT = 0;
     setInterval(() => {
