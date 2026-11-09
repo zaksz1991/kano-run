@@ -60,6 +60,40 @@ const LINES = {
   eid: ['Sallah is here. New clothes, family visits and long rides to the Eid prayer ground.'],
 };
 
+
+// ---- Election travellers: people who came to Kano to hustle, leaving before the vote. ----
+let travellerPanel = null;
+function travellerOffer(game) {
+  const day = game.dayCycle?.state?.day || 1;
+  const d = describe(day);
+  if (d.election !== 'campaign' && d.election !== 'final' && d.election !== 'polling') return;
+  if (travellerPanel && travellerPanel.isConnected) return;
+  const s = game.s;
+  const urgent = d.election !== 'campaign';
+  const pay = Math.round((1500 + Math.random() * 1500 + (urgent ? 1200 : 0)) / 50) * 50;
+  const from = ['Onitsha', 'Aba', 'Owerri', 'Enugu', 'Lagos', 'Ibadan'][Math.floor(Math.random() * 6)];
+  const el = document.createElement('div');
+  travellerPanel = el;
+  el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:68px;width:min(94vw,380px);z-index:61;background:rgba(12,16,24,.96);color:#fff;border:2px solid #f2c14e;border-radius:14px;padding:10px 12px;font:700 13px/1.35 Arial,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.55)';
+  const h = document.createElement('div'); h.style.cssText = 'font-size:11px;color:#f2c14e;letter-spacing:.08em'; h.textContent = 'TRAVELLER WITH BAGS';
+  const t = document.createElement('div'); t.style.marginTop = '4px';
+  t.textContent = `A man with two big bags waves you down: "I came to Kano to hustle. I'm going back to ${from} before the election. Take me to the motor park, I'll pay ${naira(pay)}."`;
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:6px;margin-top:8px';
+  const mk = (label, fn, bg) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.style.cssText = `flex:1;min-height:38px;border-radius:9px;border:1px solid rgba(255,255,255,.5);font:900 12px Arial,sans-serif;color:#fff;background:${bg}`; b.addEventListener('click', () => { fn(); el.remove(); }); return b; };
+  row.append(
+    mk(`TAKE HIM +${naira(pay)}`, () => {
+      s.score += pay; s.speed = Math.min(s.speed, 12);
+      if (game.dayCycle?.state) game.dayCycle.state.fatigue = Math.min(100, game.dayCycle.state.fatigue + 2);
+      game.ui?.toast?.(`You drop him at the motor park. "God bless you. Kano is a good place, I just won't stay for the noise." ${naira(pay)} earned.`);
+    }, '#c28a14'),
+    mk('NOT NOW', () => game.ui?.toast?.('He finds another keke. There are many leaving today.'), '#33465a'),
+  );
+  el.append(h, t, row);
+  document.body.append(el);
+  setTimeout(() => el.remove(), 12000);
+}
+const naira = (n) => `₦${Math.round(n).toLocaleString('en-NG')}`;
+
 const priceNote = new Map();
 function ride(game) {
   const s = game.s;
@@ -92,10 +126,13 @@ if (typeof window !== 'undefined' && !window.kanoSeason) {
       } catch (_) { /* optional */ }
       return r;
     };
+    window.kanoSeason.travellerOffer = () => travellerOffer(g);
     let acc = 0; let last = performance.now();
+    let accT = 0;
     setInterval(() => {
-      const now = performance.now(); acc += (now - last) / 1000; last = now;
+      const now = performance.now(); const dtS = (now - last) / 1000; acc += dtS; accT += dtS; last = now;
       const s = g.s;
+      if (s && g.state === 'PLAY' && !document.hidden && !s.event && accT > 240 && s.speed > 10) { accT = 0; travellerOffer(g); return; }
       if (!s || g.state !== 'PLAY' || document.hidden || s.event || acc < 210 + Math.random() * 60) return;
       acc = 0;
       ride(g);
