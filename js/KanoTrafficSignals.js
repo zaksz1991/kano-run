@@ -51,7 +51,7 @@ function ensureChip() {
   if (chip && chip.isConnected) return chip;
   chip = document.createElement('div');
   chip.id = 'kano-signal-chip';
-  chip.style.cssText = 'position:fixed;left:50%;top:172px;transform:translateX(-50%);z-index:45;padding:7px 14px;'
+  chip.style.cssText = 'position:fixed;left:36%;top:186px;transform:translateX(-50%);z-index:45;padding:7px 14px;'
     + 'border-radius:14px;font:900 15px/1.2 system-ui,sans-serif;color:#fff;background:rgba(20,24,30,.94);'
     + 'border:2px solid #888;pointer-events:none;display:none;white-space:nowrap;text-align:center';
   document.body.appendChild(chip);
