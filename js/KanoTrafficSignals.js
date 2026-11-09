@@ -84,7 +84,7 @@ async function build(renderer, index) {
   group.name = 'KANO_SIGNAL_JUNCTION';
   const models = renderer?.models;
   const lamps = {};
-  const mat = (c) => new THREE.MeshBasicMaterial({ color: c });
+  const mat = (c) => new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide });
   // Stop line + crossing stripes (paint on the road)
   const line = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 0.35), mat(0xf4f4f0));
   line.rotation.x = -Math.PI / 2; line.position.set(1.5, 0.05, 9);
@@ -102,13 +102,12 @@ async function build(renderer, index) {
     if (right) { right.position.set(5.6, 0, 8); right.rotation.y = Math.PI; group.add(right); }
   }
   [-4.7, 5.3].forEach((x, n) => {
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.5, 0.3), mat(0x15181c));
-    housing.position.set(x, 4.9, 8.4);
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.85, 2.3, 0.3), mat(0x15181c));
+    housing.position.set(x, 5.0, 8.3);
     group.add(housing);
     ['red', 'amber', 'green'].forEach((name, k) => {
-      const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.17, 14), mat(0x222222));
-      lamp.position.set(x, 5.35 - k * 0.45, 8.57);
-      lamp.rotation.y = Math.PI;
+      const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.28, 16), mat(0x222222));
+      lamp.position.set(x, 5.75 - k * 0.7, 8.57);
       group.add(lamp);
       (lamps[name] = lamps[name] || []).push(lamp);
     });
