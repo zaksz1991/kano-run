@@ -57,7 +57,7 @@ async function build(renderer) {
     } catch (_) { /* optional model */ }
   };
   await Promise.all([
-    place('karota', 2.0, 7.3, -7, Math.PI),
+    place('karota', 2.0, 5.9, -7, Math.PI),
     place('karotaOfficer', 1.8, 4.7, 0, Math.PI * 0.12),
     place('cone', 0.75, 4.0, -1.6, 0),
     place('cone', 0.75, 3.0, -4.2, 0),
