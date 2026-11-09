@@ -87,6 +87,7 @@ function chatter(g) {
 function patch(g) {
   if (g.__kanoPolitics) return;
   g.__kanoPolitics = true;
+  window.kanoPolitics = { rally: () => rally(g), chatter: () => chatter(g), news: () => g.ui?.toast?.(NEWS[0]) };
   const origDrop = g.drop.bind(g);
   g.drop = function (...a) {
     const before = this.s.score;
