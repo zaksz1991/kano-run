@@ -5,7 +5,10 @@
  * joined the APC, where former governor Ganduje is a leader; Kwankwaso's NNPP is contesting 2027.
  * Nobody is quoted. The driver can wear a cap, take a flag or stay neutral; passengers react.
  */
+import * as THREE from 'three';
+
 const KEY = 'kano-politics-stance';
+const UNITS_PER_KM = 1008;
 const naira = (n) => `₦${Math.round(n).toLocaleString('en-NG')}`;
 const get = () => { try { return localStorage.getItem(KEY) || ''; } catch (_) { return ''; } };
 const set = (v) => { try { localStorage.setItem(KEY, v); } catch (_) { /* optional */ } };
@@ -41,9 +44,8 @@ function btn(label, fn, bg) {
   return b;
 }
 
-function rally(g) {
+function openRally(g, r) {
   const s = g.s;
-  const r = RALLIES[Math.random() < 0.5 ? 0 : 1];
   const el = host();
   el.style.background = 'rgba(12,16,24,.96)';
   el.style.border = `2px solid ${r.color}`;
@@ -76,6 +78,86 @@ function rally(g) {
   setTimeout(() => { if (panel?.style.display === 'block') close(); }, 14000);
 }
 
+
+// ---- The rally exists on the road: a crowd with flags that you drive up to, then the card appears. ----
+let rallyStage = null;
+function fitModel(model, height) {
+  const box = new THREE.Box3().setFromObject(model);
+  const h = box.max.y - box.min.y;
+  if (!(h > 0.05)) return false;
+  model.scale.multiplyScalar(height / h);
+  model.position.y -= new THREE.Box3().setFromObject(model).min.y;
+  return true;
+}
+async function buildCrowd(renderer, r) {
+  const group = new THREE.Group();
+  group.name = 'KANO_RALLY_CROWD';
+  const models = renderer?.models;
+  const keys = ['passengerMan', 'pedestrianWoman', 'passengerMan', 'pedestrian', 'passengerMan', 'pedestrianWoman', 'passengerMan', 'pedestrian'];
+  const spots = [[2.0, -1], [3.1, -2.2], [4.2, -1.2], [2.6, -3.8], [3.7, -4.4], [1.6, -5.5], [4.4, -6.2], [3.0, -7.2]];
+  const flagMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(r.color), side: THREE.DoubleSide });
+  const poleMat = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+  const bobbers = [];
+  if (models?.load) {
+    await Promise.all(keys.map(async (key, i) => {
+      try {
+        await models.load(key);
+        const m = models.getInstance(key);
+        if (!m || !fitModel(m, 1.65 + (i % 3) * 0.06)) return;
+        const holder = new THREE.Group();
+        holder.add(m);
+        holder.position.set(spots[i][0], 0, spots[i][1]);
+        holder.rotation.y = Math.PI * (0.85 + 0.3 * ((i * 37) % 10) / 10);
+        group.add(holder);
+        bobbers.push({ holder, phase: i * 1.3 });
+        if (i % 2 === 0) { // a flag in the crowd
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.3, 5), poleMat);
+          pole.position.set(spots[i][0] + 0.35, 1.15, spots[i][1]);
+          const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5), flagMat);
+          cloth.position.set(spots[i][0] + 0.75, 2.0, spots[i][1]);
+          group.add(pole, cloth);
+        }
+      } catch (_) { /* optional model */ }
+    }));
+  }
+  group.userData.bobbers = bobbers;
+  return group;
+}
+function stageRally(g) {
+  if (rallyStage || g.state !== 'PLAY') return;
+  const r = RALLIES[Math.random() < 0.5 ? 0 : 1];
+  const renderer = window.kanoRenderer;
+  rallyStage = { r, atKm: g.s.distance + 0.11, group: null, shown: false };
+  const mine = rallyStage;
+  buildCrowd(renderer, r).then((group) => {
+    if (rallyStage !== mine) return;
+    mine.group = group;
+    renderer?.world?.add(group);
+  }).catch(() => {});
+  g.ui?.toast?.(`${r.head} ahead: ${r.side === 'NNPP' ? 'red caps and drums' : 'green flags and a loudspeaker'} on the road. Slow down.`);
+}
+function rallyFrame() {
+  try {
+    const g = window.kanoGame;
+    const st = rallyStage;
+    if (st && g?.s) {
+      const ahead = st.atKm - g.s.distance;
+      if (st.group) {
+        st.group.position.z = 2 - ahead * UNITS_PER_KM;
+        const t = performance.now() / 1000;
+        (st.group.userData.bobbers || []).forEach((b) => { b.holder.position.y = Math.abs(Math.sin(t * 3 + b.phase)) * 0.08; });
+      }
+      if (!st.shown && ahead < 0.035 && g.state === 'PLAY' && !g.s.event) { st.shown = true; openRally(g, st.r); }
+      if (g.state !== 'PLAY' || ahead < -0.07 || ahead > 0.4) {
+        if (st.group) { st.group.parent?.remove(st.group); }
+        rallyStage = null;
+      }
+    }
+  } catch (_) { /* optional */ }
+  requestAnimationFrame(rallyFrame);
+}
+if (typeof window !== 'undefined') requestAnimationFrame(rallyFrame);
+
 function chatter(g) {
   const stance = get();
   const party = Math.random() < 0.5 ? 'NNPP' : 'APC';
@@ -87,7 +169,7 @@ function chatter(g) {
 function patch(g) {
   if (g.__kanoPolitics) return;
   g.__kanoPolitics = true;
-  window.kanoPolitics = { rally: () => rally(g), chatter: () => chatter(g), news: () => g.ui?.toast?.(NEWS[0]) };
+  window.kanoPolitics = { rally: () => stageRally(g), chatter: () => chatter(g), news: () => g.ui?.toast?.(NEWS[0]) };
   const origDrop = g.drop.bind(g);
   g.drop = function (...a) {
     const before = this.s.score;
@@ -117,7 +199,7 @@ function patch(g) {
     acc = 0; nextAt = 150 + Math.random() * 120;
     const roll = Math.random();
     if (roll < 0.4) { g.ui?.toast?.(NEWS[newsIdx % NEWS.length]); newsIdx += 1; }
-    else if (roll < 0.75) rally(g);
+    else if (roll < 0.75) stageRally(g);
     else chatter(g);
   }, 1000);
 }
