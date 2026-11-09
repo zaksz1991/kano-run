@@ -185,11 +185,42 @@ function applyCrash(g, j) {
   j.pendingHit = null;
 }
 
+/** Other drivers obey the light too: they slow, stop in a queue behind the line, and set off on green. */
+const KM_PER_DEPTH = 88 / UNITS_PER_KM;
+function holdTraffic(g, state, lineAheadKm) {
+  const list = (g.s.traffic || []).filter((v) => v && v.direction !== -1 && Number.isFinite(v.depth));
+  if (state === 'green') {
+    for (const v of list) if (v.signalOrig) { v.speedKmh = v.signalOrig; v.signalOrig = 0; }
+    return;
+  }
+  const byLane = {};
+  for (const v of list) {
+    const a = v.depth * KM_PER_DEPTH;
+    if (a < 0 || a > lineAheadKm + 0.004 || lineAheadKm - a > 0.18) {
+      if (v.signalOrig && a > lineAheadKm) { v.speedKmh = v.signalOrig; v.signalOrig = 0; }
+      continue;
+    }
+    (byLane[v.lane] = byLane[v.lane] || []).push([a, v]);
+  }
+  for (const arr of Object.values(byLane)) {
+    arr.sort((x, y) => y[0] - x[0]);       // nearest the line first
+    arr.forEach(([a, v], rank) => {
+      if (!v.signalOrig) v.signalOrig = Math.max(14, v.speedKmh || 20);
+      const gap = lineAheadKm - rank * 0.006 - a;
+      const want = gap <= 0.0008 ? 0 : v.signalOrig * Math.min(1, gap / 0.05);
+      v.speedKmh = Math.min(v.speedKmh, Math.max(0, want));
+      if (gap <= 0.0008) v.speedKmh = 0;
+    });
+  }
+}
+
 function cleanup() {
   if (J?.group) {
     J.group.parent?.remove(J.group);
     J.group.traverse?.((o) => { o.geometry?.dispose?.(); });
   }
+  const gg = game();
+  for (const v of gg?.s?.traffic || []) if (v.signalOrig) { v.speedKmh = v.signalOrig; v.signalOrig = 0; }
   J = null;
   busy = false;
   if (chip) chip.style.display = 'none';
@@ -253,6 +284,7 @@ function frame() {
             : ph.state === 'amber' ? 'prepare to stop' : 'go';
           el.innerHTML = `<span style="color:${colour}">🚦 ${word} ${ph.left}s</span><br><span style="font:700 11px system-ui;opacity:.85">${dist} m · ${hint}</span>`;
         } else el.style.display = 'none';
+        holdTraffic(g, ph.state, dKm - LINE_KM);
         // Compliance check when crossing the stop line
         if (!J.handled && dKm <= LINE_KM) {
           J.handled = true;
