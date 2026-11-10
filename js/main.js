@@ -17,6 +17,7 @@ import './KanoBlueKerbs.js';
 import './KanoReverseButtonFix.js';
 import './KanoPlayerCleanup.js';
 import './KanoTotalPlayers.js';
+import './KanoMobileGlbTraffic.js';
 import './KanoMobileRoadlightGlb.js';
 import './KanoKanoTrafficMix.js';
 import './KanoSignClarity.js';

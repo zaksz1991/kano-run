@@ -46,6 +46,7 @@ function paint() {
   if (start && text) start.textContent = text;
   let chip = document.getElementById('kano-total-players-chip');
   const live = document.getElementById('kano-live-user-counter');
+  if (live) live.style.display = /UNAVAILABLE|CONNECTING/.test(live.textContent) ? 'none' : '';
   if (!text) { chip?.remove(); return; }
   if (!chip) {
     chip = document.createElement('div');
@@ -56,9 +57,6 @@ function paint() {
     document.body.appendChild(chip);
   }
   chip.textContent = `TOTAL PLAYERS · ${text}`;
-  // The live chip is just a bonus: hide it while the live service is unavailable.
-  if (live && /UNAVAILABLE|CONNECTING/.test(live.textContent)) live.style.display = 'none';
-  else if (live) live.style.display = '';
 }
 
 async function refresh() {
