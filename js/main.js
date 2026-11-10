@@ -1,3 +1,5 @@
+import './KanoTextCapture.js';
+import './KanoPixelRatioGovernor.js';
 import './KanoCanvasResizeGuard.js';
 import './KanoFuelBudgetChip.js';
 import './KanoKekeStatusChip.js';
@@ -13,6 +15,7 @@ import './KanoSunkenRoadSection.js';
 import './KanoTrafficSignals.js';
 import './KanoBlueKerbs.js';
 import './KanoReverseButtonFix.js';
+import './KanoPlayerCleanup.js';
 import './KanoMobileRoadlightGlb.js';
 import './KanoKanoTrafficMix.js';
 import './KanoSignClarity.js';

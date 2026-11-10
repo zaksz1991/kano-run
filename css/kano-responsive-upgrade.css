@@ -454,3 +454,11 @@ body.kano-karota-stop #event-card #event-kicker { margin-bottom: 4px; }
 body.kano-karota-stop #event-card #event-copy { font-size: 12px; line-height: 1.35; margin: 0; }
 body.kano-karota-stop #event-card #event-actions { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px; margin-top: 8px; }
 body.kano-karota-stop #event-card #event-actions button { padding: 9px 6px; }
+
+/* Player-facing cleanup: developer tools hidden */
+#klc-run-runtime-audit,#klc-export-runtime-report,#klc-runtime-audit-summary,.klc-diagnostics-actions,
+#klc-sim-status,#klc-sim-status-card .klc-hub-note,#klc-sim-status-title,.klc-hub-overview,#kano-launch-diagnostics,
+#kfe-export,#knrc-export,#kvm-export,#kds-export,#kcs-export,
+[data-kcp-action="export"],[data-kem-action="export"],[data-kes-action="export"],[data-khu-action="export"],
+[data-kano-workshop-ledger-recovery-export],.kano-workshop-ledger-audit,
+#kano-model-audit,.kano-model-audit,.model-audit-panel,#kano-perf-monitor,.kano-debug-panel{display:none !important}

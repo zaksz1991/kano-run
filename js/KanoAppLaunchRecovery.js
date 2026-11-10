@@ -98,7 +98,7 @@ function showBootAlert(error) {
     alert.id = 'kano-launch-recovery-alert';
     alert.className = 'kano-launch-recovery-alert';
     alert.setAttribute('role', 'alert');
-    alert.innerHTML = '<strong>Game startup needs attention.</strong><p id="kano-launch-recovery-message"></p><div class="kano-launch-recovery-actions"><button type="button" id="kano-launch-retry">RETRY STARTUP</button><button type="button" id="kano-launch-diagnostics">EXPORT DIAGNOSTICS</button></div>';
+    alert.innerHTML = '<strong>Game startup needs attention.</strong><p id="kano-launch-recovery-message"></p><div class="kano-launch-recovery-actions"><button type="button" id="kano-launch-retry">RETRY STARTUP</button></div>';
     const target = document.querySelector('.start-actions', startCard) || startCard;
     target.insertAdjacentElement('afterend', alert);
   }
