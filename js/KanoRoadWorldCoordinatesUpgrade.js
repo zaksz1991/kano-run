@@ -22,6 +22,8 @@ const JUNCTION_RETIRE_RANGE_KM = 0.045;
 const ROAD_WIDTH = 13;
 const BRANCH_WIDTH = 9.8;
 const WORLD_ANCHOR_PERIOD_KM = 0.46;
+// Flyovers are landmarks, not wallpaper: real Kano has a few, kilometres apart.
+const FLYOVER_SPACING_KM = 2.4;
 
 const AUDIT = {
   version: 1,
@@ -318,12 +320,12 @@ function setRepeatingAnchor(actor, baseKm, periodKm, worldKm, deck = false) {
 
 function ensureAnchorSchedules(renderer) {
   const flyovers = renderer.flyovers || [];
-  const flyoverPeriod = Math.max(1, flyovers.length) * WORLD_ANCHOR_PERIOD_KM;
+  const flyoverPeriod = Math.max(1, flyovers.length) * FLYOVER_SPACING_KM;
   flyovers.forEach((actor, index) => {
     actor.userData ||= {};
     const alreadyAnchored = Boolean(actor.userData.kanoWorldAnchoredStep96);
     if (!alreadyAnchored || actor.userData.kanoWorldAnchorIndex !== index || actor.userData.kanoWorldAnchorPeriodKm !== flyoverPeriod) {
-      actor.userData.kanoWorldAnchorBaseKm = 0.55 + index * WORLD_ANCHOR_PERIOD_KM;
+      actor.userData.kanoWorldAnchorBaseKm = 0.55 + index * FLYOVER_SPACING_KM;
       actor.userData.kanoWorldAnchorPeriodKm = flyoverPeriod;
       actor.userData.kanoWorldAnchorIndex = index;
       actor.userData.kanoWorldAnchoredStep96 = true;

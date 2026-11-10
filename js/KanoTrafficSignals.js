@@ -206,8 +206,22 @@ function cleanup() {
   if (chip) chip.style.display = 'none';
 }
 
+/** Signals belong on ordinary roads: never within ~0.6 km of a flyover deck. */
+function nearFlyover(atKm) {
+  const list = window.kanoRenderer?.flyovers || [];
+  for (const f of list) {
+    const u = f.userData || {};
+    const base = u.kanoWorldAnchorBaseKm; const per = u.kanoWorldAnchorPeriodKm;
+    if (!Number.isFinite(base) || !Number.isFinite(per) || per <= 0) continue;
+    const k = Math.round((atKm - base) / per);
+    if (Math.abs(base + k * per - atKm) < 0.6) return true;
+  }
+  return false;
+}
+
 function nextJunction(dist) {
-  const i = Math.max(0, Math.ceil((dist - OFFSET_KM + 0.02) / PERIOD_KM));
+  let i = Math.max(0, Math.ceil((dist - OFFSET_KM + 0.02) / PERIOD_KM));
+  for (let guard = 0; guard < 8 && nearFlyover(OFFSET_KM + i * PERIOD_KM); guard += 1) i += 1;
   return { index: i, atKm: OFFSET_KM + i * PERIOD_KM };
 }
 
@@ -253,7 +267,8 @@ function frame() {
         }
         if (J.pendingHit && now() >= J.pendingHit.at) applyCrash(g, J);
         // Chip
-        if (dKm > -0.02 && dKm < SHOW_KM) {
+        const onFlyover = (window.kanoRenderer?._kanoFlyoverCurrentHeight || 0) > 0.4;
+        if (!onFlyover && dKm > -0.02 && dKm < SHOW_KM) {
           el.style.display = 'block';
           const colour = { green: '#27e05a', amber: '#ffb020', red: '#ff4a3d' }[ph.state];
           el.style.borderColor = colour;

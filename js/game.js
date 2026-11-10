@@ -354,7 +354,7 @@ export class Game {
 
     this.ui.toast(
       engage
-        ? 'REVERSE GEAR · Hold BRAKE to reverse'
+        ? 'REVERSE GEAR · Hold GAS or BRAKE to back up · tap REVERSE for forward'
         : 'FORWARD GEAR · Press GAS to move forward',
     );
 
@@ -709,27 +709,12 @@ export class Game {
     const s = this.s;
     const applyingThrottle = Boolean(value);
 
-    if (applyingThrottle && s.reverse) {
-      // Do not instantly change from reverse to forward while moving.
-      if (s.speed > REVERSE_ENGAGE_SPEED) {
-        // Pressing GAS while reversing stops the reversing first, then drives forward.
-        s.gas = false;
-        s.brake = false;
-        s.reverseToForward = true;
-
-        return;
-      }
-
+    if (s.reverse) {
+      // In reverse gear GAS is the reverse pedal. Tap REVERSE again to go back to forward.
       s.gas = false;
-      s.brake = false;
-
-      s.speed = 0;
-      s.reverse = false;
-      s.signedSpeed = 0;
-
-      this.ui.toast(
-        'FORWARD GEAR · Accelerating forward',
-      );
+      s.brake = applyingThrottle;
+      s.reverseThrottle = applyingThrottle;
+      return;
     }
 
     s.gas = applyingThrottle;
