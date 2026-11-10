@@ -53,17 +53,30 @@ async function build(renderer) {
       holder.add(model);
       holder.position.set(x, 0, z);
       holder.rotation.y = rotY;
+      holder.userData.baseY = rotY;
+      holder.userData.baseX = x;
+      holder.userData.baseZ = z;
       group.add(holder);
+      return holder;
     } catch (_) { /* optional model */ }
+    return null;
   };
-  await Promise.all([
+  // The officer model's front faces -z, so turn it ~180 deg to face the oncoming driver.
+  const FACE = Math.PI;
+  const holders = await Promise.all([
     place('karota', 2.0, 5.9, -7, Math.PI),
-    place('karotaOfficer', 1.8, 4.7, 0, Math.PI * 0.12),
+    place('karotaOfficer', 1.8, 4.7, 0, FACE + 0.25),      // 0: waving traffic in
+    place('karotaOfficer', 1.8, 2.6, -3.2, FACE - 0.3),    // 1: walks the cone line, checking vehicles
+    place('karotaOfficer', 1.8, 6.6, -4.6, FACE + 0.5),    // 2: by the KAROTA vehicle, watching
+    place('karotaOfficer', 1.8, 0.2, -8.2, FACE),          // 3: stands in the lane, hand up to stop
+    place('karotaOfficer', 1.8, 5.4, -9.4, FACE - 0.6),    // 4: checking papers at the rear
+
     place('cone', 0.75, 4.0, -1.6, 0),
     place('cone', 0.75, 3.0, -4.2, 0),
     place('cone', 0.75, 2.0, -6.8, 0),
     place('cone', 0.75, 1.0, -9.4, 0),
   ]);
+  group.userData.officers = holders.slice(1, 6).filter(Boolean);
   group.visible = true;
   return group;
 }
@@ -115,7 +128,21 @@ function frame() {
       else {
         const dKm = staged.atKm - s.distance;
         const z = 2 - dKm * UNITS_PER_KM;
-        if (staged.group) staged.group.position.z = z;
+        if (staged.group) {
+          staged.group.position.z = z;
+          const t = performance.now() / 1000;
+          (staged.group.userData.officers || []).forEach((h, i) => {
+            const u = h.userData;
+            h.rotation.y = u.baseY + Math.sin(t * 0.7 + i * 1.7) * 0.28;   // looks around
+            h.rotation.z = Math.sin(t * 1.9 + i) * 0.035;                  // shifts weight
+            h.position.y = Math.abs(Math.sin(t * 2.2 + i * 2)) * 0.03;
+            if (i === 1) {                                                // pacing along the cones
+              h.position.x = u.baseX + Math.sin(t * 0.5) * 1.1;
+              h.position.z = u.baseZ - 1.4 + Math.sin(t * 0.5 + 1.2) * 2.2;
+            }
+            if (i === 0) h.position.x = u.baseX + Math.sin(t * 1.6) * 0.18;  // waving motion
+          });
+        }
         const el = ensureChip();
         if (!staged.triggered && g.state === 'PLAY') {
           el.style.display = 'block';

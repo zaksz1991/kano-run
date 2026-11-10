@@ -438,6 +438,14 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   if (renderer.lifeScene !== 'road' || !renderer.world?.visible) return 0;
   ensureApproachGroups(renderer);
   if (!renderer.player?.position) return 0;
+  // Anchors have just been synced (this runs inside render): put every deck exactly on its flyover.
+  for (const record of renderer.kanoFlyoverApproachRecords || []) {
+    const fly = renderer.flyovers?.[record.index] || record.flyover;
+    if (fly?.userData?.kanoWorldAnchoredStep96) {
+      record.group.position.z = fly.position.z;
+      record.group.visible = fly.visible !== false;
+    }
+  }
 
   const playerSurface = nearestSurfaceForZ(renderer, renderer.player.position.z);
   let height = playerSurface?.height || 0;
@@ -486,7 +494,10 @@ function syncApproachMotion(renderer, state, deltaSeconds) {
     const flyover = renderer.flyovers?.[record.index] || record.flyover;
     if (!flyover) continue;
     record.flyover = flyover;
-    const predictedZ = kanoWrapFlyoverZ(flyover.position.z + scroll * 0.72, loop);
+    // Distance-anchored flyovers already hold their true z: never wrap them (a 300 m deck wrapped
+    // at 22 units vanished while the keke was still on it).
+    const anchored = Boolean(flyover.userData?.kanoWorldAnchoredStep96);
+    const predictedZ = anchored ? flyover.position.z : kanoWrapFlyoverZ(flyover.position.z + scroll * 0.72, loop);
     record.group.position.set(flyover.position.x, 0, predictedZ);
     record.group.visible = flyover.visible !== false
       && Math.abs(predictedZ - (renderer.camera?.position?.z || 0)) < (record.glbSkinned ? 330 : renderer.mobile ? 100 : 178);

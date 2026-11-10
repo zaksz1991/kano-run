@@ -43,9 +43,9 @@ function build(renderer) {
     map: poolTexture(), transparent: true, opacity: 0, depthWrite: false,
     blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
   });
-  const pool = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 17), mat);
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(9, 26), mat);
   pool.rotation.x = -Math.PI / 2;
-  pool.position.set(0, 0.05, -9.2);
+  pool.position.set(0, 0.06, -13.5);
   pool.renderOrder = 8;
   pool.frustumCulled = false;
   group.add(pool);
@@ -74,7 +74,7 @@ if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.protot
       if (k) {
         const strength = this.lifeScene === 'road' ? nightStrength(state) : 0;
         k.group.visible = strength > 0.01;
-        k.mat.opacity = 0.75 * strength;
+        k.mat.opacity = 0.95 * strength;
         k.glowMat.opacity = 0.9 * strength;
       }
     } catch (error) {
