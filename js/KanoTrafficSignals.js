@@ -9,6 +9,7 @@
  *  - Last 4 s of green shows AMBER so you can decide early.
  */
 import * as THREE from 'three';
+import { cycleOf, signalPhase as phaseOf } from './KanoTrafficSignalRules.mjs';
 
 const UNITS_PER_KM = 1008;
 const PERIOD_KM = 3.1;
@@ -21,27 +22,7 @@ const game = () => window.kanoGame || window.__KANO_ACTIVE_GAME__;
 const t0 = performance.now();
 const now = () => (performance.now() - t0) / 1000;
 
-const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
-
-function cycleOf(i) {
-  const green = 45 + Math.floor(hash(i + 1) * 16);
-  const red = 45 + Math.floor(hash(i + 7) * 16);
-  return { green, red, off: hash(i + 13) * (green + red) };
-}
-
-/** Phase of junction i at the current moment. */
-export function signalPhase(i, t = now()) {
-  if (typeof window !== 'undefined' && window.__kanoSignalForce) return window.__kanoSignalForce;
-  const c = cycleOf(i);
-  const len = c.green + c.red;
-  const p = (t + c.off) % len;
-  if (p < c.green) {
-    const left = c.green - p;
-    return { state: left <= 4 ? 'amber' : 'green', left: Math.ceil(left), redAge: 0 };
-  }
-  const left = len - p;
-  return { state: 'red', left: Math.ceil(left), redAge: p - c.green };
-}
+const signalPhase = (i, t = now()) => (typeof window !== 'undefined' && window.__kanoSignalForce) || phaseOf(i, t);
 
 let J = null;       // {index, atKm, group, lamps, cross[], crossTimer, handled, waited}
 let chip = null;
