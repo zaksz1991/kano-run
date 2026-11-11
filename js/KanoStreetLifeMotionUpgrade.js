@@ -1,3 +1,4 @@
+import { bakedPerson } from './KanoMobilePedestrians.js';
 import { mergeActor } from './KanoMergeStaticMeshes.js';
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
@@ -266,7 +267,7 @@ function addCheckpointPassengerCrowd(renderer, zone, actor) {
 // project ships are cached, each street person is swapped for one of them.
 // ---------------------------------------------------------------------------
 const PEOPLE_MODEL_KEYS = ['passengerMan', 'pedestrianWoman', 'pedestrian', 'passengerWoman'];
-const REAL_PEOPLE_BUDGET = { mobile: 4, desktop: 12 };
+const REAL_PEOPLE_BUDGET = { mobile: 10, desktop: 12 }; // phones use cheap baked copies of the same GLB people
 const CROWD_REAL_BUDGET = { mobile: 1, desktop: 4 };
 
 function availablePeopleKeys(renderer) {
@@ -276,6 +277,7 @@ function availablePeopleKeys(renderer) {
 
 function makeRealPerson(renderer, keys, index, height) {
   if (!keys.length) return null;
+  if (renderer.mobile) return bakedPerson(renderer, keys, index, height);
   const model = renderer.models.getInstance(keys[index % keys.length]);
   if (!model) return null;
   const box = new THREE.Box3().setFromObject(model);
