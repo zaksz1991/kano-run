@@ -2309,7 +2309,7 @@ export class Renderer3D {
     if (!Number.isFinite(scroll) || scroll === 0) return;
 
     for (const tree of this.kanoNeemTrees) {
-      tree.z += scroll * 0.78;
+      tree.z += scroll;
       if (tree.z > 10) {
         tree.z -= this.kanoRoadsideLoopDistance;
       } else if (tree.z < -this.kanoRoadsideLoopDistance) {
@@ -5495,7 +5495,7 @@ export class Renderer3D {
     // --------------------------------------------------------
 
     for (const pedestrian of this.pedestrians) {
-      pedestrian.actor.position.z += scroll * 0.72;
+      pedestrian.actor.position.z += scroll + (pedestrian.side < 0 ? 1 : -1) * 1.3 * dt;
 
       if (pedestrian.actor.position.z > 6) {
         pedestrian.actor.position.z -= this.pedestrianLoopDistance;
@@ -5539,7 +5539,7 @@ export class Renderer3D {
     // --------------------------------------------------------
 
     for (const slot of this.roadProps) {
-      slot.actor.position.z += scroll * 0.88;
+      slot.actor.position.z += scroll;
 
       if (slot.actor.position.z > 9) {
         slot.actor.position.z -= 245;
