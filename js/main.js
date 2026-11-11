@@ -19,6 +19,8 @@ import './KanoPlayerCleanup.js';
 import './KanoTotalPlayers.js';
 import './KanoMobileGlbTraffic.js';
 import './KanoKekeRace.js';
+import './KanoStartLayout.js';
+import './KanoRoadFailsafe.js';
 import './KanoMobileRoadlightGlb.js';
 import './KanoKanoTrafficMix.js';
 import './KanoSignClarity.js';

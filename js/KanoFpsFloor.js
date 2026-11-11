@@ -9,14 +9,14 @@
 import * as THREE from 'three';
 
 const KEY = 'kano.life.pixelCap.v2'; // v2: forget the 0.85 that v1 saved on slow measurements
-const STAGES = [1.25, 1, 0.85, 0.72];
+const STAGES = [1.25, 1.15, 1, 0.85, 0.72];
 const PATCH = Symbol.for('kano.life.fpsFloor.v1');
 
 const coarse = typeof window !== 'undefined'
   && (window.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || ''));
 
 function load() {
-  try { const v = Number(localStorage.getItem(KEY)); return STAGES.includes(v) ? Math.min(1, Math.max(v, 0.85)) : 1; } catch (_) { return 1; } // each session re-checks the deepest stage
+  try { const v = Number(localStorage.getItem(KEY)); return STAGES.includes(v) ? Math.min(1.15, Math.max(v, 0.85)) : 1.15; } catch (_) { return 1.15; } // each session re-checks the deepest stage
 }
 const MODE_KEY = 'kano.life.qualityMode.v1';
 const MODES = ['auto', 'sharp', 'fast'];
@@ -85,7 +85,7 @@ if (coarse && !THREE.WebGLRenderer.prototype[PATCH]) {
     state.mode = MODES[(MODES.indexOf(state.mode) + 1) % MODES.length];
     saveMode(state.mode);
     state.samples = [];
-    state.cap = state.mode === 'auto' ? 1 : MODE_CAP[state.mode];
+    state.cap = state.mode === 'auto' ? 1.15 : MODE_CAP[state.mode];
     const r = window.__KANO_ACTIVE_RENDERER__?.renderer;
     if (r?.setPixelRatio) r.setPixelRatio(Math.min(window.devicePixelRatio || 1, state.cap));
     window.dispatchEvent(new Event('resize'));

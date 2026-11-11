@@ -30,4 +30,7 @@ if (typeof document !== 'undefined' && !window.__kanoPlayerCleanup) {
   style.textContent = STYLE;
   document.head.appendChild(style);
   setInterval(() => { try { sweep(); } catch (_) { /* optional */ } }, 1500);
+  let pending = false;
+  new MutationObserver(() => { if (pending) return; pending = true; setTimeout(() => { pending = false; try { sweep(); } catch (_) { /* optional */ } }, 120); })
+    .observe(document.documentElement, { childList: true, subtree: true });
 }

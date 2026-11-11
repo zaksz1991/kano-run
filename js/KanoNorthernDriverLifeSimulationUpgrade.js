@@ -151,7 +151,7 @@ function bindPanel(ui) {
   ui.__kanoLifeCareerBound = true;
   ensurePanel();
   const panel = document.getElementById('kano-life-career-screen');
-  const byId = (id) => document.getElementById(id);
+  const byId = (id) => document.getElementById(id) || document.createElement('div'); // never null: a missing optional control must not abort start-up
   let returnScreen = 'start-screen';
 
   const showNotice = (text, error = false) => {
@@ -201,7 +201,7 @@ function bindPanel(ui) {
     for (const id of ['start-screen', 'menu-screen', 'garage-screen', 'help-screen', 'over-screen', 'life-routine-screen']) ui.hide(id);
     panel.classList.remove('hidden');
     fillForm(); refreshPanel(); showNotice('Profile and ledger are saved in this browser.');
-    byId('klc-close-top').focus({ preventScroll: true });
+    byId('klc-close-top')?.focus?.({ preventScroll: true });
   };
   const closePanel = () => {
     panel.classList.add('hidden');
@@ -212,15 +212,15 @@ function bindPanel(ui) {
 
   byId('life-career-btn')?.addEventListener('click', () => openPanel('start-screen'));
   byId('life-career-menu-btn')?.addEventListener('click', () => openPanel('menu-screen'));
-  byId('klc-close-top').addEventListener('click', closePanel);
-  byId('klc-close-bottom').addEventListener('click', closePanel);
+  byId('klc-close-top')?.addEventListener?.('click', closePanel);
+  byId('klc-close-bottom')?.addEventListener?.('click', closePanel);
 
-  byId('klc-gender').addEventListener('change', (event) => {
+  byId('klc-gender')?.addEventListener?.('change', (event) => {
     const nameInput = byId('klc-name');
     if (['Musa', 'Amina'].includes(nameInput.value.trim())) nameInput.value = event.target.value === 'female' ? 'Amina' : 'Musa';
   });
 
-  byId('klc-profile-form').addEventListener('submit', (event) => {
+  byId('klc-profile-form')?.addEventListener?.('submit', (event) => {
     event.preventDefault();
     const name = safeText(byId('klc-name').value, 32);
     const age = Number(byId('klc-age').value);
@@ -247,7 +247,7 @@ function bindPanel(ui) {
     refreshPanel(); showNotice(`Saved ${profile.profile.name}'s life profile. Career costs will apply only to Career and Free roam shifts.`);
   });
 
-  byId('klc-deposit-btn').addEventListener('click', () => {
+  byId('klc-deposit-btn')?.addEventListener?.('click', () => {
     const amount = Number(byId('klc-deposit').value);
     if (!Number.isFinite(amount) || amount < 100 || Math.floor(amount) !== amount) { showNotice('Savings deposit must be a whole amount of at least ₦100.', true); return; }
     const result = life.depositSavings(amount, save.money || 0);
@@ -255,7 +255,7 @@ function bindPanel(ui) {
     save.money = result.wallet; persist(); ui.refreshWallet?.(); refreshPanel(); showNotice(`Moved ${formatNaira(result.amount)} into personal savings.`);
   });
 
-  byId('klc-pay-arrears').addEventListener('click', () => {
+  byId('klc-pay-arrears')?.addEventListener?.('click', () => {
     const result = life.payArrears(save.money || 0);
     if (!result.amount) { showNotice('No outstanding bills were paid. Wallet funds may be insufficient.'); return; }
     save.money = result.wallet; persist(); ui.refreshWallet?.(); refreshPanel();

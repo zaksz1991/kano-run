@@ -20,6 +20,7 @@ let badge = null;
 let panel = null;
 function render() {
   if (typeof document === 'undefined' || !document.body) return;
+  if (!/[?&]debug=1/.test(location.search)) return; // players never see developer warnings
   if (!badge) {
     badge = document.createElement('button');
     badge.id = 'kano-boot-issues';
