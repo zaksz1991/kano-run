@@ -4,6 +4,7 @@
  * contact with a rival scrapes both, finish line banner, prize money by position (added to run fares).
  * Start it from the start screen or the street menu.
  */
+import { yellowize } from './KanoYellowKeke.js';
 import * as THREE from 'three';
 
 const UNITS_PER_KM = 1008;
@@ -53,6 +54,7 @@ async function buildRacer(models, i) {
     await models.load('keke');
     const m = models.getInstance('keke');
     if (m && fit(m, 1.75)) {
+      yellowize(m);
       m.rotation.y = Math.PI;      // face down the road (-z)
       holder.add(m);
     }

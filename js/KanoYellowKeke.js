@@ -46,6 +46,24 @@ function recolour(map) {
   return tex;
 }
 
+const cache = new WeakMap();
+/** Recolour any keke GLB instance (race rivals) to the same yellow/black livery. */
+export function yellowize(root) {
+  try {
+    root.traverse((o) => {
+      if (!o.isMesh || o.name !== 'merged_by_material') return;
+      const m0 = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!m0?.map) return;
+      const src = m0.map.image;
+      let tex = cache.get(src);
+      if (!tex) { tex = recolour(m0.map); if (tex) cache.set(src, tex); }
+      if (!tex) return;
+      const m = m0.clone(); m.map = tex; m.color.setHex(0xffffff); m.needsUpdate = true;
+      o.material = m;
+    });
+  } catch (_) { /* optional */ }
+}
+
 function apply(R) {
   const root = R.player;
   if (!root || R.__kanoYellowKeke) return;
