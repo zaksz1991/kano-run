@@ -1,16 +1,21 @@
 /**
  * Kano CNG economy.
- * Many Kano keke napep run on CNG (cheap) and keep a petrol tank as backup. CNG is sold at only ~6 stations,
+ * Many Kano keke napep run on CNG (cheap) and keep a petrol tank as backup. CNG is sold at only four stations (Jaen Sharada, Kwandila on Maiduguri Road, Hotoro, Gwarzo Gadon Kaya),
  * and when demand is high they hoard, so the price jumps. A petrol-only keke pays about ₦5,000 for a full tank;
  * a CNG keke that has to buy petrol pays about ₦10,000 (dual-fuel markup); a full CNG tank is about ₦3,500.
  * The game's own fuel gauge (s.fuel) always mirrors the tank you are currently running on.
  */
+import { save, persist } from './storage.js';
+
 const CNG_FULL = 3500;
+const ELECTRIC_KIT_PRICE = 1000000; // engine replacement by the manufacturer, paid from the banked wallet
+const BATTERY_RENT_DAILY = 3000;    // fully charged battery rented per day
+const ELECTRIC_KEY = 'kano-electric-converted';
 const PETROL_PLAIN_FULL = 5000;
 const PETROL_DUAL_FULL = 10000;
 const KIT_PRICE = 30000;
 const KEY = 'kano-cng-converted';
-const STATIONS = ['Jaen CNG', 'Hotoro CNG', 'Ring Road CNG', 'Zaria Road CNG', 'Gadon Kaya CNG', 'Dawanau CNG'];
+const STATIONS = ['Jaen Sharada CNG', 'Kwandila Maiduguri Road CNG', 'Hotoro CNG', 'Gwarzo Gadon Kaya CNG'];
 // Jaen is open the most and has a long queue every day.
 const JAEN = 0;
 const naira = (n) => `₦${Math.round(n).toLocaleString('en-NG')}`;
@@ -29,6 +34,16 @@ export function cngDemand(day, stationIndex, minuteOfDay, seasonBoost = 0) {
   const base = 1 + 0.95 * Math.abs(Math.sin(day * 3.7 + stationIndex * 1.9));
   const rush = (minuteOfDay >= 360 && minuteOfDay <= 600) || (minuteOfDay >= 990 && minuteOfDay <= 1140) ? 0.25 : 0;
   return base + rush + seasonBoost + (stationIndex === JAEN ? 0.2 : 0);
+}
+
+/** Electric motor: uses about 30% less energy than a petrol/CNG engine per km and runs far cooler. */
+function electricTick(g, dt) {
+  const s = g.s;
+  if (!s?.electric) return;
+  if (Number.isFinite(s.prevFuelE) && s.fuel < s.prevFuelE) s.fuel = s.prevFuelE - (s.prevFuelE - s.fuel) * 0.7;
+  s.prevFuelE = s.fuel;
+  s.petrol = s.fuel;
+  if (Number.isFinite(s.engineTemp)) s.engineTemp += (58 - s.engineTemp) * Math.min(1, dt * 0.35);
 }
 
 function mirror(g) {
@@ -58,6 +73,62 @@ function ensureCss() {
   st.id = 'kano-cng-css';
   st.textContent = 'body.kano-has-cng #kano-fuel-budget-chip{display:none!important}';
   document.head.append(st);
+}
+
+const electricStore = {
+  get() { try { return localStorage.getItem(ELECTRIC_KEY) === '1'; } catch (_) { return false; } },
+  set() { try { localStorage.setItem(ELECTRIC_KEY, '1'); } catch (_) { /* optional */ } },
+};
+
+function renderElectricPanel(g, el, name, closePanel, btn, naira) {
+  const s = g.s;
+  const day = g.dayCycle?.state?.day || 1;
+  el.replaceChildren();
+  el.style.display = 'block';
+  const head = document.createElement('div');
+  head.style.cssText = 'font-size:11px;color:#4cc9f0';
+  head.textContent = `⚡ ${name.replace(' CNG', '').toUpperCase()} · BATTERY SWAP · cash ${naira(s.score)} · battery ${Math.round(s.fuel)}%`;
+  const note = document.createElement('div');
+  note.style.cssText = 'margin-top:6px;font-weight:600;font-size:12px;color:#d7e9f2';
+  const rented = s.batteryRentDay === day;
+  note.textContent = rented
+    ? 'Your battery rental for today is already paid. Swap for a fully charged battery at no extra charge.'
+    : `Rent a fully charged battery for ${naira(BATTERY_RENT_DAILY)} a day. Hand over the flat one, drive off on 100%.`;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px';
+  const swap = () => {
+    if (s.fuel >= 90) { g.ui?.toast?.('Battery is still nearly full'); return; }
+    if (!rented) {
+      if (s.score < BATTERY_RENT_DAILY) { g.ui?.toast?.(`Battery rental is ${naira(BATTERY_RENT_DAILY)} a day · earn more fares first`); return; }
+      s.score -= BATTERY_RENT_DAILY; s.batteryRentDay = day;
+    }
+    s.fuel = 100; s.petrol = 100;
+    s.refills = (s.refills || 0) + 1;
+    g.dailyAdd?.('refills', 1); g.missionAdd?.('refills', 1); g.audio?.pickup?.();
+    g.ui?.toast?.(`⚡ Fully charged battery fitted${rented ? '' : ' · ' + naira(BATTERY_RENT_DAILY) + ' daily rental paid'}`);
+    s.refillCooldown = 3;
+    closePanel();
+  };
+  row.append(btn(rented ? 'SWAP BATTERY · FREE TODAY' : `SWAP BATTERY · ${naira(BATTERY_RENT_DAILY)}`, swap, true, s.fuel >= 90), btn('LEAVE', closePanel));
+  el.append(head, note, row);
+}
+
+function tryElectricConversion(g, naira) {
+  const s = g.s;
+  if (electricStore.get() || s.electric) { g.ui?.toast?.('Your keke is already electric'); return false; }
+  if ((save.money || 0) < ELECTRIC_KIT_PRICE) {
+    g.ui?.toast?.(`Electric engine replacement costs ${naira(ELECTRIC_KIT_PRICE)} from your banked wallet (you have ${naira(save.money || 0)})`);
+    return false;
+  }
+  save.money -= ELECTRIC_KIT_PRICE;
+  try { persist(); } catch (_) { /* optional */ }
+  electricStore.set();
+  s.electric = true; s.hasCng = false; s.activeTank = 'petrol';
+  s.fuel = 100; s.petrol = 100; s.cng = 0;
+  document.body.classList.remove('kano-has-cng');
+  document.body.classList.add('kano-electric');
+  g.ui?.toast?.('⚡ Electric engine fitted · rent charged batteries at any filling station');
+  return true;
 }
 
 let panel = null;
@@ -96,6 +167,7 @@ function openStation(g) {
 
   const render = () => {
     if (!alive()) { closePanel(); return; }
+    if (s.electric) { renderElectricPanel(g, el, name, closePanel, btn, naira); return; }
     el.replaceChildren();
     el.style.display = 'block';
     const head = document.createElement('div');
@@ -152,11 +224,12 @@ function openStation(g) {
       g.ui?.toast?.('CNG tank fitted · you keep the petrol tank as backup');
       render();
     }, false, false));
+    foot.append(btn(`GO ELECTRIC ${naira(ELECTRIC_KIT_PRICE)}`, () => { if (tryElectricConversion(g, naira)) render(); }, false, false));
     foot.append(btn('LEAVE', closePanel));
     el.append(foot);
   };
 
-  const cars = Math.min(6, Math.floor(demand * 1.6) + (idx === JAEN ? 2 : 0));
+  const cars = s.electric ? 0 : Math.min(6, Math.floor(demand * 1.6) + (idx === JAEN ? 2 : 0));
   if (!cars) { render(); return; }
   let remaining = Math.min(20, cars * 4);
   const wait = () => {
@@ -199,18 +272,21 @@ function patch(g) {
     const r = origStart(...a);
     const s = this.s;
     if (s) {
-      s.hasCng = hasCngFlag();
+      s.electric = electricStore.get();
+      s.hasCng = s.electric ? false : hasCngFlag();
       s.petrol = s.fuel;
       s.cng = s.hasCng ? 75 : 0;
       s.activeTank = s.hasCng ? 'cng' : 'petrol';
       if (s.hasCng) { s.petrol = Math.min(s.petrol, 45); s.fuel = s.cng; }
       document.body.classList.toggle('kano-has-cng', !!s.hasCng);
+      document.body.classList.toggle('kano-electric', !!s.electric);
+      s.prevFuelE = s.fuel;
     }
     return r;
   };
   g.tick = function (dt) {
     const r = origTick(dt);
-    try { mirror(this); } catch (_) { /* optional */ }
+    try { mirror(this); electricTick(this, dt); } catch (_) { /* optional */ }
     return r;
   };
   g.refuel = function (...a) {
@@ -225,7 +301,7 @@ function patch(g) {
       if (!g.s) return;
       updateChip(g);
       const label = document.querySelector('#fuel')?.closest('.stat')?.querySelector('small');
-      if (label) label.textContent = g.s.hasCng ? (g.s.activeTank === 'cng' ? 'CNG' : 'PETROL') : 'FUEL';
+      if (label) label.textContent = g.s.electric ? 'BATTERY' : g.s.hasCng ? (g.s.activeTank === 'cng' ? 'CNG' : 'PETROL') : 'FUEL';
     } catch (_) { /* display only */ }
   }, 500);
 }

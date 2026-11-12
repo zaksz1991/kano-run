@@ -131,16 +131,48 @@ function frame() {
         if (staged.group) {
           staged.group.position.z = z;
           const t = performance.now() / 1000;
+          const R = window.kanoRenderer;
+          const px = R?.player?.position?.x || 0;
+          const facing = (h) => {
+            // yaw that turns the officer's front toward the keke
+            const dx = px - h.position.x;
+            const dz = 2 - (staged.group.position.z + h.position.z);
+            return Math.atan2(-dx, -dz);
+          };
           (staged.group.userData.officers || []).forEach((h, i) => {
             const u = h.userData;
-            h.rotation.y = u.baseY + Math.sin(t * 0.7 + i * 1.7) * 0.28;   // looks around
-            h.rotation.z = Math.sin(t * 1.9 + i) * 0.035;                  // shifts weight
-            h.position.y = Math.abs(Math.sin(t * 2.2 + i * 2)) * 0.03;
-            if (i === 1) {                                                // pacing along the cones
-              h.position.x = u.baseX + Math.sin(t * 0.5) * 1.1;
-              h.position.z = u.baseZ - 1.4 + Math.sin(t * 0.5 + 1.2) * 2.2;
+            const stepBob = (speed, amp) => Math.abs(Math.sin(t * speed + i)) * amp;
+            let moving = 0;
+            if (i === 0) {            // waves traffic in: whole-body wave, swaying side to side
+              h.position.x = u.baseX + Math.sin(t * 1.4) * 0.45;
+              h.rotation.z = Math.sin(t * 5.5) * 0.14;
+              moving = 0.5;
+            } else if (i === 1) {     // walks the cone line checking vehicles
+              h.position.x = u.baseX + Math.sin(t * 0.45) * 1.5;
+              h.position.z = u.baseZ - 1.4 + Math.sin(t * 0.45 + 1.2) * 3.0;
+              h.rotation.z = Math.sin(t * 4.2) * 0.05;
+              moving = 1;
+            } else if (i === 2) {     // strolls between the KAROTA vehicle and the lane
+              h.position.x = u.baseX - 0.5 - (Math.sin(t * 0.33 + 2) * 0.5 + 0.5) * 2.2;
+              h.position.z = u.baseZ + Math.sin(t * 0.5 + 3) * 1.4;
+              h.rotation.z = Math.sin(t * 3.8) * 0.05;
+              moving = 1;
+            } else if (i === 3) {     // in the lane, hand up: steps toward the driver then back
+              const pulse = Math.sin(t * 0.6) * 0.5 + 0.5;
+              h.position.x = u.baseX + Math.sin(t * 1.1) * 0.5;
+              h.position.z = u.baseZ + pulse * 2.2;
+              h.rotation.z = Math.sin(t * 2.4) * 0.07;
+              moving = 0.7;
+            } else {                  // checks papers at the rear, pacing along the vehicle
+              h.position.z = u.baseZ + Math.sin(t * 0.4 + 5) * 1.8;
+              h.position.x = u.baseX + Math.sin(t * 0.9) * 0.25;
+              h.rotation.z = Math.sin(t * 3.4) * 0.04;
+              moving = 0.8;
             }
-            if (i === 0) h.position.x = u.baseX + Math.sin(t * 1.6) * 0.18;  // waving motion
+            // look at the driver, with a little glance around
+            const want = facing(h) + Math.sin(t * 0.7 + i * 1.7) * 0.12;
+            h.rotation.y += (want - h.rotation.y) * 0.12;
+            h.position.y = moving ? stepBob(6.2, 0.06 * moving) : Math.abs(Math.sin(t * 2 + i)) * 0.02;
           });
         }
         const el = ensureChip();

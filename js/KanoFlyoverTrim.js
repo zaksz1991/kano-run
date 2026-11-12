@@ -35,7 +35,7 @@ function addTrim(renderer, record) {
   const count = Math.floor((HALF * 2) / STEP) * 2;
   const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
   material.userData = { kanoNoShift: true };
-  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.45, 0.9, STEP - 0.12), material, count);
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.62, STEP), material, count);
   mesh.name = 'KANO_INSTANCED_FLYOVER_PARAPET_TRIM';
   mesh.frustumCulled = false;
   const colours = paletteFor(renderer, record).map((c) => new THREE.Color(c));
@@ -47,7 +47,7 @@ function addTrim(renderer, record) {
     const y = (y0 + y1) / 2;
     const pitch = Math.atan2(y1 - y0, STEP);   // z grows toward the camera, so a rising road slopes toward -z
     for (const side of [-1, 1]) {
-      dummy.position.set(DECK_CENTER_X + side * EDGE_X, y + 0.42, z);
+      dummy.position.set(DECK_CENTER_X + side * EDGE_X, y + 0.3, z);
       dummy.rotation.set(-pitch, 0, 0);
       dummy.updateMatrix();
       mesh.setMatrixAt(n, dummy.matrix);
@@ -59,6 +59,29 @@ function addTrim(renderer, record) {
   mesh.instanceMatrix.needsUpdate = true;
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   record.group.add(mesh);
+  // Continuous concrete cap on top of the painted wall, and hide the older duplicate block rail on the same edge.
+  const capMat = new THREE.MeshLambertMaterial({ color: 0xb9bdc0 });
+  capMat.userData = { kanoNoShift: true };
+  const cap = new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.08, STEP), capMat, count);
+  cap.name = 'KANO_FLYOVER_PARAPET_CAP';
+  cap.frustumCulled = false;
+  let m = 0;
+  for (let z = -HALF + STEP / 2; z < HALF - STEP / 2 && m < count; z += STEP) {
+    const y0 = heightAt(profile, z - STEP / 2);
+    const y1 = heightAt(profile, z + STEP / 2);
+    const pitch = Math.atan2(y1 - y0, STEP);
+    for (const side of [-1, 1]) {
+      dummy.position.set(DECK_CENTER_X + side * EDGE_X, (y0 + y1) / 2 + 0.64, z);
+      dummy.rotation.set(-pitch, 0, 0);
+      dummy.updateMatrix();
+      cap.setMatrixAt(m, dummy.matrix);
+      m += 1;
+    }
+  }
+  cap.count = m;
+  cap.instanceMatrix.needsUpdate = true;
+  record.group.add(cap);
+  record.group.traverse((o) => { if (o.userData?.kanoFlyoverSideParapets) o.visible = false; });
   record.trimmed = true;
 }
 

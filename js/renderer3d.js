@@ -3596,7 +3596,12 @@ export class Renderer3D {
     const width = Math.max(1, Math.round(rect.width));
     const height = Math.max(1, Math.round(rect.height));
 
-    this.renderer.setSize(width, height, false);
+    const ratioNow = this.renderer.getPixelRatio?.() || 1;
+    const sizeKey = `${width}x${height}@${ratioNow}`;
+    if (this._kanoLastSizeKey !== sizeKey) {
+      this._kanoLastSizeKey = sizeKey;
+      this.renderer.setSize(width, height, false);
+    }
 
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -5610,13 +5615,11 @@ export class Renderer3D {
       Math.sin((state.time || 0) * 41) * shake * 0.12;
 
     // When reversing, show the road behind the keke.
-    const cameraTargetZ = reversing
-      ? driverView
-        ? 10.5
-        : 4.8
-      : driverView
-        ? -12
-        : -1.8;
+    // (The old look-back camera pitched down at the keke and hid the road; keep the normal chase view so the
+    // road is visible while backing up.)
+    const cameraTargetZ = driverView
+      ? -12
+      : -1.8;
 
     this.camera.lookAt(
       targetX,

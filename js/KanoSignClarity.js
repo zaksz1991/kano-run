@@ -54,7 +54,7 @@ function ensureReader() {
   if (reader && reader.isConnected) return reader;
   reader = document.createElement('div');
   reader.id = 'kano-sign-reader';
-  reader.style.cssText = 'position:fixed;left:8px;top:246px;max-width:52vw;z-index:44;padding:8px 12px;border-radius:12px;'
+  reader.style.cssText = 'position:fixed;left:8px;top:246px;max-width:48vw;z-index:44;padding:8px 12px;border-radius:12px;'
     + 'background:rgba(20,40,30,.93);border:2px solid #f6d45d;color:#fff;font:800 15px/1.25 system-ui,sans-serif;'
     + 'pointer-events:none;display:none;box-shadow:0 2px 8px rgba(0,0,0,.4)';
   document.body.appendChild(reader);

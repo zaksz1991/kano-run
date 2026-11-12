@@ -407,6 +407,8 @@ export class KanoAdaptiveQuality {
   applyRatio(ratio) {
     if (this.disposed || !this.webgl) return false;
     const next = clamp(Number(ratio) || 1, this.minRatio, this.baseRatio);
+    // Re-applying the SAME ratio rewrote canvas.width/height every ~1.2 s, which clears the canvas: the 'blinking while driving'.
+    if (this.currentRatio && Math.abs(next - this.currentRatio) < 0.005) return true;
     try {
       this.webgl.setPixelRatio(next);
       this.renderer3d?.resize?.();

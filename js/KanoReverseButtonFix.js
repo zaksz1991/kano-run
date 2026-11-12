@@ -38,5 +38,14 @@ if (typeof document !== 'undefined' && !window.__kanoReverseFix) {
       g.setReverse(true);
     }
     if (g?.s?.reverseWhenStopped && g.state !== 'PLAY') g.s.reverseWhenStopped = false;
+    // Make the pedal obvious: in reverse gear GAS (or BRAKE) backs the keke up.
+    const gasBtn = document.querySelector('#drive-controls [data-action="gas"]');
+    if (gasBtn) {
+      const rev = Boolean(g?.s?.reverse);
+      const want = rev ? 'BACK UP' : 'GAS';
+      if (gasBtn.textContent !== want) gasBtn.textContent = want;
+      gasBtn.style.background = rev ? '#f5c542' : '';
+      gasBtn.style.color = rev ? '#172333' : '';
+    }
   }, 200);
 }
