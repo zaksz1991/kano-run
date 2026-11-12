@@ -131,6 +131,14 @@ function tryElectricConversion(g, naira) {
   return true;
 }
 
+if (typeof window !== 'undefined') {
+  window.kanoElectric = {
+    price: ELECTRIC_KIT_PRICE, rent: BATTERY_RENT_DAILY, stations: STATIONS,
+    owned: () => !!(electricStore.get() || window.kanoGame?.s?.electric),
+    convert: () => { const g = window.kanoGame; return g?.s ? tryElectricConversion(g, naira) : false; },
+  };
+}
+
 let panel = null;
 function host() {
   if (panel && panel.isConnected) return panel;

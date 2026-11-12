@@ -22,6 +22,7 @@ function css() {
 #kano-hud-stack>#kano-cooling-card button{pointer-events:auto}
 #kano-hud-stack>#kano-sign-reader{font-size:14px!important}
 #kano-hud-stack>[data-stack-hidden="1"]{display:none!important}
+body:has(.screen:not(.hidden)) #kano-hud-stack{display:none!important}
 #kano-total-players-chip{bottom:max(64px,calc(env(safe-area-inset-bottom) + 60px))!important}
 #game-container .kano-interaction-hint{bottom:calc(122px + env(safe-area-inset-bottom,0px))!important}
 `;
