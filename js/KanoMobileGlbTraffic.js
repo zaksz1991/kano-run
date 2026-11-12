@@ -4,6 +4,7 @@
  * truck, bus, motorcycle, police, ambulance, KAROTA) is baked ONCE into a single vertex-coloured geometry and the
  * existing one-draw-call-per-type InstancedMesh batches render that instead. Same draw count as before, real shapes.
  */
+import { yellowize } from './KanoYellowKeke.js';
 import * as THREE from 'three';
 
 const TYPES = ['keke', 'car', 'taxi', 'suv', 'truck', 'bus', 'motorcycle', 'police', 'ambulance', 'karota'];
@@ -28,7 +29,27 @@ function averageMapColor(map) {
   } catch (_) { return null; }
 }
 
-function bake(model) {
+function mapSampler(map) {
+  try {
+    const img = map?.image;
+    if (!img || !(img.width > 0)) return null;
+    const S = 256;
+    const c = document.createElement('canvas'); c.width = S; c.height = S;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, S, S);
+    const d = ctx.getImageData(0, 0, S, S).data;
+    const flip = map.flipY !== false;
+    return (u, v) => {
+      const x = Math.min(S - 1, Math.max(0, Math.floor((u - Math.floor(u)) * S)));
+      const y = Math.min(S - 1, Math.max(0, Math.floor((flip ? 1 - (v - Math.floor(v)) : v - Math.floor(v)) * S)));
+      const k = (y * S + x) * 4;
+      return tmp.setRGB(d[k] / 255, d[k + 1] / 255, d[k + 2] / 255, THREE.SRGBColorSpace);
+    };
+  } catch (_) { return null; }
+}
+
+function bake(model, perVertex) {
+  model.updateMatrixWorld(true);
   model.updateMatrixWorld(true);
   const positions = []; const normals = []; const colors = [];
   let tris = 0;
@@ -43,10 +64,12 @@ function bake(model) {
     const avg = mat?.map ? averageMapColor(mat.map) : null;
     if (avg) base.multiply(avg);
     const p = geo.getAttribute('position'); const n = geo.getAttribute('normal');
+    const uv = geo.getAttribute('uv');
+    const sample = perVertex && uv && mat?.map ? mapSampler(mat.map) : null;
     for (let i = 0; i < p.count; i += 1) {
       positions.push(p.getX(i), p.getY(i), p.getZ(i));
       normals.push(n.getX(i), n.getY(i), n.getZ(i));
-      colors.push(base.r, base.g, base.b);
+      if (sample) { const c = sample(uv.getX(i), uv.getY(i)); colors.push(c.r, c.g, c.b); } else colors.push(base.r, base.g, base.b);
     }
     tris += p.count / 3;
     geo.dispose();
@@ -68,7 +91,8 @@ function ensure(R) {
     R.models.load(key).then(() => {
       const m = R.models.getInstance(key);
       if (!m) return;
-      const g = bake(m);
+      if (type === 'keke') yellowize(m);
+      const g = bake(m, type === 'keke');
       if (g) baked.set(type, g);
     }).catch(() => { requested.delete(type); });
   }
