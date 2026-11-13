@@ -146,8 +146,8 @@ function addSideBarriers(renderer, parent, deckHeight) {
 
 function addRampMesh(renderer, parent, deckHeight, direction) {
   const roadMaterial = renderer.material
-    ? renderer.material(0x1c2024, 0.94)
-    : new THREE.MeshStandardMaterial({ color: 0x1c2024, roughness: 0.94 });
+    ? renderer.material(0x131416, 0.94)
+    : new THREE.MeshStandardMaterial({ color: 0x131416, roughness: 0.94 });
   const ramp = new THREE.Mesh(
     new THREE.BoxGeometry(9.0, 0.14, RAMP_LENGTH),
     roadMaterial,

@@ -159,7 +159,7 @@ function ensureFlyoverSignage(renderer) {
 
 function addRoadSurface(parent, length, width, position, alongX = true, name = 'roundabout_approach_road') {
   const size = alongX ? [length, 0.055, width] : [width, 0.055, length];
-  return addBox(parent, size, 0x343c43, position, { name, roughness: 0.98 });
+  return addBox(parent, size, 0x24282b, position, { name, roughness: 0.98 });
 }
 
 function createRoundabout(renderer, side, z, index) {
@@ -179,7 +179,7 @@ function createRoundabout(renderer, side, z, index) {
   // Roundabout ring and lane surface.
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(1.62, 3.42, 48),
-    mat(0x3a4248, 0.97),
+    mat(0x2a2e32, 0.97),
   );
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.054;
