@@ -25,12 +25,12 @@ if (typeof window !== 'undefined' && !window.__kanoKekeStatusChip) {
       const lines = [];
       let bad = false;
       const temp = Number(s.engineTemp) || 0;
-      if (temp >= 85) {
+      if (temp >= 98) {
         lines.push(`🌡 Engine ${Math.round(temp)}°${temp >= 105 ? ' overheating' : ' hot'}`);
         if (temp >= 105) bad = true;
       }
       if (s.flatTyre) { lines.push('🛞 FLAT TYRE: find a vulcanizer'); bad = true; }
-      else if ((s.tyres ?? 100) < 50) lines.push(`🛞 Tyres ${Math.round(s.tyres)}%: puncture risk`);
+      else if ((s.tyres ?? 100) < 30) lines.push(`🛞 Tyres ${Math.round(s.tyres)}%: puncture risk`);
       const why = Array.isArray(s.slowReasons) ? s.slowReasons : [];
       if (s.gas && why.length && s.speed > 1) { lines.push(`⚠ Slowed by: ${why.join(', ')}`); }
       if (!lines.length) { el.style.display = 'none'; return; }

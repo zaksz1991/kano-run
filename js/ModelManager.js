@@ -62,8 +62,6 @@ const CATALOG = {
   motorcycle: [
     'vehicles/special/okada.glb',
     'vehicles/cars/motorcycle.glb',
-    'vehicles/cars/asphalt_6_ktm_rc8.glb',
-    'vehicles/cars/asphalt_6_can-am_spyder.glb',
   ],
 
   police: [

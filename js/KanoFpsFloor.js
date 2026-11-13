@@ -58,7 +58,7 @@ if (coarse && !THREE.WebGLRenderer.prototype[PATCH]) {
         const full = state.samples.length === 6;
         const avg = state.samples.reduce((a, b) => a + b, 0) / state.samples.length;
         const idx = STAGES.indexOf(state.cap);
-        if (state.mode === 'auto' && full && now - state.lastStep > 10000) {
+        if (state.mode === 'auto' && full && now - state.lastStep > 40000 && Number(game?.s?.distance || 0) >= 0.4) { // never mid-start: a resolution change clears the canvas
           if (avg < 20 && idx < STAGES.length - 1) {
             state.cap = STAGES[idx + 1]; state.steppedDown = true; state.lastStep = now; state.samples = []; save(state.cap); apply();
           } else if (avg > 45 && idx > 0) {

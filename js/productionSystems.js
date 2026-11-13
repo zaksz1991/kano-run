@@ -479,8 +479,8 @@ export class TrafficAIPool {
 
     const archetypes = [
       { type: 'motorcycle', label: 'OKADA', speed: 37, lane: 0, width: 0.65, length: 1.3 },
-      { type: 'bicycle', label: 'BICYCLE', speed: 11, lane: -1, width: 0.48, length: 1.45 },
-      { type: 'danfo', label: 'DANFO', speed: 22, lane: 1, width: 2.25, length: 5.2 },
+      { type: 'keke', label: 'KEKE', speed: 19, lane: -1, width: 1.25, length: 2.1 }, // no bicycle / danfo models supplied: only your own GLBs
+      { type: 'keke', label: 'KEKE', speed: 22, lane: 1, width: 1.25, length: 2.1 },
       { type: 'keke', label: 'KEKE', speed: 25, lane: 0, width: 1.25, length: 2.1 },
       { type: 'motorcycle', label: 'OKADA', speed: 43, lane: 1, width: 0.65, length: 1.3 },
     ].slice(0, Math.max(3, Math.min(5, count)));

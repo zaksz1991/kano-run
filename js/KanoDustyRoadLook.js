@@ -31,38 +31,7 @@ function dustyAsphalt() {
     ctx.fillStyle = `rgba(150,148,140,${0.06 + rand() * 0.1})`;
     ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 1, 1);
   }
-  // darker bitumen smears
-  for (let i = 0; i < 18; i += 1) {
-    ctx.fillStyle = 'rgba(18,20,23,0.07)';
-    ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 8 + Math.floor(rand() * 34), 2 + Math.floor(rand() * 6));
-  }
-  // oil / diesel drip stains
-  for (let i = 0; i < 4; i += 1) {
-    const x = rand() * size, y = rand() * size, r = 5 + rand() * 9;
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, 'rgba(10,11,13,0.38)'); g.addColorStop(1, 'rgba(10,11,13,0)');
-    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-  // patched repairs: slightly different tar with a hard edge
-  for (let i = 0; i < 2; i += 1) {
-    const w = 30 + rand() * 40, h = 14 + rand() * 24, x = rand() * (size - w), y = rand() * (size - h);
-    ctx.fillStyle = 'rgba(26,28,31,0.34)'; ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(86,88,92,0.35)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  }
-  // hairline cracks
-  ctx.strokeStyle = 'rgba(14,15,17,0.5)'; ctx.lineWidth = 1;
-  for (let i = 0; i < 5; i += 1) {
-    let x = rand() * size, y = rand() * size;
-    ctx.beginPath(); ctx.moveTo(x, y);
-    for (let k = 0; k < 6; k += 1) { x += (rand() - 0.5) * 22; y += (rand() - 0.5) * 22; ctx.lineTo(x, y); }
-    ctx.stroke();
-  }
-  // small pot-hole shadows
-  for (let i = 0; i < 1; i += 1) {
-    const x = rand() * size, y = rand() * size, rx = 4 + rand() * 4, ry = 3 + rand() * 3;
-    ctx.fillStyle = 'rgba(8,9,10,0.4)'; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(110,108,102,0.35)'; ctx.beginPath(); ctx.ellipse(x, y - 0.8, rx + 0.6, ry + 0.6, 0, Math.PI, Math.PI * 2); ctx.stroke();
-  }
+  // (clean tar: no cracks, patches, stains or potholes: the new Kano roads are smooth dark asphalt)
   asphaltTexture = new THREE.CanvasTexture(canvas);
   asphaltTexture.wrapS = THREE.RepeatWrapping;
   asphaltTexture.wrapT = THREE.RepeatWrapping;

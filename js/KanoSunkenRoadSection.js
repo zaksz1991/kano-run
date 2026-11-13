@@ -18,13 +18,10 @@ function wallTexture() {
   const g = c.getContext('2d');
   g.fillStyle = '#7f858c'; g.fillRect(0, 0, 512, 256);
   for (let i = 0; i < 60; i += 1) { g.fillStyle = `rgba(${90 + (i * 7) % 30},${95 + (i * 11) % 25},${100 + (i * 5) % 25},.25)`; g.fillRect((i * 83) % 512, (i * 37) % 256, 40 + (i % 5) * 20, 3); }
-  // heartbeat line
-  g.strokeStyle = '#e9eef0'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
-  g.moveTo(0, 170); g.lineTo(150, 170); g.lineTo(175, 120); g.lineTo(205, 215); g.lineTo(230, 85); g.lineTo(255, 170); g.lineTo(512, 170); g.stroke();
-  // green and white zigzag band along the top
-  g.fillStyle = '#f2f4ee'; g.fillRect(0, 0, 512, 46);
-  g.fillStyle = '#2f8f4e';
-  for (let x = 0; x < 512; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 64, 0); g.lineTo(x + 32, 46); g.closePath(); g.fill(); }
+  // plain concrete retaining wall with panel joints (no decoration)
+  g.strokeStyle = 'rgba(60,64,70,.35)'; g.lineWidth = 2;
+  for (let x = 0; x <= 512; x += 128) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); }
+  g.fillStyle = 'rgba(0,0,0,.08)'; g.fillRect(0, 232, 512, 24);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping;

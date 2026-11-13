@@ -136,7 +136,9 @@ function updateVehicleTurn(game, vehicle, depthAtJunction, dt) {
   if (!vehicle.kanoTurn && vehicle.kanoTurnCompletedKey !== junctionKey
       && ((relativeDepth <= TURN_APPROACH_DEPTH && relativeDepth >= TURN_EXIT_DEPTH) || crossedTurnWindow)) {
     const baseLane = clamp(Math.round(Number(vehicle.lane) || 0), 0, 2);
-    const side = chooseKanoTrafficTurnSide(vehicle.id ?? vehicle.type ?? 'traffic', junctionKey, baseLane);
+    // Side-road turns are disabled: vehicles turned sideways where no side road exists.
+    const side = globalThis.__KANO_ALLOW_TRAFFIC_TURNS__
+      ? chooseKanoTrafficTurnSide(vehicle.id ?? vehicle.type ?? 'traffic', junctionKey, baseLane) : 0;
     const targetLane = clamp(baseLane + side, 0, 2);
     if (side && targetLane !== baseLane) {
       vehicle.kanoTurn = {

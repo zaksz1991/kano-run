@@ -1,3 +1,4 @@
+globalThis.__KANO_ALLOW_TRAFFIC_TURNS__ = true;
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, copyFile, writeFile, rm } from 'node:fs/promises';

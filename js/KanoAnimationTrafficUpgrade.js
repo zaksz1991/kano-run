@@ -206,16 +206,14 @@ export class KanoTrafficDirector {
     let type;
     let archetype;
 
-    // Kano street traffic: 40% keke, 30% motorcycles, 30% other vehicles.
-    if (roll < 0.40) {
+    // Kano street traffic: mostly kekes and cars. The only two-wheeler model supplied (okada.glb / motorcycle.glb)
+    // is a BICYCLE, so those are occasional slow cyclists. No bus model has been supplied, so no buses.
+    if (roll < 0.46) {
       type = 'keke';
       archetype = 'keke';
-    } else if (roll < 0.70) {
+    } else if (roll < 0.56) {
       type = 'motorcycle';
       archetype = 'okada';
-    } else if (roll < 0.78) {
-      type = 'bus';
-      archetype = 'danfo';
     } else {
       type = choose(['car', 'taxi', 'suv']);
       archetype = 'car';
@@ -254,7 +252,7 @@ export class KanoTrafficDirector {
   }
 
   baseSpeedFor(archetype, direction = 1) {
-    if (archetype === 'okada') return rand(34, 50);
+    if (archetype === 'okada') return rand(9, 15); // a bicycle: walking-pace to slow cycling
     if (archetype === 'danfo') return rand(15, 24);
     if (archetype === 'keke') return rand(17, 30);
     return rand(22, 39);

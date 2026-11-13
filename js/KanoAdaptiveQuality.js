@@ -409,7 +409,16 @@ export class KanoAdaptiveQuality {
     const next = clamp(Number(ratio) || 1, this.minRatio, this.baseRatio);
     // Re-applying the SAME ratio rewrote canvas.width/height every ~1.2 s, which clears the canvas: the 'blinking while driving'.
     if (this.currentRatio && Math.abs(next - this.currentRatio) < 0.005) return true;
+    // Every resolution change clears the canvas (the screen flashes the sky colour). Never do it while a run is
+    // starting (models still loading make the first seconds slow) and not more than once every 40 s afterwards.
+    if (this.currentRatio && typeof window !== 'undefined') {
+      const game = window.kanoGame;
+      const starting = game?.state === 'PLAY' && Number(game.s?.distance || 0) < 0.4;
+      const recent = (typeof performance !== 'undefined' ? performance.now() : 0) - (this.lastRatioChangeAt || 0) < 40000;
+      if (starting || (recent && this.lastRatioChangeAt)) return true;
+    }
     try {
+      this.lastRatioChangeAt = typeof performance !== 'undefined' ? performance.now() : 0;
       this.webgl.setPixelRatio(next);
       this.renderer3d?.resize?.();
       this.currentRatio = next;
