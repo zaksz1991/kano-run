@@ -98,7 +98,7 @@ function showBootAlert(error) {
     alert.id = 'kano-launch-recovery-alert';
     alert.className = 'kano-launch-recovery-alert';
     alert.setAttribute('role', 'alert');
-    alert.innerHTML = '<strong>Game startup needs attention.</strong><p id="kano-launch-recovery-message"></p><div class="kano-launch-recovery-actions"><button type="button" id="kano-launch-retry">RETRY STARTUP</button></div>';
+    alert.innerHTML = '<strong>Still loading Kano Life…</strong><p id="kano-launch-recovery-message"></p><div class="kano-launch-recovery-actions"><button type="button" id="kano-launch-retry">RETRY STARTUP</button></div>';
     const target = document.querySelector('.start-actions', startCard) || startCard;
     target.insertAdjacentElement('afterend', alert);
   }
@@ -106,7 +106,9 @@ function showBootAlert(error) {
   if (message) {
     const detail = String(error?.message || error || 'Unknown module-loading error')
       .replace(/[\u0000-\u001f]/g, ' ').slice(0, 240);
-    message.textContent = `The game engine did not finish initialising. ${detail}`;
+    message.textContent = /[?&]debug=1/.test(window.location?.search || '')
+      ? `The game engine did not finish initialising. ${detail}`
+      : 'The game is taking longer than usual to load. Please wait a moment, then tap RETRY.';
   }
   const retry = document.getElementById('kano-launch-retry');
   if (retry && !retryButtonBound) {
@@ -127,10 +129,28 @@ function showBootAlert(error) {
   if (alert) alert.hidden = false;
 }
 
+// If the bind hook missed its moment (slow or reordered loading), derive the flags from the live game.
+function syncBindFlags() {
+  const game = window.kanoGame;
+  const ui = game?.ui || window.__KANO_ACTIVE_UI__;
+  if (game && ui?.bound) {
+    setGlobal('__KANO_ACTIVE_GAME__', window.__KANO_ACTIVE_GAME__ || game);
+    setGlobal('__KANO_ACTIVE_UI__', window.__KANO_ACTIVE_UI__ || ui);
+    setGlobal('__KANO_UI_BOUND__', true);
+  }
+}
+
 async function loadMain() {
+  syncBindFlags();
   if (window.__KANO_UI_BOUND__ && window.__KANO_ACTIVE_GAME__) return true;
   if (!mainPromise) {
-    mainPromise = import('./main.js').then(() => {
+    mainPromise = import('./main.js').then(async () => {
+      // main.js finishes its set-up asynchronously (models, saves). On a slow phone connection that can take a
+      // while, so wait for it instead of showing a false "startup needs attention" card.
+      for (let i = 0; i < 160 && !(window.__KANO_UI_BOUND__ && window.__KANO_ACTIVE_GAME__); i += 1) {
+        syncBindFlags();
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
       if (window.__KANO_UI_BOUND__ && window.__KANO_ACTIVE_GAME__) {
         hideBootAlert();
         return true;
@@ -192,6 +212,7 @@ function bindStartRecovery() {
 
 function install() {
   patchUIReferences();
+  window.setInterval(syncBindFlags, 500);
   ensureSelectsHaveOptions();
   bindStartRecovery();
   // If an optional visual/bootstrap wrapper fails, load the canonical game entry directly.
