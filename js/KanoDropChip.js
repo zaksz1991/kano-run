@@ -14,7 +14,7 @@ function ensure() {
   if (chip || typeof document === 'undefined') return chip;
   chip = document.createElement('div');
   chip.id = 'kano-drop-chip';
-  chip.style.cssText = 'position:fixed;left:10px;top:188px;z-index:21;max-width:44vw;padding:6px 9px;border-radius:10px;background:rgba(10,24,36,.88);border:1px solid #f5c542;color:#fff;font:800 11px/1.3 system-ui,sans-serif;pointer-events:none;display:none';
+  chip.style.cssText = 'position:fixed;left:10px;top:188px;z-index:21;max-width:46vw;padding:6px 9px;border-radius:10px;background:rgba(10,24,36,.88);border:1px solid #f5c542;color:#fff;font:800 11px/1.3 system-ui,sans-serif;pointer-events:none;display:none';
   document.body.appendChild(chip);
   return chip;
 }
@@ -22,7 +22,9 @@ function ensure() {
 export function dropChipText(passengers, zones) {
   if (!passengers?.length) {
     const next = (zones || []).filter((z) => z.type === 'pickup').sort((a, b) => a.depth - b.depth)[0];
-    return next ? `Next pickup: ${next.stopName || 'roadside'} → ${next.dest}` : '';
+    if (!next) return '';
+    const m = Number.isFinite(next.depth) ? Math.max(0, Math.round(next.depth * 88)) : null;
+    return `PICK-UP · ${next.stopName || 'roadside'} → ${next.dest}${m !== null ? ` · ${m} m` : ''}`;
   }
   const first = passengers[0];
   const zone = (zones || []).filter((z) => z.type === 'drop' && z.dest === first.dest).sort((a, b) => a.depth - b.depth)[0];
@@ -45,6 +47,10 @@ if (!Game.prototype[PATCH]) {
           lastText = text;
           el.textContent = text;
           el.style.display = text ? 'block' : 'none';
+          const pickup = text.startsWith('PICK-UP');
+          el.style.background = pickup ? 'rgba(10,92,52,.95)' : 'rgba(10,24,36,.92)';
+          el.style.borderColor = pickup ? '#7dffb0' : '#f5c542';
+          el.style.borderWidth = '2px';
         }
       }
     }

@@ -60,13 +60,13 @@ function build(renderer) {
   group.add(asphalt);
 
   // --- median: raised planted bed
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 250), mat(0x4f7a34, 1));
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 250), mat(0x8e8b83, 1));
   bed.position.set(MEDIAN_X, 0.08, -92);
   group.add(bed);
   // sparse green tufts down the median
   const tuftPositions = [];
   for (let z = 10; z > -LOOP_FAR; z -= 3.1) tuftPositions.push([MEDIAN_X + ((z * 7.3) % 1.2) - 0.6, 0.2, z, 0, 0, 0, 1, 1, 1]);
-  roots.push(scrollingInstances(group, new THREE.ConeGeometry(0.22, 0.4, 5), mat(0x5d7d3a, 1), tuftPositions, 3.1));
+  // (grass tufts removed: no green on the road)
 
   // --- painted edges: yellow on both sides of the median, white on the far edge
   for (const [x, w, color] of [[-5.28, 0.12, 0xf2c200], [-7.5, 0.12, 0xf2c200], [ONCOMING_X1 + 0.15, 0.12, 0xf1efe6]]) {

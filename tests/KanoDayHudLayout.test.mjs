@@ -28,7 +28,7 @@ test('phone HUD hides the background Kano label and reduces secondary rows', () 
 });
 
 test('driver camera is raised and pulled back enough to clear the keke body', () => {
-  assert.match(renderer, /this\.camera\.position\.y = driverView \? 2\.9 : 3\.35/);
-  assert.match(renderer, /this\.camera\.position\.z = driverView \? 7\.2 : 8\.6/);
+  assert.match(renderer, /this\.camera\.position\.y = driverView \? 2\.9 : 3\.95/);
+  assert.match(renderer, /this\.camera\.position\.z = driverView \? 7\.2 : 10\.9/);
   assert.match(renderer, /this\.camera\.lookAt\([\s\S]*?driverView \? 1\.6 : 0\.72/);
 });

@@ -73,7 +73,7 @@ function buildFootpath(renderer, k) {
   const geometry = new THREE.BoxGeometry(0.26, 0.2, KERB_STEP - 0.06);
   const mesh = new THREE.InstancedMesh(geometry, mat(0xffffff, 0.95), positions.length);
   const dummy = new THREE.Object3D();
-  const navy = new THREE.Color(0x1d3557); const white = new THREE.Color(0xf1efe6);
+  const navy = new THREE.Color(0x202326); const white = new THREE.Color(0xf1efe6);
   positions.forEach((z, i) => {
     dummy.position.set(-15.35, 0.1, z); dummy.updateMatrix();
     mesh.setMatrixAt(i, dummy.matrix); mesh.setColorAt(i, i % 2 ? white : navy);

@@ -952,7 +952,7 @@ export class KanoSceneUpgrade {
       start,
       end,
       elapsed: 0,
-      duration: clamp(start.distanceTo(end) / 2.8, 1.6, 3.2), // brisk walk, not a sprint
+      duration: clamp(start.distanceTo(end) / 1.35, 3.8, 6.5), // calm walking pace, nobody is chasing them
       worldScroll: 0,
       initialScale: 1,
     });
@@ -972,9 +972,9 @@ export class KanoSceneUpgrade {
       const endZ = item.kind === 'board' ? item.end.z : item.end.z + item.worldScroll;
       const x = THREE.MathUtils.lerp(item.start.x, item.end.x, eased);
       const z = THREE.MathUtils.lerp(startZ, endZ, eased);
-      item.rig.root.position.set(x, Math.abs(Math.sin(item.elapsed * 8.5)) * 0.035 * (1 - t * 0.35), z);
+      item.rig.root.position.set(x, Math.abs(Math.sin(item.elapsed * 5.2)) * 0.03 * (1 - t * 0.35), z);
 
-      const stride = Math.sin(item.elapsed * 9.4) * 0.48;
+      const stride = Math.sin(item.elapsed * 5.2) * 0.4;
       for (const arm of item.rig.arms) arm.pivot.rotation.x = arm.side * stride * 0.38;
       for (const leg of item.rig.legs) leg.pivot.rotation.x = -armSafe(stride, leg.side);
       item.rig.head.rotation.y = Math.sin(item.elapsed * 1.8) * 0.08;

@@ -12,8 +12,8 @@ const HALF = 150;
 const STEP = 3;
 const DECK_CENTER_X = 1.8;
 const EDGE_X = 4.05;      // block centre, inside the deck's outer edge
-const RED = [0xb3262e, 0xf4efe2];
-const GREEN = [0x1f7a3d, 0xf4efe2];
+const RED = [0x202326, 0xeee9df];
+const GREEN = [0x202326, 0xeee9df];
 const RED_SITES = /KOFAR MATA|DAN AGUNDI|MURTALA|BUK/;
 
 function paletteFor(renderer, record) {

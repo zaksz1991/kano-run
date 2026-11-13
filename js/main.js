@@ -26,6 +26,7 @@ import './KanoHudStack.js';
 import './KanoKarotaChase.js';
 import './KanoYellowKeke.js';
 import './KanoElectricMenu.js';
+import './KanoStartCurtain.js';
 import './KanoEngineCooling.js';
 import './KanoMobileRoadlightGlb.js';
 import './KanoKanoTrafficMix.js';

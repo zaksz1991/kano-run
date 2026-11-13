@@ -26,7 +26,7 @@ export class KekeDynamics {
     wheelRadius = mobile ? 0.235 : 0.26,
     wheelbase = 1.55,
     maxSteerAngle = 0.38,
-    maxRoll = mobile ? 0.105 : 0.13,
+    maxRoll = mobile ? 0.03 : 0.04,
     rollGain = 0.42,
     enableWheelSteering = true,
     enableWheelSpin = true,
@@ -515,7 +515,7 @@ export class KekeDynamics {
     const suspensionAcceleration = (suspensionTarget - this.suspensionY) * 58 - this.suspensionVelocity * 12.5;
     this.suspensionVelocity += suspensionAcceleration * dt;
     this.suspensionY += this.suspensionVelocity * dt;
-    this.suspensionY = clamp(this.suspensionY, -0.055, 0.055);
+    this.suspensionY = clamp(this.suspensionY, -0.02, 0.02);
 
     if (this.visualPivot && this.enableSuspension) {
       this.visualPivot.rotation.z = this.roll;

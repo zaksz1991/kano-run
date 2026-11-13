@@ -601,6 +601,8 @@ function keysForCharacter(input, role = 'pedestrian') {
 }
 function hideWalkPlaceholder(rig) {
   if (!rig) return;
+  // Hide every primitive piece (capsule body, hijab cone, limbs): the leftover capsule looked like a bag following the person.
+  if (rig.root) for (const child of rig.root.children) if (child !== rig.kanoImportedActor) child.visible = false;
   for (const key of ['torso', 'head', 'cap']) if (rig[key]) rig[key].visible = false;
   const pivotSet = [...(rig.legs || []), ...(rig.armPivots || []), ...(rig.arms || [])];
   for (const pivot of pivotSet) pivot?.traverse?.((node) => { if (node.isMesh || node.isSkinnedMesh) node.visible = false; });

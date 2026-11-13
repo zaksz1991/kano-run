@@ -153,6 +153,7 @@ function buildState(system) {
     const side = sideOf(i);
     officer.root.position.set(side * 6.1, 0, -60 - i * 85);
     officer.root.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+    officer.root.visible = false; // shown only once your KAROTA officer GLB is ready (no black-trouser placeholder)
     group.add(officer.root);
     state.officers.push({ ...officer, side, phase: rand(0, 6) });
   }
@@ -179,12 +180,14 @@ function upgradeOfficersToGlb(system, state) {
       const height = box.max.y - box.min.y;
       if (!(height > 0.1)) continue;
       model.scale.multiplyScalar(1.75 / height);
-      model.position.y -= box.min.y * (1.75 / height);
       model.rotation.y = Math.PI / 2;
-      officer.body.visible = false;
-      officer.armR.visible = false;
-      officer.armL.visible = false;
+      officer.root.children.forEach((c) => { c.visible = false; }); // hide every procedural part (black legs included)
       officer.root.add(model);
+      officer.root.updateMatrixWorld(true);
+      const feet = new THREE.Box3().setFromObject(model);
+      model.position.y -= feet.min.y - officer.root.getWorldPosition(new THREE.Vector3()).y; // feet exactly on the road
+      model.visible = true;
+      officer.root.visible = true;
       officer.model = model;
       kanoStreetAnimalsAudit.officerGlb = true;
     }

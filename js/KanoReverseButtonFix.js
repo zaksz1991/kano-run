@@ -20,6 +20,42 @@ function toggle() {
   g.setReverse(want);
 }
 
+let held = false;
+let holdTimer = 0;
+
+function release() {
+  held = false;
+  clearInterval(holdTimer);
+  const g = game();
+  if (!g?.s) return;
+  g.s.reverseThrottle = false;
+  g.s.gas = false;
+  g.s.brake = !g.s.reverse; // forward gear: brake to a stop; reverse gear: letting go stops the backing up
+  // go back to forward gear as soon as the keke is standing again
+  g.s.reverseToForwardSoon = true;
+}
+
+function pressHold() {
+  const g = game();
+  if (!g?.s || g.state !== 'PLAY') return;
+  if (g.s.event) { g.ui?.toast?.('Finish what is happening first'); return; }
+  held = true;
+  g.s.reverseToForwardSoon = false;
+  clearInterval(holdTimer);
+  holdTimer = setInterval(() => {
+    const k = game();
+    if (!held || !k?.s || k.state !== 'PLAY') { release(); return; }
+    if (!k.s.reverse) {
+      if ((k.s.speed || 0) > 3) { k.s.gas = false; k.s.brake = true; return; }
+      k.s.brake = false;
+      k.setReverse(true);
+    }
+    k.s.gas = false;
+    k.s.brake = true; // in reverse gear the brake input is the reverse accelerator
+    k.s.reverseThrottle = true;
+  }, 40);
+}
+
 if (typeof document !== 'undefined' && !window.__kanoReverseFix) {
   window.__kanoReverseFix = true;
   document.addEventListener('pointerdown', (event) => {
@@ -28,24 +64,34 @@ if (typeof document !== 'undefined' && !window.__kanoReverseFix) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    toggle();
+    pressHold();
   }, true);
-  // Pending request: engage reverse the moment the keke has stopped.
+  // A real tap also fires `click`; other handlers on the button would toggle the gear a second time.
+  for (const type of ['click', 'touchstart', 'touchend', 'mousedown', 'mouseup']) {
+    document.addEventListener(type, (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('#reverse-btn')) { event.preventDefault(); event.stopImmediatePropagation(); }
+    }, true);
+  }
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
+    document.addEventListener(type, (event) => {
+      if (!held) return;
+      const target = event.target;
+      if (type === 'pointerleave' && !(target instanceof Element && target.closest('#reverse-btn'))) return;
+      if (type !== 'pointerleave' || (target instanceof Element && target.closest('#reverse-btn'))) release();
+    }, true);
+  }
   setInterval(() => {
     const g = game();
-    if (g?.s?.reverseWhenStopped && g.state === 'PLAY' && !g.s.event && (g.s.speed || 0) <= 3) {
-      g.s.reverseWhenStopped = false;
-      g.setReverse(true);
+    if (g?.s?.reverseToForwardSoon && g.state === 'PLAY') {
+      if ((g.s.speed || 0) <= 1.5) { g.s.reverseToForwardSoon = false; g.s.brake = false; if (g.s.reverse) g.setReverse(false); }
+    } else if (g?.s?.reverseToForwardSoon) g.s.reverseToForwardSoon = false;
+    const btn = document.getElementById('reverse-btn');
+    if (btn) {
+      const want = 'HOLD TO BACK UP';
+      if (btn.textContent !== want) btn.textContent = want;
     }
-    if (g?.s?.reverseWhenStopped && g.state !== 'PLAY') g.s.reverseWhenStopped = false;
-    // Make the pedal obvious: in reverse gear GAS (or BRAKE) backs the keke up.
     const gasBtn = document.querySelector('#drive-controls [data-action="gas"]');
-    if (gasBtn) {
-      const rev = Boolean(g?.s?.reverse);
-      const want = rev ? 'BACK UP' : 'GAS';
-      if (gasBtn.textContent !== want) gasBtn.textContent = want;
-      gasBtn.style.background = rev ? '#f5c542' : '';
-      gasBtn.style.color = rev ? '#172333' : '';
-    }
+    if (gasBtn && gasBtn.textContent !== 'GAS') { gasBtn.textContent = 'GAS'; gasBtn.style.background = ''; gasBtn.style.color = ''; }
   }, 200);
 }

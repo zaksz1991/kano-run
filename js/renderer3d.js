@@ -5603,8 +5603,8 @@ export class Renderer3D {
 
     // Raise and pull the driver camera behind the keke canopy. The old low,
     // close position looked through the bodywork and could fill the viewport.
-    this.camera.position.y = driverView ? 2.9 : 3.35;
-    this.camera.position.z = driverView ? 7.2 : 8.6;
+    this.camera.position.y = driverView ? 2.9 : 3.95;
+    this.camera.position.z = driverView ? 7.2 : 10.9;
 
     const shake = Math.max(
       0,

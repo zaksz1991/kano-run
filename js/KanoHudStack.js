@@ -8,7 +8,7 @@ const ORDER = [
   'kano-chase-chip', 'kano-cooling-card', 'kano-race-chip', 'kano-signal-chip', 'kano-karota-chip', 'kano-flyover-fork',
   'kano-goslow-chip', 'kano-cng-chip', 'kano-drop-chip', 'kano-sign-reader', 'kano-day-arc',
 ];
-const MAX_VISIBLE = 3;
+const MAX_VISIBLE = 2;
 let box = null;
 
 function css() {
@@ -16,12 +16,13 @@ function css() {
   const s = document.createElement('style');
   s.id = 'kano-hud-stack-css';
   s.textContent = `
-#kano-hud-stack{position:fixed;left:8px;top:112px;width:min(48vw,230px);z-index:44;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+#kano-hud-stack{position:fixed;left:8px;top:112px;width:min(46vw,215px);z-index:44;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 #kano-hud-stack>*{position:static!important;inset:auto!important;transform:none!important;margin:0!important;width:100%!important;max-width:100%!important;box-sizing:border-box;white-space:normal!important;font-size:12px!important;line-height:1.3!important;padding:6px 9px!important}
 #kano-hud-stack>#kano-cooling-card{pointer-events:auto;padding:9px!important}
 #kano-hud-stack>#kano-cooling-card button{pointer-events:auto}
-#kano-hud-stack>#kano-sign-reader{font-size:14px!important}
+#kano-hud-stack>#kano-sign-reader{font-size:12px!important}
 #kano-hud-stack>[data-stack-hidden="1"]{display:none!important}
+#kano-day-arc{display:none!important}
 body:has(.screen:not(.hidden)) #kano-hud-stack{display:none!important}
 #kano-total-players-chip{bottom:max(64px,calc(env(safe-area-inset-bottom) + 60px))!important}
 #game-container .kano-interaction-hint{bottom:calc(122px + env(safe-area-inset-bottom,0px))!important}
