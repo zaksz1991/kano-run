@@ -53,14 +53,14 @@ function build(renderer) {
   const roots = [];
 
   // --- oncoming asphalt (same texture as the player's road, filled in once it has loaded)
-  const asphaltMaterial = mat(0x343c43, 0.95);
+  const asphaltMaterial = mat(0x2b3036, 0.95);
   const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(ONCOMING_X0 - ONCOMING_X1, 250), asphaltMaterial);
   asphalt.rotation.x = -Math.PI / 2;
   asphalt.position.set(ONCOMING_CENTRE, 0.006, -92);
   group.add(asphalt);
 
   // --- median: raised planted bed
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 250), mat(0x8e8b83, 1));
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 250), mat(0x5c5f62, 1));
   bed.position.set(MEDIAN_X, 0.08, -92);
   group.add(bed);
   // sparse green tufts down the median
@@ -129,7 +129,8 @@ function build(renderer) {
   roots.push(scrollingInstances(group, new THREE.PlaneGeometry(0.1, 3.4), mat(0xe8e0c8, 0.8), dashPositions, 8.5));
 
   renderer.world.add(group);
-  return { group, roots, asphalt, asphaltMaterial, hasMap: false, frames: 0 };
+  // plain dark tar: borrowing the player's texture turned this carriageway pale grey
+  return { group, roots, asphalt, asphaltMaterial, hasMap: true, frames: 0 };
 }
 
 function update(renderer, state, dt) {

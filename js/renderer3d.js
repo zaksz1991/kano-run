@@ -319,7 +319,7 @@ export class Renderer3D {
     for (const side of [-1, 1]) {
       const verge = new THREE.Mesh(
         new THREE.PlaneGeometry(2.7, 250),
-        vergeMaterial,
+        side < 0 ? this.material(0x5c5f62) : this.material(0x9b9a92),
       );
       verge.rotation.x = -Math.PI / 2;
       verge.position.set(side * 6.35, -0.075, -92);
