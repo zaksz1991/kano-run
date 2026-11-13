@@ -690,6 +690,8 @@ if (KanoSceneUpgrade?.prototype) {
     }
     for (const item of this.walkingPassengers || []) {
       const actor = item.rig?.kanoImportedActor;
+      // The primitive placeholder parts get merged into one 'merged_flat_scenery' mesh later: keep it hidden (it read as a bag).
+      if (actor && item.rig.root) for (const child of item.rig.root.children) if (child !== actor && child.visible) child.visible = false;
       if (actor && !actor.userData?.kanoEmbeddedAnimationActive) poseActor(actor, Number(item.elapsed) || 0, 'walk');
     }
     for (const rig of this.lifeRigs || []) {
