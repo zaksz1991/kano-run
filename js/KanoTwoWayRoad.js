@@ -53,7 +53,7 @@ function build(renderer) {
   const roots = [];
 
   // --- oncoming asphalt (same texture as the player's road, filled in once it has loaded)
-  const asphaltMaterial = mat(0x2b3036, 0.95);
+  const asphaltMaterial = mat(0x4d5259, 0.95);
   const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(ONCOMING_X0 - ONCOMING_X1, 250), asphaltMaterial);
   asphalt.rotation.x = -Math.PI / 2;
   asphalt.position.set(ONCOMING_CENTRE, 0.006, -92);

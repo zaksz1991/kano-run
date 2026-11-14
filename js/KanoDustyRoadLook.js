@@ -16,19 +16,19 @@ function dustyAsphalt() {
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#34383d';
+  ctx.fillStyle = '#4d5259';
   ctx.fillRect(0, 0, size, size);
   let seed = 7;
   const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   // aggregate speckle (coarse + fine)
   for (let i = 0; i < 7000; i += 1) {
-    const v = 40 + Math.floor(rand() * 34);
+    const v = 68 + Math.floor(rand() * 34);
     ctx.fillStyle = `rgba(${v},${v + 1},${v + 4},${0.2 + rand() * 0.32})`;
     ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 1 + Math.floor(rand() * 2), 1 + Math.floor(rand() * 2));
   }
   // worn pale grit
   for (let i = 0; i < 260; i += 1) {
-    ctx.fillStyle = `rgba(150,148,140,${0.06 + rand() * 0.1})`;
+    ctx.fillStyle = `rgba(190,188,180,${0.06 + rand() * 0.1})`;
     ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 1, 1);
   }
   // (clean tar: no cracks, patches, stains or potholes: the new Kano roads are smooth dark asphalt)
