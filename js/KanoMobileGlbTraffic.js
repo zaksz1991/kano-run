@@ -92,7 +92,7 @@ function ensure(R) {
       const m = R.models.getInstance(key);
       if (!m) return;
       if (type === 'keke') yellowize(m);
-      const g = bake(m, type === 'keke');
+      const g = bake(m, type === 'keke' || type === 'bus' || type === 'truck' || type === 'motorcycle');
       if (g) baked.set(type, g);
     }).catch(() => { requested.delete(type); });
   }

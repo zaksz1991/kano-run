@@ -211,9 +211,15 @@ export class KanoTrafficDirector {
     if (roll < 0.46) {
       type = 'keke';
       archetype = 'keke';
-    } else if (roll < 0.56) {
+    } else if (roll < 0.54) {
       type = 'motorcycle';
       archetype = 'okada';
+    } else if (roll < 0.58) {
+      type = 'bus';
+      archetype = 'danfo';
+    } else if (roll < 0.63) {
+      type = 'truck';
+      archetype = 'danfo';
     } else {
       type = choose(['car', 'taxi', 'suv']);
       archetype = 'car';
@@ -252,7 +258,7 @@ export class KanoTrafficDirector {
   }
 
   baseSpeedFor(archetype, direction = 1) {
-    if (archetype === 'okada') return rand(9, 15); // a bicycle: walking-pace to slow cycling
+    if (archetype === 'okada') return rand(18, 30);
     if (archetype === 'danfo') return rand(15, 24);
     if (archetype === 'keke') return rand(17, 30);
     return rand(22, 39);

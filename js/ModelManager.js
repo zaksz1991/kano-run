@@ -47,6 +47,7 @@ const CATALOG = {
   ],
 
   truck: [
+    'vehicles/special/lorry.glb',
     'vehicles/cars/quaternius_cc0-truck-1449.glb',
     'vehicles/cars/peterbilt_352.glb',
     'vehicles/cars/volvo_fh.glb',
@@ -57,11 +58,14 @@ const CATALOG = {
   // No usable bus model ships yet (the old bus.glb rendered black; the current
   // file is an auto-rickshaw; the only truck is a food truck). Empty on purpose:
   // buses use the built-in shape until a proper .glb is added here.
-  bus: [],
+  bus: [
+    'vehicles/special/city_bus.glb',
+    'vehicles/special/delivery_bus.glb',
+  ],
 
   motorcycle: [
-    'vehicles/special/okada.glb',
-    'vehicles/cars/motorcycle.glb',
+    'vehicles/special/scooter.glb',
+    'vehicles/special/piaggio_scooter.glb',
   ],
 
   police: [
@@ -237,6 +241,7 @@ for (const k of [
   'passenger', 'passengerWoman', 'passengerMan', 'passengerVIP', 'security', 'karotaOfficer',
   'pedestrian', 'pedestrianWoman',
 ]) MAX_TRIANGLES_BY_KEY[k] = PEOPLE_AND_VEHICLE_TRIANGLE_CAP;
+MAX_TRIANGLES_BY_KEY.truck = 14000; // the lorry model is about 13.3k triangles and appears rarely
 
 const STATIC_MERGE_KEYS = new Set([
   'keke', 'car', 'taxi', 'suv', 'truck', 'bus', 'motorcycle', 'police', 'karota', 'ambulance',
