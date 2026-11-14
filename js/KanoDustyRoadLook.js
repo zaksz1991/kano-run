@@ -114,6 +114,20 @@ if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.protot
   let last = 0;
   if (typeof draw === 'function') {
     Renderer3D.prototype.draw = function drawWithDustyRoad(...args) {
+      // The road grit must travel with the world: a static texture looks stuck to the keke while moving.
+      try {
+        const st = args[0]; const dt = Math.max(0, Math.min(0.05, Number(args[1]) || 0));
+        const signed = Number.isFinite(st?.signedSpeed) ? st.signedSpeed : st?.reverse ? -Math.abs(Number(st?.speed) || 0) : Math.abs(Number(st?.speed) || 0);
+        this.__kanoRoadGritScroll = (this.__kanoRoadGritScroll || 0) + signed * dt * 0.28;
+        if (this.lifeScene === 'road') {
+          const rows = [];
+          const road = this.world?.children?.find((c) => c.geometry?.parameters?.width === 10 && c.geometry?.parameters?.height === 250);
+          if (road?.material?.map?.userData?.kanoDusty) rows.push(road.material.map);
+          const onc = this.__kanoTwoWay?.asphaltMaterial?.map;
+          if (onc?.userData?.kanoDusty) rows.push(onc);
+          for (const map of rows) map.offset.y = (this.__kanoRoadGritScroll * map.repeat.y / 250) % 1;
+        }
+      } catch (_) { /* cosmetic */ }
       const now = performance.now();
       if (now - last > 1000) {
         last = now;

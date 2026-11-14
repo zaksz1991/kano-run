@@ -225,7 +225,7 @@ export class Renderer3D {
     this.buildWorld();
 
     this.player = this.makeKeke();
-    this.player.position.set(0, 0, 0.5);
+    this.player.position.set(0, 0, 2);
     this.scene.add(this.player);
 
     // Garage and life-scene geometry is created only when that scene is first
@@ -940,7 +940,7 @@ export class Renderer3D {
 
       this.scene.add(this.player);
       this.player.visible = true;
-      this.player.position.set(0, 0, 0.5);
+      this.player.position.set(0, 0, 2);
       this.player.rotation.set(0, this.driveFacingY, 0);
 
       if (this.garageGroup) this.garageGroup.visible = false;
@@ -4618,9 +4618,26 @@ export class Renderer3D {
             }),
           );
 
-          sign.position.set(0, 1.4, 0.15);
+          // Bigger, higher sign plus a tall glowing beacon so a stop is visible from far away.
+          sign.scale.setScalar(1.45);
+          sign.position.set(0, 2.5, 0.15);
           actor.add(sign);
           actor.userData.labelTexture = labelTexture;
+
+          const beaconColor = zone.type === 'drop' ? 0xffc400 : zone.type === 'fuel' ? 0x3aa0ff : 0x2fe08d;
+          const beacon = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.16, 0.16, 8, 8, 1, true),
+            new THREE.MeshBasicMaterial({ color: beaconColor, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+          );
+          beacon.position.set(0, 4, 0.15);
+          beacon.name = 'KANO_STOP_BEACON';
+          actor.add(beacon);
+          const post = new THREE.Mesh(
+            new THREE.BoxGeometry(0.1, 2.5, 0.1),
+            new THREE.MeshBasicMaterial({ color: 0x20252a }),
+          );
+          post.position.set(0, 1.25, 0.15);
+          actor.add(post);
 
           if (zone.type === 'pickup') {
             const waiting = this.makeSecurityPlaceholder();
@@ -4729,6 +4746,9 @@ export class Renderer3D {
         0,
         -Math.max(-0.05, Number(zone.depth) || 0) * 88,
       );
+      // Once the keke has driven past a stop or pothole it must disappear behind it. Clamping the depth left
+      // the object pinned just behind the keke, looking stuck to it while moving.
+      actor.visible = (Number(zone.depth) || 0) > -0.045;
     }
 
     for (const [id, actor] of this.zoneActors) {
@@ -5619,7 +5639,7 @@ export class Renderer3D {
     // road is visible while backing up.)
     const cameraTargetZ = driverView
       ? -12
-      : -1.8;
+      : 0.2;
 
     this.camera.lookAt(
       targetX,

@@ -203,11 +203,9 @@ const CATALOG = {
     'world/props/Cone.glb',
   ],
 
+  // Only models that read as road damage: the grass and paving-tile ground scans looked like green patches on the tarmac.
   dirtmound: [
     'environment/ground/photoscan_-_pothole_1.glb',
-    'environment/ground/low_poly_dirt_ground.glb',
-    'environment/ground/close_sand_with_tracks.glb',
-    'environment/ground/sand_with_handprints_tile_texture.glb',
     'environment/ground/manhole_cover_on_broken_asphalt_road.glb',
   ],
 
@@ -1184,6 +1182,40 @@ function attachDriverAnimationReferences(instance) {
 // MODEL MANAGER
 // ============================================================
 
+function paintFlyoverAtlasAsAsphalt(root) {
+  const seen = new Set();
+  root.traverse((node) => {
+    if (!node.isMesh) return;
+    const mats = Array.isArray(node.material) ? node.material : [node.material];
+    mats.forEach((material, index) => {
+      const map = material?.map;
+      const image = map?.image;
+      if (!map || !image || seen.has(map) || !(image.width >= 512)) return;
+      seen.add(map);
+      const w = image.width; const h = image.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0, w, h);
+      // Only the road atlas (paving + lawn on the left, asphalt on the right): check the left edge is not asphalt.
+      const probe = ctx.getImageData(Math.floor(w * 0.09), Math.floor(h * 0.5), 1, 1).data;
+      const lawn = ctx.getImageData(Math.floor(w * 0.28), Math.floor(h * 0.5), 1, 1).data;
+      const looksLikeAtlas = lawn[1] > lawn[0] + 15 && lawn[1] > lawn[2] + 15 && probe[0] > 100;
+      if (!looksLikeAtlas) return;
+      ctx.fillStyle = '#62676e';
+      ctx.fillRect(0, 0, Math.floor(w * 0.385), h);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = map.colorSpace;
+      texture.flipY = map.flipY;
+      texture.wrapS = map.wrapS; texture.wrapT = map.wrapT;
+      texture.anisotropy = map.anisotropy;
+      texture.channel = map.channel;
+      material.map = texture;
+      material.needsUpdate = true;
+    });
+  });
+}
+
 export class ModelManager {
   constructor({
     basePath = '/assets/models/',
@@ -1414,6 +1446,11 @@ export class ModelManager {
           source.position.z -= center.z;
 
           repairMaterials(source);
+          if (key === 'flyover') {
+            // The flyover atlas has a paving strip and a lawn strip beside the road. On the road they read as
+            // green and tile patches lying on the tarmac, so paint that part of the atlas as plain asphalt.
+            try { paintFlyoverAtlasAsAsphalt(source); } catch (error) { console.debug('[ModelManager] flyover atlas repaint skipped', error?.message || error); }
+          }
 
           // --------------------------------------------------
           // ROOT WRAPPER
