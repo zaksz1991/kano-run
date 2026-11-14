@@ -867,7 +867,7 @@ export class Game {
         s.flatTyre = true;
         s.flatSide = Math.random() < 0.5 ? -1 : 1;
         s.crashShake = Math.max(s.crashShake || 0, 0.5);
-        this.ui?.toast?.('PUNCTURE! Slow down and find a vulcanizer to fix the tyre.');
+        this.ui?.toast?.('PUNCTURE! A vulcanizer is coming up. Slow down and pull in.');
       }
     }
     if (s.flatTyre) s.steer += (s.flatSide || 1) * 1.8 * dt;
@@ -2420,6 +2420,21 @@ export class Game {
       (s.lifeActivityTimer || 0) - dt,
     );
 
+    // A flat tyre brings a roadside vulcanizer within about 15 seconds, so the player is never stuck.
+    if (s.flatTyre && this.mode !== 'timeAttack' && this.state === 'PLAY') {
+      if (!s.event && s.eventCooldown <= 0) {
+        s.vulcanizerTimer = (s.vulcanizerTimer ?? 14) - dt;
+        if (s.vulcanizerTimer <= 0) {
+          s.vulcanizerTimer = null;
+          s.lastLifeActivity = 'vulcanizer';
+          this.beginEvent('vulcanizer');
+          if (s.event || this.state !== 'PLAY') return;
+        }
+      }
+    } else if (!s.flatTyre) {
+      s.vulcanizerTimer = null;
+    }
+
     if (
       this.mode !== 'timeAttack' &&
       s.distance >= 0.35 &&
@@ -3233,8 +3248,10 @@ export class Game {
       }
     } else if (type === 'vulcanizer') {
       if (action === 'repairTyres') {
-        if (s.score >= 200) {
-          s.score -= 200;
+        // A puncture can always be fixed: you pay up to 200, or whatever you have.
+        const repairCost = s.flatTyre ? Math.min(200, Math.max(0, s.score)) : 200;
+        if (s.score >= repairCost) {
+          s.score -= repairCost;
 
           s.tyres = Math.min(
             100,

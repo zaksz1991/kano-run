@@ -249,7 +249,7 @@ const STATIC_MERGE_KEYS = new Set([
 ]);
 
 const TARGET_HEIGHT = {
-  keke: 1.85,
+  keke: 1.62,
   car: 1.4,
   taxi: 1.4,
   suv: 1.65,

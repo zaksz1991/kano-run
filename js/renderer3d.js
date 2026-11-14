@@ -225,7 +225,7 @@ export class Renderer3D {
     this.buildWorld();
 
     this.player = this.makeKeke();
-    this.player.position.set(0, 0, 2);
+    this.player.position.set(0, 0, 0.5);
     this.scene.add(this.player);
 
     // Garage and life-scene geometry is created only when that scene is first
@@ -940,7 +940,7 @@ export class Renderer3D {
 
       this.scene.add(this.player);
       this.player.visible = true;
-      this.player.position.set(0, 0, 2);
+      this.player.position.set(0, 0, 0.5);
       this.player.rotation.set(0, this.driveFacingY, 0);
 
       if (this.garageGroup) this.garageGroup.visible = false;
@@ -4628,12 +4628,12 @@ export class Renderer3D {
             waiting.scale.setScalar(zone.hub ? 0.86 : 0.78);
 
             waiting.position.set(
-              zone.side < 0 ? 1.35 : -1.35,
+              -1.35,
               0,
               0.15,
             );
 
-            waiting.rotation.y = zone.side < 0 ? -0.28 : 0.28;
+            waiting.rotation.y = 0.28;
 
             actor.add(waiting);
 
@@ -4719,7 +4719,7 @@ export class Renderer3D {
       const markerX =
         zone.type === 'pothole'
           ? (zone.lane - 1) * 3
-          : (zone.side || (zone.lane === 0 ? -1 : 1)) * 4.55;
+          : Math.abs(zone.side || 1) * 4.55; // always the kerb on the driver's side: the left is the oncoming carriageway
 
       // Zone depth remains controlled by game.js.
       // In reverse gear, zone.depth must increase in game.js as

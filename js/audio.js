@@ -444,9 +444,17 @@ export class AudioManager {
     this.ensureMediaAudio();
     if (this.hornAudio && !this.hornAudioFailed) {
       try {
-        try { this.hornAudio.currentTime = HORN_START_OFFSET; } catch { /* metadata not loaded yet */ }
-        this.hornAudio.volume = 0.92;
-        const result = this.hornAudio.play();
+        const hornPlayer = this.hornAudio;
+        try { hornPlayer.currentTime = HORN_START_OFFSET; } catch { /* metadata not loaded yet */ }
+        hornPlayer.volume = 0.92;
+        // On the first press the file may not be decoded yet, so the seek above is ignored and the player
+        // would start in the leading silence. Seek again the moment it really starts playing.
+        const seekIfEarly = () => {
+          try { if (hornPlayer.currentTime < HORN_START_OFFSET - 0.05) hornPlayer.currentTime = HORN_START_OFFSET; } catch { /* ignore */ }
+        };
+        hornPlayer.addEventListener('playing', seekIfEarly, { once: true });
+        hornPlayer.addEventListener('loadedmetadata', seekIfEarly, { once: true });
+        const result = hornPlayer.play();
         if (result?.catch) {
           result.catch((error) => {
             if (this.disposed || !this.enabled || error?.name === 'NotAllowedError') return;
