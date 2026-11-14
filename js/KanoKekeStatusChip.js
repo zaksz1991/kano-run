@@ -10,9 +10,9 @@ if (typeof window !== 'undefined' && !window.__kanoKekeStatusChip) {
     if (chip && chip.isConnected) return chip;
     chip = document.createElement('div');
     chip.id = 'kano-keke-status-chip';
-    chip.style.cssText = 'position:fixed;right:8px;top:192px;z-index:40;padding:5px 8px;border-radius:10px;'
+    chip.style.cssText = 'position:fixed;left:8px;bottom:calc(196px + env(safe-area-inset-bottom,0px));z-index:40;padding:5px 8px;border-radius:10px;'
       + 'font:700 10.5px/1.3 system-ui,sans-serif;color:#fff;background:rgba(14,24,38,.86);'
-      + 'border:1px solid rgba(255,255,255,.25);pointer-events:none;display:none;max-width:42vw;text-align:right';
+      + 'border:1px solid rgba(255,255,255,.25);pointer-events:none;display:none;max-width:56vw;text-align:left';
     document.body.appendChild(chip);
     return chip;
   }
