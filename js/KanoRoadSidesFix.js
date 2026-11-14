@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 
 const COLOURS = {
-  KANO_LEFT_SAND_VERGE: 0x5c5f62,   // paved concrete median
+  KANO_LEFT_SAND_VERGE: 0xb59f78,   // dry earth median top, as in the photos
   KANO_RIGHT_SAND_VERGE: 0x9b9a92,  // paved footway
 };
 const DONE = new Set();

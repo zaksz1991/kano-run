@@ -60,7 +60,7 @@ function build(renderer) {
   group.add(asphalt);
 
   // --- median: raised planted bed
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 250), mat(0x5c5f62, 1));
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 250), mat(0xb59f78, 1));
   bed.position.set(MEDIAN_X, 0.08, -92);
   group.add(bed);
   // sparse green tufts down the median
