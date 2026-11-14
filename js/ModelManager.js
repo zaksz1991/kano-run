@@ -1202,8 +1202,15 @@ function paintFlyoverAtlasAsAsphalt(root) {
       const lawn = ctx.getImageData(Math.floor(w * 0.28), Math.floor(h * 0.5), 1, 1).data;
       const looksLikeAtlas = lawn[1] > lawn[0] + 15 && lawn[1] > lawn[2] + 15 && probe[0] > 100;
       if (!looksLikeAtlas) return;
-      ctx.fillStyle = '#62676e';
-      ctx.fillRect(0, 0, Math.floor(w * 0.385), h);
+      // Re-use the atlas' own plain asphalt (no dashes, no zebra) so the repaint matches the road exactly.
+      const src = document.createElement('canvas');
+      src.width = w; src.height = h;
+      src.getContext('2d').drawImage(canvas, 0, 0);
+      const sw = Math.floor(w * 0.17); const sh = Math.floor(h * 0.78);
+      const sx = Math.floor(w * 0.42); const sy = Math.floor(h * 0.2);
+      for (let dx = 0; dx < w * 0.40; dx += sw) {
+        for (let dy = 0; dy < h; dy += sh) ctx.drawImage(src, sx, sy, sw, sh, dx, dy, sw, sh);
+      }
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = map.colorSpace;
       texture.flipY = map.flipY;
