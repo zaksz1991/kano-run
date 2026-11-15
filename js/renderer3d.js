@@ -4617,6 +4617,8 @@ export class Renderer3D {
               side: THREE.DoubleSide,
             }),
           );
+          const stopSide = Number(zone.side) < 0 ? -1 : 1; // stops exist on both kerbs: left = median kerb, right = driver's kerb
+          sign.material.userData.kanoNoShift = true;
 
           // Compact kerb-side sign on a short post, plus a painted bay on the tarmac (like a real stop).
           sign.scale.setScalar(0.85);
@@ -4630,7 +4632,8 @@ export class Renderer3D {
             new THREE.MeshBasicMaterial({ color: beaconColor, transparent: true, opacity: 0.42, depthWrite: false, fog: false }),
           );
           bay.rotation.x = -Math.PI / 2;
-          bay.position.set(-1.7, 0.045, 0.15);
+          bay.position.set(-1.7 * stopSide, 0.045, 0.15);
+          bay.material.userData.kanoNoShift = true;
           bay.name = 'KANO_STOP_BEACON';
           actor.add(bay);
           const post = new THREE.Mesh(
@@ -4638,6 +4641,7 @@ export class Renderer3D {
             new THREE.MeshBasicMaterial({ color: 0x20252a }),
           );
           post.position.set(0, 0.82, 0.15);
+          post.material.userData.kanoNoShift = true;
           actor.add(post);
 
           if (zone.type === 'pickup') {
@@ -4646,12 +4650,12 @@ export class Renderer3D {
             waiting.scale.setScalar(zone.hub ? 0.86 : 0.78);
 
             waiting.position.set(
-              -1.35,
+              -1.35 * stopSide,
               0,
               0.15,
             );
 
-            waiting.rotation.y = 0.28;
+            waiting.rotation.y = 0.28 * stopSide;
 
             actor.add(waiting);
 
@@ -4737,7 +4741,7 @@ export class Renderer3D {
       const markerX =
         zone.type === 'pothole'
           ? (zone.lane - 1) * 3
-          : Math.abs(zone.side || 1) * 4.55; // always the kerb on the driver's side: the left is the oncoming carriageway
+          : Number(zone.side) < 0 ? -5.5 : 4.55; // left stops sit on the median kerb, right stops on the driver's kerb
 
       // Zone depth remains controlled by game.js.
       // In reverse gear, zone.depth must increase in game.js as
