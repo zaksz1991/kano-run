@@ -4618,25 +4618,26 @@ export class Renderer3D {
             }),
           );
 
-          // Bigger, higher sign plus a tall glowing beacon so a stop is visible from far away.
-          sign.scale.setScalar(1.45);
-          sign.position.set(0, 2.5, 0.15);
+          // Compact kerb-side sign on a short post, plus a painted bay on the tarmac (like a real stop).
+          sign.scale.setScalar(0.85);
+          sign.position.set(0, 1.95, 0.15);
           actor.add(sign);
           actor.userData.labelTexture = labelTexture;
 
           const beaconColor = zone.type === 'drop' ? 0xffc400 : zone.type === 'fuel' ? 0x3aa0ff : 0x2fe08d;
-          const beacon = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.16, 0.16, 8, 8, 1, true),
-            new THREE.MeshBasicMaterial({ color: beaconColor, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+          const bay = new THREE.Mesh(
+            new THREE.PlaneGeometry(2.4, 5.2),
+            new THREE.MeshBasicMaterial({ color: beaconColor, transparent: true, opacity: 0.42, depthWrite: false, fog: false }),
           );
-          beacon.position.set(0, 4, 0.15);
-          beacon.name = 'KANO_STOP_BEACON';
-          actor.add(beacon);
+          bay.rotation.x = -Math.PI / 2;
+          bay.position.set(-1.7, 0.045, 0.15);
+          bay.name = 'KANO_STOP_BEACON';
+          actor.add(bay);
           const post = new THREE.Mesh(
-            new THREE.BoxGeometry(0.1, 2.5, 0.1),
+            new THREE.BoxGeometry(0.08, 1.65, 0.08),
             new THREE.MeshBasicMaterial({ color: 0x20252a }),
           );
-          post.position.set(0, 1.25, 0.15);
+          post.position.set(0, 0.82, 0.15);
           actor.add(post);
 
           if (zone.type === 'pickup') {

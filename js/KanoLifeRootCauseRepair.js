@@ -368,7 +368,10 @@ function chooseEmbeddedClip(clips, mode) {
   // and appears earlier in the clip list).
   const wantsSeat = /seated|sit|passengerseat/.test(String(mode || '').toLowerCase().replace(/[^a-z]/g, ''));
   const sitting = wantsSeat ? clips.find((clip) => /sit/i.test(String(clip.name || ''))) : null;
-  const named = sitting || clips.find((clip) => pattern.test(String(clip.name || '')));
+  // A person walking to or from the keke must WALK: prefer a walk clip over run/jog.
+  const wantsWalk = /walk|boarding|pedestrian|locomotion/.test(String(mode || '').toLowerCase().replace(/[^a-z]/g, ''));
+  const walking = wantsWalk ? clips.find((clip) => /walk/i.test(String(clip.name || '')) && !/run|jog|sprint/i.test(String(clip.name || ''))) : null;
+  const named = sitting || walking || clips.find((clip) => pattern.test(String(clip.name || '')));
   if (named) return named;
   // A single embedded clip is better than a frozen pose. With several clips
   // and no meaningful names, prefer procedural motion rather than guessing.
@@ -462,6 +465,8 @@ function activateEmbeddedAnimation(actor, path, clips, mode, requestToken) {
     nextAction.enabled = true;
     nextAction.setLoop(THREE.LoopRepeat, Infinity);
     nextAction.clampWhenFinished = false;
+    // calm, human gait: run/jog clips are slowed right down, walk clips slightly
+    nextAction.setEffectiveTimeScale(/run|jog|sprint/i.test(clipName) ? 0.5 : /walk/i.test(clipName) ? 0.85 : 1);
     entry.actions.set(actionKey, nextAction);
   }
 
@@ -591,13 +596,18 @@ function hidePrimitiveLifeBody(rig) {
   }
 }
 function keysForCharacter(input, role = 'pedestrian') {
-  const values = [input?.gender, input?.sex, input?.name, input?.type, input?.kind, input?.category, input?.archetype]
+  const values = [input?.gender, input?.sex, input?.name, input?.type, input?.kind, input?.category, input?.archetype, input?.female ? 'woman' : '']
     .filter((v) => v != null).join(' ').toLowerCase();
-  if (/woman|female|girl|hijab|wife|mother/.test(values)) return ['passengerWoman', 'pedestrianWoman', 'passenger', 'pedestrian', 'passengerMan'];
-  if (/man|male|boy|father|husband/.test(values)) return ['passengerMan', 'pedestrian', 'passenger', 'passengerWoman', 'pedestrianWoman'];
+  // Different people look different: pick the lead model from a stable hash of who they are.
+  const seedText = String(input?.id ?? input?.name ?? input?.label ?? Math.random());
+  let hash = 0;
+  for (let i = 0; i < seedText.length; i += 1) hash = (hash * 31 + seedText.charCodeAt(i)) >>> 0;
+  const rotate = (list) => { const k = hash % list.length; return [...list.slice(k), ...list.slice(0, k)]; };
+  if (/woman|female|girl|hijab|wife|mother/.test(values)) return [...rotate(['passengerWoman', 'pedestrianWoman']), 'passenger', 'pedestrian', 'passengerMan'];
+  if (/man|male|boy|father|husband/.test(values)) return [...rotate(['passengerMan', 'passengerVIP', 'pedestrian']), 'passenger', 'passengerWoman', 'pedestrianWoman'];
   return role === 'life'
     ? ['pedestrian', 'passengerMan', 'passenger', 'pedestrianWoman', 'passengerWoman']
-    : ['passenger', 'pedestrian', 'passengerMan', 'passengerWoman', 'pedestrianWoman'];
+    : [...rotate(['passenger', 'passengerMan', 'passengerVIP', 'pedestrian']), 'passengerWoman', 'pedestrianWoman'];
 }
 function hideWalkPlaceholder(rig) {
   if (!rig) return;
