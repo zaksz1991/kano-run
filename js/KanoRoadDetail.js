@@ -9,7 +9,7 @@ import { Renderer3D } from './renderer3d.js';
 
 const SPAN = 200;       // pieces repeat every 200 m
 const NEAR = 12;        // keep pieces in [NEAR - SPAN, NEAR)
-const WALL_X = 8.9;
+const WALL_X = 7.9; // front face of the shop row
 const WALL_COLORS = [0xe9e1cf, 0xc9dcc0, 0xf1dca0, 0xd9a98b, 0xd8d4ca];
 const JUNCTIONS = [-30, -130];
 
@@ -19,20 +19,23 @@ function buildPieces() {
   const items = [];
   const rnd = lcg(20241115);
   const nearJunction = (z) => JUNCTIONS.some((j) => Math.abs(((z - j) % 100 + 150) % 100 - 50) < 13);
-  // boundary wall, 10 m bays, gaps at side streets
-  for (let i = 0; i < SPAN / 10; i += 1) {
-    const z = -i * 10 - 5;
-    if (nearJunction(z)) continue;
-    const c = WALL_COLORS[(i * 7 + Math.floor(i / 3)) % WALL_COLORS.length];
-    items.push({ base: z, x: WALL_X, y: 1.15, sx: 0.3, sy: 2.3, sz: 9.4, color: c });
-    items.push({ base: z, x: WALL_X - 0.02, y: 0.12, sx: 0.36, sy: 0.24, sz: 9.5, color: 0x8d8579 }); // plinth
-    items.push({ base: z - 5, x: WALL_X, y: 1.25, sx: 0.6, sy: 2.5, sz: 0.6, color: 0xb9b2a4 });      // pilaster
+  // shop row on the pavement edge: shop body, roof slab, door and window per shop, 8.2 m apart, gaps at side streets
+  const nearShopGap = (z) => JUNCTIONS.some((j) => [0, 100].some((k) => Math.abs(z - (j - k)) < 8.5));
+  for (let i = 0; i < 24; i += 1) {
+    const z = -i * 8.2 - 4;
+    if (nearShopGap(z)) continue;
+    const body = WALL_COLORS[(i * 3 + Math.floor(i / 2)) % WALL_COLORS.length];
+    const h = 2.7 + (i % 3) * 0.45;
+    items.push({ base: z, x: WALL_X + 1.0, y: h / 2, sx: 2.0, sy: h, sz: 7.3, color: body });
+    items.push({ base: z, x: WALL_X + 0.95, y: h + 0.08, sx: 2.2, sy: 0.16, sz: 7.5, color: 0x8d8579 });
+    items.push({ base: z - 2.2, x: WALL_X - 0.02, y: 0.95, sx: 0.08, sy: 1.9, sz: 1.3, color: 0x3a2f27 });
+    items.push({ base: z + 1.7, x: WALL_X - 0.02, y: 1.25, sx: 0.08, sy: 1.1, sz: 2.2, color: 0x9fc4d6 });
   }
   // side streets and zebra crossings
   for (const j of JUNCTIONS) {
     for (const k of [0, 100]) {
       const z = j - k;
-      items.push({ base: z, x: 17, y: 0.013, sx: 14, sy: 0.02, sz: 8, color: 0x4d5259 });       // side-street tarmac
+      items.push({ base: z, x: 18, y: 0.013, sx: 16, sy: 0.02, sz: 8, color: 0x4d5259 });       // side-street tarmac
       items.push({ base: z, x: 5.45, y: 0.04, sx: 0.5, sy: 0.12, sz: 8.4, color: 0xcdcbc3 });  // dropped kerb ramp
       for (let b = -4; b <= 4; b += 1) items.push({ base: z + 7.2, x: b * 0.98, y: 0.026, sx: 0.5, sy: 0.02, sz: 3.0, color: 0xf1efe6 }); // zebra
     }
@@ -99,14 +102,13 @@ function build(renderer) {
 
   // shopfronts painted on the wall: a signboard and a striped awning each, repeating along the street
   const signs = [];
-  const sRnd = lcg(777);
-  for (let i = 0; i < 12; i += 1) {
-    const base = -8 - i * 16.4 - sRnd() * 3;
-    if (JUNCTIONS.some((j) => [0, 100].some((k) => Math.abs(base - (j - k)) < 10))) continue;
+  for (let i = 0; i < 24; i += 1) {
+    const base = -i * 8.2 - 4 - 0.2;
+    if (nearShopGap(base)) continue;
     signs.push({ base, kind: i % SHOPS.length });
   }
-  const signGeo = new THREE.PlaneGeometry(4.4, 1.1);
-  const awnGeo = new THREE.BoxGeometry(1.0, 0.1, 3.4);
+  const signGeo = new THREE.PlaneGeometry(4.6, 1.15);
+  const awnGeo = new THREE.BoxGeometry(1.0, 0.1, 4.8);
   const awnMat = lam({ color: 0xffffff });
   const awnMesh = new THREE.InstancedMesh(awnGeo, awnMat, signs.length);
   awnMesh.frustumCulled = false;
@@ -140,11 +142,11 @@ function layout(k) {
   k.mesh.instanceMatrix.needsUpdate = true;
   const wz = (b) => ((((b + k.offset - NEAR) % SPAN) + SPAN) % SPAN) + NEAR - SPAN;
   k.signs.forEach((sg, i) => {
-    d.position.set(WALL_X - 0.7, 2.2, wz(sg.base)); d.scale.set(1, 1, 1); d.rotation.set(0.28, 0, 0); d.updateMatrix(); k.awnMesh.setMatrixAt(i, d.matrix);
+    d.position.set(WALL_X - 0.5, 2.3, wz(sg.base)); d.scale.set(1, 1, 1); d.rotation.set(0.28, 0, 0); d.updateMatrix(); k.awnMesh.setMatrixAt(i, d.matrix);
   });
   k.awnMesh.instanceMatrix.needsUpdate = true;
   for (const { mesh, list } of k.signMeshes) {
-    list.forEach((sg, i) => { d.position.set(WALL_X - 0.2, 2.75, wz(sg.base)); d.scale.set(1, 1, 1); d.rotation.set(0, -Math.PI / 2, 0); d.updateMatrix(); mesh.setMatrixAt(i, d.matrix); });
+    list.forEach((sg, i) => { d.position.set(WALL_X - 0.1, 2.85, wz(sg.base)); d.scale.set(1, 1, 1); d.rotation.set(0, -Math.PI / 2, 0); d.updateMatrix(); mesh.setMatrixAt(i, d.matrix); });
     mesh.instanceMatrix.needsUpdate = true;
   }
 }

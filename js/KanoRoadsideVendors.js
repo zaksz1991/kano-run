@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
 
-const SIDE_X = 7.7;
+const SIDE_X = 6.4; // on the pavement, in front of the shop row
 const PERIOD = 46;
 const CANOPY = [0xd8332a, 0xf2b700, 0x1d7fd1, 0xef7d1a, 0x2a9d5c, 0xe9e4d8];
 
