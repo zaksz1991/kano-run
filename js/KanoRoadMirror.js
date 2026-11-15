@@ -5,10 +5,12 @@
  * are kept out of the road scene: they were the pale grey slabs that made the left side look different.
  * Visual only: lanes, stops, collisions and fares are untouched.
  */
+import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
 
 const HIDE = /^(KANO_SUNKEN_ROAD_WALLS|KANO_INSTANCED_UNDERPASS|Kano black-white concrete roadside dividers|Kano divider black diagonal stripes)$/;
 let frame = 0;
+const box = new THREE.Box3();
 
 function mirror(world) {
   const metas = [];
@@ -40,6 +42,22 @@ if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.protot
         frame += 1;
         for (const child of this.world.children) if (HIDE.test(child.name || '')) child.visible = false;
         if (frame % 30 === 1) mirror(this.world);
+        // A flyover ramp that is entirely behind the keke is the dark slab seen under the rear camera: drop it.
+        // 'visible' is wrapped so other modules re-showing the group cannot bring the slab back.
+        for (const child of this.world.children) {
+          if (!/^KWANKWASIYYA_DRIVABLE_APPROACH_/.test(child.name || '')) continue;
+          if (!child.userData.kanoVisGuard) {
+            let shown = child.visible !== false;
+            Object.defineProperty(child, 'visible', {
+              configurable: true,
+              get() { return shown && !child.userData.kanoBehind; },
+              set(v) { shown = !!v; },
+            });
+            child.userData.kanoVisGuard = true;
+          }
+          box.setFromObject(child);
+          child.userData.kanoBehind = Number.isFinite(box.min.z) && box.min.z > 1.5;
+        }
       }
     } catch (_) { /* optional */ }
     return draw.apply(this, args);
