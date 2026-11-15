@@ -823,10 +823,14 @@ function syncSeatedPassengerModels(renderer, game) {
       actor.scale.copy(seatedTargetScale).multiplyScalar(1.14);
       actor.rotation.y = Math.PI; // GLB people face +z by default; the keke drives towards -z
       actor.position.set(base.position.x + (index - (desired - 1) / 2) * spacing, seatTargetY + 0.085, base.position.z);
+      // Step in from the door side, then turn and lower onto the seat (not a pop-in).
+      const doorSide = Number(passenger?.side) < 0 ? -1 : 1;
       actor.userData.kanoSeatEntryTransition = {
-        startedAt: nowMs(), durationMs: 360,
+        startedAt: nowMs(), durationMs: 720,
         startScale: actor.scale.clone(), targetScale: seatedTargetScale,
         targetY: seatTargetY,
+        targetX: actor.position.x, doorSide,
+        startRotY: Math.PI / 2 * -doorSide + Math.PI * 0.0,
       };
       actor.traverse((node) => {
         if (node.isMesh) { node.castShadow = false; node.receiveShadow = false; }
@@ -848,8 +852,15 @@ function syncSeatedPassengerModels(renderer, game) {
       const linear = clamp((now - entryTransition.startedAt) / entryTransition.durationMs, 0, 1);
       const eased = linear * linear * (3 - 2 * linear);
       actor.scale.copy(entryTransition.startScale).lerp(entryTransition.targetScale, eased);
-      actor.position.y = entryTransition.targetY + (1 - eased) * 0.085;
-      if (linear >= 1) delete actor.userData.kanoSeatEntryTransition;
+      // phase 1 (0-0.55): step in sideways at stepping height; phase 2: turn forward and sit down.
+      const step = clamp(linear / 0.55, 0, 1);
+      const sit = clamp((linear - 0.45) / 0.55, 0, 1);
+      const stepE = step * step * (3 - 2 * step);
+      const sitE = sit * sit * (3 - 2 * sit);
+      actor.position.x = entryTransition.targetX + entryTransition.doorSide * (1 - stepE) * 0.55;
+      actor.position.y = entryTransition.targetY + 0.16 * (1 - sitE) * Math.min(1, stepE + 0.4) + (1 - eased) * 0.03;
+      actor.rotation.y = Math.PI + (entryTransition.startRotY - Math.PI) * 0 + (-entryTransition.doorSide) * (Math.PI / 2) * (1 - sitE);
+      if (linear >= 1) { actor.position.x = entryTransition.targetX; actor.rotation.y = Math.PI; delete actor.userData.kanoSeatEntryTransition; }
     } else {
       actor.position.y = actor.userData.kanoRootCauseSeatBaseY + Math.sin(time * 1.6 + index * 1.2) * 0.006;
     }

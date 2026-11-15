@@ -21,7 +21,7 @@ assert.match(source, /rootAudit\.embeddedAnimations\.budgetWaitlist = embeddedAn
 assert.match(source, /for \(const \[actor, entry\] of embeddedAnimationMixers\)/);
 assert.doesNotMatch(source, /for \(const \[actor, entry\] of \[\.\.\.embeddedAnimationMixers\.entries\(\)\]\)/);
 assert.match(source, /kanoSeatEntryTransition/);
-assert.match(source, /durationMs: 360/);
+assert.match(source, /durationMs: 720/);
 assert.match(source, /actor\.userData\.kanoRootCauseSeatBaseY = seatTargetY/);
 assert.match(source, /disposeAnimationProbeScene\(gltf\.scene\)/);
 assert.match(source, /keke-model-calibration-v1/);
