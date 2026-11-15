@@ -60,7 +60,7 @@ function build(renderer) {
   group.add(asphalt);
 
   // --- median: raised planted bed
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 250), mat(0xb59f78, 1));
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 250), mat(0xb9b8b0, 1));
   bed.position.set(MEDIAN_X, 0.08, -92);
   group.add(bed);
   // sparse green tufts down the median
@@ -78,7 +78,7 @@ function build(renderer) {
 
   // --- median kerbs, black and white
   const kerbPositions = [];
-  const kerbColors = [0x202326, 0xeee9df];
+  const kerbColors = [0xcdcbc3, 0xcdcbc3]; // plain concrete kerbs
   for (let i = -4, z = 10; z > -LOOP_FAR; i += 1, z -= 2.9) {
     kerbPositions.push([-5.4, 0.08, z], [-7.0, 0.08, z]);
   }

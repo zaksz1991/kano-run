@@ -336,7 +336,7 @@ export class Renderer3D {
 
       const edge = new THREE.Mesh(
         new THREE.PlaneGeometry(0.13, 250),
-        this.material(0xf2c200),
+        this.material(0xf1efe6), // white edge line
       );
       edge.rotation.x = -Math.PI / 2;
       edge.position.set(side * 4.54, 0.026, -92);
@@ -353,7 +353,7 @@ export class Renderer3D {
         curbRecords.push({
           x: side * 4.86,
           z,
-          color: curbSegment % 2 === 0 ? 0x202326 : 0xeee9df,
+          color: 0xcdcbc3, // plain light-grey concrete kerb
         });
       }
       curbSegment += 1;

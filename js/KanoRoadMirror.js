@@ -7,7 +7,7 @@
  */
 import { Renderer3D } from './renderer3d.js';
 
-const HIDE = /^(KANO_SUNKEN_ROAD_WALLS|KANO_INSTANCED_UNDERPASS)$/;
+const HIDE = /^(KANO_SUNKEN_ROAD_WALLS|KANO_INSTANCED_UNDERPASS|Kano black-white concrete roadside dividers|Kano divider black diagonal stripes)$/;
 let frame = 0;
 
 function mirror(world) {
