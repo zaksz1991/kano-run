@@ -52,14 +52,23 @@ function buildPieces() {
       for (let b = -4; b <= 4; b += 1) items.push({ base: z + 7.2, x: b * 0.98, y: 0.026, sx: 0.5, sy: 0.02, sz: 3.0, color: 0xf1efe6 }); // zebra
     }
   }
-  // patches and manholes in the carriageway
-  for (let i = 0; i < 10; i += 1) {
+  // repair patches, worn paint, oil stains and manhole covers in the carriageway
+  for (let i = 0; i < 34; i += 1) {
     const lane = [-3, 0, 3][Math.floor(rnd() * 3)];
-    items.push({ base: -rnd() * SPAN, x: lane + (rnd() - 0.5) * 1.2, y: 0.018, sx: 0.7 + rnd() * 0.9, sy: 0.015, sz: 1.2 + rnd() * 1.6, color: rnd() > 0.5 ? 0x3b4046 : 0x454a50 });
+    const kind = i % 4;
+    const color = kind === 0 ? 0x17191c : kind === 1 ? 0x44484d : kind === 2 ? 0x0f1012 : 0x383c41;   // fresh patch, faded patch, oil stain, dusty patch
+    const w = kind === 2 ? 0.5 + rnd() * 0.6 : 0.8 + rnd() * 1.3;
+    const l = kind === 2 ? 0.7 + rnd() * 0.9 : 1.4 + rnd() * 2.4;
+    items.push({ base: -rnd() * SPAN, x: lane + (rnd() - 0.5) * 1.6, y: 0.019 + (i % 3) * 0.002, sx: w, sy: 0.015, sz: l, color });
   }
-  for (let i = 0; i < 4; i += 1) {
+  // long thin crack lines
+  for (let i = 0; i < 16; i += 1) {
     const lane = [-3, 0, 3][i % 3];
-    items.push({ base: -rnd() * SPAN, x: lane + 1.5, y: 0.02, sx: 0.75, sy: 0.015, sz: 0.75, color: 0x2a2d31 });
+    items.push({ base: -rnd() * SPAN, x: lane + (rnd() - 0.5) * 2.0, y: 0.021, sx: 0.05, sy: 0.012, sz: 2.5 + rnd() * 4.5, color: 0x0b0c0e });
+  }
+  for (let i = 0; i < 6; i += 1) {
+    const lane = [-3, 0, 3][i % 3];
+    items.push({ base: -rnd() * SPAN, x: lane + 1.5, y: 0.024, sx: 0.8, sy: 0.015, sz: 0.8, color: 0x5a5e63 });
   }
   return items;
 }
@@ -96,8 +105,8 @@ function build(renderer) {
   const lam = (opts) => noShift(renderer.mobile ? new THREE.MeshLambertMaterial(opts) : new THREE.MeshStandardMaterial({ roughness: 0.95, ...opts }));
 
   // static: tyre-wear strips in each lane and a gutter beside the right kerb
-  const wearMat = lam({ color: 0x2c2f33, transparent: true, opacity: 0.07, depthWrite: false });
-  const wearGeo = new THREE.PlaneGeometry(0.36, 250);
+  const wearMat = lam({ color: 0x2c2f33, transparent: true, opacity: 0.2, depthWrite: false });
+  const wearGeo = new THREE.PlaneGeometry(0.5, 250);
   for (const lane of [-3, 0, 3]) for (const off of [-0.8, 0.8]) {
     const m = new THREE.Mesh(wearGeo, wearMat);
     m.rotation.x = -Math.PI / 2; m.position.set(lane + off, 0.012, -92); m.renderOrder = 1; root.add(m);
