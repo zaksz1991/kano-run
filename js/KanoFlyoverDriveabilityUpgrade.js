@@ -551,9 +551,14 @@ function updateFork(renderer, state) {
       const z = -Math.max(-0.05, Number(zone.depth) || 0) * 88;
       const onDeck = (nearestSurfaceForZ(renderer, z)?.height || 0) > 0.3;
       if (!onDeck) continue;
-      if (zone.type === 'pothole' ? zone.lane >= 1 : (zone.side || (zone.lane === 0 ? -1 : 1)) > 0) {
-        zone.side = -1;
-        zone.lane = 0;
+      // Nobody waits on, and nothing sits in, the flyover deck: move the stop to the road just past the flyover.
+      let best = null;
+      for (const record of renderer.kanoFlyoverApproachRecords) {
+        const fly = renderer.flyovers?.[record.index] || record.flyover;
+        if (fly && Math.abs(z - fly.position.z) <= GLB_HALF) best = fly;
+      }
+      if (best) {
+        zone.depth = -(best.position.z - GLB_HALF - 6) / 88;
       }
     }
   }
