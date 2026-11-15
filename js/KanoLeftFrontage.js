@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
 
-const X = -19.5;
+const X = -14.5;
 const PERIOD = 200;
 const SPACING = 40;
 

@@ -135,10 +135,15 @@ function recolour(renderer) {
     k.hasMap = true; // stop the original code from putting its dark texture back
     buildFootpath(renderer, k);
   }
-  const right = world.getObjectByName('KANO_RIGHT_SAND_VERGE');
-  // The right footway is the same cobble paving as the left one (both sides of the road match).
-  if (right?.material && !right.material.map?.userData?.kanoCobble) {
-    try { right.material.map = cobbleMap(2.7); right.material.color.set(0xffffff); right.material.needsUpdate = true; } catch (e) { /* plain paving */ }
+  // A plain sand shoulder lay over the left footway; hide it so the left footway shows like the right one.
+  const shoulder = world.getObjectByName('KANO_ROADSIDE_SHOULDER_LEFT');
+  if (shoulder) shoulder.visible = false;
+  // Both footways are the same cobble paving (the two sides of the road match).
+  for (const name of ['KANO_RIGHT_SAND_VERGE', 'KANO_LEFT_SAND_VERGE']) {
+    const verge = world.getObjectByName(name);
+    if (verge?.material && !verge.material.map?.userData?.kanoCobble) {
+      try { verge.material.map = cobbleMap(2.7); verge.material.color.set(0xffffff); verge.material.needsUpdate = true; } catch (e) { /* plain paving */ }
+    }
   }
 }
 

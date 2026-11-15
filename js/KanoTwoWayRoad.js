@@ -161,6 +161,10 @@ function update(renderer, state, dt) {
   }
 }
 
+// The separate dual carriageway is retired: the game's two-way mode already makes the keke's left lane the
+// oncoming lane, so the road is now always the single carriageway (see KanoCentreLine.js for the two-way centre line).
+if (typeof window !== 'undefined') window.kanoOneWayRoad = true;
+
 if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.prototype.__kanoTwoWayRoad) {
   Object.defineProperty(Renderer3D.prototype, '__kanoTwoWayRoad', { value: true });
   const draw = Renderer3D.prototype.draw;

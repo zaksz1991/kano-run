@@ -29,7 +29,7 @@ import './KanoHarmattanHaze.js';
 import './KanoRoadsideVendors.js';
 import './KanoLeftFrontage.js';
 import './KanoRightFrontage.js';
-import './KanoOncomingStream.js';
+import './KanoCentreLine.js';
 import './KanoRoadMirror.js';
 import './KanoRoadDetail.js';
 import './KanoEngineCooling.js';
