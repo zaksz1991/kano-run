@@ -12,7 +12,7 @@ assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
 
 assert.match(source, /function activateEmbeddedAnimation\(actor, path, clips, mode, requestToken\)/);
 assert.match(source, /kanoEmbeddedAnimationDesiredMode/);
-assert.match(source, /nextAction\.crossFadeFrom\(previousAction, 0\.22, false\)/);
+assert.match(source, /nextAction\.crossFadeFrom\(previousAction, 0\.38, false\)/);
 assert.match(source, /requestEmbeddedAnimation\(actor, actionMode\)/);
 assert.match(source, /const actionMode = String\(rig\.action \|\| 'idle'\)/);
 assert.match(source, /actions: new Map\(\)/);

@@ -477,7 +477,7 @@ function activateEmbeddedAnimation(actor, path, clips, mode, requestToken) {
     nextAction.enabled = true;
     nextAction.setEffectiveWeight(1);
     nextAction.play();
-    nextAction.crossFadeFrom(previousAction, 0.22, false);
+    nextAction.crossFadeFrom(previousAction, 0.38, false);
     entry.outgoingAction = previousAction;
     entry.outgoingUntil = nowMs() + 240;
     rootAudit.embeddedAnimations.crossfades += 1;
