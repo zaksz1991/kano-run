@@ -501,9 +501,8 @@ export class KanoAdaptiveQuality {
     for (const slot of renderer?.roadProps || []) {
       if (slot?.actor) actors.add(slot.actor);
     }
-    for (const actor of renderer?.flyovers || []) {
-      if (actor) actors.add(actor);
-    }
+    // Flyovers are gameplay, not decoration: hiding one while the keke is still climbing or driving on it
+    // made the deck vanish under the player. Their visibility is owned by the flyover system alone.
 
     // Only distant pedestrian models are LOD-managed. Their saved positions
     // and game-state updates remain untouched; only visual draw visibility changes.
