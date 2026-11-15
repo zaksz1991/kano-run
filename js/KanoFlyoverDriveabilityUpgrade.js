@@ -562,7 +562,7 @@ function updateFork(renderer, state) {
     // One road only: once you are on the flyover you stay on it in every lane (no switching to the road below).
     renderer._kanoForkLock = 'deck';
     const onRoad = isDriving();
-    showForkBanner(!onRoad ? '' : 'ON THE FLYOVER');
+    showForkBanner(!onRoad || (renderer._kanoFlyoverCurrentHeight || 0) < 0.6 ? '' : 'ON THE FLYOVER');
   } else {
     renderer._kanoForkLock = null;
     const metres = Math.round(rz - GLB_HALF);

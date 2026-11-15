@@ -68,6 +68,17 @@ function applyTexture(material, repeat) {
   material.needsUpdate = true;
 }
 
+const cobbles = [];
+function cobbleMap(width) {
+  const tex = new THREE.TextureLoader().load(PACK_COBBLE_URL);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 250 / width);   // square cobbles, as on the real footpath
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.userData = { kanoCobble: true };
+  cobbles.push(tex);
+  return tex;
+}
+
 const LOOP_FAR = 215;
 const KERB_STEP = 2.9;
 
@@ -85,11 +96,7 @@ function buildFootpath(renderer, k) {
   path.position.set(-16.4, 0.02, -92);
   path.name = 'KANO_FOOTPATH_PAVING';
   try {
-    const tex = new THREE.TextureLoader().load(PACK_COBBLE_URL);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1, 60);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    path.material.map = tex; path.material.color.set(0xffffff); path.material.needsUpdate = true;
+    path.material.map = cobbleMap(2.4); path.material.color.set(0xffffff); path.material.needsUpdate = true;
   } catch (e) { /* plain paving */ }
   k.group.add(path);
   // navy-and-white kerb blocks along the road edge of the footpath
@@ -127,7 +134,10 @@ function recolour(renderer) {
     buildFootpath(renderer, k);
   }
   const right = world.getObjectByName('KANO_RIGHT_SAND_VERGE');
-  if (right?.material && right.material.color.getHex() !== 0xb4b1a8) { right.material.color.set(0xb4b1a8); if (right.material.map) right.material.map = null; right.material.needsUpdate = true; }
+  // The right footway is the same cobble paving as the left one (both sides of the road match).
+  if (right?.material && !right.material.map?.userData?.kanoCobble) {
+    try { right.material.map = cobbleMap(2.7); right.material.color.set(0xffffff); right.material.needsUpdate = true; } catch (e) { /* plain paving */ }
+  }
 }
 
 if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.prototype[PATCH]) {
@@ -148,6 +158,7 @@ if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.protot
           const onc = this.__kanoTwoWay?.asphaltMaterial?.map;
           if (onc?.userData?.kanoDusty) rows.push(onc);
           for (const map of rows) map.offset.y = (this.__kanoRoadGritScroll * map.repeat.y / 250) % 1;
+          for (const map of cobbles) map.offset.y = (this.__kanoRoadGritScroll * map.repeat.y / 250) % 1;
         }
       } catch (_) { /* cosmetic */ }
       const now = performance.now();
