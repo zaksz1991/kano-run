@@ -273,12 +273,12 @@ function patch(g) {
   if (g.__kanoCng) return;
   g.__kanoCng = true;
   ensureCss();
-  const origStart = g.start.bind(g);
+  const origStart = (...a) => Object.getPrototypeOf(g).start.apply(g, a);
   // Late-bound: always call the game's current tick, so patches that load after this module (empty-tank rescue,
   // etc.) are not skipped by a frozen copy of the function.
   const protoOf = Object.getPrototypeOf(g);
   const origTick = (...a) => protoOf.tick.apply(g, a);
-  const origRefuel = g.refuel.bind(g);
+  const origRefuel = (...a) => Object.getPrototypeOf(g).refuel.apply(g, a);
   g.start = function (...a) {
     const r = origStart(...a);
     const s = this.s;
