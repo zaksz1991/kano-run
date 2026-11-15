@@ -559,18 +559,17 @@ function updateFork(renderer, state) {
   }
   const abs = Math.abs(rz);
   if (abs < GLB_HALF) {
-    if (!renderer._kanoForkLock) renderer._kanoForkLock = state.targetLane < 0 ? 'ground' : 'deck';
-    if (renderer._kanoForkLock === 'ground') state.targetLane = -1;
-    else state.targetLane = Math.max(0, state.targetLane);
+    // One road only: once you are on the flyover you stay on it in every lane (no switching to the road below).
+    renderer._kanoForkLock = 'deck';
     const onRoad = isDriving();
-    showForkBanner(!onRoad ? '' : renderer._kanoForkLock === 'ground' ? 'ROAD BELOW the flyover' : 'ON THE FLYOVER');
+    showForkBanner(!onRoad ? '' : 'ON THE FLYOVER');
   } else {
     renderer._kanoForkLock = null;
     const metres = Math.round(rz - GLB_HALF);
     const driving = isDriving();
     const name = KANO_FLYOVER_SITES[renderer.__kanoFlyoverSiteKey]?.title || 'FLYOVER';
     showForkBanner(driving && rz > 0 && abs < GLB_HALF + 650
-      ? (metres > 20 ? `${name} ahead · ${metres} m` : 'Flyover now · middle/right lane ▲ · left lane ▼ road below')
+      ? (metres > 20 ? `${name} ahead · ${metres} m` : 'Flyover now')
       : '');
   }
 }

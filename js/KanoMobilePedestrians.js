@@ -37,6 +37,7 @@ function bake(model) {
     const mat = mats[0];
     const base = mat?.color ? mat.color.clone() : new THREE.Color(0xbbbbbb);
     const tex = mat?.map ? imageData(mat.map) : null;
+    const own = geo.getAttribute('color');
     const index = geo.index;
     const triCount = (index ? index.count : p.count) / 3;
     const vertexColor = (i) => {
@@ -48,6 +49,8 @@ function bake(model) {
         const k = (y * tex.s + x) * 4;
         tmp.multiply(new THREE.Color().setRGB(tex.d[k] / 255, tex.d[k + 1] / 255, tex.d[k + 2] / 255, THREE.SRGBColorSpace));
       }
+      // Models such as BaseHuman keep their colours as vertex colours: without this they bake to plain white.
+      if (own) tmp.multiply(new THREE.Color().setRGB(own.getX(i), own.getY(i), own.getZ(i), THREE.LinearSRGBColorSpace));
       return tmp;
     };
     for (let t = 0; t < triCount * 3; t += 1) {
