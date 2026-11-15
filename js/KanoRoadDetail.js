@@ -9,7 +9,7 @@ import { Renderer3D } from './renderer3d.js';
 
 const SPAN = 200;       // pieces repeat every 200 m
 const NEAR = 12;        // keep pieces in [NEAR - SPAN, NEAR)
-const WALL_X = 10.7;
+const WALL_X = 8.9;
 const WALL_COLORS = [0xe9e1cf, 0xc9dcc0, 0xf1dca0, 0xd9a98b, 0xd8d4ca];
 const JUNCTIONS = [-30, -130];
 
@@ -24,7 +24,7 @@ function buildPieces() {
     const z = -i * 10 - 5;
     if (nearJunction(z)) continue;
     const c = WALL_COLORS[(i * 7 + Math.floor(i / 3)) % WALL_COLORS.length];
-    items.push({ base: z, x: WALL_X, y: 1.05, sx: 0.3, sy: 2.1, sz: 9.4, color: c });
+    items.push({ base: z, x: WALL_X, y: 1.15, sx: 0.3, sy: 2.3, sz: 9.4, color: c });
     items.push({ base: z, x: WALL_X - 0.02, y: 0.12, sx: 0.36, sy: 0.24, sz: 9.5, color: 0x8d8579 }); // plinth
     items.push({ base: z - 5, x: WALL_X, y: 1.25, sx: 0.6, sy: 2.5, sz: 0.6, color: 0xb9b2a4 });      // pilaster
   }
@@ -47,6 +47,23 @@ function buildPieces() {
     items.push({ base: -rnd() * SPAN, x: lane + 1.5, y: 0.02, sx: 0.75, sy: 0.015, sz: 0.75, color: 0x2a2d31 });
   }
   return items;
+}
+
+const SHOPS = [
+  ['ALHAJI GENERAL STORE', '#1f6f43'], ['MAI SHAI & BREAD', '#b5532b'], ['GSM / POS / AIRTIME', '#1b5fa8'],
+  ['PHARMACY', '#12805c'], ['SUYA SPOT', '#8e2b20'], ['M. TAILORING', '#6a3d8f'], ['TYRE & VULCANIZER', '#d49a00'], ['ELECTRONICS', '#233a5e'],
+];
+
+function signTexture(label, color) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = color; g.fillRect(0, 0, 512, 128);
+  g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(0, 0, 512, 8); g.fillRect(0, 120, 512, 8);
+  g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  let size = 54; g.font = `800 ${size}px system-ui, sans-serif`;
+  while (g.measureText(label).width > 470 && size > 20) { size -= 2; g.font = `800 ${size}px system-ui, sans-serif`; }
+  g.fillText(label, 256, 66);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 2; return t;
 }
 
 function shadowTexture() {
@@ -80,13 +97,37 @@ function build(renderer) {
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   root.add(mesh);
 
+  // shopfronts painted on the wall: a signboard and a striped awning each, repeating along the street
+  const signs = [];
+  const sRnd = lcg(777);
+  for (let i = 0; i < 12; i += 1) {
+    const base = -8 - i * 16.4 - sRnd() * 3;
+    if (JUNCTIONS.some((j) => [0, 100].some((k) => Math.abs(base - (j - k)) < 10))) continue;
+    signs.push({ base, kind: i % SHOPS.length });
+  }
+  const signGeo = new THREE.PlaneGeometry(4.4, 1.1);
+  const awnGeo = new THREE.BoxGeometry(1.0, 0.1, 3.4);
+  const awnMat = lam({ color: 0xffffff });
+  const awnMesh = new THREE.InstancedMesh(awnGeo, awnMat, signs.length);
+  awnMesh.frustumCulled = false;
+  const AWN = [0xd8332a, 0xf2b700, 0x1d7fd1, 0x2a9d5c, 0xef7d1a];
+  signs.forEach((sg, i) => awnMesh.setColorAt(i, new THREE.Color(AWN[i % AWN.length])));
+  if (awnMesh.instanceColor) awnMesh.instanceColor.needsUpdate = true;
+  root.add(awnMesh);
+  const signMeshes = SHOPS.map(([label, color]) => {
+    const list = signs.filter((sg) => sg.kind === SHOPS.findIndex((x) => x[0] === label));
+    const m = new THREE.InstancedMesh(signGeo, noShift(new THREE.MeshBasicMaterial({ map: signTexture(label, color) })), Math.max(1, list.length));
+    m.frustumCulled = false; m.count = list.length; root.add(m);
+    return { mesh: m, list };
+  });
+
   // contact shadow under the keke
   const blob = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 3.8), new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, fog: false }));
   blob.rotation.x = -Math.PI / 2; blob.position.set(0, 0.02, 0.1); blob.name = 'KANO_KEKE_CONTACT_SHADOW'; blob.renderOrder = 2;
   renderer.player?.add(blob);
 
   renderer.world.add(root);
-  return { root, mesh, items, offset: 0, dummy: new THREE.Object3D(), blob };
+  return { root, mesh, items, offset: 0, dummy: new THREE.Object3D(), blob, signs, signMeshes, awnMesh };
 }
 
 function layout(k) {
@@ -97,6 +138,15 @@ function layout(k) {
     k.mesh.setMatrixAt(i, d.matrix);
   });
   k.mesh.instanceMatrix.needsUpdate = true;
+  const wz = (b) => ((((b + k.offset - NEAR) % SPAN) + SPAN) % SPAN) + NEAR - SPAN;
+  k.signs.forEach((sg, i) => {
+    d.position.set(WALL_X - 0.7, 2.2, wz(sg.base)); d.scale.set(1, 1, 1); d.rotation.set(0.28, 0, 0); d.updateMatrix(); k.awnMesh.setMatrixAt(i, d.matrix);
+  });
+  k.awnMesh.instanceMatrix.needsUpdate = true;
+  for (const { mesh, list } of k.signMeshes) {
+    list.forEach((sg, i) => { d.position.set(WALL_X - 0.2, 2.75, wz(sg.base)); d.scale.set(1, 1, 1); d.rotation.set(0, -Math.PI / 2, 0); d.updateMatrix(); mesh.setMatrixAt(i, d.matrix); });
+    mesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 function update(renderer, state, dt) {
