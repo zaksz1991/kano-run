@@ -150,7 +150,9 @@ function render(g, story) {
   overlay.append(scene, h, meta, stats);
   if (story) { const d = document.createElement('div'); d.className = 'story'; d.textContent = story.text; overlay.append(d); }
   const grid = document.createElement('div'); grid.className = 'grid';
-  for (const a of activities(g)) {
+  // Only show what you can actually do tonight (plus ones you only lack cash for); sleep always comes first.
+  const shown = activities(g).filter((a) => a.ok).sort((x, y) => Number(!!y.primary) - Number(!!x.primary));
+  for (const a of shown) {
     const b = document.createElement('button');
     b.className = a.primary ? 'primary' : '';
     const can = a.ok && s.score >= a.cost;
@@ -217,7 +219,13 @@ function sleep(g) {
 function closeOverlay() {
   busy = false;
   if (overlay) { overlay.remove(); overlay = null; }
-  const g = window.kanoGame; if (g?.s) g.s.eventCooldown = 6;
+  const g = window.kanoGame;
+  if (g?.s) {
+    g.s.eventCooldown = 6;
+    // The shift screen holds the brake; let go of every control so the keke does not creep backwards afterwards.
+    g.s.brake = false; g.s.gas = false; g.s.reverse = false; g.s.reverseThrottle = 0; g.s.reverseToForward = false;
+    g.s.speed = 0; g.s.signedSpeed = 0;
+  }
 }
 
 function openEvening(g) {
