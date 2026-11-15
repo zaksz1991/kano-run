@@ -28,6 +28,7 @@ import './KanoElectricMenu.js';
 import './KanoHarmattanHaze.js';
 import './KanoRoadsideVendors.js';
 import './KanoLeftFrontage.js';
+import './KanoRoadMirror.js';
 import './KanoEngineCooling.js';
 import './KanoMobileRoadlightGlb.js';
 import './KanoKanoTrafficMix.js';
