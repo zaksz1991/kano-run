@@ -6,10 +6,12 @@
  */
 import * as THREE from 'three';
 import { Renderer3D } from './renderer3d.js';
+import { PACK_ASPHALT_URL, PACK_COBBLE_URL } from './KanoRoadPackTextures.js';
 
 const PATCH = Symbol.for('kano.life.dustyRoadLook.v1');
 
 let asphaltTexture = null;
+const clones = [];
 function dustyAsphalt() {
   if (asphaltTexture) return asphaltTexture;
   const size = 256;
@@ -37,6 +39,18 @@ function dustyAsphalt() {
   asphaltTexture.wrapT = THREE.RepeatWrapping;
   asphaltTexture.colorSpace = THREE.SRGBColorSpace;
   asphaltTexture.anisotropy = 4;
+  // Replace the procedural tar with the real asphalt from the player's road-pack model.
+  try {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        ctx.drawImage(img, 0, 0, size, size);
+        asphaltTexture.needsUpdate = true;
+        clones.forEach((t) => { t.needsUpdate = true; });
+      } catch (e) { /* keep procedural tar */ }
+    };
+    img.src = PACK_ASPHALT_URL;
+  } catch (e) { /* keep procedural tar */ }
   return asphaltTexture;
 }
 
@@ -47,6 +61,7 @@ function applyTexture(material, repeat) {
   const map = base.clone();
   map.needsUpdate = true;
   map.userData = { kanoDusty: true };
+  clones.push(map);
   map.repeat.set(repeat[0], repeat[1]);
   material.map = map;
   material.color?.set(0xffffff);
@@ -69,6 +84,13 @@ function buildFootpath(renderer, k) {
   path.rotation.x = -Math.PI / 2;
   path.position.set(-16.4, 0.02, -92);
   path.name = 'KANO_FOOTPATH_PAVING';
+  try {
+    const tex = new THREE.TextureLoader().load(PACK_COBBLE_URL);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, 60);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    path.material.map = tex; path.material.color.set(0xffffff); path.material.needsUpdate = true;
+  } catch (e) { /* plain paving */ }
   k.group.add(path);
   // navy-and-white kerb blocks along the road edge of the footpath
   const positions = [];
