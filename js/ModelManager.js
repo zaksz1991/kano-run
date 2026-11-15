@@ -1206,11 +1206,11 @@ function paintFlyoverAtlasAsAsphalt(root) {
       const src = document.createElement('canvas');
       src.width = w; src.height = h;
       src.getContext('2d').drawImage(canvas, 0, 0);
-      const sw = Math.floor(w * 0.17); const sh = Math.floor(h * 0.78);
-      const sx = Math.floor(w * 0.42); const sy = Math.floor(h * 0.2);
-      for (let dx = 0; dx < w * 0.40; dx += sw) {
-        for (let dy = 0; dy < h; dy += sh) ctx.drawImage(src, sx, sy, sw, sh, dx, dy, sw, sh);
-      }
+      // One stretched draw of a clean inset of the atlas' asphalt: no tile joints, so no seam lines.
+      const inset = Math.max(6, Math.floor(w * 0.012));
+      const sx = Math.floor(w * 0.42) + inset; const sy = Math.floor(h * 0.2) + inset;
+      const sw = Math.floor(w * 0.17) - inset * 2; const sh = Math.floor(h * 0.78) - inset * 2;
+      ctx.drawImage(src, sx, sy, sw, sh, 0, 0, Math.floor(w * 0.40), h);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = map.colorSpace;
       texture.flipY = map.flipY;
@@ -1218,7 +1218,7 @@ function paintFlyoverAtlasAsAsphalt(root) {
       texture.anisotropy = map.anisotropy;
       texture.channel = map.channel;
       material.map = texture;
-      material.color?.setScalar?.(0.8); // match the road's lighting
+      material.color?.setScalar?.(0.9); // match the road's lighting
       material.needsUpdate = true;
     });
   });
