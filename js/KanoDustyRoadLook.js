@@ -45,6 +45,8 @@ function dustyAsphalt() {
     img.onload = () => {
       try {
         ctx.drawImage(img, 0, 0, size, size);
+        ctx.fillStyle = 'rgba(62,64,69,0.38)';   // soften the grain so near tarmac reads smooth, not gravelly
+        ctx.fillRect(0, 0, size, size);
         asphaltTexture.needsUpdate = true;
         clones.forEach((t) => { t.needsUpdate = true; });
       } catch (e) { /* keep procedural tar */ }
@@ -126,10 +128,10 @@ function recolour(renderer) {
   if (!world) return;
   // player's carriageway
   const road = world.children.find((c) => c.geometry?.parameters?.width === 10 && c.geometry?.parameters?.height === 250);
-  if (road) applyTexture(road.material, road.material?.map ? [road.material.map.repeat.x, road.material.map.repeat.y] : [3, 64]);
+  if (road) applyTexture(road.material, [8, 208]);
   const k = renderer.__kanoTwoWay;
   if (k) {
-    applyTexture(k.asphaltMaterial, [2.4, 64]);
+    applyTexture(k.asphaltMaterial, [6.1, 208]);
     k.hasMap = true; // stop the original code from putting its dark texture back
     buildFootpath(renderer, k);
   }
