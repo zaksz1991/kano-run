@@ -374,6 +374,9 @@ function animateStreetLife(renderer, dt) {
     const parts = actor.userData.kanoAnimationParts;
     if (!parts) continue;
     const phase = time * (2.7 + pedestrian.walkSpeed * 2.0) + pedestrian.phase;
+    if (!Number.isFinite(actor.userData.kanoStreetWalkBaseX)) actor.userData.kanoStreetWalkBaseX = Number.isFinite(actor.position.x) ? actor.position.x : 7;
+    if (!Number.isFinite(actor.userData.kanoStreetWalkBaseY)) actor.userData.kanoStreetWalkBaseY = 0;
+    if (!Number.isFinite(actor.position.z)) actor.position.z = -20;
     actor.position.x = actor.userData.kanoStreetWalkBaseX + Math.sin(time * 0.46 + pedestrian.phase) * 0.22;
     actor.position.z += pedestrian.walkDirection * pedestrian.walkSpeed * dt;
     actor.position.y = actor.userData.kanoStreetWalkBaseY + Math.abs(Math.sin(phase * 2)) * 0.025;
