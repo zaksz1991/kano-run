@@ -1218,6 +1218,7 @@ function paintFlyoverAtlasAsAsphalt(root) {
       texture.anisotropy = map.anisotropy;
       texture.channel = map.channel;
       material.map = texture;
+      material.color?.setScalar?.(0.8); // match the road's lighting
       material.needsUpdate = true;
     });
   });

@@ -8,8 +8,10 @@ const ORDER = [
   'kano-chase-chip', 'kano-cooling-card', 'kano-race-chip', 'kano-signal-chip', 'kano-karota-chip', 'kano-flyover-fork',
   'kano-goslow-chip', 'kano-cng-chip', 'kano-drop-chip', 'kano-sign-reader', 'kano-day-arc',
 ];
-const MAX_VISIBLE = 2;
+const MAX_VISIBLE = 1;
 let box = null;
+const seen = new Map(); // id -> {text, since}
+const LINGER_MS = { 'kano-sign-reader': 3200, 'kano-drop-chip': 6000, 'kano-goslow-chip': 4000, 'kano-karota-chip': 5000 };
 
 function css() {
   if (document.getElementById('kano-hud-stack-css')) return;
@@ -53,10 +55,18 @@ function tick() {
       // keep the declared order
       const wantIndex = ORDER.filter((k) => document.getElementById(k)?.parentElement === box).indexOf(id);
       if (box.children[wantIndex] !== el) box.insertBefore(el, box.children[wantIndex] || null);
-      if (visible(el)) {
+      const present = visible(el);
+      let alive = present;
+      if (alive && LINGER_MS[id]) {
+        const text = el.textContent || '';
+        let rec = seen.get(id);
+        if (!rec || rec.text !== text) { rec = { text, since: Date.now() }; seen.set(id, rec); }
+        if (Date.now() - rec.since > LINGER_MS[id]) alive = false; // read once, then get out of the way
+      }
+      if (alive) {
         shown += 1;
         el.dataset.stackHidden = shown > MAX_VISIBLE ? '1' : '0';
-      } else el.dataset.stackHidden = '0';
+      } else el.dataset.stackHidden = present ? '1' : '0';
     }
     // Player-count chips: TOTAL sits to the right of LIVE on the same row.
     const total = document.getElementById('kano-total-players-chip');
