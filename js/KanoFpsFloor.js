@@ -20,7 +20,7 @@ function load() {
 }
 const MODE_KEY = 'kano.life.qualityMode.v1';
 const MODES = ['auto', 'sharp', 'fast'];
-const MODE_CAP = { sharp: 1.25, fast: 0.72 };
+const MODE_CAP = { sharp: 1.25, fast: 0.8 };
 function loadMode() { try { const m = localStorage.getItem(MODE_KEY); return MODES.includes(m) ? m : 'auto'; } catch (_) { return 'auto'; } }
 function saveMode(m) { try { localStorage.setItem(MODE_KEY, m); } catch (_) { /* optional */ } }
 function save(v) { try { localStorage.setItem(KEY, String(v)); } catch (_) { /* optional */ } }
