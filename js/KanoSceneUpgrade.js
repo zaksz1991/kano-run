@@ -1,3 +1,4 @@
+import { kanoLateBoundMethod } from './KanoProductionBridge.js';
 import * as THREE from 'three';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -796,7 +797,7 @@ export class KanoSceneUpgrade {
     // zero, the epsilon is restored immediately, and pothole damage still has
     // its independent speed > 0.5 guard. This keeps the existing engine intact.
     if (typeof this.game.moveZones === 'function') {
-      const original = this.game.moveZones;
+      const original = kanoLateBoundMethod(this.game, 'moveZones');
       const wrapped = function (dt) {
         const state = this.s;
         const originalSignedSpeed = state?.signedSpeed;
@@ -824,7 +825,7 @@ export class KanoSceneUpgrade {
     }
 
     if (typeof this.game.pickup === 'function') {
-      const original = this.game.pickup;
+      const original = kanoLateBoundMethod(this.game, 'pickup');
       const wrapped = function (zone) {
         const before = this.s?.passengers?.length || 0;
         const beforeSeats = (this.s?.passengers || []).reduce((sum, p) => sum + (p.seats || 0), 0);
@@ -841,7 +842,7 @@ export class KanoSceneUpgrade {
     }
 
     if (typeof this.game.drop === 'function') {
-      const original = this.game.drop;
+      const original = kanoLateBoundMethod(this.game, 'drop');
       const wrapped = function (zone) {
         const passengers = this.s?.passengers || [];
         const passenger = passengers[0] || null;
