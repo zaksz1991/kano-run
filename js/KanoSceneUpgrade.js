@@ -988,6 +988,11 @@ export class KanoSceneUpgrade {
         const climb = clamp((t - 0.8) / 0.2, 0, 1);
         item.rig.root.position.y -= climb * 0.22;
         item.rig.root.scale.setScalar(t > 0.97 ? 0.015 : 1 - climb * 0.08);
+      } else if (item.kind === 'alight' && t < 0.14) {
+        // Climb out from under the canopy: rise and straighten before walking off.
+        const out = clamp(t / 0.14, 0, 1);
+        item.rig.root.position.y -= (1 - out) * 0.22;
+        item.rig.root.scale.setScalar(0.92 + out * 0.08);
       } else if (item.kind === 'alight' && t > 0.84) {
         item.rig.root.scale.setScalar(clamp((1 - t) / 0.16, 0.015, 1));
       }
