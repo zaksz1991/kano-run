@@ -1,3 +1,4 @@
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 import { ROUTES, DRIVERS, ACHIEVEMENTS } from './config.js';
 import { save, persist, tribeStanding, unlockAchievement } from './storage.js';
 
@@ -260,8 +261,9 @@ export function installStoppedInteractionCompatibility(game) {
       if (entry.references <= 0) entry.restore();
     };
   }
-  const original = game.moveZones;
-  const entry = { active: true, references: 1, original, wrapper: null, restore: null };
+  const rawOriginal = game.moveZones;
+  const original = kanoLateBoundMethod(game, 'moveZones');
+  const entry = { active: true, references: 1, original: rawOriginal, wrapper: null, restore: null };
   entry.wrapper = function alignedRoadsideMoveZones(dt) {
     const state = this?.s;
     if (!state || !Array.isArray(state.zones)) return original.call(this, dt);
@@ -296,7 +298,7 @@ export function installStoppedInteractionCompatibility(game) {
   entry.restore = () => {
     if (!entry.active) return;
     entry.active = false;
-    if (game.moveZones === entry.wrapper) game.moveZones = original;
+    if (game.moveZones === entry.wrapper) game.moveZones = rawOriginal;
     try { delete game[MOVE_ZONES_PATCH]; } catch { game[MOVE_ZONES_PATCH] = undefined; }
   };
   game.moveZones = entry.wrapper;
@@ -791,9 +793,9 @@ export class KanoInteractionReliability {
   }
 
   installChallengeStartHooks() {
-    const originalStart = this.game.start;
-    const originalFinish = this.game.finishOrContinue;
-    const originalContinue = this.game.continueRun;
+    const originalStart = kanoLateBoundMethod(this.game, 'start');
+    const originalFinish = kanoLateBoundMethod(this.game, 'finishOrContinue');
+    const originalContinue = kanoLateBoundMethod(this.game, 'continueRun');
     const owner = this;
 
     if (typeof originalStart === 'function') {

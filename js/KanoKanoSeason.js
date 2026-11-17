@@ -1,3 +1,4 @@
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 /**
  * Kano seasons: the general election and Ramadan, tied to the real calendar (sped up as the game days pass).
  * INEC scheduled the 2027 presidential poll for 16 January 2027 (Feb 2026 timetable); Ramadan 2027 starts about 8 Feb.
@@ -110,7 +111,7 @@ if (typeof window !== 'undefined' && !window.kanoSeason) {
     const g = window.kanoGame;
     if (!g || typeof g.drop !== 'function') return;
     clearInterval(wait);
-    const origDrop = g.drop.bind(g);
+    const origDrop = kanoLateBoundMethod(g, 'drop');
     g.drop = function (...a) {
       const before = this.s.score;
       const r = origDrop(...a);

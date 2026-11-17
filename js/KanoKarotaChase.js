@@ -7,6 +7,7 @@
  *     stopped for a few seconds, fine N2,500 and more wanted heat
  *   - after 45 s they give up
  */
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 import * as THREE from 'three';
 
 const UNITS_PER_KM = 1008;
@@ -114,7 +115,7 @@ function frame() {
     const R = window.kanoRenderer;
     if (g && !g.__kanoChaseHook && typeof g.resolveEvent === 'function') {
       g.__kanoChaseHook = true;
-      const orig = g.resolveEvent.bind(g);
+      const orig = kanoLateBoundMethod(g, 'resolveEvent');
       g.resolveEvent = function (action, ...rest) {
         const wasKarota = this.s?.event === 'karota';
         const out = orig(action, ...rest);

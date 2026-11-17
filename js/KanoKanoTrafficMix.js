@@ -1,3 +1,4 @@
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 /**
  * Kano road mix: about 50% keke napep, 20% motorcycle (okada/achaba) and 30% everything else
  * (cars, taxis, SUVs, trucks/lorries, buses). Assigned in shuffled batches of ten so the mix holds at any moment.
@@ -32,7 +33,7 @@ if (typeof window !== 'undefined' && !window.__kanoTrafficMix) {
     const g = window.kanoGame;
     if (!g || typeof g.spawnTraffic !== 'function') return;
     clearInterval(wait);
-    const orig = g.spawnTraffic.bind(g);
+    const orig = kanoLateBoundMethod(g, 'spawnTraffic');
     let bag = [];
     g.spawnTraffic = function (...a) {
       const before = new Set(this.s.traffic || []);

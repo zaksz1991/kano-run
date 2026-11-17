@@ -5,6 +5,7 @@
  * joined the APC, where former governor Ganduje is a leader; Kwankwaso's NNPP is contesting 2027.
  * Nobody is quoted. The driver can wear a cap, take a flag or stay neutral; passengers react.
  */
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 import * as THREE from 'three';
 
 const KEY = 'kano-politics-stance';
@@ -170,7 +171,7 @@ function patch(g) {
   if (g.__kanoPolitics) return;
   g.__kanoPolitics = true;
   window.kanoPolitics = { rally: () => stageRally(g), chatter: () => chatter(g), news: () => g.ui?.toast?.(NEWS[0]) };
-  const origDrop = g.drop.bind(g);
+  const origDrop = kanoLateBoundMethod(g, 'drop');
   g.drop = function (...a) {
     const before = this.s.score;
     const r = origDrop(...a);

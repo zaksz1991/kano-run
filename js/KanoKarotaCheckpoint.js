@@ -5,6 +5,7 @@
  * shoulder) and a distance chip counts down. The usual KAROTA card opens only when you reach the checkpoint.
  * Models come from your own GLBs: karota.glb, police_man.glb and the cone model.
  */
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 import * as THREE from 'three';
 
 const UNITS_PER_KM = 1008;      // world scroll: 0.28 units per km/h per second
@@ -84,7 +85,7 @@ async function build(renderer) {
 function install(g) {
   if (g.__kanoKarotaStaged || typeof g.beginEvent !== 'function') return;
   g.__kanoKarotaStaged = true;
-  const original = g.beginEvent.bind(g);
+  const original = kanoLateBoundMethod(g, 'beginEvent');
   g.beginEvent = function patched(type) {
     if (type === 'karota' && !this.__kanoKarotaPass) {
       if (staged || this.state !== 'PLAY' || this.s.event) return undefined;

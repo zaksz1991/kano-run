@@ -1,3 +1,4 @@
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 import './KanoTextCapture.js';
 import './KanoPixelRatioGovernor.js';
 import './KanoCanvasResizeGuard.js';
@@ -1075,7 +1076,7 @@ function boot() {
 
     // Each new run is a new shift. Breakfast is recorded just after start(),
     // so it is applied on the first driving frame.
-    const startRun = game.start.bind(game);
+    const startRun = kanoLateBoundMethod(game, 'start');
 
     game.start = (...args) => {
       shiftPending = true;

@@ -1,3 +1,4 @@
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 import {
   NarrativeDialogueEngine,
   ProfileEngine,
@@ -278,15 +279,4 @@ export class KanoProductionBridge {
     this.hawker = null;
     this.narrative = null;
   }
-}
-
-// Returns the game's method for wrapping. If it is still the plain prototype method (no wrapper stacked on the
-// instance yet) it is returned late-bound, so patches installed on the prototype after this point are not skipped.
-export function kanoLateBoundMethod(game, name) {
-  const current = game?.[name];
-  if (typeof current !== 'function') return current;
-  if (Object.prototype.hasOwnProperty.call(game, name)) return current;
-  const proto = Object.getPrototypeOf(game);
-  if (typeof proto?.[name] !== 'function') return current;
-  return function lateBound(...a) { return proto[name].apply(game, a); };
 }

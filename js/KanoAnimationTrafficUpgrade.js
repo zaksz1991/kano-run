@@ -1,3 +1,4 @@
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
@@ -170,7 +171,7 @@ export class KanoTrafficDirector {
 
   install() {
     const game = this.game;
-    const originalSpawn = game.spawnTraffic;
+    const originalSpawn = kanoLateBoundMethod(game, 'spawnTraffic');
 
     if (typeof originalSpawn === 'function') {
       this.originalSpawnTraffic = originalSpawn;

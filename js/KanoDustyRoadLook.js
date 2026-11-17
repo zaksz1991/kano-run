@@ -98,7 +98,7 @@ function buildFootpath(renderer, k) {
   path.position.set(-16.4, 0.02, -92);
   path.name = 'KANO_FOOTPATH_PAVING';
   try {
-    path.material.map = cobbleMap(2.4); path.material.color.set(0xffffff); path.material.needsUpdate = true;
+    path.material.map = cobbleMap(2.4); path.material.color.set(0xd2b280); path.material.needsUpdate = true;
   } catch (e) { /* plain paving */ }
   k.group.add(path);
   // navy-and-white kerb blocks along the road edge of the footpath
@@ -142,7 +142,7 @@ function recolour(renderer) {
   for (const name of ['KANO_RIGHT_SAND_VERGE', 'KANO_LEFT_SAND_VERGE']) {
     const verge = world.getObjectByName(name);
     if (verge?.material && !verge.material.map?.userData?.kanoCobble) {
-      try { verge.material.map = cobbleMap(2.7); verge.material.color.set(0xffffff); verge.material.needsUpdate = true; } catch (e) { /* plain paving */ }
+      try { verge.material.map = cobbleMap(2.7); verge.material.color.set(0xd2b280); verge.material.needsUpdate = true; } catch (e) { /* plain paving */ }
     }
   }
 }

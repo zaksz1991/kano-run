@@ -1,4 +1,4 @@
-import { kanoLateBoundMethod } from './KanoProductionBridge.js';
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 import * as THREE from 'three';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -797,7 +797,8 @@ export class KanoSceneUpgrade {
     // zero, the epsilon is restored immediately, and pothole damage still has
     // its independent speed > 0.5 guard. This keeps the existing engine intact.
     if (typeof this.game.moveZones === 'function') {
-      const original = kanoLateBoundMethod(this.game, 'moveZones');
+      const original = this.game.moveZones;
+      const base = kanoLateBoundMethod(this.game, 'moveZones');
       const wrapped = function (dt) {
         const state = this.s;
         const originalSignedSpeed = state?.signedSpeed;
@@ -813,7 +814,7 @@ export class KanoSceneUpgrade {
         }
 
         try {
-          return original.call(this, dt);
+          return base.call(this, dt);
         } finally {
           if (state && stoppedForRoadsideInteraction) {
             state.signedSpeed = originalSignedSpeed;
@@ -825,11 +826,12 @@ export class KanoSceneUpgrade {
     }
 
     if (typeof this.game.pickup === 'function') {
-      const original = kanoLateBoundMethod(this.game, 'pickup');
+      const original = this.game.pickup;
+      const base = kanoLateBoundMethod(this.game, 'pickup');
       const wrapped = function (zone) {
         const before = this.s?.passengers?.length || 0;
         const beforeSeats = (this.s?.passengers || []).reduce((sum, p) => sum + (p.seats || 0), 0);
-        const result = original.call(this, zone);
+        const result = base.call(this, zone);
         const after = this.s?.passengers?.length || 0;
         const afterSeats = (this.s?.passengers || []).reduce((sum, p) => sum + (p.seats || 0), 0);
         if (result && after > before && afterSeats > beforeSeats) {
@@ -842,12 +844,13 @@ export class KanoSceneUpgrade {
     }
 
     if (typeof this.game.drop === 'function') {
-      const original = kanoLateBoundMethod(this.game, 'drop');
+      const original = this.game.drop;
+      const base = kanoLateBoundMethod(this.game, 'drop');
       const wrapped = function (zone) {
         const passengers = this.s?.passengers || [];
         const passenger = passengers[0] || null;
         const before = passengers.length;
-        const result = original.call(this, zone);
+        const result = base.call(this, zone);
         const after = this.s?.passengers?.length || 0;
         if (passenger && result && after < before) {
           upgrade.startPassengerWalk('alight', zone, passenger);

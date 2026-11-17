@@ -1,3 +1,4 @@
+import { kanoLateBoundMethod } from './KanoLateBound.js';
 /**
  * After the shift: park the keke and live the evening like a Kano keke driver.
  * Dinner (iftar in Ramadan), Maghrib and Isha prayers, home to the family, a visit to the girlfriend,
@@ -265,7 +266,7 @@ if (typeof window !== 'undefined' && !window.__kanoEveningLife) {
     clearInterval(wait);
     setInterval(() => { try { updateChip(g); } catch (_) { /* optional */ } }, 700);
     // Mood nudges tomorrow's tips a little.
-    const origDrop = g.drop.bind(g);
+    const origDrop = kanoLateBoundMethod(g, 'drop');
     g.drop = function (...a) {
       const before = this.s.score;
       const r = origDrop(...a);
