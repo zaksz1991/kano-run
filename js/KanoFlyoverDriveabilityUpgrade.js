@@ -205,8 +205,8 @@ const GLB_HALF = 150; // 300 m flyover with long, gentle ramps (was 144 m)
 const FLYOVER_SPACING = 1700; // real flyovers are kilometres apart, not one every 260 m
 const GLB_DECK_HEIGHT = 5.2;
 const GLB_SPAN = GLB_HALF * 2;
-const GLB_WIDTH = 8.4; // deck covers the middle + right lanes; the LEFT lane is the road down beside the flyover
-const GLB_CENTER_X = 1.8; // lanes sit at x=0 and x=3: keep the keke off the left kerb and rail
+const GLB_WIDTH = 10.8; // deck covers all three lanes edge to edge: one road, no ground lane beside it
+const GLB_CENTER_X = 0; // lanes sit at x=-3, 0 and 3, so the deck is centred on the road
 
 function sampleDeck(wrapper) {
   wrapper.updateMatrixWorld(true);
@@ -392,8 +392,8 @@ function nearestSurfaceForZ(renderer, z) {
 function elevateActor(renderer, actor) {
   if (!actor?.position) return 0;
   const surface = nearestSurfaceForZ(renderer, actor.position.z);
-  // The left lane is the ground-level road beside the flyover.
-  const height = actor.position.x < -1.8 ? 0 : (surface?.height || 0);
+  // Every lane is on the deck; only people standing out on the verge stay at ground level.
+  const height = Math.abs(actor.position.x) > 5.4 ? 0 : (surface?.height || 0);
   actor.position.y = height;
   return height;
 }
@@ -422,7 +422,7 @@ function updateMobileTrafficBatchElevations(renderer, state) {
       const z = -Math.max(-0.05, Number(vehicle.depth) || 0) * 88;
       const surface = nearestSurfaceForZ(renderer, z);
       if (!surface) continue;
-      const groundLane = vehicle.lane === 0;
+      const groundLane = false;
       mesh.getMatrixAt(index, tempMatrix);
       tempMatrix.decompose(tempPosition, tempQuaternion, tempScale);
       tempPosition.y = groundLane ? 0 : surface.height;
