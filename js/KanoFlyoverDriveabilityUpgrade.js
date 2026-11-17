@@ -376,6 +376,7 @@ function nearestSurfaceForZ(renderer, z) {
   for (const record of renderer.kanoFlyoverApproachRecords || []) {
     const flyover = renderer.flyovers?.[record.index] || record.flyover;
     if (!flyover) continue;
+    if (!record.glbSkinTried) continue; // the real deck is still loading: no surface yet, so nothing changes shape mid-approach
     const deckHeight = record.deckHeight || getSurfaceHeight(flyover);
     const relativeZ = z - flyover.position.z;
     const height = record.profile ? profileHeight(record.profile, relativeZ) : kanoFlyoverHeightAt(relativeZ, deckHeight);
@@ -441,6 +442,12 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   // Anchors have just been synced (this runs inside render): put every deck exactly on its flyover.
   for (const record of renderer.kanoFlyoverApproachRecords || []) {
     const fly = renderer.flyovers?.[record.index] || record.flyover;
+    if (!record.glbSkinTried) {
+      // Model still loading: show nothing (the old placeholder deck has a different shape and made the road jump).
+      if (fly) fly.visible = false;
+      record.group.visible = false;
+      continue;
+    }
     if (fly?.userData?.kanoWorldAnchoredStep96) {
       record.group.position.z = fly.position.z;
       record.group.visible = fly.visible !== false;
