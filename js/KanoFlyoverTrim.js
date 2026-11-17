@@ -10,8 +10,8 @@ import { KANO_FLYOVER_SITES } from './KanoFlyoverRoundaboutUpgrade.js';
 const PATCH = Symbol.for('kano.life.flyoverTrim.v1');
 const HALF = 150;
 const STEP = 3;
-const DECK_CENTER_X = 1.8;
-const EDGE_X = 4.05;      // block centre, inside the deck's outer edge
+const DECK_CENTER_X = 0;
+const EDGE_X = 5.05;      // block centre, inside the deck's outer edge
 const RED = [0x202326, 0xeee9df];
 const GREEN = [0x202326, 0xeee9df];
 const RED_SITES = /KOFAR MATA|DAN AGUNDI|MURTALA|BUK/;
