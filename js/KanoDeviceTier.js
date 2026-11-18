@@ -86,7 +86,8 @@ export function getMobileRenderBudget(tier) {
 export function getMobileTrafficModelBudget(tier) {
   // Imported traffic meshes are still drawn as many separate material groups.
   // Keep most mobile traffic procedural; the player's own keke remains GLB-backed.
-  if (tier === 'high') return 1;
-  if (tier === 'mid') return 1;
-  return 0;
+  // The nearest cars use the project's own GLB models (no generated box cars up close); the rest stay cheap.
+  if (tier === 'high') return 5;
+  if (tier === 'mid') return 4;
+  return 2;
 }

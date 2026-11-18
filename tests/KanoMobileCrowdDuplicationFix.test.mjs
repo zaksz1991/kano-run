@@ -23,9 +23,9 @@ test('mobile roadside walkers have a hard cap on imported GLB replacements', () 
 test('mobile renders fewer imported traffic models and uses lightweight traffic keke', () => {
   const tier = read('js/KanoDeviceTier.js');
   const renderer = read('js/renderer3d.js');
-  assert.match(tier, /if \(tier === 'high'\) return 1/);
-  assert.match(tier, /if \(tier === 'mid'\) return 1/);
-  assert.match(tier, /return 0/);
+  assert.match(tier, /if \(tier === 'high'\) return 5/);
+  assert.match(tier, /if \(tier === 'mid'\) return 4/);
+  assert.match(tier, /return 2/);
   assert.match(renderer, /this\.mobile \? this\.makeTrafficKeke\(\) : this\.makeKeke\(\)/);
   assert.match(renderer, /keke\.userData\.sharedGeometry = true/);
 });

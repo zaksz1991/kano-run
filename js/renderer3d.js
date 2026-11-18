@@ -4629,15 +4629,15 @@ export class Renderer3D {
           const beaconColor = zone.type === 'drop' ? 0xffc400 : zone.type === 'fuel' ? 0x3aa0ff : 0x2fe08d;
           const bay = new THREE.Mesh(
             new THREE.PlaneGeometry(2.4, 5.2),
-            new THREE.MeshBasicMaterial({ color: 0x0e0f11, transparent: true, opacity: 0.88, depthWrite: false, fog: false }),
+            new THREE.MeshBasicMaterial({ color: beaconColor, transparent: true, opacity: 0.55, depthWrite: false, fog: false }), // green pick-up / yellow drop-off bay
           );
           bay.rotation.x = -Math.PI / 2;
           bay.position.set(-1.7 * stopSide, 0.045, 0.15);
           bay.material.userData.kanoNoShift = true;
           bay.name = 'KANO_STOP_BEACON';
           actor.add(bay);
-          // Black tarmac bay with a thin painted outline (green pickup / yellow drop-off) instead of a flat coloured tile.
-          const edgeMaterial = new THREE.MeshBasicMaterial({ color: beaconColor, transparent: true, opacity: 0.95, depthWrite: false, fog: false });
+          // Bright painted outline around the coloured bay.
+          const edgeMaterial = new THREE.MeshBasicMaterial({ color: beaconColor, transparent: true, opacity: 1, depthWrite: false, fog: false });
           edgeMaterial.userData.kanoNoShift = true;
           for (const [w, d, ex, ez] of [[2.4, 0.1, 0, 2.55], [2.4, 0.1, 0, -2.55], [0.1, 5.2, 1.15, 0], [0.1, 5.2, -1.15, 0]]) {
             const edge = new THREE.Mesh(new THREE.PlaneGeometry(w, d), edgeMaterial);

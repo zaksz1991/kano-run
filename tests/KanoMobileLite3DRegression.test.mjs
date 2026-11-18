@@ -9,9 +9,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8');
 
 test('mobile traffic model pool is capped by device tier', () => {
-  assert.equal(getMobileTrafficModelBudget('low'), 0);
-  assert.equal(getMobileTrafficModelBudget('mid'), 1);
-  assert.equal(getMobileTrafficModelBudget('high'), 1);
+  assert.equal(getMobileTrafficModelBudget('low'), 2);
+  assert.equal(getMobileTrafficModelBudget('mid'), 4);
+  assert.equal(getMobileTrafficModelBudget('high'), 5);
 });
 
 test('all lane markings use one InstancedMesh instead of individual Mesh draw calls', () => {
