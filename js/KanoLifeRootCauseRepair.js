@@ -295,7 +295,16 @@ function poseActor(actor, time, mode = 'walk') {
   }
   stepCharacterGait(actor, phase, mode === 'walk');
   actor.position.y = actor.userData.kanoRootCauseBaseY + Math.abs(gait) * (mode === 'walk' ? 0.025 : 0.008);
-  if (!pose.all.length) actor.rotation.y = Math.sin(time * 2.4) * 0.025;
+  if (!pose.all.length) {
+    // Keep the facing the caller set (boarding / walking direction); only add a tiny sway on top of it.
+    const last = actor.userData.kanoRootCauseSwayApplied;
+    // If the caller turned the person since our last frame, adopt the new facing as the base.
+    if (!Number.isFinite(actor.userData.kanoRootCauseBaseRotY) || !Number.isFinite(last) || Math.abs(actor.rotation.y - last) > 1e-4) {
+      actor.userData.kanoRootCauseBaseRotY = actor.rotation.y;
+    }
+    actor.rotation.y = actor.userData.kanoRootCauseBaseRotY + Math.sin(time * 2.4) * 0.025;
+    actor.userData.kanoRootCauseSwayApplied = actor.rotation.y;
+  }
 }
 // ---------------------------------------------------------------------------
 // 2B. Activate animation clips already embedded in the character GLBs.
