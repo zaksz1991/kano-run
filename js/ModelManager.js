@@ -133,6 +133,7 @@ const CATALOG = {
   ],
 
   pedestrianWoman: [
+    'characters/pedestrians/muslim-girl.glb',
     'characters/passengers/women_in_hijab.glb',
     'characters/passengers/hijab_muslim_woman.glb',
   ],

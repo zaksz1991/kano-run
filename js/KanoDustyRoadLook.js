@@ -70,6 +70,17 @@ function applyTexture(material, repeat) {
   material.needsUpdate = true;
 }
 
+// Roadside strips (where passengers wait) are black tar like the road, not tiles.
+const tarStrips = [];
+function tarStrip(width) {
+  const map = dustyAsphalt().clone();
+  map.needsUpdate = true;
+  map.userData = { kanoDusty: true };
+  clones.push(map);
+  map.repeat.set(Math.max(1, width / 1.25), 208);
+  tarStrips.push(map);
+  return map;
+}
 const cobbles = [];
 function cobbleMap(width) {
   const tex = new THREE.TextureLoader().load(PACK_COBBLE_URL);
@@ -98,7 +109,7 @@ function buildFootpath(renderer, k) {
   path.position.set(-16.4, 0.02, -92);
   path.name = 'KANO_FOOTPATH_PAVING';
   try {
-    path.material.map = cobbleMap(2.4); path.material.color.set(0xd2b280); path.material.needsUpdate = true;
+    path.material.map = tarStrip(2.4); path.material.color.set(0xffffff); path.material.needsUpdate = true;
   } catch (e) { /* plain paving */ }
   k.group.add(path);
   // navy-and-white kerb blocks along the road edge of the footpath
@@ -141,8 +152,8 @@ function recolour(renderer) {
   // Both footways are the same cobble paving (the two sides of the road match).
   for (const name of ['KANO_RIGHT_SAND_VERGE', 'KANO_LEFT_SAND_VERGE']) {
     const verge = world.getObjectByName(name);
-    if (verge?.material && !verge.material.map?.userData?.kanoCobble) {
-      try { verge.material.map = cobbleMap(2.7); verge.material.color.set(0xd2b280); verge.material.needsUpdate = true; } catch (e) { /* plain paving */ }
+    if (verge?.material && !verge.material.map?.userData?.kanoDusty) {
+      try { verge.material.map = tarStrip(2.7); verge.material.color.set(0xf0f0f0); verge.material.needsUpdate = true; } catch (e) { /* plain tar */ }
     }
   }
 }
@@ -165,6 +176,7 @@ if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.protot
           const onc = this.__kanoTwoWay?.asphaltMaterial?.map;
           if (onc?.userData?.kanoDusty) rows.push(onc);
           for (const map of rows) map.offset.y = (this.__kanoRoadGritScroll * map.repeat.y / 250) % 1;
+          for (const map of tarStrips) map.offset.y = (this.__kanoRoadGritScroll * map.repeat.y / 250) % 1;
           for (const map of cobbles) map.offset.y = (this.__kanoRoadGritScroll * map.repeat.y / 250) % 1;
         }
       } catch (_) { /* cosmetic */ }

@@ -5,6 +5,7 @@
  * This is an additive compatibility layer. It does not change fares, health
  * damage values, collision detection, steering, speed, or progression.
  */
+import { polishCharacter, stepCharacterGait } from './KanoCharacterPolish.js';
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
@@ -81,7 +82,9 @@ function modelInstance(manager, key) {
   if (!manager || typeof manager.getInstance !== 'function') return null;
   try {
     const instance = manager.getInstance(key);
-    return instance?.isObject3D ? instance : null;
+    if (!instance?.isObject3D) return null;
+    try { polishCharacter(instance, key); } catch { /* polish is cosmetic: never block a person from appearing */ }
+    return instance;
   } catch { return null; }
 }
 function getModelPath(root) {
@@ -290,6 +293,7 @@ function poseActor(actor, time, mode = 'walk') {
   for (const item of pose.head) {
     item.node.rotation.z = item.rest.z + Math.sin(time * 1.7) * 0.035;
   }
+  stepCharacterGait(actor, phase, mode === 'walk');
   actor.position.y = actor.userData.kanoRootCauseBaseY + Math.abs(gait) * (mode === 'walk' ? 0.025 : 0.008);
   if (!pose.all.length) actor.rotation.y = Math.sin(time * 2.4) * 0.025;
 }

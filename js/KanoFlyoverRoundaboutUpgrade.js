@@ -341,10 +341,22 @@ export const KANO_FLYOVER_SITES = {
   'Zaria Road': { title: 'DANGI INTERCHANGE', subtitle: '3-LAYER  •  KANO' },
 };
 
+function deckIsBusy(renderer) {
+  for (const flyover of renderer.flyovers || []) {
+    if (!flyover || !flyover.visible) continue;
+    const z = flyover.position.z - 2;
+    if (z > -260 && z < 190) return true;
+  }
+  return false;
+}
+
 function applyFlyoverSite(renderer, routeName) {
   const site = KANO_FLYOVER_SITES[routeName] || null;
   const key = site ? routeName : '';
   const changed = renderer.__kanoFlyoverSiteKey !== key;
+  // Never hide (or swap) a flyover while the keke is on it or about to climb it: a route change
+  // mid-deck used to delete the road from under the player. Apply the change once the deck is clear.
+  if (changed && renderer.__kanoFlyoverSiteKey !== undefined && deckIsBusy(renderer)) return;
   renderer.__kanoFlyoverSiteKey = key;
   for (const flyover of renderer.flyovers || []) if (flyover) flyover.visible = Boolean(site);
   for (const record of renderer.kanoFlyoverSignRecords || []) {
