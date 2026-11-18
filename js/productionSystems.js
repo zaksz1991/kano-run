@@ -674,6 +674,8 @@ export class PureWaterHawker {
     const head = ownedMesh(new THREE.SphereGeometry(0.18, 8, 6), ownedMaterial(0x74482f));
     head.position.set(0, 1.58, -0.42);
     root.add(head);
+    this.fallbackParts = [body, head];
+    for (const part of this.fallbackParts) part.visible = false; // shown only if the real person model never loads
     for (let index = 0; index < 3; index += 1) {
       const sachet = ownedMesh(new THREE.BoxGeometry(0.13, 0.28, 0.1), ownedMaterial(0x9fd6e1, { transparent: true, opacity: 0.85 }));
       sachet.position.set(-0.35 + index * 0.3, 0.95, 0.02);
