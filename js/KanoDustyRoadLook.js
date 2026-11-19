@@ -139,29 +139,21 @@ function recolour(renderer) {
   if (!world) return;
   // player's carriageway
   const road = world.children.find((c) => c.geometry?.parameters?.width === 10 && c.geometry?.parameters?.height === 250);
-  if (road) applyTexture(road.material, [8, 208]);
+  if (road) {
+    applyTexture(road.material, [8, 208]);
+    // The tarmac runs out to the verge on BOTH sides (no sand strip beside the road): same width left and right.
+    if (!road.userData.kanoWideTar) {
+      const wide = 2.7;
+      road.userData.kanoWideTar = true;
+      road.scale.x = wide;
+      if (road.material.map) road.material.map.repeat.x *= wide;
+    }
+  }
   const k = renderer.__kanoTwoWay;
   if (k) {
     applyTexture(k.asphaltMaterial, [6.1, 208]);
     k.hasMap = true; // stop the original code from putting its dark texture back
     buildFootpath(renderer, k);
-  }
-  // Dedicated black-tar footways, one per side. The original footway planes are not drawn on the phone
-  // build, which left raw yellow sand beside the road. These are drawn on top of the sand, identical both sides.
-  for (const side of [-1, 1]) {
-    const name = side < 0 ? 'KANO_TAR_FOOTWAY_LEFT' : 'KANO_TAR_FOOTWAY_RIGHT';
-    if (world.getObjectByName(name)) continue;
-    const ref = world.getObjectByName('KANO_LEFT_SAND_VERGE') || world.getObjectByName('KANO_RIGHT_SAND_VERGE');
-    if (!ref) continue;
-    const mat = new ref.material.constructor({ color: 0xf0f0f0 });
-    mat.userData = { kanoNoShift: true };
-    try { mat.map = tarStrip(4.5); } catch (e) { mat.color.set(0x2c2e32); }
-    const strip = new ref.constructor(new ref.geometry.constructor(4.5, 250), mat);
-    strip.rotation.x = -Math.PI / 2;
-    strip.position.set(side * 6.85, -0.02, -92);
-    strip.name = name;
-    strip.renderOrder = 1;
-    world.add(strip);
   }
   // A plain sand shoulder lay over the left footway; hide it so the left footway shows like the right one.
   const shoulder = world.getObjectByName('KANO_ROADSIDE_SHOULDER_LEFT');

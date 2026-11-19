@@ -2,10 +2,10 @@
  * Continue your last drive. While you drive, the run's key numbers are saved every few seconds and
  * whenever the page is hidden or closed (phone lock, tab switch, app swipe). On the start screen a
  * "CONTINUE LAST DRIVE" button restores cash/score, distance, fuel, tyres, engine and lives (the day clock, hunger and
- * tiredness already persist on their own). Riders on board are not restored (they are let off), and a snapshot older than 12 h is ignored.
+ * tiredness already persist on their own). Riders on board are not restored (they are let off), and a snapshot older than 14 days is ignored. START DRIVING itself continues the saved drive; "START FRESH DRIVE" begins from zero.
  */
 const KEY = 'kano-life-drive-resume-v1';
-const MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const FIELDS = ['score', 'fares', 'distance', 'fuel', 'condition', 'engine', 'tyres', 'engineTemp', 'drops', 'boards',
   'matchedDrops', 'checkpoints', 'refills', 'combo', 'streak', 'safeTripStreak', 'passengerTrust', 'morale', 'heat',
   'lives', 'continues', 'potholeHits', 'collisions', 'nearMisses', 'elapsed', 'time', 'kanoWorldDistanceKm'];
@@ -57,6 +57,49 @@ function ensureButton() {
   btn.textContent = `CONTINUE LAST DRIVE · ${km} km · ₦${Math.round(snap.s.score || 0).toLocaleString()}`;
   btn.addEventListener('click', () => { const s = load(); if (s) restore(s); });
   startBtn.insertAdjacentElement('afterend', btn);
+  let fresh = document.getElementById('kano-fresh-drive-btn');
+  if (!fresh) {
+    fresh = document.createElement('button');
+    fresh.id = 'kano-fresh-drive-btn';
+    fresh.type = 'button';
+    fresh.className = startBtn.className;
+    fresh.textContent = 'START FRESH DRIVE';
+    fresh.style.opacity = '0.8';
+    fresh.addEventListener('click', () => { window.__kanoFreshDrive = true; clear(); startBtn.click(); });
+    btn.insertAdjacentElement('afterend', fresh);
+  }
+}
+
+// START DRIVING continues the saved drive: progress is never silently reset by pressing start or by an update.
+function armAutoResume() {
+  const startBtn = document.getElementById('start-btn');
+  if (!startBtn || startBtn.dataset.kanoResumeArmed) return;
+  startBtn.dataset.kanoResumeArmed = '1';
+  startBtn.addEventListener('click', () => {
+    const snap = window.__kanoFreshDrive ? null : load();
+    window.__kanoFreshDrive = false;
+    window.__kanoResumeNext = snap || null;
+  }, true);
+  const g = game();
+  if (!g || g.__kanoResumeWrapped) return;
+  g.__kanoResumeWrapped = true;
+  const own = Object.prototype.hasOwnProperty.call(g, 'start');
+  const ownFn = g.start;
+  g.start = function kanoResumeStart(...args) {
+    const base = own ? ownFn : Object.getPrototypeOf(g).start;
+    const result = base.apply(this, args);
+    const snap = window.__kanoResumeNext;
+    if (snap && snap.s) {
+      window.__kanoResumeNext = null;
+      try {
+        Object.assign(this.s, snap.s);
+        this.s.passengers = [];
+        this.s.speed = 0;
+        this.ui?.toast?.('Welcome back. Your drive continues from where you stopped.');
+      } catch (_) { /* optional */ }
+    }
+    return result;
+  };
 }
 
 if (typeof window !== 'undefined' && !window.__kanoDriveResume) {
@@ -64,7 +107,7 @@ if (typeof window !== 'undefined' && !window.__kanoDriveResume) {
   setInterval(save, 5000);
   window.addEventListener('pagehide', save);
   document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
-  setInterval(() => { try { ensureButton(); } catch (_) { /* optional */ } }, 1500);
+  setInterval(() => { try { ensureButton(); armAutoResume(); } catch (_) { /* optional */ } }, 1500);
   // A finished run (game over) ends the saved drive.
   setInterval(() => { const g = game(); if (g && g.state === 'OVER') clear(); }, 2000);
 }
