@@ -490,3 +490,15 @@ body.kano-karota-stop #event-card #event-actions button { padding: 9px 6px; }
 .event-actions button:nth-child(4) { animation-delay: .18s; }
 .event-actions button:active, .menu-grid button:active, .primary:active { transform: scale(.97); transition: transform .08s; }
 @media (prefers-reduced-motion: reduce) { .event-card, .screen, .toast.show, .event-actions button, .start-card, .panel { animation: none !important; } }
+
+/* ---- Live 3D start stage ---- */
+#start-screen { background: linear-gradient(180deg, #2b1a2e 0%, #6b3b2e 38%, #101b2b 100%); }
+#start-screen .kano-keke-hero { position: relative; height: clamp(210px, 34dvh, 300px); border-radius: 16px; overflow: hidden; }
+#start-screen .kano-keke-hero .kano-stage-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity .6s; }
+#start-screen .kano-keke-hero.kano-stage-live .kano-stage-canvas { opacity: 1; }
+#start-screen .kano-keke-hero.kano-stage-live img { opacity: 0; }
+.kano-stage-bubble { position: absolute; right: 8px; top: 10px; max-width: 58%; padding: 6px 10px; border-radius: 14px 14px 14px 3px; background: #fffdf2; color: #2a1d10; font: 800 12px/1.25 Inter, Arial, sans-serif; box-shadow: 0 4px 14px #0005; opacity: 0; transform: translateY(6px) scale(.9); transition: opacity .2s, transform .2s; pointer-events: none; }
+.kano-stage-bubble.on { opacity: 1; transform: none; }
+.kano-stage-fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.kano-stage-fare { position: absolute; bottom: 38%; padding: 3px 9px; border-radius: 12px; background: #18a058; color: #fff; font: 900 13px Inter, Arial, sans-serif; box-shadow: 0 3px 10px #0006; animation: kanoFare 1.7s ease-out both; }
+@keyframes kanoFare { 0% { opacity: 0; transform: translateY(8px) scale(.7); } 15% { opacity: 1; transform: translateY(0) scale(1.1); } 100% { opacity: 0; transform: translateY(-46px) scale(1); } }

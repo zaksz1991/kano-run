@@ -16,12 +16,14 @@ const JUNCTIONS = [-30, -130];
 
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
 
+// Shop row gaps at the side streets (also used by the painted shopfront signs below).
+const nearShopGap = (z) => JUNCTIONS.some((j) => [0, 100].some((k) => Math.abs(z - (j - k)) < 8.5));
+
 function buildPieces() {
   const items = [];
   const rnd = lcg(20241115);
   const nearJunction = (z) => JUNCTIONS.some((j) => Math.abs(((z - j) % 100 + 150) % 100 - 50) < 13);
   // shop row on the pavement edge: shop body, roof slab, door and window per shop, 8.2 m apart, gaps at side streets
-  const nearShopGap = (z) => JUNCTIONS.some((j) => [0, 100].some((k) => Math.abs(z - (j - k)) < 8.5));
   for (let i = 0; i < 24; i += 1) {
     const z = -i * 8.2 - 4;
     if (nearShopGap(z)) continue;

@@ -20,6 +20,7 @@ import './KanoTotalPlayers.js';
 import './KanoMobileGlbTraffic.js';
 import './KanoKekeRace.js';
 import './KanoStartLayout.js';
+import './KanoStartStage.js';
 import './KanoRoadFailsafe.js';
 import './KanoMobilePedestrians.js';
 import './KanoHudStack.js';
