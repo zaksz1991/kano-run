@@ -473,3 +473,21 @@ body.kano-karota-stop #event-card #event-actions button { padding: 9px 6px; }
 #daily-login-btn.kano-daily-hero:not(.kano-daily-claimed)::before { content: '🎁 '; }
 #daily-login-btn.kano-daily-hero.kano-daily-claimed { animation: none; background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.2); color: #b9c4d0; }
 @keyframes kanoRewardPulse { 0% { box-shadow: 0 0 0 0 rgba(255,211,90,.65); } 70% { box-shadow: 0 0 0 14px rgba(255,211,90,0); } 100% { box-shadow: 0 0 0 0 rgba(255,211,90,0); } }
+
+/* ---- Pop-up animation polish (GPU-friendly: transform + opacity only) ---- */
+@keyframes kanoPopCard { 0% { opacity: 0; transform: translate(-50%, -46%) scale(.88); } 60% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); } 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@keyframes kanoPopPanel { 0% { opacity: 0; transform: translateY(18px) scale(.94); } 65% { opacity: 1; transform: translateY(-2px) scale(1.015); } 100% { opacity: 1; transform: none; } }
+@keyframes kanoFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes kanoToastIn { 0% { opacity: 0; transform: translate(-50%, -18px) scale(.9); } 70% { opacity: 1; transform: translate(-50%, 3px) scale(1.03); } 100% { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes kanoSlideUp { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+.event-card:not(.hidden) { animation: kanoPopCard .34s cubic-bezier(.2,.9,.3,1.2) both; }
+.screen:not(.hidden) { animation: kanoFadeIn .25s ease-out both; }
+.screen:not(.hidden) .start-card, .screen:not(.hidden) .panel { animation: kanoPopPanel .36s cubic-bezier(.2,.9,.3,1.15) both; }
+.toast.show { animation: kanoToastIn .32s cubic-bezier(.2,.9,.3,1.2) both; }
+.event-actions button { animation: kanoSlideUp .3s ease-out both; }
+.event-actions button:nth-child(2) { animation-delay: .06s; }
+.event-actions button:nth-child(3) { animation-delay: .12s; }
+.event-actions button:nth-child(4) { animation-delay: .18s; }
+[id^="kano-"][id$="-panel"]:not([hidden]), [id^="kano-"][id$="-card"]:not([hidden]), #kano-fuel-rescue:not([hidden]) { animation: kanoPopPanel .32s cubic-bezier(.2,.9,.3,1.15) both; }
+.event-actions button:active, .menu-grid button:active, .primary:active { transform: scale(.97); transition: transform .08s; }
+@media (prefers-reduced-motion: reduce) { .event-card, .screen, .toast.show, .event-actions button, .start-card, .panel { animation: none !important; } }

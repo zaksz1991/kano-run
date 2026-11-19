@@ -20,7 +20,7 @@ export const CHARACTER_POLISH_KEY = 'kanoCharacterPolish';
 const SHOULDER_X = 0.092;
 const SHOULDER_Y = 0.80;
 const ARM_DROP = 1.22; // radians (about 70 degrees)
-const GAIT_AMPLITUDE = 0.11; // fraction of body height: how far the hem / feet swing
+const GAIT_AMPLITUDE = 0.2; // fraction of body height: how far the hem / feet swing
 
 export function isTPoseSize(width, height) {
   return Number.isFinite(width) && Number.isFinite(height) && height > 0 && width / height > 0.6;
@@ -85,7 +85,11 @@ uniform mat4 uKM; uniform mat4 uKMi;`)
   float gr = c.g / max(c.r, 1e-4);
   float bg = c.b / max(c.g, 1e-4);
   float skin = step(0.38, gr) * step(gr, 0.86) * step(0.45, bg) * step(bg, 1.05) * step(0.12, c.r);
-  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.58, 0.45, 0.36), skin * uKSkin);
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.84, 0.70, 0.58), skin * uKSkin);
+  // Lift near-black clothes to deep colour so people do not read as silhouettes at night.
+  float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+  float dark = (1.0 - skin) * (1.0 - smoothstep(0.05, 0.22, lum)) * uKSkin;
+  diffuseColor.rgb += dark * vec3(0.09, 0.075, 0.06);
 }`);
   };
   clone.customProgramCacheKey = () => `kanoPolish:${withVertex ? 'static' : 'skinned'}`;

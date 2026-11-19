@@ -974,8 +974,34 @@ export class KanoSceneUpgrade {
       item.rig.root.visible = Boolean(item.rig.kanoImportedActor);
       const startZ = item.kind === 'board' ? item.start.z + item.worldScroll : item.start.z;
       const endZ = item.kind === 'board' ? item.end.z : item.end.z + item.worldScroll;
-      const x = THREE.MathUtils.lerp(item.start.x, item.end.x, eased);
-      const z = THREE.MathUtils.lerp(startZ, endZ, eased);
+      // Two-leg route: walk along the kerb to the keke's door, then step in/out SIDEWAYS through the side door
+      // (never through the front).
+      const laneX = item.side * 2.1;
+      const split = 0.58;
+      let x; let z; let heading;
+      if (item.kind === 'board') {
+        if (t < split) {
+          const u = t / split; const e = u * u * (3 - 2 * u);
+          x = THREE.MathUtils.lerp(item.start.x, laneX, e);
+          z = THREE.MathUtils.lerp(startZ, endZ, e);
+          heading = 0;
+        } else {
+          const u = (t - split) / (1 - split); const e = u * u * (3 - 2 * u);
+          x = THREE.MathUtils.lerp(laneX, item.end.x, e); z = endZ;
+          heading = item.side < 0 ? -Math.PI / 2 : Math.PI / 2;
+        }
+      } else if (t < 1 - split) {
+        const u = t / (1 - split); const e = u * u * (3 - 2 * u);
+        x = THREE.MathUtils.lerp(item.start.x, laneX, e); z = startZ + 0;
+        z = THREE.MathUtils.lerp(item.start.z, item.start.z, e);
+        heading = item.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+      } else {
+        const u = (t - (1 - split)) / split; const e = u * u * (3 - 2 * u);
+        x = THREE.MathUtils.lerp(laneX, item.end.x, e);
+        z = THREE.MathUtils.lerp(item.start.z, endZ, e);
+        heading = Math.PI;
+      }
+      item.rig.root.rotation.y = heading;
       item.rig.root.position.set(x, Math.abs(Math.sin(item.elapsed * 5.2)) * 0.03 * (1 - t * 0.35), z);
 
       const stride = Math.sin(item.elapsed * 5.2) * 0.4;
@@ -983,17 +1009,17 @@ export class KanoSceneUpgrade {
       for (const leg of item.rig.legs) leg.pivot.rotation.x = -armSafe(stride, leg.side);
       item.rig.head.rotation.y = Math.sin(item.elapsed * 1.8) * 0.08;
 
-      if (item.kind === 'board' && t > 0.8) {
+      if (item.kind === 'board' && t > 0.86) {
         // Duck under the canopy as they climb in, then disappear only once inside the body.
-        const climb = clamp((t - 0.8) / 0.2, 0, 1);
+        const climb = clamp((t - 0.86) / 0.14, 0, 1);
         item.rig.root.position.y -= climb * 0.22;
         item.rig.root.scale.setScalar(t > 0.97 ? 0.015 : 1 - climb * 0.08);
-      } else if (item.kind === 'alight' && t < 0.14) {
+      } else if (item.kind === 'alight' && t < 0.12) {
         // Climb out from under the canopy: rise and straighten before walking off.
-        const out = clamp(t / 0.14, 0, 1);
+        const out = clamp(t / 0.12, 0, 1);
         item.rig.root.position.y -= (1 - out) * 0.22;
         item.rig.root.scale.setScalar(0.92 + out * 0.08);
-      } else if (item.kind === 'alight' && t > 0.84) {
+      } else if (item.kind === 'alight' && t > 0.86) {
         item.rig.root.scale.setScalar(clamp((1 - t) / 0.16, 0.015, 1));
       }
 

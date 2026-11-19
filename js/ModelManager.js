@@ -95,10 +95,9 @@ const CATALOG = {
   ],
 
   passengerWoman: [
-    'characters/passengers/women_in_hijab.glb',
-    'characters/passengers/free_download_attractive_african_woman_236.glb',
     'characters/passengers/hijab_muslim_woman.glb',
     'characters/passengers/hijab_muslim_woman 2.glb',
+    'characters/passengers/women_in_hijab.glb',
   ],
 
   passengerMan: [
@@ -133,9 +132,9 @@ const CATALOG = {
   ],
 
   pedestrianWoman: [
-    'characters/pedestrians/muslim-girl.glb',
-    'characters/passengers/women_in_hijab.glb',
     'characters/passengers/hijab_muslim_woman.glb',
+    'characters/passengers/hijab_muslim_woman 2.glb',
+    'characters/passengers/women_in_hijab.glb',
   ],
 
   building: [
