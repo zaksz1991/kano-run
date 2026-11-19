@@ -148,6 +148,33 @@ function recolour(renderer) {
       road.scale.x = wide;
       if (road.material.map) road.material.map.repeat.x *= wide;
     }
+    // Hard shoulder on BOTH sides (between the white edge line at 4.5 and the kerb at 7.8): paler dusty
+    // paving, painted in the road's own shader so it bends and scrolls with the road (no extra planes).
+    if (!road.userData.kanoShoulderShader) {
+      road.userData.kanoShoulderShader = true;
+      const scaleX = road.scale.x;
+      const mat = road.material;
+      const prior = mat.onBeforeCompile;
+      mat.onBeforeCompile = (shader, renderer) => {
+        if (typeof prior === 'function') prior.call(mat, shader, renderer);
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying float vKRoadX;')
+          .replace('#include <begin_vertex>', `#include <begin_vertex>\nvKRoadX = position.x * ${scaleX.toFixed(3)};`);
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying float vKRoadX;')
+          .replace('#include <map_fragment>', `#include <map_fragment>
+{
+  float ax = abs(vKRoadX);
+  float sh = smoothstep(4.55, 4.7, ax) * (1.0 - smoothstep(7.7, 7.85, ax));
+  float lum = dot(diffuseColor.rgb, vec3(0.333));
+  vec3 paving = vec3(0.40, 0.37, 0.33) * (0.7 + lum * 1.2);
+  diffuseColor.rgb = mix(diffuseColor.rgb, paving, sh);
+}`);
+      };
+      const key = mat.customProgramCacheKey?.bind(mat);
+      mat.customProgramCacheKey = () => `${key ? key() : ''}kanoShoulder`;
+      mat.needsUpdate = true;
+    }
   }
   const k = renderer.__kanoTwoWay;
   if (k) {

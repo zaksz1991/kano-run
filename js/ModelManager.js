@@ -4,6 +4,7 @@ import { fixCharacterPose } from './KanoCharacterPoseFix.js';
 import { mergeTexturedByMaterial } from './KanoMergeStaticMeshes.js';
 import { mergeFlatSkinnedMeshes } from './KanoSkinnedMerge.js';
 import { resolveKanoGlbPath } from './KanoGlbPathResolver.js';
+import { polishCharacter, wantsSkinCorrection } from './KanoCharacterPolish.js';
 
 // ============================================================
 // KANO LIFE — MODEL MANAGER
@@ -1624,6 +1625,9 @@ export class ModelManager {
 
     if (key === 'keke') {
       attachDriverAnimationReferences(clone);
+    } else if (wantsSkinCorrection(key)) {
+      // Every person (roadside waiting passengers included) gets the same skin / hijab / gait polish.
+      try { polishCharacter(clone, key); } catch { /* cosmetic only */ }
     }
 
     return clone;

@@ -988,13 +988,13 @@ export class KanoSceneUpgrade {
         } else {
           const u = (t - split) / (1 - split); const e = u * u * (3 - 2 * u);
           x = THREE.MathUtils.lerp(laneX, item.end.x, e); z = endZ;
-          heading = item.side < 0 ? -Math.PI / 2 : Math.PI / 2;
+          heading = item.side < 0 ? Math.PI / 2 : -Math.PI / 2;
         }
       } else if (t < 1 - split) {
         const u = t / (1 - split); const e = u * u * (3 - 2 * u);
         x = THREE.MathUtils.lerp(item.start.x, laneX, e); z = startZ + 0;
-        z = THREE.MathUtils.lerp(item.start.z, item.start.z, e);
-        heading = item.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+        z = item.start.z;
+        heading = item.side < 0 ? -Math.PI / 2 : Math.PI / 2;
       } else {
         const u = (t - (1 - split)) / split; const e = u * u * (3 - 2 * u);
         x = THREE.MathUtils.lerp(laneX, item.end.x, e);

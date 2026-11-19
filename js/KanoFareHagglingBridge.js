@@ -35,7 +35,7 @@ function panelHost() {
   el.id = 'kano-haggle-panel';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Fare negotiation');
-  el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:132px;width:min(92vw,360px);z-index:60;background:rgba(10,24,16,.95);color:#fff4d0;border:2px solid #f5d77b;border-radius:14px;padding:10px 12px;font:700 13px/1.35 Arial,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none';
+  el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:max(70px,env(safe-area-inset-top));width:min(92vw,360px);max-height:calc(100dvh - 150px);overflow-y:auto;z-index:60;background:rgba(10,24,16,.95);color:#fff4d0;border:2px solid #f5d77b;border-radius:14px;padding:10px 12px;font:700 13px/1.35 Arial,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none';
   document.body.append(el);
   return el;
 }

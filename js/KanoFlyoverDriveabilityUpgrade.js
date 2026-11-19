@@ -457,11 +457,23 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   const playerSurface = nearestSurfaceForZ(renderer, renderer.player.position.z);
   let height = playerSurface?.height || 0;
   if (renderer._kanoForkLock === 'ground') height = 0;
+  // Never let the keke/camera pop: any sudden change in deck height (late model swap, anchor re-sync,
+  // low frame rate) is turned into a quick glide instead of a visible flicker.
+  {
+    const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const dtS = Math.min(0.1, Math.max(0.001, (nowMs - (renderer.__kanoHeightClock || nowMs)) / 1000));
+    renderer.__kanoHeightClock = nowMs;
+    const prev = Number.isFinite(renderer.__kanoSmoothHeight) ? renderer.__kanoSmoothHeight : height;
+    const step = 7 * dtS;
+    height = prev + Math.max(-step, Math.min(step, height - prev));
+    if (Math.abs(height) < 0.004) height = 0;
+    renderer.__kanoSmoothHeight = height;
+  }
   if (height > 0) {
     renderer.player.position.y += height;
     camera.position.y += height;
     AUDIT.elevatedRenderFrames += 1;
-    AUDIT.lastActiveFlyoverIndex = playerSurface.record.index;
+    AUDIT.lastActiveFlyoverIndex = playerSurface?.record.index ?? null;
   } else {
     AUDIT.lastActiveFlyoverIndex = null;
   }
