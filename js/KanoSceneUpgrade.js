@@ -937,11 +937,11 @@ export class KanoSceneUpgrade {
     let end;
 
     if (kind === 'board') {
-      start = new THREE.Vector3(side * 6.55, 0, -clamp(Number(zone?.depth) || 0.12, 0.04, 1.8) * 88);
+      start = new THREE.Vector3(side * 5.9, 0, playerZ - 1.9); // waits on the kerb just ahead of the door, never far down the road
       end = new THREE.Vector3(playerX + side * 0.16, 0, playerZ + 0.02); // step right up to the seat inside the keke
     } else {
       start = new THREE.Vector3(playerX + side * 0.48, 0, playerZ + 0.28);
-      end = new THREE.Vector3(side * 6.55, 0, -clamp(Number(zone?.depth) || 0.12, 0.04, 1.8) * 88);
+      end = new THREE.Vector3(side * 5.9, 0, playerZ - 3.6);
     }
 
     rig.root.position.copy(start);
@@ -956,7 +956,7 @@ export class KanoSceneUpgrade {
       start,
       end,
       elapsed: 0,
-      duration: clamp(start.distanceTo(end) / 1.35, 3.8, 6.5), // calm walking pace, nobody is chasing them
+      duration: clamp(start.distanceTo(end) / 1.35, 4.2, 6.5), // calm walking pace, nobody is chasing them
       worldScroll: 0,
       initialScale: 1,
     });
@@ -989,6 +989,10 @@ export class KanoSceneUpgrade {
           const u = (t - split) / (1 - split); const e = u * u * (3 - 2 * u);
           x = THREE.MathUtils.lerp(laneX, item.end.x, e); z = endZ;
           heading = item.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+          // Turn to face forward and settle onto the rear bench.
+          const turn = clamp((t - 0.84) / 0.1, 0, 1);
+          const fromH = heading; const toH = Math.PI;
+          heading = fromH + (toH - fromH) * (turn * turn * (3 - 2 * turn));
         }
       } else if (t < 1 - split) {
         const u = t / (1 - split); const e = u * u * (3 - 2 * u);
@@ -1009,11 +1013,11 @@ export class KanoSceneUpgrade {
       for (const leg of item.rig.legs) leg.pivot.rotation.x = -armSafe(stride, leg.side);
       item.rig.head.rotation.y = Math.sin(item.elapsed * 1.8) * 0.08;
 
-      if (item.kind === 'board' && t > 0.86) {
+      if (item.kind === 'board' && t > 0.84) {
         // Duck under the canopy as they climb in, then disappear only once inside the body.
-        const climb = clamp((t - 0.86) / 0.14, 0, 1);
-        item.rig.root.position.y -= climb * 0.22;
-        item.rig.root.scale.setScalar(t > 0.97 ? 0.015 : 1 - climb * 0.08);
+        const sit = clamp((t - 0.86) / 0.1, 0, 1);
+        item.rig.root.position.y -= sit * sit * (3 - 2 * sit) * 0.34; // hips drop onto the bench
+        item.rig.root.scale.setScalar(t > 0.985 ? 0.015 : 1);
       } else if (item.kind === 'alight' && t < 0.12) {
         // Climb out from under the canopy: rise and straighten before walking off.
         const out = clamp(t / 0.12, 0, 1);

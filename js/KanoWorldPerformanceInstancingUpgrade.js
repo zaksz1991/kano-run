@@ -273,7 +273,7 @@ function installWorldBrightness() {
     }
     const webgl = this.renderer3d.renderer;
     if (webgl && 'toneMappingExposure' in webgl) {
-      webgl.toneMappingExposure = night ? 1.07 : 1.14;
+      webgl.toneMappingExposure = night ? 1.16 : 1.32;
     }
     report.brightnessProfile = night ? 'night-visible-lift' : 'daylight-lift';
     publishReport();

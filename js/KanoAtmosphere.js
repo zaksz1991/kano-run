@@ -1235,7 +1235,7 @@ export class KanoAtmosphere {
     // Small exposure lift only. The existing GLB material stack remains intact.
     const webgl = this.renderer3d.renderer;
     if (webgl && 'toneMappingExposure' in webgl) {
-      webgl.toneMappingExposure = 1.04;
+      webgl.toneMappingExposure = 1.22;
     }
     if (this.rain) this.rainMaterial.opacity = this.settings.season === 'rainy' || profile.env === 'rainPuddles' ? 0.50 : 0.40;
     if (this.dustMaterial) this.dustMaterial.opacity = this.settings.season === 'harmattan' || ['harmattan', 'badRoad', 'muddy'].includes(profile.env) ? 0.36 : 0.27;
