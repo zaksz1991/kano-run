@@ -165,10 +165,12 @@ function recolour(renderer) {
           .replace('#include <map_fragment>', `#include <map_fragment>
 {
   float ax = abs(vKRoadX);
-  float sh = smoothstep(4.55, 4.7, ax) * (1.0 - smoothstep(7.7, 7.85, ax));
+  float sh = smoothstep(4.55, 4.7, ax);
   float lum = dot(diffuseColor.rgb, vec3(0.333));
-  vec3 paving = vec3(0.40, 0.37, 0.33) * (0.7 + lum * 1.2);
-  diffuseColor.rgb = mix(diffuseColor.rgb, paving, sh);
+  // The road texture has pale edge strips that, tiled across the widened road, showed as a grey band on
+  // the left. Beyond the white edge line the surface is always dark tarmac, identical on both sides.
+  vec3 tar = vec3(0.028, 0.029, 0.031) * (0.9 + clamp(lum, 0.0, 0.1) * 1.5);
+  diffuseColor.rgb = mix(diffuseColor.rgb, tar, sh);
 }`);
       };
       const key = mat.customProgramCacheKey?.bind(mat);
@@ -194,6 +196,7 @@ function recolour(renderer) {
     if (verge?.material) {
       // A sand strip lies at the same height beside it; without this the sand won on the left and showed as a yellow road edge.
       verge.position.y = -0.04;
+      verge.visible = false; // the tarmac already runs under it; a visible verge showed as a grey/yellow band
     }
   }
 }

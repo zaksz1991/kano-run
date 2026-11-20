@@ -40,8 +40,8 @@ function withBoardingCamera(inner) {
           restore = { p: camera.position.clone(), q: camera.quaternion.clone() };
           const px = player.position.x;
           const pz = player.position.z;
-          tmpPos.set(px + state.side * 1.9, 2.9, pz + 4.3);
-          tmpTarget.set(px + state.side * 0.8, 0.85, pz + 0.1);
+          tmpPos.set(px + state.side * 5.4, 2.1, pz + 4.6);
+          tmpTarget.set(px + state.side * 0.2, 0.85, pz - 0.4);
           camera.position.lerp(tmpPos, e);
           const look = tmpTarget.clone();
           const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(restore.q).multiplyScalar(12).add(restore.p);
