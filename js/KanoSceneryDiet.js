@@ -37,6 +37,11 @@ export function mergeFlatDeep(group) {
     if (material.map || material.alphaMap || material.transparent || material.isMeshBasicMaterial) return;
     if (material.emissive && material.emissiveIntensity && material.emissive.getHex() !== 0) return; // keep glowing lamps separate
     if (node.userData?.animated || node.userData?.kanoKeep) return;
+    // Never bake a person's clothes into scenery: a woman's gown / hijab are flat-coloured pieces, and once
+    // baked into the group's merged mesh they were hidden with it, leaving a bare body on phones.
+    for (let up = node.parent; up && up !== group.parent; up = up.parent) {
+      if (/characters\//i.test(String(up.userData?.modelPath || '')) || up.userData?.kanoImportedActor || up.userData?.kanoCharacterPolish) return;
+    }
     meshes.push(node);
   });
   if (meshes.length < 2) return 0;
