@@ -96,6 +96,7 @@ const CATALOG = {
   ],
 
   passengerWoman: [
+    'characters/pedestrians/muslim-girl-lite.glb',
     'characters/passengers/hijab-muslim-woman.glb',
     'characters/passengers/hijab-muslim-woman-2.glb',
     'characters/passengers/women_in_hijab.glb',
@@ -133,6 +134,7 @@ const CATALOG = {
   ],
 
   pedestrianWoman: [
+    'characters/pedestrians/muslim-girl-lite.glb',
     'characters/passengers/hijab-muslim-woman.glb',
     'characters/passengers/hijab-muslim-woman-2.glb',
     'characters/passengers/women_in_hijab.glb',

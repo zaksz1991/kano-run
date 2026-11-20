@@ -89,7 +89,7 @@ uniform mat4 uKM; uniform mat4 uKMi;`)
   // Lift near-black clothes to deep colour so people do not read as silhouettes at night.
   float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
   float dark = (1.0 - skin) * (1.0 - smoothstep(0.05, 0.22, lum)) * uKSkin;
-  diffuseColor.rgb += dark * vec3(0.09, 0.075, 0.06);
+  diffuseColor.rgb += dark * vec3(0.16, 0.13, 0.11);
 }`);
   };
   clone.customProgramCacheKey = () => `kanoPolish:${withVertex ? 'static' : 'skinned'}`;

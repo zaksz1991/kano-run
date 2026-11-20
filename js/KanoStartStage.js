@@ -31,7 +31,7 @@ const SEAT_Y = 0.2;            // hips drop onto the bench
 const DRIVER_POS = [-0.52, 0.2, 0.2];
 
 const CAST = [
-  { file: 'characters/passengers/hijab-muslim-woman.glb', key: 'passengerWoman', woman: true, offset: 0, fare: '+₦300' },
+  { file: 'characters/pedestrians/muslim-girl-lite.glb', key: 'passengerWoman', woman: true, offset: 0, fare: '+₦300' },
   { file: 'characters/passengers/Man in Suit.glb', key: 'passengerVIP', offset: 4, fare: '+₦700' },
   { file: 'characters/passengers/hijab-muslim-woman-2.glb', key: 'passengerWoman', woman: true, offset: 8, fare: '+₦250' },
   { file: 'characters/passengers/Man.glb', key: 'passengerMan', offset: 12, fare: '+₦400' },
@@ -246,6 +246,7 @@ function start() {
     // gentle handheld camera drift so the stage feels alive
     camera.position.set(2.2 + Math.sin(clock * 0.35) * 0.5, 2.1, 7.6);
     camera.lookAt(0.2, 0.95, 0.6);
+    if (window.__kanoStageCamHook) window.__kanoStageCamHook(camera, actors, THREE);
     renderer.render(scene, camera);
   }
   function setRunning(on) {
