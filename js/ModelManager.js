@@ -92,12 +92,12 @@ const CATALOG = {
     'characters/passengers/man-2.glb',
     'characters/passengers/Man in Suit.glb',
     'characters/passengers/women_in_hijab.glb',
-    'characters/passengers/hijab_muslim_woman.glb',
+    'characters/passengers/hijab-muslim-woman.glb',
   ],
 
   passengerWoman: [
-    'characters/passengers/hijab_muslim_woman.glb',
-    'characters/passengers/hijab_muslim_woman 2.glb',
+    'characters/passengers/hijab-muslim-woman.glb',
+    'characters/passengers/hijab-muslim-woman-2.glb',
     'characters/passengers/women_in_hijab.glb',
   ],
 
@@ -133,8 +133,8 @@ const CATALOG = {
   ],
 
   pedestrianWoman: [
-    'characters/passengers/hijab_muslim_woman.glb',
-    'characters/passengers/hijab_muslim_woman 2.glb',
+    'characters/passengers/hijab-muslim-woman.glb',
+    'characters/passengers/hijab-muslim-woman-2.glb',
     'characters/passengers/women_in_hijab.glb',
   ],
 
