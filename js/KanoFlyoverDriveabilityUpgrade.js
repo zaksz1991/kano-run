@@ -377,6 +377,7 @@ function nearestSurfaceForZ(renderer, z) {
     const flyover = renderer.flyovers?.[record.index] || record.flyover;
     if (!flyover) continue;
     if (!record.glbSkinTried) continue; // the real deck is still loading: no surface yet, so nothing changes shape mid-approach
+    if (!flyover.userData?.kanoWorldAnchoredStep96) continue; // not yet placed by the world distance: its default spot overlaps the start of the road
     const deckHeight = record.deckHeight || getSurfaceHeight(flyover);
     const relativeZ = z - flyover.position.z;
     const height = record.profile ? profileHeight(record.profile, relativeZ) : kanoFlyoverHeightAt(relativeZ, deckHeight);
@@ -451,6 +452,8 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
     if (fly?.userData?.kanoWorldAnchoredStep96) {
       record.group.position.z = fly.position.z;
       record.group.visible = fly.visible !== false;
+    } else {
+      record.group.visible = false; // never show a flyover sitting on the start line before the world places it
     }
   }
 

@@ -28,6 +28,19 @@ function restoreProps() {
   for (const o of hidden) o.visible = true;
   hidden.clear();
 }
+const probe = new THREE.Vector3();
+function segmentHits(box, from, to) {
+  for (let i = 0; i <= 16; i += 1) {
+    const t = i / 16;
+    probe.set(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t, from.z + (to.z - from.z) * t);
+    if (box.containsPoint(probe)) return true;
+  }
+  return false;
+}
+const camGuess = new THREE.Vector3();
+const doorPoint = new THREE.Vector3();
+const kerbPoint = new THREE.Vector3();
+const childBox = new THREE.Box3();
 function clearView(owner, player, side, nowMs) {
   if (nowMs - clearClock < 450) return;
   clearClock = nowMs;
@@ -37,20 +50,30 @@ function clearView(owner, player, side, nowMs) {
   const next = new Set();
   const pz = player.position.z;
   const px = player.position.x;
+  camGuess.set(px + side * 8.2, 2.9, pz + 6.6);
+  doorPoint.set(px + side * 0.3, 1.0, pz);
+  kerbPoint.set(side * 5.9, 1.0, pz - 1.9);
   for (const child of world.children) {
     if (!child.visible && !hidden.has(child)) continue;
     if (child === player || skip.has(child) || child.isLight || child.isCamera) continue;
     const lx = (child.position.x - px) * side;
     const dz = child.position.z - pz;
-    if (lx < 2.2 || lx > 13 || dz < -9 || dz > 8) continue;
-    let size = sizeCache.get(child);
-    if (!size) {
-      try { tmpBox.setFromObject(child); tmpBox.getSize(tmpSize); size = tmpSize.clone(); } catch { size = new THREE.Vector3(99, 99, 99); }
-      sizeCache.set(child, size);
+    if (lx < 2.0 || lx > 40 || dz < -30 || dz > 24) continue;
+    let info = sizeCache.get(child);
+    if (!info) {
+      try {
+        tmpBox.setFromObject(child); tmpBox.getSize(tmpSize);
+        info = { size: tmpSize.clone(), off: tmpBox.getCenter(new THREE.Vector3()).sub(child.position) };
+      } catch { info = { size: new THREE.Vector3(99, 99, 99), off: new THREE.Vector3() }; }
+      sizeCache.set(child, info);
     }
-    if (size.x > 14 || size.z > 14 || size.y < 0.25) continue; // road, ground and long walls stay
+    const size = info.size;
+    if (size.x > 45 || size.z > 45 || size.y < 0.25) continue; // road, ground and very long walls stay
     if (child.userData?.kanoKeepVisible || /road|ground|terrain|flyover|bridge|sky|player|keke|traffic|vehicle|passenger|walker/i.test(child.name || '')) continue;
-    next.add(child);
+    childBox.setFromCenterAndSize(probe.copy(child.position).add(info.off), size);
+    // Anything standing between the camera and the door or the waiting spot, or right beside the door, goes.
+    const near = lx < 13 && Math.abs(dz) < 9;
+    if (near || segmentHits(childBox, camGuess, doorPoint) || segmentHits(childBox, camGuess, kerbPoint)) next.add(child);
   }
   for (const o of hidden) if (!next.has(o)) o.visible = true;
   for (const o of next) o.visible = false;
