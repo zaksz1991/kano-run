@@ -22,8 +22,8 @@ const SHOUTS = [
   'Hanzarta, hanya ta cika!',
 ];
 const LOOP = 16;
-const WALK_LINE_Z = 1.95;
-const DOOR_Z = 0.82;
+const WALK_LINE_Z = 2.7;
+const DOOR_Z = 1.0;
 const DOOR_X = 0.1;
 const SEAT_X = -0.62;           // rear bench (behind the driver), facing the front of the keke
 const SEAT_Z = [0.02, 0.5];    // two passengers side by side
@@ -187,21 +187,21 @@ function start() {
       x = lerp(-6.5, DOOR_X - 1.1, u); z = WALK_LINE_Z + 0.2; heading = Math.PI / 2; moving = true; a.paid = false;
     } else if (t < 5.4) { // turn to the SIDE door and step up to it
       const u = ease((t - 4.6) / 0.8);
-      x = lerp(DOOR_X - 1.1, DOOR_X, u); z = lerp(WALK_LINE_Z + 0.2, DOOR_Z + 0.35, u);
+      x = lerp(DOOR_X - 1.1, DOOR_X, u); z = lerp(WALK_LINE_Z + 0.2, DOOR_Z + 0.5, u);
       heading = lerp(Math.PI / 2, Math.PI, ease(Math.min(1, (t - 4.6) / 0.4))); moving = true;
     } else if (t < 6.3) { // climb in and slide onto the bench
       const u = ease((t - 5.4) / 0.9);
-      x = lerp(DOOR_X, SEAT_X, u); z = lerp(DOOR_Z + 0.35, slot, u); y = lerp(0.05, SEAT_Y, u);
+      x = lerp(DOOR_X, SEAT_X, u); z = lerp(DOOR_Z + 0.5, slot, u); y = lerp(0.05, SEAT_Y, u);
       heading = lerp(Math.PI, Math.PI / 2, ease(Math.min(1, u * 1.4))); moving = u < 0.7; seated = u > 0.7;
     } else if (t < 10.6) { // seated and riding
       x = SEAT_X; z = slot; y = SEAT_Y; heading = Math.PI / 2; seated = true;
     } else if (t < 11.5) { // stand and climb out of the side door
       const u = ease((t - 10.6) / 0.9);
-      x = lerp(SEAT_X, DOOR_X, u); z = lerp(slot, DOOR_Z + 0.35, u); y = lerp(SEAT_Y, 0.05, u);
+      x = lerp(SEAT_X, DOOR_X, u); z = lerp(slot, DOOR_Z + 0.5, u); y = lerp(SEAT_Y, 0.05, u);
       heading = lerp(Math.PI / 2, 0, ease(Math.min(1, u * 1.2))); moving = u > 0.3; seated = u < 0.3;
     } else if (t < 12.3) { // step down to the paving and hand over the fare
       const u = ease((t - 11.5) / 0.8);
-      x = DOOR_X; z = lerp(DOOR_Z + 0.35, WALK_LINE_Z, u); y = lerp(0.05, 0, u); heading = 0; moving = true;
+      x = DOOR_X; z = lerp(DOOR_Z + 0.5, WALK_LINE_Z, u); y = lerp(0.05, 0, u); heading = 0; moving = true;
       if (!a.paid) { a.paid = true; popFare(a.fare); }
     } else if (t < 15.6) { // walk off along the paving
       const u = ease((t - 12.3) / 3.3);
@@ -300,9 +300,9 @@ if (typeof window !== 'undefined' && !window.__kanoStartStage) {
     if (!screen || screen.querySelector('.kano-build-stamp')) return;
     const el = document.createElement('div');
     el.className = 'kano-build-stamp';
-    el.textContent = 'Update 166 · 21 Nov';
+    el.textContent = 'Update 167 · 21 Nov';
     el.style.cssText = 'text-align:center;margin:10px 0 6px;font:700 10px Arial,sans-serif;letter-spacing:.06em;color:#fff;opacity:.45;pointer-events:none';
-    screen.appendChild(el);
+    (screen.querySelector('.kano-start-card,.start-card,.start-panel')||screen.firstElementChild||screen).appendChild(el);
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', put); else put();
 })();
