@@ -46,6 +46,11 @@ function lambertFor(source) {
     flatShading: Boolean(source.flatShading),
   });
   lite.userData = { ...(source.userData || {}), kanoLiteOf: source.uuid };
+  if (typeof source.userData?.kanoPolishCompile === 'function') {
+    lite.onBeforeCompile = source.userData.kanoPolishCompile;
+    const polishKey = source.userData.kanoPolishKey || 'kanoPolish';
+    lite.customProgramCacheKey = () => polishKey;
+  }
   // Keep PBR roughness-driven shine out; the scene is lit by hemisphere + sun.
   SWAPPED.set(source, lite);
   return lite;

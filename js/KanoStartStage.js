@@ -31,9 +31,9 @@ const SEAT_Y = 0.2;            // hips drop onto the bench
 const DRIVER_POS = [-0.52, 0.2, 0.2];
 
 const CAST = [
-  { file: 'characters/pedestrians/muslim-girl-lite.glb', key: 'passengerWoman', woman: true, offset: 0, fare: '+₦300' },
+  { file: 'characters/passengers/female.glb', key: 'passengerWoman', woman: true, offset: 0, fare: '+₦300' },
   { file: 'characters/passengers/Man in Suit.glb', key: 'passengerVIP', offset: 4, fare: '+₦700' },
-  { file: 'characters/passengers/hijab-muslim-woman-2.glb', key: 'passengerWoman', woman: true, offset: 8, fare: '+₦250' },
+  { file: 'characters/passengers/female.glb', key: 'passengerWoman', woman: true, offset: 8, fare: '+₦250' },
   { file: 'characters/passengers/Man.glb', key: 'passengerMan', offset: 12, fare: '+₦400' },
 ];
 
@@ -113,7 +113,8 @@ function start() {
     ready = true;
   });
 
-  const bldgs = ['world/buildings-suburban/building-type-d.glb', 'world/buildings-suburban/building-type-g.glb', 'world/buildings-suburban/building-type-f.glb'];
+  const phone = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
+  const bldgs = phone ? [] : ['world/buildings-suburban/building-type-d.glb', 'world/buildings-suburban/building-type-g.glb', 'world/buildings-suburban/building-type-f.glb'];
   bldgs.forEach((f, i) => load(f).then((g) => {
     if (!g) return;
     const b = g.scene;
@@ -254,7 +255,16 @@ function start() {
     else if (!on) running = false;
   }
   const visibleNow = () => !screen.classList.contains('hidden') && !document.hidden && hero.offsetParent !== null;
-  setInterval(() => { const on = visibleNow(); if (on !== running) setRunning(on); }, 400);
+  let hiddenFor = 0;
+  const poll = setInterval(() => {
+    const on = visibleNow(); if (on !== running) setRunning(on);
+    hiddenFor = screen.classList.contains('hidden') ? hiddenFor + 0.4 : 0;
+    if (hiddenFor > 6) { // game is being played: free the second WebGL context and all stage models
+      clearInterval(poll); running = false;
+      try { scene.traverse((o) => { o.geometry?.dispose?.(); const m = o.material; if (m) (Array.isArray(m) ? m : [m]).forEach((x) => x.dispose?.()); }); renderer.dispose(); renderer.forceContextLoss(); } catch (_) { /* ignore */ }
+      canvas.remove(); bubble.remove(); fx.remove(); hero.classList.remove('kano-stage-live');
+    }
+  }, 400);
   window.addEventListener('resize', () => { if (running) resize(); });
   // Once the first frames exist, fade the still picture away.
   setTimeout(() => hero.classList.add('kano-stage-live'), 1200);
@@ -264,5 +274,14 @@ function start() {
 if (typeof window !== 'undefined' && !window.__kanoStartStage) {
   window.__kanoStartStage = true;
   const go = () => { try { start(); } catch (e) { console.warn('[Kano Life] live start stage skipped', e); } };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+  // Never compete with the game's own loading: wait until the game exists and the page has been idle a while.
+  const begin = () => {
+    const t0 = Date.now();
+    const tick = () => {
+      const gameUp = !!(window.kanoGame && window.kanoRenderer);
+      if (gameUp || Date.now() - t0 > 25000) setTimeout(go, 1500); else setTimeout(tick, 500);
+    };
+    tick();
+  };
+  if (document.readyState === 'complete') begin(); else window.addEventListener('load', begin);
 }

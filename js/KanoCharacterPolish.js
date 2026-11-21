@@ -78,21 +78,30 @@ uniform mat4 uKM; uniform mat4 uKMi;`)
   transformed = (uKMi * vec4(q, 1.0)).xyz;
 }` : '#include <begin_vertex>');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uKSkin;')
+      .replace('#include <common>', '#include <common>\nuniform float uKSkin;\nuniform float uKScarf;')
       .replace('#include <map_fragment>', `#include <map_fragment>
 {
   vec3 c = diffuseColor.rgb;
   float gr = c.g / max(c.r, 1e-4);
   float bg = c.b / max(c.g, 1e-4);
   float skin = step(0.38, gr) * step(gr, 0.86) * step(0.45, bg) * step(bg, 1.05) * step(0.12, c.r);
+  // Blond hair on the rigged woman becomes a headscarf (hijab) so she reads as a Kano woman.
+  float scarf = 0.0;
+#ifdef USE_MAP
+  scarf = step(0.09, vMapUv.x) * step(vMapUv.x, 0.225) * step(0.575, vMapUv.y) * step(vMapUv.y, 0.615) * uKScarf;
+#endif
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.36, 0.34) * (0.75 + 0.5 * c.r), scarf);
   diffuseColor.rgb *= mix(vec3(1.0), vec3(0.84, 0.70, 0.58), skin * uKSkin);
   // Lift near-black clothes to deep colour so people do not read as silhouettes at night.
   float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
   float dark = (1.0 - skin) * (1.0 - smoothstep(0.05, 0.22, lum)) * uKSkin;
-  diffuseColor.rgb += dark * vec3(0.16, 0.13, 0.11);
+  diffuseColor.rgb = diffuseColor.rgb * (1.0 + dark * 1.6) + dark * vec3(0.05, 0.04, 0.035);
 }`);
   };
   clone.customProgramCacheKey = () => `kanoPolish:${withVertex ? 'static' : 'skinned'}`;
+  // The phone material swap (KanoPhoneMaterialLite) rebuilds materials; it re-attaches these so the walk, skin and scarf survive.
+  clone.userData.kanoPolishCompile = clone.onBeforeCompile;
+  clone.userData.kanoPolishKey = `kanoPolish:${withVertex ? 'static' : 'skinned'}`;
   clone.needsUpdate = true;
   return clone;
 }
@@ -124,7 +133,7 @@ export function polishCharacter(actor, key) {
   const localWidth = localBox.max.x - localBox.min.x;
   const tPose = staticWoman && isTPoseSize(localWidth, localHeight);
 
-  const shared = { uKGait: { value: 0 }, uKSkin: { value: skin ? 1 : 0 } };
+  const shared = { uKGait: { value: 0 }, uKSkin: { value: skin ? 1 : 0 }, uKScarf: { value: skinned && isWomanKey(key) ? 1 : 0 } };
   actor.traverse((node) => {
     if (!node.isMesh || !node.material) return;
     const toActor = new THREE.Matrix4().multiplyMatrices(inverseActor, node.matrixWorld);
