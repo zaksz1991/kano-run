@@ -967,7 +967,12 @@ export class KanoSceneUpgrade {
       const item = this.walkingPassengers[index];
       item.elapsed += dt;
       item.worldScroll += scroll;
-      const t = clamp(item.elapsed / item.duration, 0, 1);
+      const tRaw = clamp(item.elapsed / item.duration, 0, 1);
+      // A boarding passenger first stands at the kerb and hails the keke before walking to the door.
+      const HAIL_HOLD = 0.15;
+      const t = item.kind === 'board' ? clamp((tRaw - HAIL_HOLD) / (1 - HAIL_HOLD), 0, 1) : tRaw;
+      const hailing = item.kind === 'board' && tRaw < HAIL_HOLD;
+      if (item.rig?.root) item.rig.root.userData.kanoHail = hailing ? tRaw / HAIL_HOLD : 0;
       const eased = t * t * (3 - 2 * t);
       // Show nothing until the real GLB person is attached: the placeholder body used to flash
       // for a few frames at the roadside and then swap, which read as blinking.
@@ -984,7 +989,8 @@ export class KanoSceneUpgrade {
           const u = t / split; const e = u * u * (3 - 2 * u);
           x = THREE.MathUtils.lerp(item.start.x, laneX, e);
           z = THREE.MathUtils.lerp(startZ, endZ, e);
-          heading = 0;
+          const lateral = item.side < 0 ? Math.PI / 2 : -Math.PI / 2;
+          heading = hailing ? lateral : lateral * (1 - clamp(u / 0.18, 0, 1));
         } else {
           const u = (t - split) / (1 - split); const e = u * u * (3 - 2 * u);
           x = THREE.MathUtils.lerp(laneX, item.end.x, e); z = endZ;
