@@ -1019,6 +1019,11 @@ export class KanoSceneUpgrade {
       else bow = Math.sin(Math.PI * clamp(t / 0.16, 0, 1)) * 0.5;
       item.rig.root.rotation.x = bow;
       item.rig.root.position.set(x, Math.abs(Math.sin(item.elapsed * 5.2)) * 0.03 * (1 - t * 0.35), z);
+      // Step UP onto the cab floor when boarding and DOWN to the road when leaving, so nobody stands with their legs in the tarmac.
+      const FLOOR = 0.4;
+      const sm = (v) => { const k = clamp(v, 0, 1); return k * k * (3 - 2 * k); };
+      if (item.kind === 'board') item.rig.root.position.y += FLOOR * sm((t - split) / (1 - split) / 0.7);
+      else item.rig.root.position.y += FLOOR * (1 - sm(t / (1 - split) / 0.7));
 
       const stride = Math.sin(item.elapsed * 5.2) * 0.4;
       for (const arm of item.rig.arms) arm.pivot.rotation.x = arm.side * stride * 0.38;
@@ -1028,12 +1033,12 @@ export class KanoSceneUpgrade {
       if (item.kind === 'board' && t > 0.84) {
         // Duck under the canopy as they climb in, then disappear only once inside the body.
         const sit = clamp((t - 0.86) / 0.1, 0, 1);
-        item.rig.root.position.y -= sit * sit * (3 - 2 * sit) * 0.34; // hips drop onto the bench
+        item.rig.root.position.y -= sit * sit * (3 - 2 * sit) * 0.14; // hips drop onto the bench
         item.rig.root.scale.setScalar(t > 0.985 ? 0.015 : 1);
       } else if (item.kind === 'alight' && t < 0.12) {
         // Climb out from under the canopy: rise and straighten before walking off.
         const out = clamp(t / 0.12, 0, 1);
-        item.rig.root.position.y -= (1 - out) * 0.22;
+        item.rig.root.position.y -= (1 - out) * 0.1;
         item.rig.root.scale.setScalar(0.92 + out * 0.08);
       } else if (item.kind === 'alight' && t > 0.86) {
         item.rig.root.scale.setScalar(clamp((1 - t) / 0.16, 0.015, 1));
