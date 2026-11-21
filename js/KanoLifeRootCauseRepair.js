@@ -516,6 +516,35 @@ function activateEmbeddedAnimation(actor, path, clips, mode, requestToken) {
   return true;
 }
 
+// Rigs that only ship an idle clip (the woman) would glide along in a standing pose. This overlays a real walking
+// cycle on top of the idle pose: thighs and calves swing, arms drop to the sides and swing opposite the legs.
+function proceduralGait(actor) {
+  let g = actor.userData.kanoGaitBones;
+  if (g === undefined) {
+    g = { thigh: [], calf: [], arm: [], fore: [] };
+    actor.traverse((o) => {
+      if (!o.isBone) return;
+      const n = o.name || '';
+      const left = /\bL\b|\.L$|_L$|Left/i.test(n) ? 1 : /\bR\b|\.R$|_R$|Right/i.test(n) ? -1 : 0;
+      if (!left) return;
+      if (/Thigh|UpLeg/i.test(n)) g.thigh.push([o, left]);
+      else if (/Calf|LowLeg|Shin/i.test(n)) g.calf.push([o, left]);
+      else if (/UpperArm/i.test(n)) g.arm.push([o, left]);
+      else if (/Forearm|LowerArm/i.test(n)) g.fore.push([o, left]);
+    });
+    if (!g.thigh.length) g = null;
+    actor.userData.kanoGaitBones = g;
+  }
+  if (!g) return;
+  const ph = nowMs() * 0.0075 + (actor.id % 7);
+  for (const [b, side] of g.thigh) b.rotateX(Math.sin(ph) * side * GAIT_SWING);
+  for (const [b, side] of g.calf) b.rotateX(Math.max(0, -Math.sin(ph + 0.6) * side) * GAIT_SWING * 1.2);
+  for (const [b, side] of g.arm) { b.rotateZ(side * GAIT_ARM_DROP); b.rotateX(-Math.sin(ph) * side * GAIT_SWING * 0.7); }
+  for (const [b] of g.fore) b.rotateX(-0.15);
+}
+const GAIT_SWING = 0.5;
+const GAIT_ARM_DROP = 0;
+
 function requestEmbeddedAnimation(actor, mode = 'idle') {
   if (!actor?.isObject3D || !actor.userData) return;
   const targetMode = String(mode || 'idle');
@@ -572,7 +601,10 @@ function updateEmbeddedAnimations(renderer, dt) {
     if (renderer?.scene && top !== renderer.scene) continue;
     // Object3D.visible is not inherited by reading only the leaf actor. A
     // hidden scene parent must pause its child mixers as well.
-    if (ancestryVisible) safeCall(() => entry.mixer.update(clamp(dt, 0, 0.05)));
+    if (ancestryVisible) {
+      safeCall(() => entry.mixer.update(clamp(dt, 0, 0.05)));
+      if (entry.mode === 'walk' && !/walk|run|jog/i.test(entry.clipName || '')) safeCall(() => proceduralGait(actor));
+    }
     if (entry.outgoingAction && nowMs() >= entry.outgoingUntil) {
       const old = entry.outgoingAction;
       entry.outgoingAction = null;
