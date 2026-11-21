@@ -169,3 +169,28 @@ export function stepCharacterGait(actor, phase, walking) {
   if (!polish?.staticWoman) return;
   polish.uniforms.uKGait.value = walking ? Math.sin(phase) : 0;
 }
+
+/** Walking overlay for rigged characters that only ship an idle clip: call after the animation mixer has updated. */
+export function applyBoneGait(actor, phase) {
+  let g = actor?.userData?.kanoGaitBonesStage;
+  if (g === undefined) {
+    g = { thigh: [], calf: [], arm: [], fore: [] };
+    actor.traverse((o) => {
+      if (!o.isBone) return;
+      const n = o.name || '';
+      const side = /\bL\b|\.L$|_L$|Left/i.test(n) ? 1 : /\bR\b|\.R$|_R$|Right/i.test(n) ? -1 : 0;
+      if (!side) return;
+      if (/Thigh|UpLeg/i.test(n)) g.thigh.push([o, side]);
+      else if (/Calf|LowLeg|Shin/i.test(n)) g.calf.push([o, side]);
+      else if (/UpperArm/i.test(n)) g.arm.push([o, side]);
+      else if (/Forearm|LowerArm/i.test(n)) g.fore.push([o, side]);
+    });
+    if (!g.thigh.length) g = null;
+    actor.userData.kanoGaitBonesStage = g;
+  }
+  if (!g) return;
+  for (const [b, side] of g.thigh) b.rotateX(Math.sin(phase) * side * 0.5);
+  for (const [b, side] of g.calf) b.rotateX(Math.max(0, -Math.sin(phase + 0.6) * side) * 0.6);
+  for (const [b, side] of g.arm) b.rotateX(-Math.sin(phase) * side * 0.35);
+  for (const [b] of g.fore) b.rotateX(-0.15);
+}
