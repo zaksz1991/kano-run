@@ -5,7 +5,7 @@
  * This is an additive compatibility layer. It does not change fares, health
  * damage values, collision detection, steering, speed, or progression.
  */
-import { polishCharacter, stepCharacterGait } from './KanoCharacterPolish.js';
+import { polishCharacter, stepCharacterGait, applyBoneSit } from './KanoCharacterPolish.js';
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
@@ -604,6 +604,10 @@ function updateEmbeddedAnimations(renderer, dt) {
     if (ancestryVisible) {
       safeCall(() => entry.mixer.update(clamp(dt, 0, 0.05)));
       if (entry.mode === 'walk' && !/walk|run|jog/i.test(entry.clipName || '')) safeCall(() => proceduralGait(actor));
+      else if (/seat|sit/i.test(String(entry.mode || '')) && !/sit/i.test(entry.clipName || '') && actor.userData.kanoGaitBones !== null) {
+        // Idle-only rig (the woman) would stand inside the cab: bend her hips and knees onto the bench.
+        safeCall(() => { applyBoneSit(actor); if (!actor.userData.kanoSitDropped) { actor.userData.kanoSitDropped = true; actor.position.y -= 0.3; } });
+      }
     }
     if (entry.outgoingAction && nowMs() >= entry.outgoingUntil) {
       const old = entry.outgoingAction;

@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
-import { polishCharacter, stepCharacterGait, applyBoneGait } from './KanoCharacterPolish.js';
+import { polishCharacter, stepCharacterGait, applyBoneGait, applyBoneSit } from './KanoCharacterPolish.js';
 import { yellowize } from './KanoYellowKeke.js';
 
 const BASE = '/assets/models/';
@@ -216,6 +216,7 @@ function start() {
       else if (solo) { play(a, solo); a.mixer.timeScale = (moving && !seated) ? 1 : 0; }
     }
     if (a.woman && visible) stepCharacterGait(a.actor, time * 7.2 + a.offset, moving && !seated);
+    a.sit = !!(a.woman && seated && !(a.clips && a.clips.Man_Sitting));
     a.gait = (a.woman && moving && !seated && !(a.clips && a.clips.Man_Sitting)) ? time * 7.2 + a.offset : null;
     return visible && seated;
   }
@@ -233,7 +234,7 @@ function start() {
     let riding = false;
     for (const a of actors) { if (placeActor(a, clock)) riding = true; }
     for (const m of mixers) m.update(dt);
-    for (const c of actors) if (c.gait != null) applyBoneGait(c.actor, c.gait);
+    for (const c of actors) { if (c.gait != null) applyBoneGait(c.actor, c.gait); else if (c.sit) applyBoneSit(c.actor); }
     if (keke) {
       const jolt = riding ? Math.sin(clock * 22) * 0.012 : Math.sin(clock * 9) * 0.004; // idling engine
       keke.position.y = Math.max(0, jolt) + 0.0;

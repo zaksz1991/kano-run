@@ -170,6 +170,16 @@ export function stepCharacterGait(actor, phase, walking) {
   polish.uniforms.uKGait.value = walking ? Math.sin(phase) : 0;
 }
 
+/** Seated overlay for the rigged woman (idle-only rig): thighs forward, knees bent, hands resting. Call after the mixer update. */
+export function applyBoneSit(actor) {
+  applyBoneGait(actor, 0); // builds the bone lists (phase 0 adds no swing except the small forearm bend)
+  const g = actor?.userData?.kanoGaitBonesStage;
+  if (!g) return;
+  for (const [b, side] of g.thigh) b.rotateX(side * SIT_THIGH);
+  for (const [b, side] of g.calf) b.rotateX(-side * SIT_THIGH * 1.05);
+}
+const SIT_THIGH = 1.3;
+
 /** Walking overlay for rigged characters that only ship an idle clip: call after the animation mixer has updated. */
 export function applyBoneGait(actor, phase) {
   let g = actor?.userData?.kanoGaitBonesStage;
