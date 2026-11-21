@@ -17,6 +17,47 @@ function walkers() {
   return upgrade?.walkingPassengers || [];
 }
 
+// Stalls, kiosks, signs and trees between the side camera and the door hide the person stepping in or out:
+// while the boarding view is on, those few props are switched off, then restored.
+const hidden = new Set();
+const sizeCache = new WeakMap();
+let clearClock = 0;
+const tmpBox = new THREE.Box3();
+const tmpSize = new THREE.Vector3();
+function restoreProps() {
+  for (const o of hidden) o.visible = true;
+  hidden.clear();
+}
+function clearView(owner, player, side, nowMs) {
+  if (nowMs - clearClock < 450) return;
+  clearClock = nowMs;
+  const world = owner.world;
+  if (!world) return;
+  const skip = new Set(walkers().map((w) => w.rig?.root));
+  const next = new Set();
+  const pz = player.position.z;
+  const px = player.position.x;
+  for (const child of world.children) {
+    if (!child.visible && !hidden.has(child)) continue;
+    if (child === player || skip.has(child) || child.isLight || child.isCamera) continue;
+    const lx = (child.position.x - px) * side;
+    const dz = child.position.z - pz;
+    if (lx < 2.2 || lx > 13 || dz < -9 || dz > 8) continue;
+    let size = sizeCache.get(child);
+    if (!size) {
+      try { tmpBox.setFromObject(child); tmpBox.getSize(tmpSize); size = tmpSize.clone(); } catch { size = new THREE.Vector3(99, 99, 99); }
+      sizeCache.set(child, size);
+    }
+    if (size.x > 14 || size.z > 14 || size.y < 0.25) continue; // road, ground and long walls stay
+    if (child.userData?.kanoKeepVisible || /road|ground|terrain|flyover|bridge|sky|player|keke|traffic|vehicle|passenger|walker/i.test(child.name || '')) continue;
+    next.add(child);
+  }
+  for (const o of hidden) if (!next.has(o)) o.visible = true;
+  for (const o of next) o.visible = false;
+  hidden.clear();
+  for (const o of next) hidden.add(o);
+}
+
 function withBoardingCamera(inner) {
   return function renderWithBoardingCamera(scene, camera) {
     let restore = null;
@@ -35,13 +76,14 @@ function withBoardingCamera(inner) {
         const active = list.length > 0 && speed < limit;
         if (active) state.side = list[list.length - 1].side || 1;
         state.w = Math.min(1, Math.max(0, state.w + (active ? 2.2 : -2.0) * dt));
+        if (state.w > 0.3) clearView(owner, player, state.side, now); else if (hidden.size && state.w < 0.05) restoreProps();
         if (state.w > 0.001) {
           const e = state.w * state.w * (3 - 2 * state.w);
           restore = { p: camera.position.clone(), q: camera.quaternion.clone() };
           const px = player.position.x;
           const pz = player.position.z;
-          tmpPos.set(px + state.side * 5.4, 2.1, pz + 4.6);
-          tmpTarget.set(px + state.side * 0.2, 0.85, pz - 0.4);
+          tmpPos.set(px + state.side * 8.2, 2.9, pz + 6.6);
+          tmpTarget.set(px + state.side * 1.0, 0.9, pz - 0.7);
           camera.position.lerp(tmpPos, e);
           const look = tmpTarget.clone();
           const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(restore.q).multiplyScalar(12).add(restore.p);

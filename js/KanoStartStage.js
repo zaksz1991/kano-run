@@ -25,10 +25,10 @@ const LOOP = 16;
 const WALK_LINE_Z = 1.95;
 const DOOR_Z = 0.82;
 const DOOR_X = 0.1;
-const SEAT_X = 0.62;           // rear bench (behind the driver), facing the front of the keke
+const SEAT_X = -0.62;           // rear bench (behind the driver), facing the front of the keke
 const SEAT_Z = [0.02, 0.5];    // two passengers side by side
 const SEAT_Y = 0.2;            // hips drop onto the bench
-const DRIVER_POS = [-0.52, 0.2, 0.2];
+const DRIVER_POS = [0.52, 0.2, 0.2];
 
 const CAST = [
   { file: 'characters/passengers/female.glb', key: 'passengerWoman', woman: true, offset: 0, fare: '+₦300' },
@@ -138,7 +138,7 @@ function start() {
     if (!g) return;
     const p = prepPerson(g, 1.72);
     try { polishCharacter(p.actor, 'passengerMan'); } catch (_) { /* cosmetic */ }
-    p.holder.position.set(DRIVER_POS[0], DRIVER_POS[1], DRIVER_POS[2]); p.holder.rotation.y = -Math.PI / 2;
+    p.holder.position.set(DRIVER_POS[0], DRIVER_POS[1], DRIVER_POS[2]); p.holder.rotation.y = Math.PI / 2;
     driver = { ...p, clips: {}, mixer: new THREE.AnimationMixer(p.actor), current: null };
     for (const clip of g.animations) driver.clips[clip.name.split('|').pop()] = clip;
     mixers.push(driver.mixer);
@@ -192,13 +192,13 @@ function start() {
     } else if (t < 6.3) { // climb in and slide onto the bench
       const u = ease((t - 5.4) / 0.9);
       x = lerp(DOOR_X, SEAT_X, u); z = lerp(DOOR_Z + 0.35, slot, u); y = lerp(0.05, SEAT_Y, u);
-      heading = lerp(Math.PI, -Math.PI / 2, ease(Math.min(1, u * 1.4))); moving = u < 0.7; seated = u > 0.7;
+      heading = lerp(Math.PI, Math.PI / 2, ease(Math.min(1, u * 1.4))); moving = u < 0.7; seated = u > 0.7;
     } else if (t < 10.6) { // seated and riding
-      x = SEAT_X; z = slot; y = SEAT_Y; heading = -Math.PI / 2; seated = true;
+      x = SEAT_X; z = slot; y = SEAT_Y; heading = Math.PI / 2; seated = true;
     } else if (t < 11.5) { // stand and climb out of the side door
       const u = ease((t - 10.6) / 0.9);
       x = lerp(SEAT_X, DOOR_X, u); z = lerp(slot, DOOR_Z + 0.35, u); y = lerp(SEAT_Y, 0.05, u);
-      heading = lerp(-Math.PI / 2, 0, ease(Math.min(1, u * 1.2))); moving = u > 0.3; seated = u < 0.3;
+      heading = lerp(Math.PI / 2, 0, ease(Math.min(1, u * 1.2))); moving = u > 0.3; seated = u < 0.3;
     } else if (t < 12.3) { // step down to the paving and hand over the fare
       const u = ease((t - 11.5) / 0.8);
       x = DOOR_X; z = lerp(DOOR_Z + 0.35, WALK_LINE_Z, u); y = lerp(0.05, 0, u); heading = 0; moving = true;
@@ -208,9 +208,13 @@ function start() {
       x = lerp(DOOR_X, 7.2, u); z = WALK_LINE_Z; heading = Math.PI / 2; moving = true;
     } else { visible = false; x = -6.5; z = WALK_LINE_Z; }
     h.visible = visible;
-    h.position.set(x, y - (seated && !a.mixer ? 0.34 : 0), z);
+    h.position.set(x, y - (seated && !(a.clips && a.clips.Man_Sitting) ? 0.34 : 0), z);
     h.rotation.y = heading;
-    if (a.mixer) play(a, seated ? 'Man_Sitting' : (moving ? 'Man_Walk' : 'Man_Idle'));
+    if (a.mixer) {
+      const solo = Object.keys(a.clips || {}).find((k) => !/^Man_/.test(k));
+      if (a.clips.Man_Sitting) play(a, seated ? 'Man_Sitting' : (moving ? 'Man_Walk' : 'Man_Idle'));
+      else if (solo) { play(a, solo); a.mixer.timeScale = (moving && !seated) ? 1 : 0; }
+    }
     if (a.woman && visible) stepCharacterGait(a.actor, time * 7.2 + a.offset, moving && !seated);
     return visible && seated;
   }
@@ -237,7 +241,7 @@ function start() {
       const cyc = clock % 5;
       const yelling = cyc > 1.2 && cyc < 3.6;
       play(driver, 'Man_Sitting');
-      driver.holder.rotation.y = -Math.PI / 2 + (yelling ? Math.sin(clock * 6) * 0.25 : Math.sin(clock * 1.1) * 0.06);
+      driver.holder.rotation.y = Math.PI / 2 + (yelling ? Math.sin(clock * 6) * 0.25 : Math.sin(clock * 1.1) * 0.06);
       driver.holder.position.y = DRIVER_POS[1] + (yelling ? Math.abs(Math.sin(clock * 9)) * 0.02 : 0);
       shoutClock += dt;
       bubble.classList.toggle('on', yelling);
