@@ -3185,7 +3185,7 @@ export class Game {
 
             class: 'school run',
 
-            female: false,
+            female: Math.random() < 0.5,
             special: false,
             group: true,
           });
