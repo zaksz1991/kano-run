@@ -50,7 +50,8 @@ function patchMaterial(material, uniforms, withVertex) {
       .replace('#include <common>', `#include <common>
 uniform float uKGait; uniform float uKHip; uniform float uKAmp; uniform float uKArm;
 uniform float uKSx; uniform float uKSy; uniform float uKArmAng; uniform float uKCx; uniform float uKFy;
-uniform mat4 uKM; uniform mat4 uKMi;`)
+uniform mat4 uKM; uniform mat4 uKMi;
+varying vec3 vKBind;`)
       .replace('#include <begin_vertex>', withVertex ? `#include <begin_vertex>
 {
   // Work in the character's own space (y up, x across, z forward) whatever axes the GLB was modelled in.
@@ -76,9 +77,10 @@ uniform mat4 uKM; uniform mat4 uKMi;`)
   }
   q.x += uKCx; q.y += uKFy;
   transformed = (uKMi * vec4(q, 1.0)).xyz;
-}` : '#include <begin_vertex>');
+}
+vKBind = position;` : '#include <begin_vertex>\nvKBind = position;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uKSkin;\nuniform float uKScarf;')
+      .replace('#include <common>', '#include <common>\nuniform float uKSkin;\nuniform float uKScarf;\nvarying vec3 vKBind;')
       .replace('#include <map_fragment>', `#include <map_fragment>
 {
   vec3 c = diffuseColor.rgb;
@@ -91,6 +93,9 @@ uniform mat4 uKM; uniform mat4 uKMi;`)
   scarf = step(0.09, vMapUv.x) * step(vMapUv.x, 0.225) * step(0.575, vMapUv.y) * step(vMapUv.y, 0.615) * uKScarf;
 #endif
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.36, 0.34) * (0.75 + 0.5 * c.r), scarf);
+  // Long sleeves: bare upper/lower arms (rigged woman, bind pose arms out to the sides) take the blouse colour; hands stay.
+  float armMask = step(17.0, abs(vKBind.x)) * step(abs(vKBind.x), 60.0) * step(105.0, vKBind.y) * skin * uKScarf;
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.70, 0.52), armMask);
   diffuseColor.rgb *= mix(vec3(1.0), vec3(0.84, 0.70, 0.58), skin * uKSkin);
   // Lift near-black clothes to deep colour so people do not read as silhouettes at night.
   float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
