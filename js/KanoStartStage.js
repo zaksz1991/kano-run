@@ -300,7 +300,7 @@ if (typeof window !== 'undefined' && !window.__kanoStartStage) {
     if (!screen || screen.querySelector('.kano-build-stamp')) return;
     const el = document.createElement('div');
     el.className = 'kano-build-stamp';
-    el.textContent = 'Update 165 · 21 Nov';
+    el.textContent = 'Update 166 · 21 Nov';
     el.style.cssText = 'text-align:center;margin:10px 0 6px;font:700 10px Arial,sans-serif;letter-spacing:.06em;color:#fff;opacity:.45;pointer-events:none';
     screen.appendChild(el);
   };

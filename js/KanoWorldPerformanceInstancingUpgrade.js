@@ -25,6 +25,7 @@ import './KanoFeatureActivationBridge.js';
 import './KanoFareHagglingBridge.js';
 import './KanoChangePayment.js';
 import './KanoRideRequests.js';
+import './KanoStubbornPassenger.js';
 import './KanoFuelQueueBridge.js';
 import './KanoStreetAnimalsOfficerUpgrade.js';
 import './KanoRealLandmarksUpgrade.js';
