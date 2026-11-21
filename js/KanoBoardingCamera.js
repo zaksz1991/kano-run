@@ -50,7 +50,7 @@ function clearView(owner, player, side, nowMs) {
   const next = new Set();
   const pz = player.position.z;
   const px = player.position.x;
-  camGuess.set(px + side * 8.2, 2.9, pz + 6.6);
+  camGuess.set(px + side * 0.7, 5.6, pz + 8.2);
   doorPoint.set(px + side * 0.3, 1.0, pz);
   kerbPoint.set(side * 5.9, 1.0, pz - 1.9);
   for (const child of world.children) {
@@ -105,8 +105,8 @@ function withBoardingCamera(inner) {
           restore = { p: camera.position.clone(), q: camera.quaternion.clone() };
           const px = player.position.x;
           const pz = player.position.z;
-          tmpPos.set(px + state.side * 8.2, 2.9, pz + 6.6);
-          tmpTarget.set(px + state.side * 1.0, 0.9, pz - 0.7);
+          tmpPos.set(px + state.side * 0.7, 5.6, pz + 8.2);
+          tmpTarget.set(px + state.side * 1.5, 0.5, pz - 1.4);
           camera.position.lerp(tmpPos, e);
           const look = tmpTarget.clone();
           const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(restore.q).multiplyScalar(12).add(restore.p);
