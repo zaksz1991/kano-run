@@ -274,7 +274,9 @@ function installWorldBrightness() {
     }
     const webgl = this.renderer3d.renderer;
     if (webgl && 'toneMappingExposure' in webgl) {
-      webgl.toneMappingExposure = night ? 1.16 : 1.32;
+      webgl.toneMappingExposure = night ? 1.0 : 1.06;
+      // Khronos neutral tone mapping keeps colours rich and the road dark; ACES at high exposure washed everything out.
+      if (THREE.NeutralToneMapping !== undefined) webgl.toneMapping = THREE.NeutralToneMapping;
     }
     report.brightnessProfile = night ? 'night-visible-lift' : 'daylight-lift';
     publishReport();
@@ -298,7 +300,7 @@ function installRendererHooks() {
           if (object?.isHemisphereLight) object.intensity = Math.max(object.intensity, 2.02);
           if (object?.isDirectionalLight) object.intensity = Math.max(object.intensity, 1.92);
         });
-        this.renderer.toneMappingExposure = Math.max(1.08, Number(this.renderer.toneMappingExposure) || 1);
+        this.renderer.toneMappingExposure = 1.04;
         report.renderer = this.mobile ? 'mobile' : 'desktop';
         publishReport();
       } catch (error) {

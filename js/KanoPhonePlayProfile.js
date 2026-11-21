@@ -38,7 +38,7 @@ function installPhonePlayProfile(options = {}) {
     tier: t,
     isPhone: IS_PHONE,
     // Resolution: laptop often 1.5–2 DPR; phones pay 4x+ pixels at 3 DPR
-    maxPixelRatio: t === 'high' ? 1.75 : t === 'mid' ? 1.5 : 1.25,
+    maxPixelRatio: t === 'high' ? 2.0 : t === 'mid' ? 1.75 : 1.5,
     targetFps: t === 'high' ? 60 : 30,
     shadows: false,
     // Closer fog = sharper near road, less distant mush, fewer pixels shaded

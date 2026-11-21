@@ -9,18 +9,18 @@
 import * as THREE from 'three';
 
 const KEY = 'kano.life.pixelCap.v2'; // v2: forget the 0.85 that v1 saved on slow measurements
-const STAGES = [1.25, 1.15, 1, 0.85, 0.72];
+const STAGES = [1.75, 1.5, 1.25, 1.1, 1, 0.85, 0.72];
 const PATCH = Symbol.for('kano.life.fpsFloor.v1');
 
 const coarse = typeof window !== 'undefined'
   && (window.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || ''));
 
 function load() {
-  try { const v = Number(localStorage.getItem(KEY)); return STAGES.includes(v) ? Math.min(1.15, Math.max(v, 0.85)) : 1.15; } catch (_) { return 1.15; } // each session re-checks the deepest stage
+  try { const v = Number(localStorage.getItem(KEY)); return STAGES.includes(v) ? Math.min(1.75, Math.max(v, 0.85)) : 1.75; } catch (_) { return 1.75; } // each session re-checks the deepest stage
 }
 const MODE_KEY = 'kano.life.qualityMode.v1';
 const MODES = ['auto', 'sharp', 'fast'];
-const MODE_CAP = { sharp: 1.25, fast: 0.8 };
+const MODE_CAP = { sharp: 1.75, fast: 0.9 };
 function loadMode() { try { const m = localStorage.getItem(MODE_KEY); return MODES.includes(m) ? m : 'auto'; } catch (_) { return 'auto'; } }
 function saveMode(m) { try { localStorage.setItem(MODE_KEY, m); } catch (_) { /* optional */ } }
 function save(v) { try { localStorage.setItem(KEY, String(v)); } catch (_) { /* optional */ } }

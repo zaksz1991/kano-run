@@ -1005,7 +1005,13 @@ export class KanoSceneUpgrade {
         z = THREE.MathUtils.lerp(item.start.z, endZ, e);
         heading = Math.PI;
       }
+      item.rig.root.rotation.order = 'YXZ';
       item.rig.root.rotation.y = heading;
+      // Bow the head and shoulders to get under the low canopy when stepping in or out.
+      let bow = 0;
+      if (item.kind === 'board') bow = Math.sin(Math.PI * clamp((t - 0.7) / 0.24, 0, 1)) * 0.5;
+      else bow = Math.sin(Math.PI * clamp(t / 0.16, 0, 1)) * 0.5;
+      item.rig.root.rotation.x = bow;
       item.rig.root.position.set(x, Math.abs(Math.sin(item.elapsed * 5.2)) * 0.03 * (1 - t * 0.35), z);
 
       const stride = Math.sin(item.elapsed * 5.2) * 0.4;
