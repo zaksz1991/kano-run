@@ -292,17 +292,3 @@ if (typeof window !== 'undefined' && !window.__kanoStartStage) {
   };
   if (document.readyState === 'complete') begin(); else window.addEventListener('load', begin);
 }
-
-// Small update label on the start screen so players (and support) can tell which update they are running.
-(function stampBuild() {
-  const put = () => {
-    const screen = document.getElementById('start-screen');
-    if (!screen || screen.querySelector('.kano-build-stamp')) return;
-    const el = document.createElement('div');
-    el.className = 'kano-build-stamp';
-    el.textContent = 'Update 178 · 21 Nov';
-    el.style.cssText = 'text-align:center;margin:10px 0 6px;font:700 10px Arial,sans-serif;letter-spacing:.06em;color:#fff;opacity:.45;pointer-events:none';
-    (screen.querySelector('.kano-start-card,.start-card,.start-panel')||screen.firstElementChild||screen).appendChild(el);
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', put); else put();
-})();
