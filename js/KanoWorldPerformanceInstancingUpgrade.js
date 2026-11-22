@@ -29,6 +29,7 @@ import('./KanoRideRequests.js').catch(() => {});
 import('./KanoStubbornPassenger.js').catch(() => {});
 import('./KanoIntroSplash.js').catch(() => {});
 import('./KanoAgberoLevy.js').catch(() => {});
+import('./KanoStartRestyle.js').catch(() => {});
 import './KanoFuelQueueBridge.js';
 import './KanoStreetAnimalsOfficerUpgrade.js';
 import './KanoRealLandmarksUpgrade.js';
