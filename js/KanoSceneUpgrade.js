@@ -1025,6 +1025,23 @@ export class KanoSceneUpgrade {
       if (item.kind === 'board') item.rig.root.position.y += FLOOR * sm((t - split) / (1 - split) / 0.7);
       else item.rig.root.position.y += FLOOR * (1 - sm(t / (1 - split) / 0.7));
 
+      // The keke's side panel is solid: clip the part of the passenger that is inside the cabin wall, so they step
+      // in through the door and vanish into the body instead of visibly walking through the panel.
+      try {
+        const R = window.kanoRenderer;
+        const px = R?.player?.position?.x ?? 0;
+        const side = item.side < 0 ? -1 : 1;
+        if (!item.kanoClip) item.kanoClip = new THREE.Plane(new THREE.Vector3(side, 0, 0), 0);
+        item.kanoClip.constant = -side * px - 0.5;
+        if (R?.renderer && !R.renderer.localClippingEnabled) R.renderer.localClippingEnabled = true;
+        item.rig.root.traverse((n) => {
+          if (!n.isMesh || !n.material) return;
+          for (const m of Array.isArray(n.material) ? n.material : [n.material]) {
+            if (m.clippingPlanes?.[0] !== item.kanoClip) m.clippingPlanes = [item.kanoClip];
+          }
+        });
+      } catch { /* cosmetic */ }
+
       const stride = Math.sin(item.elapsed * 5.2) * 0.4;
       for (const arm of item.rig.arms) arm.pivot.rotation.x = arm.side * stride * 0.38;
       for (const leg of item.rig.legs) leg.pivot.rotation.x = -armSafe(stride, leg.side);
