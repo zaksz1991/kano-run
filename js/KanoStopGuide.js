@@ -71,7 +71,7 @@ function render() {
     css();
     board ||= mk('kano-challenge');
     if (game()?.state === 'PLAY') coach();
-    if (!g?.s || g.state !== 'PLAY') { board.style.display = 'none'; return; }
+    if (!g?.s || g.state !== 'PLAY' || window.kanoBoardingCamera?.w) { board.style.display = 'none'; return; }
     // Challenge
     if (!challenge || (challenge.until && Date.now() > challenge.until)) newChallenge();
     const c = challenge;
