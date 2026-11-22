@@ -436,6 +436,33 @@ function updateMobileTrafficBatchElevations(renderer, state) {
   }
 }
 
+
+// Ground-level service roads running beside the raised deck (the road under and beside a Kano flyover).
+function syncServiceRoads(renderer, record, fly) {
+  if (!renderer?.world) return;
+  if (!record.serviceRoads) {
+    const group = new THREE.Group();
+    group.name = 'KANO_FLYOVER_SERVICE_ROADS';
+    const asphalt = new THREE.MeshStandardMaterial({ color: 0x25282c, roughness: 0.95 });
+    const paint = new THREE.MeshBasicMaterial({ color: 0xd9d4c4 });
+    const kerb = new THREE.MeshStandardMaterial({ color: 0x9a948a, roughness: 0.9 });
+    for (const side of [-1, 1]) {
+      const road = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.04, GLB_HALF * 2 + 40), asphalt);
+      road.position.set(side * 8.0, 0.02, 0);
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.045, GLB_HALF * 2 + 40), paint);
+      edge.position.set(side * 6.0, 0.03, 0);
+      const outer = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.16, GLB_HALF * 2 + 40), kerb);
+      outer.position.set(side * 10.4, 0.08, 0);
+      group.add(road, edge, outer);
+    }
+    renderer.world.add(group);
+    record.serviceRoads = group;
+  }
+  const anchored = Boolean(fly?.userData?.kanoWorldAnchoredStep96) && record.glbSkinTried;
+  record.serviceRoads.visible = anchored && fly.visible !== false;
+  if (anchored) record.serviceRoads.position.z = fly.position.z;
+}
+
 function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   if (renderer.lifeScene !== 'road' || !renderer.world?.visible) return 0;
   ensureApproachGroups(renderer);
@@ -455,6 +482,7 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
     } else {
       record.group.visible = false; // never show a flyover sitting on the start line before the world places it
     }
+    syncServiceRoads(renderer, record, fly);
   }
 
   const playerSurface = nearestSurfaceForZ(renderer, renderer.player.position.z);

@@ -50,6 +50,16 @@ async function build(renderer) {
       const model = models.getInstance(key);
       if (!model) return;
       if (!fit(model, height)) return;
+      if (key === 'karotaOfficer') {
+        // KAROTA trousers: navy blue, not the black of the source texture.
+        model.traverse((n) => {
+          if (n.isMesh && /^Bottoms/i.test(n.name || '')) {
+            n.material = new THREE.MeshStandardMaterial({ color: 0x1d3f80, roughness: 0.85, metalness: 0 });
+          } else if (n.isMesh && /^Tops/i.test(n.name || '')) {
+            n.material = new THREE.MeshStandardMaterial({ color: 0x6db3e8, roughness: 0.8, metalness: 0 });
+          }
+        });
+      }
       const holder = new THREE.Group();
       holder.add(model);
       holder.position.set(x, 0, z);
@@ -62,8 +72,8 @@ async function build(renderer) {
     } catch (_) { /* optional model */ }
     return null;
   };
-  // The officer model's front faces -z, so turn it ~180 deg to face the oncoming driver.
-  const FACE = Math.PI;
+  // The officer model's front faces +z (towards the driver) when its yaw is 0.
+  const FACE = 0;
   const holders = await Promise.all([
     place('karota', 2.0, 5.9, -7, Math.PI),
     place('karotaOfficer', 1.8, 4.7, 0, FACE + 0.25),      // 0: waving traffic in
@@ -138,7 +148,7 @@ function frame() {
             // yaw that turns the officer's front toward the keke
             const dx = px - h.position.x;
             const dz = 2 - (staged.group.position.z + h.position.z);
-            return Math.atan2(-dx, -dz);
+            return Math.atan2(dx, dz);
           };
           (staged.group.userData.officers || []).forEach((h, i) => {
             const u = h.userData;
