@@ -7,7 +7,7 @@ function install() {
   const fields = document.querySelector('#start-screen .start-fields');
   if (!fields || document.getElementById('kano-handle')) return false;
   const label = document.createElement('label');
-  label.innerHTML = 'PLAYER HANDLE<input id="kano-handle" type="text" maxlength="14" autocomplete="off" placeholder="e.g. Ruffneck" style="background:#141b24;color:#f4efe3;border:1px solid #2a3544;border-radius:10px;font:700 14px Arial,sans-serif;padding:0 12px;min-height:42px">';
+  label.innerHTML = 'HANDLE<input id="kano-handle" type="text" maxlength="14" autocomplete="off" placeholder="e.g. Ruffneck" style="background:#141b24;color:#f4efe3;border:1px solid #2a3544;border-radius:10px;font:700 14px Arial,sans-serif;padding:0 12px;min-height:42px">';
   fields.prepend(label);
   const input = label.querySelector('input');
   input.value = read();

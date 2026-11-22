@@ -98,7 +98,7 @@ if (!Game.prototype[PATCH]) {
     const result = base.call(this, zone);
     try {
       const after = this.s?.passengers?.length || 0;
-      const busy = ['kano-change-panel', 'kano-haggle-panel', 'kano-ride-panel', 'kano-stubborn-panel', 'kano-gang-panel']
+      const busy = ['kano-change-panel', 'kano-haggle-panel', 'kano-ride-panel', 'kano-stubborn-panel', 'kano-gang-panel', 'kano-karota-panel']
         .some((id) => document.getElementById(id)?.childElementCount && document.getElementById(id).style.display !== 'none');
       const now = Date.now();
       if (after > before && !busy && now - lastAt > 200000) {

@@ -71,7 +71,7 @@ if (!Game.prototype[PATCH]) {
     try {
       const after = this.s?.passengers?.length || 0;
       const paid = (Number(this.s?.fares) || 0) - fareBefore;
-      const busy = ['kano-change-panel', 'kano-haggle-panel', 'kano-ride-panel', 'kano-stubborn-panel']
+      const busy = ['kano-change-panel', 'kano-haggle-panel', 'kano-ride-panel', 'kano-stubborn-panel', 'kano-karota-panel']
         .some((id) => document.getElementById(id)?.childElementCount && document.getElementById(id).style.display !== 'none');
       if (passenger && result !== false && after < before && !passenger.group && !passenger.special && paid >= 80 && !busy && Math.random() < 0.15) {
         setTimeout(() => offer(this, passenger, Math.round(paid)), 900);

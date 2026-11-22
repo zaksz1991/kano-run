@@ -15,6 +15,13 @@ if (!document.getElementById('kano-start-restyle')) {
 #start-screen .start-actions .primary,#start-screen #start-btn{background:linear-gradient(180deg,#ffd43b,#f2b700)!important;color:#111!important;border:0!important;border-radius:14px!important;min-height:54px;font-weight:900!important;letter-spacing:.16em!important;box-shadow:0 8px 22px #f2c20033!important}
 #start-screen .secondary{background:#141b24!important;color:#f4efe3!important;border:1px solid #2a3544!important;border-radius:12px!important;font-weight:800!important;letter-spacing:.1em!important;min-height:44px}
 #start-screen #daily-login-btn{border-color:#2fe08d!important;color:#2fe08d!important}
+#start-screen .start-fields label{display:grid!important;grid-template-columns:72px minmax(0,1fr);align-items:center;column-gap:10px}
+#start-screen .start-fields select,#start-screen .start-fields input#kano-handle{width:100%!important;min-width:0;box-sizing:border-box!important;margin:0!important;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+#start-screen .start-fields input#kano-handle{height:40px;font-size:14px}
+#start-screen #daily-login-btn{box-shadow:0 0 0 1px #2fe08d55,0 6px 20px #2fe08d22!important;background:#0f2a1f!important}
+#start-screen .kano-economy-guidance{font-size:11px!important;opacity:.62;line-height:1.5}
+#start-screen .start-card{animation:kanoStartIn .45s ease-out both}
+@keyframes kanoStartIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 #start-screen .start-meta{color:#9aa6b4!important}
 #start-screen .start-meta b{color:#f2c200!important}
 #start-screen .kano-economy-guidance,#start-screen .credit,#start-screen .promo a{color:#7d8a99!important}
