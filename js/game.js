@@ -1412,6 +1412,26 @@ export class Game {
       }
 
       // --------------------------------------------------------
+      // PULL-IN ASSIST
+      //
+      // A driver lining up with a stop eases off on the approach, like a real
+      // keke pulling in to the kerb, so the stop never needs a hard brake.
+      // --------------------------------------------------------
+
+      if (
+        movingForward &&
+        aligned &&
+        zone.type !== 'pothole' &&
+        (inApproachRange || (inRoadsideInteractionRange && s.speed > permittedStopSpeed)) &&
+        s.speed > permittedStopSpeed * 0.85 &&
+        s.speed > 2
+      ) {
+        const eased = s.speed - (s.speed - permittedStopSpeed * 0.8) * Math.min(1, dt * 1.6);
+        s.speed = Math.max(2, eased);
+        s.signedSpeed = s.speed;
+      }
+
+      // --------------------------------------------------------
       // POTHOLE COLLISION
       //
       // A pothole remains visible as it approaches.
