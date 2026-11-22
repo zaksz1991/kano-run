@@ -5658,7 +5658,7 @@ export class Renderer3D {
 
     this.camera.lookAt(
       targetX,
-      driverView ? 1.6 : 0.72,
+      driverView ? 0.1 : 0.72,
       cameraTargetZ,
     );
 
