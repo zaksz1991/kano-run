@@ -31,6 +31,7 @@ import('./KanoIntroSplash.js').catch(() => {});
 import('./KanoAgberoLevy.js').catch(() => {});
 import('./KanoStartRestyle.js').catch(() => {});
 import('./KanoCashHandover.js').catch(() => {});
+import('./KanoPlayerHandle.js').catch(() => {});
 import './KanoFuelQueueBridge.js';
 import './KanoStreetAnimalsOfficerUpgrade.js';
 import './KanoRealLandmarksUpgrade.js';
