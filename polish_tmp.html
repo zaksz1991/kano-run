@@ -1,0 +1,32 @@
+<!doctype html><meta charset=utf-8><body style="margin:0"><canvas id=c width=1600 height=520></canvas>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type=module>
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {polishCharacter,stepCharacterGait} from '/js/KanoCharacterPolish.js';
+const files=['/public/assets/models/characters/passengers/hijab-muslim-woman-2.glb','/public/assets/models/characters/passengers/female.glb','/public/assets/models/characters/passengers/woman-arms-crossed.glb','/public/assets/models/characters/pedestrians/muslim-girl.glb'];
+const r=new THREE.WebGLRenderer({canvas:c,antialias:true});r.setSize(1600,520,false);r.outputColorSpace=THREE.SRGBColorSpace;
+const s=new THREE.Scene();s.background=new THREE.Color(0xa8d4f0);
+s.add(new THREE.HemisphereLight(0xffffff,0x887766,1.6));const d=new THREE.DirectionalLight(0xffffff,1.6);d.position.set(2,5,6);s.add(d);
+const cam=new THREE.OrthographicCamera(-4.4,4.4,1.0,-0.9,0.1,50);cam.position.set(0,0,8);
+const L=new GLTFLoader();const actors=[];let n=0;
+const keys=['passengerWoman','passengerWoman','pedestrianWoman','pedestrianWoman'];
+files.forEach((f,idx)=>{L.load(f,g=>{const m=g.scene;const b=new THREE.Box3().setFromObject(m);const k=1.6/(b.max.y-b.min.y);m.scale.setScalar(k);m.updateMatrixWorld(true);polishCharacter(m,keys[idx]);
+ // 3 phases per model
+ for(let ph=0;ph<3;ph++){const c2=ph===0?m:m.clone(true);if(ph>0){c2.traverse(o=>{if(o.isMesh)o.material=o.material});}
+  }
+ if(idx===0){m.traverse(o=>{if(o.isMesh){const u=o.material.onBeforeCompile;const bb=new THREE.Box3().setFromBufferAttribute(o.geometry.attributes.position);console.warn('MESH',o.name,JSON.stringify(bb.min),JSON.stringify(bb.max),'scale',JSON.stringify(new THREE.Vector3().setFromMatrixScale(o.matrixWorld)),'rotq',JSON.stringify(o.getWorldQuaternion(new THREE.Quaternion())))}});console.warn('POL',JSON.stringify(m.userData.kanoCharacterPolish.tPose),m.scale.y)}actors[idx]=m;n++;if(n===files.length){
+  [0,1,2].forEach(ph=>{files.forEach((_,i)=>{const src=actors[i];const cl=ph===0?src:src.clone(true);cl.position.set((i*2.2-3.3)+ph*0,0,0);});});
+  // simple: render 3 frames side by side by moving actors? use one row per phase through viewport scissor
+  const phases=[0,Math.PI/2,-Math.PI/2];
+  r.setScissorTest(true);
+  phases.forEach((phv,pi)=>{const x=pi*533;r.setViewport(x,0,533,520);r.setScissor(x,0,533,520);
+    actors.forEach((a,i)=>{a.position.set(0,0,0);});
+    // render each model in own sub-viewport region: shift camera
+    });
+  r.setScissorTest(false);
+  // layout: 4 models in a row, one phase per call; take screenshots per phase externally
+  window.__go=(phv)=>{r.setViewport(0,0,1600,520);r.setScissorTest(false);actors.forEach((a,i)=>{a.position.set((i-1.5)*2.0,0,0);s.add(a);stepCharacterGait(a,phv,true)});r.render(s,cam);return true};
+  window.__ready=true}
+},undefined,e=>console.error('ERR',f))});
+</script>

@@ -1,0 +1,8 @@
+<!doctype html><meta charset=utf-8><script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type=module>
+import * as THREE from 'three';import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+const f=decodeURIComponent(location.hash.slice(1));
+new GLTFLoader().load(f,g=>{g.scene.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(g.scene);const out=[];const slices={};
+ const v=new THREE.Vector3();g.scene.traverse(m=>{if(m.isMesh){const p=m.geometry.attributes.position;for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(m.matrixWorld);const k=Math.round((v.y-b.min.y)/0.1);const s=slices[k]||(slices[k]=[1e9,-1e9,1e9,-1e9]);s[0]=Math.min(s[0],v.x);s[1]=Math.max(s[1],v.x);s[2]=Math.min(s[2],v.z);s[3]=Math.max(s[3],v.z)}}});
+ window.__done=JSON.stringify({min:b.min,max:b.max,slices:Object.fromEntries(Object.entries(slices).map(([k,s])=>[k,s.map(x=>+x.toFixed(2))]))})});
+</script>

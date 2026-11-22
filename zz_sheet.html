@@ -1,0 +1,13 @@
+<!doctype html><html><body style="margin:0;background:#9ab"><canvas id=c width=1600 height=700></canvas>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+const files=decodeURIComponent(location.hash.slice(1)).split('|');
+const R=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});R.setSize(1600,700);R.setScissorTest(true);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x889aaa);scene.add(new THREE.HemisphereLight(0xffffff,0x666666,2.2));
+const cam=new THREE.PerspectiveCamera(30,1,0.1,100);
+const L=new GLTFLoader();const objs=[];let done=0;
+files.forEach((f,i)=>L.load('/assets/models/characters/'+f,g=>{const o=g.scene;const b=new THREE.Box3().setFromObject(o);const s=1.8/(b.max.y-b.min.y);o.scale.setScalar(s);b.setFromObject(o);o.position.y-=b.min.y;o.position.x-=(b.min.x+b.max.x)/2;o.position.z-=(b.min.z+b.max.z)/2;objs[i]=o;let tri=0;o.traverse(m=>{if(m.isMesh)tri+=(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count)/3});console.log(f,Math.round(tri),'tris', o.userData);if(++done===files.length)draw()},undefined,e=>{console.log('ERR '+f);objs[i]=null;if(++done===files.length)draw()}));
+function draw(){const w=1600/files.length;files.forEach((f,i)=>{if(!objs[i])return;R.setViewport(i*w,0,w,700);R.setScissor(i*w,0,w,700);scene.clear();scene.add(new THREE.HemisphereLight(0xffffff,0x666666,2.2));scene.add(objs[i]);cam.aspect=w/700;cam.updateProjectionMatrix();cam.position.set(0,1.1,5.2);cam.lookAt(0,0.9,0);R.render(scene,cam)});window.__ok=1}
+</script></body></html>
