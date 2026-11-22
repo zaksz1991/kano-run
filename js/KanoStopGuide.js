@@ -16,6 +16,26 @@ const game = () => window.kanoGame || window.__KANO_ACTIVE_GAME__;
 let guide = null;
 let board = null;
 let challenge = null;
+let coachShown = false;
+
+function coach() {
+  if (coachShown) return;
+  coachShown = true;
+  let seen = false;
+  try { seen = localStorage.getItem('kano.coach.v1') === '1'; } catch { /* private mode */ }
+  if (seen) return;
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:50%;top:300px;transform:translateX(-50%);z-index:70;width:min(88vw,320px);padding:14px 16px;border-radius:16px;background:rgba(10,13,18,.96);border:2px solid #f2c200;color:#f4efe3;font:700 13px/1.5 Arial,sans-serif;box-shadow:0 12px 34px #000b;text-align:left';
+  el.innerHTML = '<div style="font:900 12px Arial;letter-spacing:.16em;color:#f2c200;margin-bottom:6px">HOW TO EARN</div>'
+    + '<div><b style="color:#2fe08d">GREEN · PICK UP</b> a waiting passenger. Move into the side of the sign and slow down.</div>'
+    + '<div style="margin-top:6px"><b style="color:#ff9a3c">ORANGE · DROP OFF</b> at the place your passenger asked for. The tag shows the name.</div>'
+    + '<div style="margin-top:6px"><b style="color:#f2c200">🎯 CHALLENGE</b> top left: finish it for bonus cash.</div>'
+    + '<div style="margin-top:10px;text-align:center;font:900 12px Arial;letter-spacing:.14em;color:#f2c200">TAP TO START</div>';
+  const done = () => { try { localStorage.setItem('kano.coach.v1', '1'); } catch { /* ignore */ } el.remove(); };
+  el.addEventListener('click', done);
+  document.body.append(el);
+  setTimeout(done, 9000);
+}
 
 function css() {
   if (document.getElementById('kano-guide-css')) return;
@@ -50,6 +70,7 @@ function render() {
     const g = game();
     css();
     board ||= mk('kano-challenge');
+    if (game()?.state === 'PLAY') coach();
     if (!g?.s || g.state !== 'PLAY') { board.style.display = 'none'; return; }
     // Challenge
     if (!challenge || (challenge.until && Date.now() > challenge.until)) newChallenge();
