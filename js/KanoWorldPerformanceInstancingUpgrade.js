@@ -30,6 +30,7 @@ import('./KanoStubbornPassenger.js').catch(() => {});
 import('./KanoIntroSplash.js').catch(() => {});
 import('./KanoStreetGangs.js').catch(() => {});
 import('./KanoStartRestyle.js').catch(() => {});
+import('./KanoStopGuide.js').catch(() => {});
 import('./KanoCashHandover.js').catch(() => {});
 import('./KanoPlayerHandle.js').catch(() => {});
 import './KanoFuelQueueBridge.js';
