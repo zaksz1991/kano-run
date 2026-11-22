@@ -27,6 +27,7 @@ import './KanoChangePayment.js';
 // Optional live-ride events: loaded on the side so a missing/stale file can never stop the game from starting.
 import('./KanoRideRequests.js').catch(() => {});
 import('./KanoStubbornPassenger.js').catch(() => {});
+import('./KanoIntroSplash.js').catch(() => {});
 import './KanoFuelQueueBridge.js';
 import './KanoStreetAnimalsOfficerUpgrade.js';
 import './KanoRealLandmarksUpgrade.js';
