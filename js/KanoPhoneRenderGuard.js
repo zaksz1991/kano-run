@@ -23,8 +23,8 @@ function tier() {
 /** Longest canvas edge in CSS*DPR pixels */
 function maxEdge(t) {
   if (t === 'low') return 1100;
-  if (t === 'mid') return 1300;
-  return 1500;
+  if (t === 'mid') return 1520;
+  return 1700;
 }
 
 function findWebGLRenderer() {
