@@ -1422,13 +1422,19 @@ export class Game {
         movingForward &&
         aligned &&
         zone.type !== 'pothole' &&
-        (inApproachRange || (inRoadsideInteractionRange && s.speed > permittedStopSpeed)) &&
-        s.speed > permittedStopSpeed * 0.85 &&
+        zone.depth <= 0.34 &&
+        zone.depth >= 0.055 &&
         s.speed > 2
       ) {
-        const eased = s.speed - (s.speed - permittedStopSpeed * 0.8) * Math.min(1, dt * 1.6);
-        s.speed = Math.max(2, eased);
-        s.signedSpeed = s.speed;
+        // Speed allowed at this distance: full speed far out, a gentle crawl once beside the stop.
+        const crawl = permittedStopSpeed * 0.8;
+        const allowed = zone.depth <= 0.19
+          ? crawl
+          : crawl + (zone.depth - 0.19) * ((120 - crawl) / 0.15);
+        if (s.speed > allowed) {
+          s.speed = Math.max(2, allowed);
+          s.signedSpeed = s.speed;
+        }
       }
 
       // --------------------------------------------------------
