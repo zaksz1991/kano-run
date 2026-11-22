@@ -1625,6 +1625,18 @@ export class ModelManager {
         : object.material.clone();
     });
 
+    if (/^building/.test(key)) {
+      // Kano earth tones: warm ochre, terracotta, cream and sand walls instead of the stock pastel colours.
+      const KANO_WALLS = [[1.0, 0.86, 0.66], [0.96, 0.74, 0.60], [0.98, 0.93, 0.80], [0.90, 0.80, 0.62], [0.94, 0.82, 0.70]];
+      const tone = KANO_WALLS[Math.floor(Math.random() * KANO_WALLS.length)];
+      clone.traverse((object) => {
+        if (!object.isMesh || !object.material) return;
+        for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+          if (material?.color?.setRGB && material.color.getHex() !== 0x000000) material.color.multiply({ r: tone[0], g: tone[1], b: tone[2], isColor: true });
+        }
+      });
+    }
+
     if (key === 'keke') {
       attachDriverAnimationReferences(clone);
     } else if (wantsSkinCorrection(key)) {
