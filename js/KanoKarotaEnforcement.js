@@ -14,6 +14,7 @@ const LEGAL_SEATS = 3;
 let timer = 0;
 let lastAt = 0;
 let stillFor = 0;
+let lastStopAt = 0;
 
 const anyPanel = () => PANELS.some((id) => { const e = document.getElementById(id); return e && e.childElementCount && e.style.display !== 'none'; });
 
@@ -109,6 +110,7 @@ if (!Game.prototype[PATCH]) {
   const base = Game.prototype.pickup;
   Game.prototype.pickup = function pickupWithKarota(zone) {
     const before = this.s?.passengers?.length || 0;
+    lastStopAt = Date.now();
     const result = base.call(this, zone);
     try {
       const s = this.s;
@@ -122,10 +124,14 @@ if (!Game.prototype[PATCH]) {
     } catch { /* never break a pick-up */ }
     return result;
   };
+  const dropBase = Game.prototype.drop;
+  Game.prototype.drop = function dropMarkStop(zone) { lastStopAt = Date.now(); return dropBase.call(this, zone); };
   setInterval(() => {
     try {
       const g = window.kanoGame; const s = g?.s;
       if (!s || g.state !== 'PLAY') { stillFor = 0; return; }
+      // Loading or dropping passengers is a legal stop: never fine it.
+      if (window.kanoBoardingCamera?.w > 0 || (window.__KANO_LIFE_SCENE_UPGRADE__?.walkingPassengers || []).length || Date.now() - lastStopAt < 30000) { stillFor = 0; return; }
       const near = (s.zones || []).some((z) => z.type !== 'pothole' && z.depth > 0 && z.depth < 0.4);
       const middle = Math.abs(Number(s.steer) || 0) < 0.5;
       if ((Number(s.speed) || 0) < 1.5 && !near && middle && !s.event) stillFor += 0.5; else stillFor = 0;
