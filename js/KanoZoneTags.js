@@ -65,7 +65,7 @@ if (!window[KEY]) {
         const y = Math.max(304, y0);
         if (y > rect.height - 190) continue;
         const cx = Math.max(120, Math.min(rect.width - 120, x));
-        if (used.some((u) => Math.abs(u.x - cx) < 130 && Math.abs(u.y - y) < 56)) continue;
+        if (used.some((u) => Math.abs(u.x - cx) < 215 && Math.abs(u.y - y) < 56)) continue;
         used.push({ x: cx, y });
         const e = chip(n++);
         const full = String(it.z.label || '').replace(/^(PICK UP|DROP OFF|DROP-OFF|FUEL STATION)\s*[·:-]\s*/i, '');
