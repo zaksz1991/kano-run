@@ -5,7 +5,7 @@
  * This is an additive compatibility layer. It does not change fares, health
  * damage values, collision detection, steering, speed, or progression.
  */
-import { polishCharacter, stepCharacterGait, applyBoneSit } from './KanoCharacterPolish.js';
+import { polishCharacter, stepCharacterGait, applyBoneSit, applyBoneGait } from './KanoCharacterPolish.js';
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
@@ -519,28 +519,7 @@ function activateEmbeddedAnimation(actor, path, clips, mode, requestToken) {
 // Rigs that only ship an idle clip (the woman) would glide along in a standing pose. This overlays a real walking
 // cycle on top of the idle pose: thighs and calves swing, arms drop to the sides and swing opposite the legs.
 function proceduralGait(actor) {
-  let g = actor.userData.kanoGaitBones;
-  if (g === undefined) {
-    g = { thigh: [], calf: [], arm: [], fore: [] };
-    actor.traverse((o) => {
-      if (!o.isBone) return;
-      const n = o.name || '';
-      const left = /\bL\b|\.L$|_L$|Left/i.test(n) ? 1 : /\bR\b|\.R$|_R$|Right/i.test(n) ? -1 : 0;
-      if (!left) return;
-      if (/Thigh|UpLeg/i.test(n)) g.thigh.push([o, left]);
-      else if (/Calf|LowLeg|Shin/i.test(n)) g.calf.push([o, left]);
-      else if (/UpperArm/i.test(n)) g.arm.push([o, left]);
-      else if (/Forearm|LowerArm/i.test(n)) g.fore.push([o, left]);
-    });
-    if (!g.thigh.length) g = null;
-    actor.userData.kanoGaitBones = g;
-  }
-  if (!g) return;
-  const ph = nowMs() * 0.0075 + (actor.id % 7);
-  for (const [b, side] of g.thigh) b.rotateX(Math.sin(ph) * side * GAIT_SWING);
-  for (const [b, side] of g.calf) b.rotateX(Math.max(0, -Math.sin(ph + 0.6) * side) * GAIT_SWING * 1.2);
-  for (const [b, side] of g.arm) { b.rotateZ(side * GAIT_ARM_DROP); b.rotateX(-Math.sin(ph) * side * GAIT_SWING * 0.7); }
-  for (const [b] of g.fore) b.rotateX(-0.15);
+  applyBoneGait(actor, nowMs() * 0.0075 + (actor.id % 7));
 }
 const GAIT_SWING = 0.5;
 const GAIT_ARM_DROP = 0;
@@ -604,9 +583,14 @@ function updateEmbeddedAnimations(renderer, dt) {
     if (ancestryVisible) {
       safeCall(() => entry.mixer.update(clamp(dt, 0, 0.05)));
       if (entry.mode === 'walk' && !/walk|run|jog/i.test(entry.clipName || '')) safeCall(() => proceduralGait(actor));
-      else if (/seat|sit/i.test(String(entry.mode || '')) && !/sit/i.test(entry.clipName || '') && actor.userData.kanoGaitBones !== null) {
+      else if (/seat|sit/i.test(String(entry.mode || '')) && !/sit/i.test(entry.clipName || '') && actor.userData.kanoGaitBonesStage !== null) {
         // Idle-only rig (the woman) would stand inside the cab: bend her hips and knees onto the bench.
-        safeCall(() => { applyBoneSit(actor); if (!actor.userData.kanoSitDropped) { actor.userData.kanoSitDropped = true; actor.position.y -= 0.3; } });
+        safeCall(() => { if (applyBoneSit(actor) && !actor.userData.kanoSitDropped) {
+          actor.userData.kanoSitDropped = true;
+          // position.y is rewritten every frame from the seat base, so lower the base (and entry target) itself.
+          actor.userData.kanoRootCauseSeatBaseY = (actor.userData.kanoRootCauseSeatBaseY ?? actor.position.y) - 0.3;
+          const tr = actor.userData.kanoSeatEntryTransition; if (tr) tr.targetY -= 0.3;
+        } });
       }
     }
     if (entry.outgoingAction && nowMs() >= entry.outgoingUntil) {

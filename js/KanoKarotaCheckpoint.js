@@ -51,11 +51,9 @@ async function build(renderer) {
       if (!model) return;
       if (!fit(model, height)) return;
       if (key === 'karotaOfficer') {
-        // KAROTA trousers: navy blue, not the black of the source texture.
+        // KAROTA uniform: sky-blue shirt, black trousers (the source texture's trousers stay as they are).
         model.traverse((n) => {
-          if (n.isMesh && /^Bottoms/i.test(n.name || '')) {
-            n.material = new THREE.MeshStandardMaterial({ color: 0x1d3f80, roughness: 0.85, metalness: 0 });
-          } else if (n.isMesh && /^Tops/i.test(n.name || '')) {
+          if (n.isMesh && /^Tops/i.test(n.name || '')) {
             n.material = new THREE.MeshStandardMaterial({ color: 0x6db3e8, roughness: 0.8, metalness: 0 });
           }
         });

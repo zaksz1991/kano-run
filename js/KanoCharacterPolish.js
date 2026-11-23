@@ -170,25 +170,63 @@ export function stepCharacterGait(actor, phase, walking) {
   polish.uniforms.uKGait.value = walking ? Math.sin(phase) : 0;
 }
 
-/** Seated overlay for the rigged woman (idle-only rig): thighs forward, knees bent, hands resting. Call after the mixer update. */
-export function applyBoneSit(actor) {
-  applyBoneGait(actor, 0); // builds the bone lists (phase 0 adds no swing except the small forearm bend)
-  const g = actor?.userData?.kanoGaitBonesStage;
-  if (!g) return;
-  for (const [b, side] of g.thigh) b.rotateX(side * SIT_THIGH);
-  for (const [b, side] of g.calf) b.rotateX(-side * SIT_THIGH * 1.05);
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
+/** Point a bone at a direction given in the actor's own space (+z forward, -y down), whatever the rig's local axes are. */
+function aimBone(actor, bone, child, ang) {
+  bone.updateWorldMatrix(true, false);
+  child.updateWorldMatrix(true, false);
+  _v1.setFromMatrixPosition(child.matrixWorld).sub(_v2.setFromMatrixPosition(bone.matrixWorld));
+  if (_v1.lengthSq() < 1e-10) return;
+  _v1.normalize();
+  _v3.set(0, -Math.cos(ang), Math.sin(ang)).transformDirection(actor.matrixWorld);
+  _q1.setFromUnitVectors(_v1, _v3);
+  bone.getWorldQuaternion(_q2);
+  _q2.premultiply(_q1);
+  if (bone.parent) { bone.parent.getWorldQuaternion(_q3); _q3.invert(); _q2.premultiply(_q3); }
+  bone.quaternion.copy(_q2);
+  bone.updateMatrixWorld(true);
 }
-const SIT_THIGH = 1.3;
+function legBones(actor) {
+  let g = actor?.userData?.kanoGaitBonesStage;
+  if (g === undefined) { applyBoneGait(actor, 0, true); g = actor.userData.kanoGaitBonesStage; }
+  if (!g) return null;
+  if (g.legs === undefined) {
+    g.legs = [];
+    for (const [thigh] of g.thigh) {
+      const calf = thigh.children.find((c) => c.isBone && /Calf|LowLeg|Shin/i.test(c.name));
+      const foot = calf?.children.find((c) => c.isBone);
+      if (calf && foot) g.legs.push({ thigh, calf, foot });
+    }
+  }
+  return g.legs;
+}
+/** Legs by direction: angles are measured from straight down, positive = forward. */
+function poseLeg(actor, leg, thighAng, calfAng) {
+  actor.updateWorldMatrix(true, false);
+  aimBone(actor, leg.thigh, leg.calf, thighAng);
+  aimBone(actor, leg.calf, leg.foot, calfAng);
+}
+
+/** Seated overlay for the rigged woman (idle-only rig): thighs forward, shins down, hands resting. Call after the mixer update. */
+export function applyBoneSit(actor) {
+  const legs = legBones(actor);
+  if (!legs || !legs.length) return false;
+  for (const leg of legs) poseLeg(actor, leg, 1.42, 0.05);
+  const g = actor.userData.kanoGaitBonesStage;
+  for (const [b] of g.fore) b.rotateX(-0.15);
+  return true;
+}
 
 /** Walking overlay for rigged characters that only ship an idle clip: call after the animation mixer has updated. */
-export function applyBoneGait(actor, phase) {
+export function applyBoneGait(actor, phase, buildOnly = false) {
   let g = actor?.userData?.kanoGaitBonesStage;
   if (g === undefined) {
     g = { thigh: [], calf: [], arm: [], fore: [] };
     actor.traverse((o) => {
       if (!o.isBone) return;
       const n = o.name || '';
-      const side = /\bL\b|\.L$|_L$|Left/i.test(n) ? 1 : /\bR\b|\.R$|_R$|Right/i.test(n) ? -1 : 0;
+      const side = /\bL\b|\.L$|_L$|_L_|Left/i.test(n) ? 1 : /\bR\b|\.R$|_R$|_R_|Right/i.test(n) ? -1 : 0;
       if (!side) return;
       if (/Thigh|UpLeg/i.test(n)) g.thigh.push([o, side]);
       else if (/Calf|LowLeg|Shin/i.test(n)) g.calf.push([o, side]);
@@ -198,9 +236,14 @@ export function applyBoneGait(actor, phase) {
     if (!g.thigh.length) g = null;
     actor.userData.kanoGaitBonesStage = g;
   }
-  if (!g) return;
-  for (const [b, side] of g.thigh) b.rotateX(Math.sin(phase) * side * 0.5);
-  for (const [b, side] of g.calf) b.rotateX(Math.max(0, -Math.sin(phase + 0.6) * side) * 0.6);
-  for (const [b, side] of g.arm) b.rotateX(-Math.sin(phase) * side * 0.35);
+  if (!g || buildOnly) return;
+  const legs = legBones(actor);
+  if (legs && legs.length) {
+    legs.forEach((leg, i) => {
+      const p = phase + (i % 2 ? Math.PI : 0);
+      poseLeg(actor, leg, Math.sin(p) * 0.5, Math.sin(p) * 0.5 - 0.7 * Math.max(0, Math.cos(p)));
+    });
+  }
+  for (const [b, side] of g.arm) b.rotateX(side * 1.2 - Math.sin(phase) * side * 0.35);
   for (const [b] of g.fore) b.rotateX(-0.15);
 }
