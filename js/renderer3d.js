@@ -4587,9 +4587,9 @@ export class Renderer3D {
             const labelText = zone.hub
               ? `${String(zone.stopName || 'KEKE STOP').toUpperCase()} · KEKE STOP`
               : zone.type === 'pickup'
-                ? 'ROADSIDE PICK-UP'
+                ? 'PICK UP HERE'
                 : zone.type === 'drop'
-                  ? 'ROADSIDE DROP-OFF'
+                  ? 'DROP OFF HERE'
                   : 'FUEL STOP';
 
             labelCtx.fillText(labelText, 256, 51, 486);
@@ -4621,8 +4621,8 @@ export class Renderer3D {
           sign.material.userData.kanoNoShift = true;
 
           // Compact kerb-side sign on a short post, plus a painted bay on the tarmac (like a real stop).
-          sign.scale.setScalar(0.85);
-          sign.position.set(0, 1.95, 0.15);
+          sign.scale.setScalar(1.45);
+          sign.position.set(0, 2.85, 0.15);
           actor.add(sign);
           actor.userData.labelTexture = labelTexture;
 
@@ -4647,10 +4647,10 @@ export class Renderer3D {
             actor.add(edge);
           }
           const post = new THREE.Mesh(
-            new THREE.BoxGeometry(0.08, 1.65, 0.08),
+            new THREE.BoxGeometry(0.1, 2.5, 0.1),
             new THREE.MeshBasicMaterial({ color: 0x20252a }),
           );
-          post.position.set(0, 0.82, 0.15);
+          post.position.set(0, 1.25, 0.15);
           post.material.userData.kanoNoShift = true;
           actor.add(post);
 

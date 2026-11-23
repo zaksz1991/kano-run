@@ -13,7 +13,7 @@ if (!window[KEY]) {
   layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:25;overflow:hidden';
   const style = document.createElement('style');
   style.textContent = '.kzt{position:absolute;left:0;top:0;transform-origin:50% 100%;padding:5px 9px 6px;border-radius:10px;background:rgba(10,13,18,.92);'
-    + 'font:800 12px/1.25 Arial,sans-serif;color:#f4efe3;max-width:176px;border:2px solid var(--c);box-shadow:0 4px 14px #0009;will-change:transform}'
+    + 'font:800 12px/1.25 Arial,sans-serif;color:#f4efe3;max-width:230px;border:2px solid var(--c);box-shadow:0 4px 14px #0009;will-change:transform}'
     + '.kzt b{display:block;font:900 10px Arial;letter-spacing:.14em;color:var(--c)}'
     + '.kzt span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.kzt u{text-decoration:none}.kzt i{font-style:normal;opacity:.7;margin-left:6px;font-weight:700}'
     + '.kzt:after{content:"";position:absolute;left:50%;bottom:-8px;margin-left:-6px;border:6px solid transparent;border-top-color:var(--c);border-bottom:0}';
@@ -64,7 +64,7 @@ if (!window[KEY]) {
         const y0 = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
         const y = Math.max(304, y0);
         if (y > rect.height - 190) continue;
-        const cx = Math.max(100, Math.min(rect.width - 100, x));
+        const cx = Math.max(120, Math.min(rect.width - 120, x));
         if (used.some((u) => Math.abs(u.x - cx) < 130 && Math.abs(u.y - y) < 56)) continue;
         used.push({ x: cx, y });
         const e = chip(n++);
