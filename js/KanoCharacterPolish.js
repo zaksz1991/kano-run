@@ -241,7 +241,7 @@ export function applyBoneGait(actor, phase, buildOnly = false) {
   if (legs && legs.length) {
     legs.forEach((leg, i) => {
       const p = phase + (i % 2 ? Math.PI : 0);
-      poseLeg(actor, leg, Math.sin(p) * 0.5, Math.sin(p) * 0.5 - 0.7 * Math.max(0, Math.cos(p)));
+      poseLeg(actor, leg, Math.sin(p) * 0.32, Math.sin(p) * 0.32 - 0.5 * Math.max(0, Math.cos(p)));
     });
   }
   for (const [b, side] of g.arm) b.rotateX(side * 1.2 - Math.sin(phase) * side * 0.35);
