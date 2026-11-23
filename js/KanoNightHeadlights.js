@@ -46,7 +46,7 @@ function build(renderer) {
   const pool = new THREE.Mesh(new THREE.PlaneGeometry(9, 26), mat);
   pool.rotation.x = -Math.PI / 2;
   pool.position.set(0, 0.06, -13.5);
-  pool.renderOrder = 8;
+  pool.renderOrder = -5;
   pool.frustumCulled = false;
   group.add(pool);
   const glowMat = new THREE.SpriteMaterial({
@@ -60,7 +60,6 @@ function build(renderer) {
     group.add(sprite);
     return sprite;
   });
-  renderer.player.add(group);
   return { group, mat, glowMat, glows };
 }
 
@@ -72,6 +71,10 @@ if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.protot
       if (this.player && !this.__kanoNightLights) this.__kanoNightLights = build(this);
       const k = this.__kanoNightLights;
       if (k) {
+        // The keke group can be rebuilt after the lights were attached; follow the live one.
+        // Lights live on the scene (adding children to the keke group alters how the keke renders) and follow it.
+        if (this.scene && k.group.parent !== this.scene) this.scene.add(k.group);
+        if (this.player) { k.group.position.copy(this.player.position); k.group.quaternion.copy(this.player.quaternion); }
         const strength = this.lifeScene === 'road' ? nightStrength(state) : 0;
         k.group.visible = strength > 0.01;
         k.mat.opacity = 0.95 * strength;
