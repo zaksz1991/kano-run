@@ -170,8 +170,8 @@ export class KanoSceneUpgrade {
   buildSignAtlas() {
     const columns = 4;
     const rows = 2;
-    const cellWidth = 256;
-    const cellHeight = 128;
+    const cellWidth = 512;
+    const cellHeight = 256;
     const canvas = document.createElement('canvas');
     canvas.width = columns * cellWidth;
     canvas.height = rows * cellHeight;
@@ -193,20 +193,24 @@ export class KanoSceneUpgrade {
       ctx.fillStyle = '#4a3526';
       ctx.fillRect(x, y, cellWidth, cellHeight);
       ctx.fillStyle = palette[0];
-      ctx.fillRect(x + 5, y + 5, cellWidth - 10, cellHeight - 10);
+      ctx.fillRect(x + 10, y + 10, cellWidth - 20, cellHeight - 20);
       ctx.strokeStyle = palette[1];
-      ctx.lineWidth = 5;
-      ctx.strokeRect(x + 8, y + 8, cellWidth - 16, cellHeight - 16);
+      ctx.lineWidth = 10;
+      ctx.strokeRect(x + 16, y + 16, cellWidth - 32, cellHeight - 32);
       ctx.fillStyle = palette[1];
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = `900 ${label.length > 13 ? 23 : label.length > 9 ? 27 : 32}px system-ui, sans-serif`;
-      ctx.fillText(label, x + cellWidth / 2, y + cellHeight / 2, cellWidth - 22);
+      ctx.font = `900 ${label.length > 13 ? 58 : label.length > 9 ? 68 : 82}px system-ui, sans-serif`;
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = 'rgba(15,10,6,0.85)';
+      ctx.strokeText(label, x + cellWidth / 2, y + cellHeight / 2, cellWidth - 56);
+      ctx.fillText(label, x + cellWidth / 2, y + cellHeight / 2, cellWidth - 56);
     });
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 1;
+    texture.anisotropy = 4;
     this.signTexture = texture;
     this.ownedTextures ||= new Set();
     this.ownedTextures.add(texture);
