@@ -100,27 +100,50 @@ if (!Game.prototype[PATCH]) {
     } catch { /* never break spawning */ }
     return result;
   };
-  const pickup = Game.prototype.pickup;
-  Game.prototype.pickup = function pickupForChallenge(zone) {
-    const before = this.s?.passengers?.length || 0;
-    const stop = zone?.stopName;
-    const result = pickup.call(this, zone);
-    try {
-      const gained = (this.s?.passengers?.length || 0) - before;
-      if (gained > 0 && challenge?.kind === 'pickup' && stop === challenge.stop) bump(this, gained);
-    } catch { /* cosmetic */ }
-    return result;
+  // Other modules replace pickup/drop on the game INSTANCE, which hides prototype wrappers
+  // added later. So the challenge hooks sit on top of the instance once it exists.
+  const hook = () => {
+    const g = game();
+    if (!g || g.__kanoChallengeHooked || typeof g.pickup !== 'function' || typeof g.drop !== 'function') return;
+    g.__kanoChallengeHooked = true;
+    const basePickup = g.pickup;
+    const baseDrop = g.drop;
+    g.pickup = function pickupForChallenge(zone, ...rest) {
+      const before = this.s?.passengers?.length || 0;
+      const stop = zone?.stopName;
+      const result = basePickup.call(this, zone, ...rest);
+      try {
+        const self = this;
+        const ch = challenge;
+        let counted = 0;
+        const check = () => {
+          const gained = (self.s?.passengers?.length || 0) - before - counted;
+          if (gained > 0 && ch && ch === challenge && ch.kind === 'pickup' && stop === ch.stop) { counted += gained; bump(self, gained); }
+        };
+        check();
+        [150, 700, 1600].forEach((ms) => setTimeout(check, ms));
+      } catch { /* cosmetic */ }
+      return result;
+    };
+    g.drop = function dropForChallenge(zone, ...rest) {
+      const matching = (this.s?.passengers || []).filter((p) => p.dest === zone?.dest).length;
+      const before = this.s?.passengers?.length || 0;
+      const result = baseDrop.call(this, zone, ...rest);
+      try {
+        const self = this;
+        const ch = challenge;
+        const dest = zone?.dest;
+        let counted = 0;
+        const check = () => {
+          const left = before - (self.s?.passengers?.length || 0) - counted;
+          if (left > 0 && ch && ch === challenge && ch.kind === 'drop' && dest === ch.dest) { const n = Math.min(left, Math.max(1, matching - counted)); counted += left; bump(self, n); }
+        };
+        check();
+        [150, 700, 1600].forEach((ms) => setTimeout(check, ms));
+      } catch { /* cosmetic */ }
+      return result;
+    };
   };
-  const drop = Game.prototype.drop;
-  Game.prototype.drop = function dropForChallenge(zone) {
-    const matching = (this.s?.passengers || []).filter((p) => p.dest === zone?.dest).length;
-    const before = this.s?.passengers?.length || 0;
-    const result = drop.call(this, zone);
-    try {
-      const left = before - (this.s?.passengers?.length || 0);
-      if (left > 0 && challenge?.kind === 'drop' && zone?.dest === challenge.dest) bump(this, Math.min(left, matching) || left);
-    } catch { /* cosmetic */ }
-    return result;
-  };
+  setInterval(hook, 300);
   setInterval(render, 250);
 }
