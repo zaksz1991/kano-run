@@ -107,25 +107,33 @@ function wrongParking(game) {
 
 if (!Game.prototype[PATCH]) {
   Object.defineProperty(Game.prototype, PATCH, { value: true });
-  const base = Game.prototype.pickup;
-  Game.prototype.pickup = function pickupWithKarota(zone) {
-    const before = this.s?.passengers?.length || 0;
-    lastStopAt = Date.now();
-    const result = base.call(this, zone);
-    try {
-      const s = this.s;
-      const after = s?.passengers?.length || 0;
-      if (after > before && !anyPanel() && Date.now() - lastAt > 90000) {
-        const seats = (s.passengers || []).reduce((n, p) => n + (Number(p.seats) || 1), 0);
-        if (seats > LEGAL_SEATS && Math.random() < 0.65) setTimeout(() => overload(this, seats), 1500);
-        else if (zone?.hub && !(Number(s.kanoMarketTicketUntil) > Date.now()) && Math.random() < 0.55) setTimeout(() => marketTicket(this, zone.stopName), 1500);
-        else if (zone?.hub && Number(s.kanoMarketTicketUntil) > Date.now() && !s.kanoTicketShown) { s.kanoTicketShown = true; this.ui?.toast?.('KAROTA checks your market ticket. All good.'); }
-      }
-    } catch { /* never break a pick-up */ }
-    return result;
+  // Instance-level hook: other modules replace pickup/drop on the game object itself, which
+  // would hide a prototype wrapper added later (the KAROTA panels then never appeared).
+  const hookGame = () => {
+    const g = window.kanoGame;
+    if (!g || g.__kanoKarotaHooked || typeof g.pickup !== 'function' || typeof g.drop !== 'function') return;
+    g.__kanoKarotaHooked = true;
+    const base = g.pickup;
+    g.pickup = function pickupWithKarota(zone, ...rest) {
+      const before = this.s?.passengers?.length || 0;
+      lastStopAt = Date.now();
+      const result = base.call(this, zone, ...rest);
+      try {
+        const s = this.s;
+        const after = s?.passengers?.length || 0;
+        if (after > before && !anyPanel() && Date.now() - lastAt > 90000) {
+          const seats = (s.passengers || []).reduce((n, p) => n + (Number(p.seats) || 1), 0);
+          if (seats > LEGAL_SEATS && Math.random() < 0.65) setTimeout(() => overload(this, seats), 1500);
+          else if (zone?.hub && !(Number(s.kanoMarketTicketUntil) > Date.now()) && Math.random() < 0.55) setTimeout(() => marketTicket(this, zone.stopName), 1500);
+          else if (zone?.hub && Number(s.kanoMarketTicketUntil) > Date.now() && !s.kanoTicketShown) { s.kanoTicketShown = true; this.ui?.toast?.('KAROTA checks your market ticket. All good.'); }
+        }
+      } catch { /* never break a pick-up */ }
+      return result;
+    };
+    const dropBase = g.drop;
+    g.drop = function dropMarkStop(zone, ...rest) { lastStopAt = Date.now(); return dropBase.call(this, zone, ...rest); };
   };
-  const dropBase = Game.prototype.drop;
-  Game.prototype.drop = function dropMarkStop(zone) { lastStopAt = Date.now(); return dropBase.call(this, zone); };
+  setInterval(hookGame, 300);
   setInterval(() => {
     try {
       const g = window.kanoGame; const s = g?.s;
