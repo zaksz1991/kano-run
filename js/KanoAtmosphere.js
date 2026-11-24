@@ -25,12 +25,12 @@ const LIFESTYLE_DEFAULTS = {
 const TIME_PROFILES = {
   morning: {
     background: 0xb4cfdb, fog: 0xd0d6c9, fogNear: 48, fogFar: 205,
-    hemi: 1.10, directional: 1.08, light: 0xfff0d2,
+    hemi: 0.84, directional: 1.55, light: 0xfff0d2,
     temperature: { hotDry: '30–34°C', harmattan: '17–22°C', rainy: '22–26°C', cool: '18–23°C' },
   },
   afternoon: {
     background: 0xcbdee5, fog: 0xdfdccb, fogNear: 58, fogFar: 228,
-    hemi: 1.18, directional: 1.18, light: 0xfff4df,
+    hemi: 0.86, directional: 1.6, light: 0xfff4df,
     temperature: { hotDry: '37–41°C', harmattan: '29–34°C', rainy: '27–31°C', cool: '27–32°C' },
   },
   evening: {
