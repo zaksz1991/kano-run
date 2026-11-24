@@ -45,7 +45,7 @@ function dustyAsphalt() {
     img.onload = () => {
       try {
         ctx.drawImage(img, 0, 0, size, size);
-        ctx.fillStyle = 'rgba(62,64,69,0.38)';   // soften the grain so near tarmac reads smooth, not gravelly
+        ctx.fillStyle = 'rgba(104,106,110,0.34)';   // soften the grain so near tarmac reads smooth, not gravelly
         ctx.fillRect(0, 0, size, size);
         asphaltTexture.needsUpdate = true;
         clones.forEach((t) => { t.needsUpdate = true; });
