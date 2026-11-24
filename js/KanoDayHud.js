@@ -60,10 +60,14 @@ export class KanoDayHud {
       if (now - lastAte < 60000) return;
       const dc = window.kanoDayCycle;
       if (!dc?.eat || (dc.state?.hunger ?? 0) < 20) return;
-      lastAte = now;
-      dc.eat(40);
+      const gs = window.kanoGame?.s;
       const lab = row.querySelector('span');
-      if (lab) { const old = lab.textContent; lab.textContent = 'Ate ✓'; setTimeout(() => { lab.textContent = old; }, 1800); }
+      const flash = (msg) => { if (!lab) return; const old = lab.textContent; lab.textContent = msg; setTimeout(() => { lab.textContent = old; }, 1800); };
+      if (gs && Number(gs.fares) < 300) { flash('₦300 ✗'); return; }
+      lastAte = now;
+      if (gs) gs.fares -= 300;
+      dc.eat(40);
+      flash('−₦300');
     });
     this.root.style.display = 'none'; // shown only while driving
     this.container.appendChild(this.root);
