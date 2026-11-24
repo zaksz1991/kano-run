@@ -1895,7 +1895,7 @@ export class Renderer3D {
       const armGeo = new THREE.BoxGeometry(1.35, 0.07, 0.07);
       const panelGeo = new THREE.BoxGeometry(1.05, 0.05, 0.62);
       const lampGeo = new THREE.BoxGeometry(0.46, 0.1, 0.26);
-      const perSide = this.mobile ? 3 : 6;
+      const perSide = this.mobile ? 6 : 8;
       const spacing = 245 / perSide;
       for (let index = 0; index < perSide; index += 1) {
         for (const side of [-1, 1]) {
