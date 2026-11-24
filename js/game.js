@@ -2198,6 +2198,8 @@ export class Game {
       if (Number.isFinite(requestedMultiplier) && requestedMultiplier > 0) {
         dayFareMultiplier = clamp(requestedMultiplier, 0.5, 2);
       }
+      const tip = Number(this.dayCycle?.modifiers?.()?.tipMultiplier);
+      if (Number.isFinite(tip) && tip > 0) dayFareMultiplier *= clamp(tip, 0.85, 1);
     } catch { /* Ignore a failing optional day-cycle adapter. */ }
     fare = Math.floor(fare * dayFareMultiplier);
 

@@ -63,9 +63,9 @@ export class KanoDayHud {
       const gs = window.kanoGame?.s;
       const lab = row.querySelector('span');
       const flash = (msg) => { if (!lab) return; const old = lab.textContent; lab.textContent = msg; setTimeout(() => { lab.textContent = old; }, 1800); };
-      if (gs && Number(gs.fares) < 300) { flash('₦300 ✗'); return; }
+      if (gs && Number(gs.score) < 300) { flash('₦300 ✗'); return; }
       lastAte = now;
-      if (gs) gs.fares -= 300;
+      if (gs) gs.score -= 300;
       dc.eat(40);
       flash('−₦300');
     });
@@ -81,8 +81,8 @@ export class KanoDayHud {
       const flash = (msg) => { if (!lab) return; const old = lab.textContent; lab.textContent = msg; setTimeout(() => { lab.textContent = old; }, 1800); };
       if (!dc?.rest || (dc.state?.fatigue ?? 0) < 20) return;
       if (gs && ((gs.passengers?.length || 0) > 0 || Math.abs(gs.speed || 0) > 1)) { flash('Park first'); return; }
-      if (gs && Number(gs.fares) < 200) { flash('₦200 ✗'); return; }
-      if (gs) gs.fares -= 200;
+      if (gs && Number(gs.score) < 200) { flash('₦200 ✗'); return; }
+      if (gs) gs.score -= 200;
       dc.rest(30);
       flash('Rested ✓');
     });
