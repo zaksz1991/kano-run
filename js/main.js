@@ -824,10 +824,16 @@ async function start3D() {
   // Load remaining assets in batches on mobile.
   if (mobile) {
     const mobileAssetBatches = [
-      // Keep imported traffic and character variety available, but do not
-      // preload GLBs the mobile renderer intentionally keeps procedural.
-      // This avoids decoding pools of unused flyover, streetlight and prop
-      // models while retaining the road-side shapes and gameplay fallbacks.
+      // The street itself first: buildings and the tiny roadside GLBs are what the player sees most.
+      [
+        'building',
+        'industrialBuilding',
+        'bench',
+        'trafficLight',
+        'stopSign',
+        'passengerWoman',
+        'passengerMan',
+      ],
       [
         'car',
         'taxi',
@@ -835,11 +841,6 @@ async function start3D() {
         'motorcycle',
         'police',
         'passenger',
-      ],
-      [
-        'building',
-        'passengerWoman',
-        'passengerMan',
       ],
       [
         'karota',
@@ -852,19 +853,16 @@ async function start3D() {
         'security',
         'pedestrian',
         'pedestrianWoman',
-      ],
-      [
-        'industrialBuilding',
         'cone',
         'dirtmound',
       ],
-      // Tiny roadside GLBs (<1.4k tris each): real bench, traffic light, stop sign.
-      [
-        'bench',
-        'trafficLight',
-        'stopSign',
-      ],
     ];
+
+    // The street's own buildings (two small GLBs) load right after the keke, even if the shift has already started;
+    // the rest of the queue below still waits for the player to stop driving.
+    void essentialLoad
+      .then(() => models.preload(['building', 'industrialBuilding']))
+      .catch((error) => console.warn('[ModelManager] mobile building preload failed', error));
 
     void essentialLoad.then(async () => {
       const rendererIsCurrent = () =>

@@ -472,7 +472,7 @@ export class Renderer3D {
         z,
         height,
         side,
-        industrial: index % 6 === 3,
+        industrial: index % 3 !== 0, // flat-roof commercial blocks read as Kano; the pitched-roof set only fills every third slot
         replaced: false,
       });
 
@@ -2521,7 +2521,7 @@ export class Renderer3D {
     if (!this.models || !this.shouldRunMobilePromotionCheck('world')) return;
 
     const activeBuildingSlots = this.mobile
-      ? this.buildingSlots.slice(0, 2)
+      ? this.buildingSlots.slice(0, 6)
       : this.buildingSlots;
 
     for (const slot of activeBuildingSlots) {
