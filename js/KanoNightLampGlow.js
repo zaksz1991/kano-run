@@ -34,6 +34,10 @@ function material() {
   return mat;
 }
 
+let pg = null, pm = null;
+const poolGeo = () => (pg ||= new THREE.PlaneGeometry(9, 9));
+const poolMat = () => (pm ||= new THREE.MeshBasicMaterial({ map: material().map, color: 0xffd9a0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false }));
+
 if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.prototype[KEY]) {
   Object.defineProperty(Renderer3D.prototype, KEY, { value: true });
   const draw = Renderer3D.prototype.draw;
@@ -42,17 +46,24 @@ if (typeof window !== 'undefined' && Renderer3D?.prototype && !Renderer3D.protot
       const k = this.lifeScene === 'road' ? strength(state) : 0;
       const m = material();
       m.opacity = k;
+      poolMat().opacity = 0.5 * k;
       if (k > 0.01) {
         for (const pole of this.streetLights || []) {
           if (!pole || pole.userData.kanoLampGlow) continue;
           const box = new THREE.Box3().setFromObject(pole);
           const sprite = new THREE.Sprite(m);
-          sprite.scale.set(6.5, 6.5, 1);
+          sprite.scale.set(10, 10, 1);
           const wp = new THREE.Vector3(); pole.getWorldPosition(wp);
           const top = Number.isFinite(box.max.y) && box.max.y > 2 ? box.max.y : 5.5;
           sprite.position.set(0, (top - wp.y) / (pole.scale?.y || 1) - 0.3, 0);
           sprite.renderOrder = 9;
           pole.add(sprite);
+          const pool = new THREE.Mesh(poolGeo(), poolMat());
+          pool.rotation.x = -Math.PI / 2;
+          pool.position.set(-Math.sign(wp.x || 1) * 3.2, 0.07 - wp.y, 0);
+          pool.renderOrder = -4;
+          pool.userData.kanoLampPool = true;
+          pole.add(pool);
           pole.userData.kanoLampGlow = sprite;
         }
       }
