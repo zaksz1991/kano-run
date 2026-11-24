@@ -69,6 +69,23 @@ export class KanoDayHud {
       dc.eat(40);
       flash('−₦300');
     });
+    // Tap Fatigue to rest under a tree with tea (30 min, ₦200). Only when parked and empty.
+    const frow = this.fatigue.row;
+    frow.style.pointerEvents = 'auto';
+    frow.style.cursor = 'pointer';
+    frow.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      const dc = window.kanoDayCycle;
+      const gs = window.kanoGame?.s;
+      const lab = frow.querySelector('span');
+      const flash = (msg) => { if (!lab) return; const old = lab.textContent; lab.textContent = msg; setTimeout(() => { lab.textContent = old; }, 1800); };
+      if (!dc?.rest || (dc.state?.fatigue ?? 0) < 20) return;
+      if (gs && ((gs.passengers?.length || 0) > 0 || Math.abs(gs.speed || 0) > 1)) { flash('Park first'); return; }
+      if (gs && Number(gs.fares) < 200) { flash('₦200 ✗'); return; }
+      if (gs) gs.fares -= 200;
+      dc.rest(30);
+      flash('Rested ✓');
+    });
     this.root.style.display = 'none'; // shown only while driving
     this.container.appendChild(this.root);
 
