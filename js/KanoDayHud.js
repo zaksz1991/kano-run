@@ -49,6 +49,22 @@ export class KanoDayHud {
     this.hunger = this.#row('Hunger');
     this.fatigue = this.#row('Fatigue');
     this.root.append(this.clock, this.hunger.row, this.fatigue.row);
+    // Tap Hunger to grab a quick snack (tea + puff-puff). One snack per minute.
+    const row = this.hunger.row;
+    row.style.pointerEvents = 'auto';
+    row.style.cursor = 'pointer';
+    let lastAte = 0;
+    row.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      const now = Date.now();
+      if (now - lastAte < 60000) return;
+      const dc = window.kanoDayCycle;
+      if (!dc?.eat || (dc.state?.hunger ?? 0) < 20) return;
+      lastAte = now;
+      dc.eat(40);
+      const lab = row.querySelector('span');
+      if (lab) { const old = lab.textContent; lab.textContent = 'Ate ✓'; setTimeout(() => { lab.textContent = old; }, 1800); }
+    });
     this.root.style.display = 'none'; // shown only while driving
     this.container.appendChild(this.root);
 

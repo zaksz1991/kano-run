@@ -54,24 +54,7 @@ function buildPieces() {
       for (let b = -4; b <= 4; b += 1) items.push({ base: z + 7.2, x: b * 0.98, y: 0.026, sx: 0.5, sy: 0.02, sz: 3.0, color: 0xf1efe6 }); // zebra
     }
   }
-  // repair patches, worn paint, oil stains and manhole covers in the carriageway
-  for (let i = 0; i < 34; i += 1) {
-    const lane = [-3, 0, 3][Math.floor(rnd() * 3)];
-    const kind = i % 4;
-    const color = kind === 0 ? 0x17191c : kind === 1 ? 0x44484d : kind === 2 ? 0x0f1012 : 0x383c41;   // fresh patch, faded patch, oil stain, dusty patch
-    const w = kind === 2 ? 0.5 + rnd() * 0.6 : 0.8 + rnd() * 1.3;
-    const l = kind === 2 ? 0.7 + rnd() * 0.9 : 1.4 + rnd() * 2.4;
-    items.push({ base: -rnd() * SPAN, x: lane + (rnd() - 0.5) * 1.6, y: 0.019 + (i % 3) * 0.002, sx: w, sy: 0.015, sz: l, color });
-  }
-  // long thin crack lines
-  for (let i = 0; i < 16; i += 1) {
-    const lane = [-3, 0, 3][i % 3];
-    items.push({ base: -rnd() * SPAN, x: lane + (rnd() - 0.5) * 2.0, y: 0.021, sx: 0.05, sy: 0.012, sz: 2.5 + rnd() * 4.5, color: 0x0b0c0e });
-  }
-  for (let i = 0; i < 6; i += 1) {
-    const lane = [-3, 0, 3][i % 3];
-    items.push({ base: -rnd() * SPAN, x: lane + 1.5, y: 0.024, sx: 0.8, sy: 0.015, sz: 0.8, color: 0x5a5e63 });
-  }
+  // (no repair patches / stains / cracks: they read as grey blocks on the road)
   return items;
 }
 

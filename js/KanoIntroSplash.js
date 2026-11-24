@@ -20,7 +20,6 @@ function run() {
 #kano-intro .mark{width:84px;height:84px;border-radius:22px;border:2px solid #f2c200;color:#f2c200;font:900 34px/80px Arial,sans-serif;letter-spacing:1px}
 #kano-intro h1{margin:18px 0 4px;font:900 26px Arial,sans-serif;letter-spacing:.14em;text-transform:uppercase}
 #kano-intro .sub{font:700 11px Arial,sans-serif;letter-spacing:.2em;text-transform:uppercase;opacity:.65}
-#kano-intro .beta{margin-top:22px;padding:4px 12px;border:1px solid #2fe08d;border-radius:99px;color:#2fe08d;font:800 10px Arial,sans-serif;letter-spacing:.18em}
 #kano-intro .bar{width:140px;height:3px;background:#1e2630;border-radius:2px;margin-top:26px;overflow:hidden}
 #kano-intro .bar i{display:block;height:100%;width:40%;background:#f2c200;animation:kanoIntroBar 1.1s ease-in-out infinite}
 @keyframes kanoIntroBar{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}
@@ -39,7 +38,7 @@ function run() {
   document.body.append(box);
   const finish = () => { mark(); box.classList.add('out'); setTimeout(() => { box.remove(); css.remove(); }, 400); };
   const splash = () => {
-    box.innerHTML = '<div class="mark">KL</div><h1>Kano Life</h1><div class="sub">Preparing the city…</div><div class="sub" style="margin-top:6px">Kano streets · open world</div><div class="bar"><i></i></div><div class="beta">EARLY BETA · OPEN DEMO</div>';
+    box.innerHTML = '<div class="mark">KL</div><h1>Kano Life</h1><div class="sub">Preparing the city…</div><div class="sub" style="margin-top:6px">Kano streets · open world</div><div class="bar"><i></i></div>';
   };
   const slide = (i) => {
     const [no, title, text] = SLIDES[i];

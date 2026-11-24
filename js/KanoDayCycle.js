@@ -129,7 +129,7 @@ export class KanoDayCycle {
 
     // The same game-time rate as the world clock keeps hunger/fatigue pacing aligned.
     const gm = sec * this.rate;
-    s.hunger = clamp(s.hunger + gm * 0.09, 0, 100);
+    s.hunger = clamp(s.hunger + gm * 0.035, 0, 100);
     // A hungry driver tires faster (up to +50% when starving).
     if (moving) s.fatigue = clamp(s.fatigue + gm * (passengerOnboard ? 0.11 : 0.08) * (1 + Math.max(0, (s.hunger - 60) / 40) * 0.5), 0, 100);
 

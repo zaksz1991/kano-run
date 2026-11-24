@@ -114,6 +114,7 @@ function disposeSceneTree(root, { disposeTextures = false } = {}) {
   visit(root);
 }
 
+
 export class Renderer3D {
   constructor(canvas, models, { mobile = false } = {}) {
     this.canvas = canvas;
@@ -4448,16 +4449,16 @@ export class Renderer3D {
     };
     // Cracked, lighter patch of broken asphalt around the hole.
     const rimPts = outline(1.28, 0.35);
-    const rim = flat(new THREE.Shape(rimPts), 0x4a4742, 0.012);
+    const rim = flat(new THREE.Shape(rimPts), 0x2b2a28, 0.012);
     // Dark hole with a deeper core.
-    const holePts = outline(0.92, 0.5);
+    const holePts = outline(0.8, 0.5);
     flat(new THREE.Shape(holePts), 0x14120f, 0.02);
     flat(new THREE.Shape(outline(0.55, 0.45)), 0x050505, 0.024);
     // Damp mud at the bottom for depth cues.
     const mud = flat(new THREE.Shape(outline(0.32, 0.4)), 0x2a2218, 0.027);
     mud.position.x = radius * 0.1;
     // Raised broken asphalt chunks on the rim.
-    const chunkMat = this.material(0x5d5951);
+    const chunkMat = this.material(0x3c3a36);
     const chunkGeo = new THREE.DodecahedronGeometry(1, 0);
     for (let i = 0; i < 9; i += 1) {
       const a = rnd() * Math.PI * 2;
