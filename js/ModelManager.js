@@ -141,6 +141,8 @@ const CATALOG = {
   ],
 
   building: [
+    // Flat-roof blocks first: the stock pitched green roofs do not read as Kano.
+    'world/buildings-suburban/building-type-p.glb',
     'world/buildings-suburban/building-type-d.glb',
     'world/buildings-suburban/building-type-e.glb',
     'world/buildings-suburban/building-type-f.glb',
@@ -161,7 +163,14 @@ const CATALOG = {
     'world/buildings-suburban/building-type-u.glb',
   ],
 
+  // Extra flat-roof shapes so a street is not one building repeated (picked round-robin by getInstance).
+  buildingFlatQ: ['world/buildings-suburban/building-type-q.glb'],
+  buildingFlatA: ['world/buildings-industrial/building-a.glb'],
+  buildingFlatD: ['world/buildings-industrial/building-d.glb'],
+  buildingFlatR: ['world/buildings-industrial/building-r.glb'],
+
   industrialBuilding: [
+    'world/buildings-industrial/building-o.glb',
     'world/buildings-industrial/building-a.glb',
     'world/buildings-industrial/building-b.glb',
     'world/buildings-industrial/building-c.glb',
@@ -271,7 +280,11 @@ const TARGET_HEIGHT = {
   pedestrianWoman: 1.7,
 
   building: 4.5,
+  buildingFlatQ: 4.5,
   industrialBuilding: 5.2,
+  buildingFlatA: 5.2,
+  buildingFlatD: 5.2,
+  buildingFlatR: 5.2,
   flyover: 5.8,
   roadlight: 4.2,
 
@@ -284,6 +297,48 @@ const TARGET_HEIGHT = {
   marketStall: 2.45,
 };
 
+
+const PAINTED_WALL_MAPS = new Map();
+/** Copy of a building colour map where dark neutral texels (charcoal floors/trim) become warm painted wall. */
+function paintedWallMap(map, toneIndex, tone) {
+  try {
+    const key = `${map.uuid}:${toneIndex}`;
+    if (PAINTED_WALL_MAPS.has(key)) return PAINTED_WALL_MAPS.get(key);
+    const img = map.image;
+    const w = img?.width || img?.videoWidth;
+    const h = img?.height || img?.videoHeight;
+    if (!w || !h || typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h);
+    const px = data.data;
+    const pr = tone[0] * 0.78 * 255, pg = tone[1] * 0.78 * 255, pb = tone[2] * 0.78 * 255;
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i + 1], b = px[i + 2];
+      const lum = r * 0.3 + g * 0.59 + b * 0.11;
+      if (lum < 110 && Math.abs(b - r) < 28 && Math.abs(g - r) < 28) {
+        const k = 0.55 + lum / 110 * 0.45; // keep a little of the original shading
+        px[i] = pr * k; px[i + 1] = pg * k; px[i + 2] = pb * k;
+      }
+    }
+    ctx.putImageData(data, 0, 0);
+    const tex = map.clone();
+    tex.image = canvas;
+    tex.needsUpdate = true;
+    PAINTED_WALL_MAPS.set(key, tex);
+    return tex;
+  } catch {
+    return null;
+  }
+}
+
+const BUILDING_VARIANTS = {
+  building: ['buildingFlatQ'],
+  industrialBuilding: ['buildingFlatA', 'buildingFlatD', 'buildingFlatR'],
+};
+
 const UPRIGHT_KEYS = new Set([
   'passenger',
   'passengerWoman',
@@ -293,7 +348,11 @@ const UPRIGHT_KEYS = new Set([
   'pedestrian',
   'pedestrianWoman',
   'building',
+  'buildingFlatQ',
   'industrialBuilding',
+  'buildingFlatA',
+  'buildingFlatD',
+  'buildingFlatR',
   'flyover',
   'roadlight',
   'cone',
@@ -1604,6 +1663,14 @@ export class ModelManager {
   getInstance(key) {
     if (this.disposed) return null;
 
+    const variants = BUILDING_VARIANTS[key];
+    if (variants) {
+      const pool = [key, ...variants].filter((k) => this.cache.has(k));
+      this.variantCursor = this.variantCursor || {};
+      const turn = (this.variantCursor[key] = (this.variantCursor[key] || 0) + 1);
+      if (pool.length) key = pool[turn % pool.length];
+    }
+
     const model = this.cache.get(key);
 
     if (!model) return null;
@@ -1628,11 +1695,29 @@ export class ModelManager {
     if (/^building/.test(key)) {
       // Kano earth tones: warm ochre, terracotta, cream and sand walls instead of the stock pastel colours.
       const KANO_WALLS = [[1.0, 0.86, 0.66], [0.96, 0.74, 0.60], [0.98, 0.93, 0.80], [0.90, 0.80, 0.62], [0.94, 0.82, 0.70]];
-      const tone = KANO_WALLS[Math.floor(Math.random() * KANO_WALLS.length)];
+      const toneIndex = Math.floor(Math.random() * KANO_WALLS.length);
+      const tone = KANO_WALLS[toneIndex];
+      // The stock models paint upper floors charcoal. Kano walls are painted: lift dark NEUTRAL texels
+      // (not the blue window glass) to a warm shade of the wall colour.
+      const paint = tone.map((c) => (c * 0.78).toFixed(3));
       clone.traverse((object) => {
         if (!object.isMesh || !object.material) return;
         for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
-          if (material?.color?.setRGB && material.color.getHex() !== 0x000000) material.color.multiply({ r: tone[0], g: tone[1], b: tone[2], isColor: true });
+          if (material?.color?.setRGB && material.color.getHex() !== 0x000000) {
+            const c = material.color;
+            const lum = c.r * 0.3 + c.g * 0.59 + c.b * 0.11;
+            if (!material.map && lum < 0.42 && Math.abs(c.b - c.r) < 0.1) {
+              // dark neutral flat colour (charcoal upper floor / trim) -> warm painted wall
+              c.setRGB(tone[0] * 0.78, tone[1] * 0.78, tone[2] * 0.78);
+            } else {
+              c.multiply({ r: tone[0], g: tone[1], b: tone[2], isColor: true });
+            }
+          }
+          if (material && material.map && !material.userData.kanoWallPaint) {
+            material.userData.kanoWallPaint = true;
+            const painted = paintedWallMap(material.map, toneIndex, tone);
+            if (painted) { material.map = painted; material.needsUpdate = true; }
+          }
         }
       });
     }

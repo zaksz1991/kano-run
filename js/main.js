@@ -861,7 +861,7 @@ async function start3D() {
     // The street's own buildings (plus the tiny roadside props) load right after the keke, even if the shift has already started;
     // the rest of the queue below still waits for the player to stop driving.
     void essentialLoad
-      .then(() => models.preload(['building', 'industrialBuilding', 'trafficLight', 'stopSign', 'bench', 'cone']))
+      .then(() => models.preload(['building', 'industrialBuilding', 'buildingFlatQ', 'buildingFlatA', 'buildingFlatD', 'buildingFlatR', 'trafficLight', 'stopSign', 'bench', 'cone']))
       .catch((error) => console.warn('[ModelManager] mobile building preload failed', error));
 
     void essentialLoad.then(async () => {

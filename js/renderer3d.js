@@ -472,7 +472,7 @@ export class Renderer3D {
         z,
         height,
         side,
-        industrial: index % 3 !== 0, // flat-roof commercial blocks read as Kano; the pitched-roof set only fills every third slot
+        industrial: true, // flat-roof commercial blocks read as Kano; the pitched-roof set only fills every third slot
         replaced: false,
       });
 
