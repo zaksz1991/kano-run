@@ -90,6 +90,13 @@ function offerSnatch(game) {
   timer = setTimeout(() => settle(() => { lose(loss); game.ui?.toast?.(`The phone is gone. You lose ${naira(loss)}.`); }), 9000);
 }
 
+function isNight() {
+  const m = Number(window.kanoDayCycle?.state?.minuteOfDay);
+  if (!Number.isFinite(m)) return false;
+  const h = (((m % 1440) + 1440) % 1440) / 60;
+  return h >= 19 || h < 5;
+}
+
 if (!Game.prototype[PATCH]) {
   Object.defineProperty(Game.prototype, PATCH, { value: true });
   const base = Game.prototype.pickup;
@@ -101,9 +108,9 @@ if (!Game.prototype[PATCH]) {
       const busy = ['kano-change-panel', 'kano-haggle-panel', 'kano-ride-panel', 'kano-stubborn-panel', 'kano-gang-panel', 'kano-karota-panel']
         .some((id) => document.getElementById(id)?.childElementCount && document.getElementById(id).style.display !== 'none');
       const now = Date.now();
-      if (after > before && !busy && now - lastAt > 200000) {
+      if (after > before && !busy && now - lastAt > (isNight() ? 90000 : 200000)) {
         if (zone?.hub && Math.random() < 0.35) { lastAt = now; setTimeout(() => offerDaba(this, zone.name || zone.label), 1200); }
-        else if (!zone?.hub && Math.random() < 0.18) { lastAt = now; setTimeout(() => offerSnatch(this), 2500); }
+        else if (!zone?.hub && Math.random() < (isNight() ? 0.45 : 0.15)) { lastAt = now; setTimeout(() => offerSnatch(this), 2500); }
       }
     } catch { /* never break a pick-up */ }
     return result;

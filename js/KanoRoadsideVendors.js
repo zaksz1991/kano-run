@@ -62,9 +62,13 @@ function build(renderer) {
     stalls.map((p) => ({ x: p.x - 0.25, y: 1.02, z: p.z + 0.1 })));
   instanced(inner, new THREE.BoxGeometry(0.34, 0.2, 0.3), mat(0x2f7fd0, 0.7),
     stalls.map((p) => ({ x: p.x + 0.25, y: 0.96, z: p.z + 0.1 })));
-  // plastic stool
-  instanced(inner, new THREE.CylinderGeometry(0.2, 0.17, 0.3, 8), mat(0xe03a2e, 0.7),
-    stalls.map((p) => ({ x: p.x - 0.95 - (p.s - 0.9), y: 0.25, z: p.z + 0.6 })));
+  // plastic stool: flat seat on four thin legs (a solid red cylinder reads as a pot)
+  const stoolX = (p) => p.x - 0.95 - (p.s - 0.9);
+  instanced(inner, new THREE.BoxGeometry(0.4, 0.05, 0.4), mat(0xd8382c, 0.7),
+    stalls.map((p) => ({ x: stoolX(p), y: 0.46, z: p.z + 0.6 })));
+  const legs = [];
+  for (const p of stalls) for (const dx of [-0.15, 0.15]) for (const dz of [-0.15, 0.15]) legs.push({ x: stoolX(p) + dx, y: 0.22, z: p.z + 0.6 + dz });
+  instanced(inner, new THREE.BoxGeometry(0.045, 0.44, 0.045), mat(0xb02a20, 0.7), legs);
 
   renderer.world.add(root);
   return { root, inner };
