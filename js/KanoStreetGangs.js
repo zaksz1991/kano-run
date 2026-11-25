@@ -3,6 +3,7 @@
  * bikes go for a passenger's phone on the road. Each has three responses with different risk. Never blocks a pick-up; the passenger is already on board.
  */
 import { Game } from './game.js';
+import { showSnatchBike, fleeSnatchBike } from './KanoSnatchScene.js';
 
 const PATCH = Symbol.for('kano.life.streetGangs.v1');
 const naira = (n) => `₦${Math.round(n).toLocaleString()}`;
@@ -64,7 +65,8 @@ function offerSnatch(game) {
   const el = host();
   el.replaceChildren();
   let done = false;
-  const settle = (fn) => { if (done) return; done = true; fn(); close(); };
+  const settle = (fn) => { if (done) return; done = true; fn(); close(); setTimeout(() => fleeSnatchBike(Math.random() < 0.5), 300); };
+  try { showSnatchBike(); } catch { /* cosmetic */ }
   const loss = 1000 + Math.round(Math.random() * 4) * 500;
   const title = document.createElement('div');
   title.textContent = 'Yan Kwacen Waya!';
