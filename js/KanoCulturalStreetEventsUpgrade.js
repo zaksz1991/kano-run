@@ -175,7 +175,7 @@ function makeRoadsideChildren(system) {
     goatAction: null,
     goatStarted: false,
     goatCrossing: null,
-    goatNextAt: Infinity, // generated goats removed (no goat model in the project)
+    goatNextAt: 18,
     goatLoadStarted: false,
     disposed: false,
     vendorGestureTicks: 0,
@@ -324,11 +324,8 @@ export function createProceduralGoat() {
 }
 
 function installProceduralGoatFallback(system, state, reason) {
-  // No goat GLB ships with the project and procedural goats are not drawn.
+  // No goat GLB ships with the project: use the articulated low-poly goat.
   if (state.disposed || state.goatRoot || system.renderer?.disposed || !system.renderer?.world) return false;
-  cultureAudit.goatAssetStatus = `none-${reason}`;
-  return false;
-  // eslint-disable-next-line no-unreachable
   const goat = createProceduralGoat();
   system.renderer.world.add(goat.root);
   state.goatRoot = goat.root;
@@ -468,7 +465,7 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
       goatFallbackLegs: [],
       goatStarted: false,
       goatCrossing: null,
-      goatNextAt: Infinity, // generated goats removed (no goat model in the project)
+      goatNextAt: 18,
       goatLoadStarted: false,
       goatClips: [],
       disposed: false,
@@ -520,7 +517,7 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
     state.goatRoot.position.z += scroll;
     if (!state.goatCrossing && state.elapsed >= state.goatNextAt && game?.state === 'PLAY' && !stateSnapshot?.event) {
       const startSide = Math.random() < 0.5 ? -1 : 1;
-      state.goatCrossing = { progress: 0, startSide, duration: 5.6, fixedZ: -19 - rand(0, 8) };
+      state.goatCrossing = { progress: 0, startSide, duration: 5.6, fixedZ: -12 - rand(0, 4) };
       state.goatRoot.visible = true;
       state.goatRoot.position.set(startSide * 8.6, state.goatRoot.position.y, state.goatCrossing.fixedZ);
       state.goatRoot.rotation.y = startSide < 0 ? 0 : Math.PI;
@@ -538,7 +535,7 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
       if (crossing.progress >= 1) {
         state.goatRoot.visible = false;
         state.goatCrossing = null;
-        state.goatNextAt = Infinity;
+        state.goatNextAt = state.elapsed + rand(55, 110);
       }
     }
   }

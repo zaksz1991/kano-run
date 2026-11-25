@@ -22,8 +22,8 @@ test('goat model has a body, raised neck, head, muzzle, ears, horns, tail and fo
   assert.match(source, /for \(const z of \[-0\.155, 0\.155\]\)/);
 });
 
-test('generated goat crossing is disabled (no goat model in the project) but its code path still animates legs', () => {
-  assert.match(source, /goatNextAt: Infinity/);
+test('the articulated low-poly goat crosses the road on a timer and animates its legs', () => {
+  assert.match(source, /goatNextAt: 18/);
   assert.match(source, /duration: 5\.6/);
   assert.match(source, /state\.goatFallbackLegs\?\.length/);
   assert.match(source, /Math\.sin\(state\.elapsed \* 8\.2 \+ index \* Math\.PI \* 0\.5\)/);
