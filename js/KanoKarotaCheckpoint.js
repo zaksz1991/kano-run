@@ -55,6 +55,8 @@ async function build(renderer) {
         model.traverse((n) => {
           if (n.isMesh && /^Tops/i.test(n.name || '')) {
             n.material = new THREE.MeshStandardMaterial({ color: 0x6db3e8, roughness: 0.8, metalness: 0 });
+          } else if (n.isMesh && /^Bottoms/i.test(n.name || '')) {
+            n.material = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.85, metalness: 0 });
           }
         });
       }
