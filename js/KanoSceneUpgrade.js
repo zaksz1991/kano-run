@@ -1046,7 +1046,9 @@ export class KanoSceneUpgrade {
         });
       } catch { /* cosmetic */ }
 
-      const stride = Math.sin(item.elapsed * 5.2) * 0.4;
+      // Calm gait on the pavement; arms and legs settle while stepping through the door (no flailing limbs in the cab).
+      const doorPhase = item.kind === 'board' ? clamp((t - split) / 0.2, 0, 1) : clamp(1 - t / 0.2, 0, 1) * (t < 1 - split ? 1 : 0);
+      const stride = Math.sin(item.elapsed * 4.2) * 0.3 * (1 - 0.85 * doorPhase);
       for (const arm of item.rig.arms) arm.pivot.rotation.x = arm.side * stride * 0.38;
       for (const leg of item.rig.legs) leg.pivot.rotation.x = -armSafe(stride, leg.side);
       item.rig.head.rotation.y = Math.sin(item.elapsed * 1.8) * 0.08;

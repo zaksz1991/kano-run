@@ -149,7 +149,7 @@ function addRampMesh(renderer, parent, deckHeight, direction) {
     ? renderer.material(0x131416, 0.94)
     : new THREE.MeshStandardMaterial({ color: 0x131416, roughness: 0.94 });
   const ramp = new THREE.Mesh(
-    new THREE.BoxGeometry(9.0, 0.14, RAMP_LENGTH),
+    new THREE.BoxGeometry(10.8, 0.14, RAMP_LENGTH),
     roadMaterial,
   );
   ramp.name = direction > 0 ? 'KWANKWASIYYA_FLYOVER_ENTRY_RAMP' : 'KWANKWASIYYA_FLYOVER_EXIT_RAMP';

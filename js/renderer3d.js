@@ -4582,7 +4582,7 @@ export class Renderer3D {
             labelCtx.strokeRect(4, 4, 504, 120);
 
             labelCtx.fillStyle = '#fff4d0';
-            labelCtx.font = '900 30px Arial, sans-serif';
+            labelCtx.font = '900 46px Arial, sans-serif';
             labelCtx.textAlign = 'center';
 
             const labelText = zone.hub
@@ -4593,20 +4593,21 @@ export class Renderer3D {
                   ? 'DROP OFF HERE'
                   : 'FUEL STOP';
 
-            labelCtx.fillText(labelText, 256, 51, 486);
+            labelCtx.fillText(labelText, 256, 55, 486);
 
-            labelCtx.font = '700 24px Arial, sans-serif';
+            labelCtx.font = '800 34px Arial, sans-serif';
 
             labelCtx.fillText(
               String(zone.dest || zone.label || '').slice(0, 36),
               256,
-              91,
+              100,
               486,
             );
           }
 
           const labelTexture = new THREE.CanvasTexture(labelCanvas);
           labelTexture.colorSpace = THREE.SRGBColorSpace;
+          labelTexture.anisotropy = 4;
 
           const sign = new THREE.Mesh(
             new THREE.PlaneGeometry(
@@ -4622,8 +4623,8 @@ export class Renderer3D {
           sign.material.userData.kanoNoShift = true;
 
           // Compact kerb-side sign on a short post, plus a painted bay on the tarmac (like a real stop).
-          sign.scale.setScalar(1.45);
-          sign.position.set(0, 2.85, 0.15);
+          sign.scale.setScalar(1.85);
+          sign.position.set(0, 3.0, 0.15);
           actor.add(sign);
           actor.userData.labelTexture = labelTexture;
 
