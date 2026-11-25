@@ -526,7 +526,7 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
         ? (Math.random() < 0.5 ? [0xe9e3d4, 0xf6f1e4, 0x8a6a4a] : [0x8a5a35, 0xb98b5e, 0x4a2f1c])
         : [0x8d7558, 0xc8b89b, 0x5c4735];
       coats.forEach((m, i) => m.color.setHex(palette[i]));
-      state.goatRoot.scale.setScalar(cattle ? 1.75 : 0.88);
+      state.goatRoot.scale.setScalar(cattle ? 1.2 : 0.62);
       state.goatCrossing = { progress: 0, startSide, duration: cattle ? 8.5 : 5.6, fixedZ: -12 - rand(0, 4) };
       state.goatRoot.visible = true;
       state.goatRoot.position.set(startSide * 8.6, state.goatRoot.position.y, state.goatCrossing.fixedZ);

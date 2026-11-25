@@ -9,6 +9,7 @@
  */
 import * as THREE from 'three';
 import { createGLTFLoader } from './createGLTFLoader.js';
+import { addHijab } from './KanoHijab.js';
 import { polishCharacter, stepCharacterGait, applyBoneGait, applyBoneSit } from './KanoCharacterPolish.js';
 import { yellowize } from './KanoYellowKeke.js';
 
@@ -147,6 +148,7 @@ function start() {
   CAST.forEach((c) => load(c.file).then((g) => {
     if (!g) return;
     const p = prepPerson(g, c.woman ? 1.62 : 1.74);
+    if (c.woman) { try { addHijab(p.actor); } catch (_) { /* cosmetic */ } }
     try { polishCharacter(p.actor, c.key); } catch (_) { /* cosmetic */ }
     const a = { ...c, ...p, clips: {}, mixer: null, current: null, paid: false };
     if (g.animations?.length) {
@@ -212,7 +214,7 @@ function start() {
     h.rotation.y = heading;
     if (a.mixer) {
       const solo = Object.keys(a.clips || {}).find((k) => !/^Man_/.test(k));
-      if (a.clips.Man_Sitting) play(a, seated ? 'Man_Sitting' : (moving ? 'Man_Walk' : 'Man_Idle'));
+      if (a.clips.Man_Sitting) { play(a, seated ? 'Man_Sitting' : (moving ? 'Man_Walk' : 'Man_Idle')); a.mixer.timeScale = moving ? 0.72 : 1; }
       else if (solo) { play(a, solo); a.mixer.timeScale = (moving && !seated) ? 1 : 0; }
     }
     if (a.woman && visible) stepCharacterGait(a.actor, time * 7.2 + a.offset, moving && !seated);

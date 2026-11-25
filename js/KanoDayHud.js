@@ -167,6 +167,12 @@ export class KanoDayHud {
     // getComputedStyle for several elements) each frame forces a reflow and is a
     // big cost on phones, so only re-place when it appears or about once a second.
     const display = visible ? '' : 'none';
+    if (visible && !this.sessionChecked) {
+      // a save from an older build can come back starving or exhausted: a new drive starts fed and rested
+      this.sessionChecked = true;
+      const st = window.kanoDayCycle?.state;
+      if (st) { if (st.hunger >= 90) st.hunger = 25; if (st.fatigue >= 95) st.fatigue = 35; }
+    }
     if (this.root.style.display !== display) this.root.style.display = display;
     if (!visible) { this.placedAt = 0; return; }
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();

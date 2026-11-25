@@ -21,16 +21,25 @@ function nightStrength(state) {
 }
 
 function poolTexture() {
+  // A straight, centred beam: strongest just ahead of the lamps, fading smoothly to nothing
+  // at the start, the sides and the far end (no hard edges, no flare to either side).
+  const W = 64, H = 128;
   const c = document.createElement('canvas');
-  c.width = 128; c.height = 256;
+  c.width = W; c.height = H;
   const g = c.getContext('2d');
-  // Wide near the keke, fading with distance: radial blob stretched into a cone-like pool.
-  const grad = g.createRadialGradient(64, 235, 4, 64, 150, 125);
-  grad.addColorStop(0, 'rgba(255,236,190,0.95)');
-  grad.addColorStop(0.35, 'rgba(255,226,160,0.5)');
-  grad.addColorStop(1, 'rgba(255,220,150,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 256);
+  const img = g.createImageData(W, H);
+  for (let y = 0; y < H; y += 1) {
+    const v = y / (H - 1);                       // 0 = far end, 1 = at the keke
+    const along = Math.pow(1 - Math.abs(v - 0.72) / (v < 0.72 ? 0.72 : 0.28), 1.3);
+    for (let x = 0; x < W; x += 1) {
+      const u = Math.abs((x / (W - 1)) * 2 - 1);
+      const across = Math.pow(Math.max(0, 1 - u * u), 1.6);
+      const a = Math.max(0, along) * across;
+      const i = (y * W + x) * 4;
+      img.data[i] = 255; img.data[i + 1] = 232; img.data[i + 2] = 176; img.data[i + 3] = Math.round(a * 235);
+    }
+  }
+  g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -43,9 +52,9 @@ function build(renderer) {
     map: poolTexture(), transparent: true, opacity: 0, depthWrite: false,
     blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
   });
-  const pool = new THREE.Mesh(new THREE.PlaneGeometry(9, 26), mat);
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 24), mat);
   pool.rotation.x = -Math.PI / 2;
-  pool.position.set(0, 0.06, -13.5);
+  pool.position.set(0, 0.06, -12.4);
   pool.renderOrder = -5;
   pool.frustumCulled = false;
   group.add(pool);

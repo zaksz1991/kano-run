@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addHijab } from './KanoHijab.js';
 import { createGLTFLoader } from './createGLTFLoader.js';
 import { fixCharacterPose } from './KanoCharacterPoseFix.js';
 import { mergeTexturedByMaterial } from './KanoMergeStaticMeshes.js';
@@ -1562,6 +1563,10 @@ export class ModelManager {
             );
 
             wrapper.userData.seatedDriverAttached = true;
+          }
+
+          if (key === 'passengerWoman' || key === 'pedestrianWoman') {
+            try { addHijab(wrapper); } catch (error) { console.warn('[Kano Life] Hijab not attached:', error); }
           }
 
           this.cache.set(key, wrapper);

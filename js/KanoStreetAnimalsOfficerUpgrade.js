@@ -181,6 +181,11 @@ function upgradeOfficersToGlb(system, state) {
       if (!(height > 0.1)) continue;
       model.scale.multiplyScalar(1.75 / height);
       model.rotation.y = Math.PI / 2;
+      model.traverse((n) => {
+        if (!n.isMesh) return;
+        if (/^Tops/i.test(n.name || '')) n.material = new THREE.MeshStandardMaterial({ color: 0x6db3e8, roughness: 0.8, metalness: 0 });
+        else if (/^Bottoms/i.test(n.name || '')) n.material = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.85, metalness: 0 });
+      });
       officer.root.children.forEach((c) => { c.visible = false; }); // hide every procedural part (black legs included)
       officer.root.add(model);
       officer.root.updateMatrixWorld(true);
@@ -247,6 +252,13 @@ function update(system, dt, snap) {
     r.position.z += scroll;
     o.armR.rotation.z = -1.9 + Math.sin(o.phase * 3.2) * 0.45;   // waving the baton
     o.armL.rotation.z = 0.15;
+    if (o.model) {
+      // directing traffic: turns to watch the lane, shifts weight and steps, instead of standing at attention
+      o.model.rotation.y = Math.PI / 2 + Math.sin(o.phase * 0.9) * 0.55;
+      o.model.rotation.z = Math.sin(o.phase * 1.8) * 0.045;
+      o.model.position.x = Math.sin(o.phase * 0.7) * 0.35;
+      o.model.scale.y = (o.model.userData.baseScaleY ||= o.model.scale.y) * (1 + Math.abs(Math.sin(o.phase * 1.8)) * 0.012);
+    }
     if (r.position.z > 12) recycle(r, o.side, 110, 190, 6.0, 6.3);
     else if (r.position.z < -200) r.position.z = 12;
   }

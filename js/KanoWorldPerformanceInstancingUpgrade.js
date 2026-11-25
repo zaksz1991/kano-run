@@ -34,6 +34,7 @@ import('./KanoStartRestyle.js').catch(() => {});
 import('./KanoStopGuide.js').catch(() => {});
 import('./KanoKarotaEnforcement.js').catch(() => {});
 import('./KanoStreetRhythmUpgrade.js').catch(() => {});
+import('./KanoKekeArgument.js').catch(() => {});
 import('./KanoZoneTags.js').catch(() => {});
 import('./KanoCashHandover.js').catch(() => {});
 import('./KanoPlayerHandle.js').catch(() => {});
