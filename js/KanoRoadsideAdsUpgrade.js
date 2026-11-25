@@ -14,10 +14,19 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const SPACING = 170;
 
 const SKINS = [
-  { bg: '#16213a', fg: '#ffd84a', fg2: '#ffffff', head: 'RUFFNECK', sub: 'ENTERTAINMENT' },
-  { bg: '#7a1f1f', fg: '#fff3c4', fg2: '#ffd84a', head: 'RUFFNECK', sub: 'ENTERTAINMENT' },
-  { bg: '#0f4d3a', fg: '#ffffff', fg2: '#ffd84a', head: 'RUFFNECK', sub: 'ENTERTAINMENT' },
+  { bg: '#16213a', fg: '#ffd84a', fg2: '#ffffff', head: 'RUFFNECK', sub: 'ENTERTAINMENT', foot: KANO_AD_URL },
+  { bg: '#7a1f1f', fg: '#fff3c4', fg2: '#ffd84a', head: 'KANO LIFE', sub: 'DRIVE. LOAD. NEGOTIATE. SURVIVE.', foot: 'A RUFFNECK ENTERTAINMENT GAME' },
+  { bg: '#0f4d3a', fg: '#ffffff', fg2: '#ffd84a', head: 'HASSAN ZAKARIYA', sub: 'CEO · RUFFNECK ENTERTAINMENT', foot: KANO_AD_URL },
+  { bg: '#2b1b4d', fg: '#ffd84a', fg2: '#ffffff', head: 'RUFFNECK LEARN', sub: 'PRACTICAL AI & DIGITAL SKILLS', foot: 'ruffneck-lms.vercel.app' },
+  { bg: '#0d3b66', fg: '#ffffff', fg2: '#ffd84a', head: 'YOUR BRAND HERE', sub: 'ADVERTISE WITH RUFFNECK', foot: KANO_AD_URL },
+  { bg: '#3a2a10', fg: '#ffd84a', fg2: '#ffffff', head: 'PLAY MORE GAMES', sub: 'FROM RUFFNECK ENTERTAINMENT', foot: KANO_AD_URL },
 ];
+const textureCache = new Map();
+
+function fitFont(g, text, maxW, size, weight = 900) {
+  let s = size;
+  do { g.font = `${weight} ${s}px Arial, sans-serif`; s -= 4; } while (g.measureText(text).width > maxW && s > 24);
+}
 
 function makeTexture(skin) {
   const c = document.createElement('canvas');
@@ -26,18 +35,24 @@ function makeTexture(skin) {
   g.fillStyle = skin.bg; g.fillRect(0, 0, 1024, 512);
   g.strokeStyle = skin.fg; g.lineWidth = 14; g.strokeRect(14, 14, 996, 484);
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '900 150px Arial, sans-serif';
-  g.lineWidth = 12; g.strokeStyle = 'rgba(0,0,0,.55)'; g.strokeText(skin.head, 512, 140);
+  fitFont(g, skin.head, 940, 150);
+  g.lineWidth = 12; g.strokeStyle = 'rgba(0,0,0,.55)'; g.lineJoin = 'round'; g.strokeText(skin.head, 512, 140);
   g.fillStyle = skin.fg; g.fillText(skin.head, 512, 140);
-  g.font = '900 84px Arial, sans-serif';
+  fitFont(g, skin.sub, 940, 76);
   g.fillStyle = skin.fg2; g.fillText(skin.sub, 512, 270);
   g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(60, 360, 904, 100);
-  g.font = '800 54px Arial, sans-serif';
-  g.fillStyle = '#ffffff'; g.fillText(KANO_AD_URL, 512, 410);
+  fitFont(g, skin.foot, 860, 54, 800);
+  g.fillStyle = '#ffffff'; g.fillText(skin.foot, 512, 410);
   const t = new THREE.CanvasTexture(c);
   t.anisotropy = 4;
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+function textureFor(index) {
+  const i = ((index % SKINS.length) + SKINS.length) % SKINS.length;
+  if (!textureCache.has(i)) textureCache.set(i, makeTexture(SKINS[i]));
+  return textureCache.get(i);
 }
 
 function buildBoard(skin, side) {
@@ -54,7 +69,7 @@ function buildBoard(skin, side) {
   root.add(frame);
   const face = new THREE.Mesh(
     new THREE.PlaneGeometry(6.1, 3.05),
-    new THREE.MeshBasicMaterial({ map: makeTexture(skin), toneMapped: false }),
+    new THREE.MeshBasicMaterial({ map: textureFor(SKINS.indexOf(skin)), toneMapped: false }),
   );
   face.position.set(0, 5.0, 0.07);
   face.name = 'ruffneck_ad_face';
@@ -75,6 +90,7 @@ function update(system, dt, snap) {
     for (let i = 0; i < count; i += 1) {
       const side = i % 2 === 0 ? 1 : -1;
       const board = buildBoard(SKINS[i % SKINS.length], side);
+      board.userData.skin = i % SKINS.length;
       board.position.z = -70 - i * SPACING;
       st.boards.push(board);
       st.group.add(board);
@@ -91,8 +107,15 @@ function update(system, dt, snap) {
   const span = SPACING * st.boards.length;
   for (const board of st.boards) {
     board.position.z += signed * delta * 0.28;
+    const before = board.position.z;
     if (board.position.z > 18) board.position.z -= span;
     else if (board.position.z < 18 - span) board.position.z += span;
+    if (board.position.z !== before) {
+      // every lap shows the next message: company, the game, the CEO, other platforms
+      board.userData.skin = (Number(board.userData.skin) || 0) + (before > 0 ? 1 : -1) * st.boards.length;
+      const face = board.getObjectByName('ruffneck_ad_face');
+      if (face) face.material.map = textureFor(board.userData.skin);
+    }
   }
 }
 
