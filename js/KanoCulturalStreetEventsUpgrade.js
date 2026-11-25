@@ -317,6 +317,7 @@ export function createProceduralGoat() {
     }
   }
 
+  root.userData.coats = [coat, lightCoat, darkCoat];
   root.scale.setScalar(0.88);
   root.position.set(0, 0.012, -23);
   root.visible = false;
@@ -517,7 +518,16 @@ function updateCulturalScenes(system, dt, stateSnapshot) {
     state.goatRoot.position.z += scroll;
     if (!state.goatCrossing && state.elapsed >= state.goatNextAt && game?.state === 'PLAY' && !stateSnapshot?.event) {
       const startSide = Math.random() < 0.5 ? -1 : 1;
-      state.goatCrossing = { progress: 0, startSide, duration: 5.6, fixedZ: -12 - rand(0, 4) };
+      // every third crossing is a Fulani herd animal (white or brown cattle) instead of a goat
+      state.crossCount = (state.crossCount || 0) + 1;
+      const cattle = state.crossCount % 3 === 0;
+      const coats = state.goatRoot.userData.coats || [];
+      const palette = cattle
+        ? (Math.random() < 0.5 ? [0xe9e3d4, 0xf6f1e4, 0x8a6a4a] : [0x8a5a35, 0xb98b5e, 0x4a2f1c])
+        : [0x8d7558, 0xc8b89b, 0x5c4735];
+      coats.forEach((m, i) => m.color.setHex(palette[i]));
+      state.goatRoot.scale.setScalar(cattle ? 1.75 : 0.88);
+      state.goatCrossing = { progress: 0, startSide, duration: cattle ? 8.5 : 5.6, fixedZ: -12 - rand(0, 4) };
       state.goatRoot.visible = true;
       state.goatRoot.position.set(startSide * 8.6, state.goatRoot.position.y, state.goatCrossing.fixedZ);
       state.goatRoot.rotation.y = startSide < 0 ? 0 : Math.PI;
