@@ -66,7 +66,7 @@ function start() {
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'default' });
   } catch (_) { hero.removeChild(canvas); bubble.remove(); fx.remove(); return; }
-  renderer.setPixelRatio(1);
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
@@ -208,7 +208,7 @@ function start() {
       x = lerp(DOOR_X, 7.2, u); z = WALK_LINE_Z; heading = Math.PI / 2; moving = true;
     } else { visible = false; x = -6.5; z = WALK_LINE_Z; }
     h.visible = visible;
-    h.position.set(x, y - (seated && !(a.clips && a.clips.Man_Sitting) ? 0.34 : 0), z);
+    h.position.set(x, y - (seated && !(a.clips && a.clips.Man_Sitting) ? 0.2 : 0), z);
     h.rotation.y = heading;
     if (a.mixer) {
       const solo = Object.keys(a.clips || {}).find((k) => !/^Man_/.test(k));
@@ -234,7 +234,7 @@ function start() {
     let riding = false;
     for (const a of actors) { if (placeActor(a, clock)) riding = true; }
     for (const m of mixers) m.update(dt);
-    for (const c of actors) { if (c.gait != null) applyBoneGait(c.actor, c.gait); else if (c.sit) applyBoneSit(c.actor); }
+    for (const c of actors) { if (c.gait != null) applyBoneGait(c.actor, c.gait); else if (c.sit) applyBoneSit(c.actor, -0.55); }
     if (keke) {
       const jolt = riding ? Math.sin(clock * 22) * 0.012 : Math.sin(clock * 9) * 0.004; // idling engine
       keke.position.y = Math.max(0, jolt) + 0.0;

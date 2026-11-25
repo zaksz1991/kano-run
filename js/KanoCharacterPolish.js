@@ -209,10 +209,10 @@ function poseLeg(actor, leg, thighAng, calfAng) {
 }
 
 /** Seated overlay for the rigged woman (idle-only rig): thighs forward, shins down, hands resting. Call after the mixer update. */
-export function applyBoneSit(actor) {
+export function applyBoneSit(actor, calfAng = 0.05) {
   const legs = legBones(actor);
   if (!legs || !legs.length) return false;
-  for (const leg of legs) poseLeg(actor, leg, 1.42, 0.05);
+  for (const leg of legs) poseLeg(actor, leg, 1.42, calfAng);
   const g = actor.userData.kanoGaitBonesStage;
   for (const [b] of g.fore) b.rotateX(-0.15);
   return true;
