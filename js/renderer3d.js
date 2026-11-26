@@ -4521,6 +4521,119 @@ export class Renderer3D {
     return group;
   }
 
+  // A low-poly parked keke napep (yellow body, black hood) used in stop queues and at the fuel station.
+  makeParkedKeke() {
+    const g = new THREE.Group();
+    const yellow = this.material(0xf2b705);
+    const black = this.material(0x16181b);
+    const glass = this.material(0x7fb7d6);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.62, 1.9), yellow);
+    body.position.set(0, 0.66, 0);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.55), yellow);
+    nose.position.set(0, 0.5, 1.15);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.1, 1.55), black);
+    roof.position.set(0, 1.55, -0.1);
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.04), glass);
+    screen.position.set(0, 1.2, 0.62);
+    g.add(body, nose, roof, screen);
+    for (const [x, z] of [[-0.46, 0.8], [0.46, 0.8], [-0.5, -0.7], [0.5, -0.7]]) {
+      if (x > 0 && z > 0.5) continue;
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.16, 10), black);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, 0.26, z);
+      g.add(wheel);
+    }
+    for (const x of [-0.55, 0.55]) for (const z of [0.5, -0.78]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.9, 0.06), black);
+      post.position.set(x, 1.1, z);
+      g.add(post);
+    }
+    g.scale.setScalar(1.0);
+    return g;
+  }
+
+  // Row of parked kekes waiting their turn at a keke stop / General Checkpoint.
+  addKekeQueue(actor, side, count = 3) {
+    const queue = new THREE.Group();
+    queue.name = 'KANO_KEKE_QUEUE';
+    for (let i = 0; i < count; i += 1) {
+      const k = this.makeParkedKeke();
+      k.position.set(side * 3.1, 0, -3.8 - i * 3.0);
+      k.rotation.y = 0.0;
+      queue.add(k);
+    }
+    actor.add(queue);
+  }
+
+  // Roadside fuel station: canopy on posts, two pumps with hoses on a raised island, an attendant and a keke in line.
+  addFuelStation(actor, side) {
+    const st = new THREE.Group();
+    st.name = 'KANO_FUEL_STATION';
+    const white = this.material(0xf1efe6);
+    const green = this.material(0x0f7a4a);
+    const grey = this.material(0x6c7076);
+    const dark = this.material(0x16181b);
+    const red = this.material(0xd23a2e);
+    const cx = side * 0.5;
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.2, 5.0), white);
+    canopy.position.set(cx, 3.6, 0);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.64, 0.22, 0.5), green);
+    stripe.position.set(cx, 3.6, 2.4);
+    const stripeB = stripe.clone(); stripeB.position.z = -2.4;
+    st.add(canopy, stripe, stripeB);
+    for (const dx of [-1.6, 1.6]) for (const dz of [-2.2, 2.2]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3.6, 8), grey);
+      post.position.set(cx + dx, 1.8, dz);
+      st.add(post);
+    }
+    const island = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.18, 3.2), grey);
+    island.position.set(cx - side * 0.9, 0.09, 0);
+    st.add(island);
+    const pumps = [];
+    for (const dz of [-0.9, 0.9]) {
+      const pump = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.35, 0.42), white);
+      pump.position.set(cx - side * 0.9, 0.86, dz);
+      const top = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.28, 0.44), red);
+      top.position.set(cx - side * 0.9, 1.65, dz);
+      const disp = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.02), dark);
+      disp.position.set(cx - side * 0.9 - side * 0.0, 1.22, dz + 0.22);
+      const hose = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.7, 0.05), dark);
+      hose.position.set(cx - side * 1.2, 0.8, dz);
+      const nozzle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.3), dark);
+      nozzle.position.set(cx - side * 1.2, 0.45, dz);
+      st.add(pump, top, disp, hose, nozzle);
+      pumps.push(top);
+    }
+    // Attendant in a green polo, arm moving as he pumps.
+    const att = new THREE.Group();
+    const bodyM = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.62, 0.22), green);
+    bodyM.position.y = 1.0;
+    const legs = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.7, 0.2), dark);
+    legs.position.y = 0.35;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), this.material(0x6b4630));
+    head.position.y = 1.47;
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.3), green);
+    cap.position.y = 1.6;
+    const arm = new THREE.Group();
+    const armMesh = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.5, 0.09), this.material(0x6b4630));
+    armMesh.position.y = -0.25;
+    arm.add(armMesh);
+    arm.position.set(-side * 0.22, 1.25, 0);
+    att.add(bodyM, legs, head, cap, arm);
+    att.position.set(cx - side * 0.2, 0, 1.4);
+    st.add(att);
+    // A keke already in line at the pump.
+    const k = this.makeParkedKeke();
+    k.position.set(cx - side * 1.7, 0, 0.1);
+    st.add(k);
+    const k2 = this.makeParkedKeke();
+    k2.position.set(cx - side * 1.7, 0, -3.2);
+    st.add(k2);
+    actor.userData.fuelAttendantArm = arm;
+    actor.userData.fuelPumpTops = pumps;
+    actor.add(st);
+  }
+
   syncZones(state) {
     const activeIds = this._activeZoneIds;
     activeIds.clear();
@@ -4566,16 +4679,6 @@ export class Renderer3D {
 
           pad.position.y = 0.035;
           actor.add(pad);
-
-          if (zone.type === 'fuel') {
-            const pump = new THREE.Mesh(
-              new THREE.BoxGeometry(0.34, 0.72, 0.34),
-              this.material(0x35c991),
-            );
-
-            pump.position.set(0.75, 0.38, 0);
-            actor.add(pump);
-          }
 
           const labelCanvas = document.createElement('canvas');
           labelCanvas.width = 512;
@@ -4642,6 +4745,10 @@ export class Renderer3D {
           sign.scale.setScalar(1.85);
           sign.position.set(0, 3.0, 0.15);
           actor.add(sign);
+          try {
+            if (zone.type === 'fuel') this.addFuelStation(actor, stopSide);
+            else if (zone.hub) this.addKekeQueue(actor, stopSide, 3);
+          } catch { /* decorative only */ }
           actor.userData.labelTexture = labelTexture;
 
           const beaconColor = zone.type === 'drop' ? 0xffc400 : zone.type === 'fuel' ? 0x3aa0ff : 0x2fe08d;
@@ -4782,6 +4889,11 @@ export class Renderer3D {
       // Once the keke has driven past a stop or pothole it must disappear behind it. Clamping the depth left
       // the object pinned just behind the keke, looking stuck to it while moving.
       actor.visible = (Number(zone.depth) || 0) > -0.045;
+      if (actor.userData.fuelAttendantArm) {
+        const tt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+        actor.userData.fuelAttendantArm.rotation.x = -0.9 + Math.sin(tt * 2.2) * 0.45;
+        actor.userData.fuelPumpTops.forEach((t, i) => { t.material.color.setHex(Math.sin(tt * 3 + i * 1.7) > 0 ? 0xd23a2e : 0xf2c200); });
+      }
     }
 
     for (const [id, actor] of this.zoneActors) {

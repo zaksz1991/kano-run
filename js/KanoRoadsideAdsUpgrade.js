@@ -20,6 +20,10 @@ const SKINS = [
   { bg: '#2b1b4d', fg: '#ffd84a', fg2: '#ffffff', head: 'RUFFNECK LEARN', sub: 'PRACTICAL AI & DIGITAL SKILLS', foot: 'ruffneck-lms.vercel.app' },
   { bg: '#0d3b66', fg: '#ffffff', fg2: '#ffd84a', head: 'YOUR BRAND HERE', sub: 'ADVERTISE WITH RUFFNECK', foot: KANO_AD_URL },
   { bg: '#3a2a10', fg: '#ffd84a', fg2: '#ffffff', head: 'PLAY MORE GAMES', sub: 'FROM RUFFNECK ENTERTAINMENT', foot: KANO_AD_URL },
+  { bg: '#0b6b3a', fg: '#ffffff', fg2: '#ffe45c', head: 'CHAT ON WHATSAPP', sub: 'RUFFNECK ENTERTAINMENT', foot: 'GAMES · APPS · ADS · TRAINING' },
+  { bg: '#1c1c1c', fg: '#ffd84a', fg2: '#ffffff', head: 'WEBSITES · APPS · GAMES', sub: 'BUILT BY RUFFNECK ENTERTAINMENT', foot: KANO_AD_URL },
+  { bg: '#8a3b0f', fg: '#fff3c4', fg2: '#ffd84a', head: 'KANO · CENTRE OF COMMERCE', sub: 'KANTIN KWARI · SABON GARI · KURMI', foot: 'GREETINGS FROM RUFFNECK ENTERTAINMENT' },
+  { bg: '#142a5e', fg: '#ffffff', fg2: '#ffd84a', head: 'ADVERTISE HERE', sub: 'BILLBOARDS · GAMES · SOCIAL MEDIA', foot: 'MESSAGE RUFFNECK ON WHATSAPP' },
 ];
 const textureCache = new Map();
 
