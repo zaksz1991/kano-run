@@ -1,0 +1,62 @@
+{
+  "name": "ruffneck-exchange",
+  "version": "3.14.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test:account-recovery": "node scripts/test-account-recovery.mjs",
+    "test:email-verification": "node scripts/test-email-verification.mjs",
+    "test:supplier-form-build-fix": "node scripts/test-supplier-form-build-fix.mjs",
+    "test:supplier-listing-controls": "node scripts/test-supplier-listing-controls.mjs",
+    "test:rnx-v180": "node scripts/test-rnx-v180-operations-upgrade.mjs",
+    "test:rnx-v190": "node scripts/test-rnx-v190-marketplace-search.mjs",
+    "check": "npm run test:account-recovery && npm run test:email-verification && npm run test:supplier-form-build-fix && npm run test:supplier-listing-controls && npm run test:rnx-v180 && npm run test:rnx-v190 && npm run test:rnx-v200 && npm run test:rnx-v210 && npm run test:rnx-v220 && npm run test:rnx-v221 && npm run test:rnx-v222 && npm run test:rnx-v230 && npm run test:rnx-v240 && npm run test:rnx-v250 && npm run test:rnx-v260 && npm run test:rnx-v270 && npm run test:rnx-v280 && npm run test:rnx-v290 && npm run test:rnx-v300 && npm run test:rnx-v310 && npm run test:rnx-v320 && npm run test:rnx-v330 && npm run test:rnx-v340 && npm run test:rnx-v350 && npm run test:rnx-v360 && npm run test:rnx-v370 && npm run test:rnx-v380 && npm run test:rnx-v390 && npm run test:rnx-v391 && npm run test:rnx-v310 && npm run test:rnx-v311 && npm run test:rnx-v312 && npm run test:rnx-v313 && npm run test:rnx-v3131 && npm run test:rnx-v314 && npm run typecheck && npm run build",
+    "test:rnx-v200": "node scripts/test-rnx-v200-listing-enquiry.mjs",
+    "test:rnx-v210": "node scripts/test-rnx-v210-supplier-listing-edit.mjs",
+    "test:rnx-v220": "node scripts/test-rnx-v220-listing-images.mjs",
+    "test:rnx-v221": "node scripts/test-rnx-v221-audit-promise-fix.mjs",
+    "test:rnx-v222": "node scripts/test-rnx-v222-supplier-listing-audit-fix.mjs",
+    "test:rnx-v230": "node scripts/test-rnx-v230-listing-gallery.mjs",
+    "test:rnx-v240": "node scripts/test-rnx-v240-listing-availability.mjs",
+    "test:rnx-v250": "node scripts/test-rnx-v250-customer-saved-listings.mjs",
+    "test:rnx-v260": "node scripts/test-rnx-v260-customer-offer-comparison.mjs",
+    "test:rnx-v270": "node scripts/test-rnx-v270-saved-offer-alerts.mjs",
+    "test:rnx-v280": "node scripts/test-rnx-v280-customer-notification-centre.mjs",
+    "test:rnx-v290": "node scripts/test-rnx-v290-customer-request-timeline.mjs",
+    "test:rnx-v300": "node scripts/test-rnx-v300-supplier-listing-insights.mjs",
+    "test:rnx-v310": "node scripts/test-rnx-v310-commercial-quote-revision-history.mjs",
+    "test:rnx-v320": "node scripts/test-rnx-v320-commercial-quotes.mjs",
+    "test:rnx-v330": "node scripts/test-rnx-v330-commercial-quote-oversight.mjs",
+    "test:rnx-v340": "node scripts/test-rnx-v340-supplier-quote-notifications.mjs",
+    "test:rnx-v350": "node scripts/test-rnx-v350-commercial-quote-comparison.mjs",
+    "test:rnx-v360": "node scripts/test-rnx-v360-commercial-quote-conversations.mjs",
+    "test:rnx-v370": "node scripts/test-rnx-v370-commercial-quote-attachments.mjs",
+    "test:rnx-v380": "node scripts/test-rnx-v380-commercial-quote-document.mjs",
+    "test:rnx-v390": "node scripts/test-rnx-v390-commercial-quote-revisions.mjs",
+    "test:rnx-v391": "node scripts/test-rnx-v391-admin-quote-event-jsx.mjs",
+    "test:rnx-v311": "node scripts/test-rnx-v311-supplier-trust-case-response-centre.mjs",
+    "test:rnx-v312": "node scripts/test-rnx-v312-trust-case-evidence-vault.mjs",
+    "test:rnx-v313": "node scripts/test-rnx-v313-trust-case-resolution-appeals.mjs",
+    "test:rnx-v3131": "node scripts/test-rnx-v3131-tracking-fallback-type-fix.mjs",
+    "test:rnx-v314": "node scripts/test-rnx-v314-trust-case-response-sla.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0",
+    "next": "^15.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.0"
+  }
+}
