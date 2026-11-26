@@ -270,6 +270,8 @@ export class Renderer3D {
           texture.wrapT = THREE.RepeatWrapping;
           texture.repeat.set(repeat[0], repeat[1]);
           texture.colorSpace = THREE.SRGBColorSpace;
+          // Sharper road and ground at the shallow driving angle (blurry in the distance without this).
+          try { texture.anisotropy = Math.min(4, this.renderer?.capabilities?.getMaxAnisotropy?.() || 1); } catch { /* cosmetic */ }
 
           material.map = texture;
           material.color.set(0xffffff);
