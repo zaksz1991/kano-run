@@ -2465,12 +2465,12 @@ export class Game {
 
     if (
       this.mode !== 'timeAttack' &&
-      s.distance >= 0.35 &&
+      s.distance >= 0.12 &&
       s.lifeActivityTimer <= 0 &&
       !s.event &&
       s.eventCooldown <= 0
     ) {
-      s.lifeActivityTimer = randomBetween(105, 150);
+      s.lifeActivityTimer = randomBetween(75, 115);
 
       const activities = [
         'schoolRun',

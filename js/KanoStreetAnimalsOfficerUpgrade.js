@@ -183,8 +183,7 @@ function upgradeOfficersToGlb(system, state) {
       model.rotation.y = Math.PI / 2;
       model.traverse((n) => {
         if (!n.isMesh) return;
-        if (/^Tops/i.test(n.name || '')) n.material = new THREE.MeshStandardMaterial({ color: 0x6db3e8, roughness: 0.8, metalness: 0 });
-        else if (/^Bottoms/i.test(n.name || '')) n.material = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.85, metalness: 0 });
+        if (/^Bottoms/i.test(n.name || '')) n.material = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.85, metalness: 0 });
       });
       officer.root.children.forEach((c) => { c.visible = false; }); // hide every procedural part (black legs included)
       officer.root.add(model);
