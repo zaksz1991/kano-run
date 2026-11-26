@@ -299,6 +299,20 @@ export class Renderer3D {
     asphalt.position.z = -92;
     this.world.add(asphalt);
 
+    // Worn wheel tracks in each lane: gives the empty tarmac some structure and depth (long, uniform strips, so nothing to scroll).
+    {
+      const trackMat = new THREE.MeshBasicMaterial({ color: 0x1b1f23, transparent: true, opacity: 0.13, depthWrite: false });
+      for (const laneX of [-3, 0, 3]) {
+        for (const off of [-0.55, 0.55]) {
+          const track = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 250), trackMat);
+          track.rotation.x = -Math.PI / 2;
+          track.position.set(laneX + off, 0.012, -92);
+          track.renderOrder = 1;
+          this.world.add(track);
+        }
+      }
+    }
+
     this.loadOptionalTexture(
       '/assets/models/environment/ground/asphalt.jpg',
       asphaltMaterial,
