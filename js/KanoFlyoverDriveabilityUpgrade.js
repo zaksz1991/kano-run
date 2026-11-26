@@ -623,7 +623,7 @@ function updateFork(renderer, state) {
     const metres = Math.round(rz - GLB_HALF);
     const driving = isDriving();
     const name = KANO_FLYOVER_SITES[renderer.__kanoFlyoverSiteKey]?.title || 'FLYOVER';
-    showForkBanner(driving && rz > 0 && abs < GLB_HALF + 650
+    showForkBanner(driving && rz > 0 && abs < GLB_HALF + 260
       ? (metres > 20 ? `${name} ahead · ${metres} m` : 'Flyover now')
       : '');
   }

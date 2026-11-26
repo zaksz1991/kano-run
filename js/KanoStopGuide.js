@@ -76,7 +76,7 @@ function render() {
     if (!challenge || (challenge.until && Date.now() > challenge.until)) newChallenge();
     const c = challenge;
     const goal = c.kind === 'drop' ? `Drop ${c.n} passengers at ${c.dest}` : `Pick up ${c.n} passengers at ${c.stop}`;
-    board.innerHTML = c.until ? '<b>CHALLENGE COMPLETE</b>Next one coming…' : `<b>🎯 KANO CHALLENGE · ${naira(c.reward)}</b>${goal} · ${c.done}/${c.n}`;
+    board.innerHTML = c.until ? '<b>CHALLENGE COMPLETE</b>Next one coming…' : `<b>🎯 ${naira(c.reward)}</b>${goal} · ${c.done}/${c.n}`;
     board.style.display = 'block';
   } catch { /* cosmetic */ }
 }
