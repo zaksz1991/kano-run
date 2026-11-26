@@ -4558,7 +4558,7 @@ export class Renderer3D {
     queue.name = 'KANO_KEKE_QUEUE';
     for (let i = 0; i < count; i += 1) {
       const k = this.makeParkedKeke();
-      k.position.set(side * 3.1, 0, -3.8 - i * 3.0);
+      k.position.set(side * 0.5, 0, -3.8 - i * 3.0);
       k.rotation.y = 0.0;
       queue.add(k);
     }
