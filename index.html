@@ -102,6 +102,7 @@
   <!-- Boot main first; the life/career/social upgrades below are inert <template> content that an idle loader activates in the same order. -->
   <template id="kano-deferred-modules">
   <!-- A dependency-free local audit starts first, before app and simulation modules load. -->
+  <script src="/kano-modulepreload.js"></script>
   <script type="module" src="/js/KanoLifeRuntimeAudit.js"></script>
   <!-- Launch recovery keeps the existing main.js/Game/UI authoritative. -->
   <script type="module" src="/js/KanoAppLaunchRecovery.js"></script>
