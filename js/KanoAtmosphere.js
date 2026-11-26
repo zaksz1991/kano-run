@@ -24,17 +24,17 @@ const LIFESTYLE_DEFAULTS = {
 
 const TIME_PROFILES = {
   morning: {
-    background: 0xb4cfdb, fog: 0xd0d6c9, fogNear: 48, fogFar: 205,
+    background: 0xb4cfdb, fog: 0xd0d6c9, fogNear: 72, fogFar: 205,
     hemi: 0.84, directional: 1.55, light: 0xfff0d2,
     temperature: { hotDry: '30–34°C', harmattan: '17–22°C', rainy: '22–26°C', cool: '18–23°C' },
   },
   afternoon: {
-    background: 0xcbdee5, fog: 0xdfdccb, fogNear: 58, fogFar: 228,
+    background: 0xcbdee5, fog: 0xdfdccb, fogNear: 82, fogFar: 228,
     hemi: 0.86, directional: 1.6, light: 0xfff4df,
     temperature: { hotDry: '37–41°C', harmattan: '29–34°C', rainy: '27–31°C', cool: '27–32°C' },
   },
   evening: {
-    background: 0xe4b18b, fog: 0xd7b49a, fogNear: 38, fogFar: 172,
+    background: 0xe4b18b, fog: 0xd7b49a, fogNear: 56, fogFar: 172,
     hemi: 1.15, directional: 1.0, light: 0xffc98f,
     temperature: { hotDry: '30–35°C', harmattan: '24–29°C', rainy: '24–28°C', cool: '23–28°C' },
   },
