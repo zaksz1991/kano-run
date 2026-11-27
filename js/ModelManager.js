@@ -1682,6 +1682,13 @@ export class ModelManager {
 
     const clone = model.clone(true);
 
+    // Kano has women in hijab and skirt and women in ordinary trousers: half of the cloned women lose the hijab set.
+    if ((key === 'passengerWoman' || key === 'pedestrianWoman') && Math.random() < 0.5) {
+      const strip = [];
+      clone.traverse((o) => { if (o.name === 'KANO_HIJAB' || o.name === 'KANO_SKIRT') strip.push(o); });
+      strip.forEach((o) => o.parent?.remove(o));
+    }
+
     clone.userData.sharedGeometry = true;
     clone.userData.modelManagerInstance = true;
     clone.userData.modelKey = key;

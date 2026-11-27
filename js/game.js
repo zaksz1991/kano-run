@@ -2978,6 +2978,25 @@ export class Game {
     );
   }
 
+  // A visible stop: the keke stands still while the driver eats or rests, then driving resumes.
+  startRestBreak(text, ms = 3600) {
+    try {
+      const s = this.s;
+      s.speed = 0;
+      this.state = 'RESTING';
+      if (typeof document === 'undefined') { this.state = 'PLAY'; return; }
+      const el = document.createElement('div');
+      el.style.cssText = 'position:fixed;left:0;right:0;top:0;bottom:0;z-index:2000;display:flex;align-items:center;justify-content:center;background:rgba(8,12,20,.55);color:#fff;font:700 20px system-ui,sans-serif;text-align:center;padding:24px;pointer-events:auto;transition:opacity .4s';
+      el.style.whiteSpace = 'pre-line'; el.textContent = text;
+      document.body.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 450);
+        if (this.state === 'RESTING') { this.state = 'PLAY'; this.s.speed = 0; }
+      }, ms);
+    } catch { this.state = 'PLAY'; }
+  }
+
   resolveEvent(action) {
     const s = this.s;
     const type = s.event;
@@ -3006,6 +3025,7 @@ export class Game {
           s.score -= meal.cost;
           try { this.dayCycle?.eat?.(meal.relief); } catch { /* keep gameplay usable if an optional adapter fails */ }
           this.ui.toast(`${meal.label} stop · -₦${meal.cost}`);
+          this.startRestBreak(`🍽 ${meal.label} break…\nThe keke is parked. You eat before the next trip.`, 3200);
         }
       }
     } else if (type === 'restBreak') {
@@ -3016,10 +3036,12 @@ export class Game {
           s.score -= 150;
           try { this.dayCycle?.rest?.(25); } catch { /* optional adapter */ }
           this.ui.toast('Tea break · -₦150 · fatigue reduced');
+          this.startRestBreak('☕ Tea break…\nThe keke is parked. You rest a while.');
         }
       } else if (action === 'restShade') {
         try { this.dayCycle?.rest?.(50); } catch { /* optional adapter */ }
         this.ui.toast('Rested in the shade · free stop');
+        this.startRestBreak('🌳 Resting in the shade…\nThe keke is parked. You close your eyes for a while.', 4200);
       }
     } else if (type === 'fare') {
       if (action === 'low') {

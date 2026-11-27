@@ -447,11 +447,11 @@ function syncServiceRoads(renderer, record, fly) {
     const paint = new THREE.MeshBasicMaterial({ color: 0xd9d4c4 });
     const kerb = new THREE.MeshStandardMaterial({ color: 0x9a948a, roughness: 0.9 });
     for (const side of [-1, 1]) {
-      const road = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.04, GLB_HALF * 2 + 40), asphalt);
+      const road = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.04, GLB_HALF * 2 + 60), asphalt);
       road.position.set(side * 8.0, 0.02, 0);
-      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.045, GLB_HALF * 2 + 40), paint);
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.045, GLB_HALF * 2 + 60), paint);
       edge.position.set(side * 6.0, 0.03, 0);
-      const outer = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.16, GLB_HALF * 2 + 40), kerb);
+      const outer = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.16, GLB_HALF * 2 + 60), kerb);
       outer.position.set(side * 10.4, 0.08, 0);
       group.add(road, edge, outer);
     }
@@ -486,7 +486,18 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   }
 
   const playerSurface = nearestSurfaceForZ(renderer, renderer.player.position.z);
-  let height = playerSurface?.height || 0;
+  // Left lane = the real ground road beside the flyover (x -8); middle/right lanes climb the deck.
+  // The keke slides across to the side road, stays at ground level there, and slides back when the flyover ends.
+  {
+    const nowS = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    const dtB = Math.min(0.1, Math.max(0.001, nowS - (renderer.__kanoSideClock || nowS)));
+    renderer.__kanoSideClock = nowS;
+    const wantSide = Boolean(playerSurface) && renderer.player.position.x < -1.5 ? 1 : 0;
+    const prevB = Number.isFinite(renderer.__kanoSideBlend) ? renderer.__kanoSideBlend : 0;
+    renderer.__kanoSideBlend = prevB + Math.max(-dtB * 1.3, Math.min(dtB * 1.3, wantSide - prevB));
+  }
+  const sideBlend = renderer.__kanoSideBlend || 0;
+  let height = (playerSurface?.height || 0) * (1 - sideBlend);
   if (renderer._kanoForkLock === 'ground') height = 0;
   // Never let the keke/camera pop: any sudden change in deck height (late model swap, anchor re-sync,
   // low frame rate) is turned into a quick glide instead of a visible flicker.
@@ -523,6 +534,11 @@ function applyDriveSurfaceBeforeRender(renderer, scene, camera) {
   // The keke may pull over, but never onto the verge where people stand.
   if (renderer.player.position.x > 3.1) renderer.player.position.x = 3.1;
   else if (renderer.player.position.x < -3.1) renderer.player.position.x = -3.1;
+  if (sideBlend > 0.001) {
+    const shift = -5 * sideBlend;
+    renderer.player.position.x += shift;
+    camera.position.x += shift;
+  }
   updateMobileTrafficBatchElevations(renderer, renderer._kanoFlyoverCurrentState);
   return height;
 }
@@ -615,9 +631,10 @@ function updateFork(renderer, state) {
   const abs = Math.abs(rz);
   if (abs < GLB_HALF) {
     // One road only: once you are on the flyover you stay on it in every lane (no switching to the road below).
-    renderer._kanoForkLock = 'deck';
+    const sideNow = (renderer.__kanoSideBlend || 0) > 0.5;
+    renderer._kanoForkLock = sideNow ? 'ground' : 'deck';
     const onRoad = isDriving();
-    showForkBanner(!onRoad || (renderer._kanoFlyoverCurrentHeight || 0) < 0.6 ? '' : 'ON THE FLYOVER');
+    showForkBanner(!onRoad ? '' : sideNow ? 'ROAD BESIDE THE FLYOVER' : ((renderer._kanoFlyoverCurrentHeight || 0) < 0.6 ? '' : 'ON THE FLYOVER'));
   } else {
     renderer._kanoForkLock = null;
     const metres = Math.round(rz - GLB_HALF);
@@ -640,6 +657,8 @@ function installRenderHook(renderer) {
   webgl.render = function renderWithFlyoverDriveSurface(scene, camera) {
     const originalCameraY = camera?.position?.y;
     const basePlayerY = renderer.player?.position?.y;
+    const originalCameraX = camera?.position?.x;
+    const basePlayerX = renderer.player?.position?.x;
     renderer._kanoFlyoverActiveRenderState = renderer._kanoFlyoverCurrentState;
     let height = 0;
     try {
@@ -650,6 +669,8 @@ function installRenderHook(renderer) {
       // 1-D signed-distance road model. The GPU draw above uses the elevated pose.
       if (camera?.position && Number.isFinite(originalCameraY)) camera.position.y = originalCameraY;
       if (renderer.player?.position && Number.isFinite(basePlayerY)) renderer.player.position.y = basePlayerY;
+      if (camera?.position && Number.isFinite(originalCameraX)) camera.position.x = originalCameraX;
+      if (renderer.player?.position && Number.isFinite(basePlayerX)) renderer.player.position.x = basePlayerX;
       renderer._kanoFlyoverLastRenderedHeight = height;
     }
   };

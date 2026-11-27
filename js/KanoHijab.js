@@ -30,4 +30,16 @@ export function addHijab(root) {
   g.applyMatrix4(local);
   head.add(g);
   head.userData.kanoHijab = true;
+  // Long skirt (hijab women in Kano wear a skirt, not trousers): hangs from the hip to the calf, parented to the model root.
+  try {
+    const box = new THREE.Box3().setFromObject(root);
+    const feet = root.worldToLocal(new THREE.Vector3(0, box.min.y, 0)).y;
+    const top = root.worldToLocal(new THREE.Vector3(0, box.max.y, 0)).y;
+    const H = Math.max(0.5, top - feet);
+    const skirtMat = new THREE.MeshStandardMaterial({ color: 0x7d3a4a, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.13 * H / 1.7, 0.25 * H / 1.7, 0.86 * H / 1.7, 18, 1, true), skirtMat);
+    skirt.name = 'KANO_SKIRT';
+    skirt.position.set(0, feet + 0.51 * H / 1.7, 0);
+    root.add(skirt);
+  } catch { /* cosmetic */ }
 }

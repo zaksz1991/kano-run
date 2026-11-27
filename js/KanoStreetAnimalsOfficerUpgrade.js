@@ -183,7 +183,8 @@ function upgradeOfficersToGlb(system, state) {
       model.rotation.y = Math.PI / 2;
       model.traverse((n) => {
         if (!n.isMesh) return;
-        if (/^Bottoms/i.test(n.name || '')) n.material = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.85, metalness: 0 });
+        if (/^Tops/i.test(n.name || '')) n.material = new THREE.MeshStandardMaterial({ color: 0xf2c200, roughness: 0.8, metalness: 0 });
+        else if (/^Bottoms/i.test(n.name || '')) n.material = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.85, metalness: 0 });
       });
       officer.root.children.forEach((c) => { c.visible = false; }); // hide every procedural part (black legs included)
       officer.root.add(model);
@@ -254,8 +255,11 @@ function update(system, dt, snap) {
     if (o.model) {
       // directing traffic: turns to watch the lane, shifts weight and steps, instead of standing at attention
       o.model.rotation.y = Math.PI / 2 + Math.sin(o.phase * 0.9) * 0.55;
-      o.model.rotation.z = Math.sin(o.phase * 1.8) * 0.045;
-      o.model.position.x = Math.sin(o.phase * 0.7) * 0.35;
+      // Directing traffic: body leans side to side with each wave, small step bob, and he paces along the kerb.
+      o.model.rotation.z = Math.sin(o.phase * 2.6) * 0.16;
+      o.model.rotation.x = Math.sin(o.phase * 1.3) * 0.05;
+      o.model.position.x = Math.sin(o.phase * 0.7) * 0.9;
+      o.model.position.y = Math.abs(Math.sin(o.phase * 2.6)) * 0.05;
       o.model.scale.y = (o.model.userData.baseScaleY ||= o.model.scale.y) * (1 + Math.abs(Math.sin(o.phase * 1.8)) * 0.012);
     }
     if (r.position.z > 12) recycle(r, o.side, 110, 190, 6.0, 6.3);

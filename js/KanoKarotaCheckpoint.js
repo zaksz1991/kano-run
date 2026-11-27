@@ -51,9 +51,11 @@ async function build(renderer) {
       if (!model) return;
       if (!fit(model, height)) return;
       if (key === 'karotaOfficer') {
-        // KAROTA uniform: original yellow shirt, black trousers.
+        // KAROTA uniform: yellow shirt, black trousers.
         model.traverse((n) => {
-          if (n.isMesh && /^Bottoms/i.test(n.name || '')) {
+          if (n.isMesh && /^Tops/i.test(n.name || '')) {
+            n.material = new THREE.MeshStandardMaterial({ color: 0xf2c200, roughness: 0.8, metalness: 0 });
+          } else if (n.isMesh && /^Bottoms/i.test(n.name || '')) {
             n.material = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.85, metalness: 0 });
           }
         });

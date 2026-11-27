@@ -960,7 +960,7 @@ export class KanoSceneUpgrade {
       start,
       end,
       elapsed: 0,
-      duration: clamp(start.distanceTo(end) / 1.35, 4.2, 6.5), // calm walking pace, nobody is chasing them
+      duration: clamp(start.distanceTo(end) / 1.0, 6.5, 9), // slow, visible walk to the door and a careful step in
       worldScroll: 0,
       initialScale: 1,
     });
@@ -985,7 +985,10 @@ export class KanoSceneUpgrade {
       const endZ = item.kind === 'board' ? item.end.z : item.end.z + item.worldScroll;
       // Two-leg route: walk along the kerb to the keke's door, then step in/out SIDEWAYS through the side door
       // (never through the front).
-      const laneX = item.side * 2.1;
+      // Walk to the keke's own kerb-side door (not to a fixed lane), so nobody crosses through the body of the keke.
+      const keX = Number(this.renderer.player?.position?.x) || 0;
+      const laneX = keX + item.side * 0.95;
+      if (item.kind === 'board') item.end.x = keX + item.side * 0.16;
       const split = 0.58;
       let x; let z; let heading;
       if (item.kind === 'board') {
