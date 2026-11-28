@@ -147,11 +147,11 @@ function buildState(system) {
     group.add(dog.root);
     state.dogs.push({ ...dog, side, phase: rand(0, 6), vz: rand(0.6, 1.6) * (Math.random() < 0.5 ? 1 : -1) });
   }
-  for (let i = 0; i < 2; i += 1) {
+  for (let i = 0; i < 4; i += 1) {
     const officer = createOfficer();
     mergeActor(officer.root); mergeActor(officer.body);
     const side = sideOf(i);
-    officer.root.position.set(side * 6.1, 0, -60 - i * 85);
+    officer.root.position.set(side * 6.1, 0, -45 - i * 40);
     officer.root.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
     officer.root.visible = false; // shown only once your KAROTA officer GLB is ready (no black-trouser placeholder)
     group.add(officer.root);
@@ -188,6 +188,13 @@ function upgradeOfficersToGlb(system, state) {
       });
       officer.root.children.forEach((c) => { c.visible = false; }); // hide every procedural part (black legs included)
       officer.root.add(model);
+      // Always-visible KAROTA tag above the officer (the procedural sign is hidden once the GLB is used).
+      { const c = document.createElement('canvas'); c.width = 256; c.height = 80; const g2 = c.getContext('2d');
+        g2.fillStyle = '#0f3d22'; g2.fillRect(0, 0, 256, 80); g2.strokeStyle = '#ffd23a'; g2.lineWidth = 6; g2.strokeRect(3, 3, 250, 74);
+        g2.fillStyle = '#fff6d6'; g2.font = '900 46px Arial'; g2.textAlign = 'center'; g2.fillText('KAROTA', 128, 56);
+        const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+        const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.3), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, side: THREE.DoubleSide, fog: false }));
+        tag.position.set(0, 2.2, 0); tag.name = 'KANO_KAROTA_TAG'; officer.root.add(tag); }
       officer.root.updateMatrixWorld(true);
       const feet = new THREE.Box3().setFromObject(model);
       model.position.y -= feet.min.y - officer.root.getWorldPosition(new THREE.Vector3()).y; // feet exactly on the road
@@ -259,10 +266,11 @@ function update(system, dt, snap) {
       o.model.rotation.z = Math.sin(o.phase * 2.6) * 0.16;
       o.model.rotation.x = Math.sin(o.phase * 1.3) * 0.05;
       o.model.position.x = Math.sin(o.phase * 0.7) * 0.9;
+      o.model.position.z = Math.sin(o.phase * 0.5 + o.side) * 1.6;   // patrols up and down the kerb
       o.model.position.y = Math.abs(Math.sin(o.phase * 2.6)) * 0.05;
       o.model.scale.y = (o.model.userData.baseScaleY ||= o.model.scale.y) * (1 + Math.abs(Math.sin(o.phase * 1.8)) * 0.012);
     }
-    if (r.position.z > 12) recycle(r, o.side, 110, 190, 6.0, 6.3);
+    if (r.position.z > 12) recycle(r, o.side, 110, 200, 6.0, 6.3);
     else if (r.position.z < -200) r.position.z = 12;
   }
 }

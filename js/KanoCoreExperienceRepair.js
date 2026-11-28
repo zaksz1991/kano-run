@@ -212,7 +212,7 @@ function installPotholeVisuals() {
   if (!proto || proto.__kanoRealisticPotholes || typeof proto.makePotholeActor !== 'function') return;
   const originalMakePotholeActor = proto.makePotholeActor;
   proto.makePotholeActor = function makeKanoBrokenAsphaltPothole(zone, ...args) {
-    try { return makeIrregularPothole(this, zone); }
+    try { const pit = makeIrregularPothole(this, zone); try { pit.add(this.makePotholeWarning(zone?.hub ? 1.25 : 0.82)); } catch { /* sign is extra */ } return pit; }
     catch (error) {
       console.warn('[Kano Life] Realistic pothole geometry failed; keeping the existing safe pothole marker.', error);
       return originalMakePotholeActor.call(this, zone, ...args);

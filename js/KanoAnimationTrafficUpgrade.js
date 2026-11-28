@@ -153,6 +153,13 @@ function disposeRemovedCharacter(root) {
  * vehicle condition and score. This module only directs traffic archetypes,
  * upgrades character fallback selection and advances available GLB clips.
  */
+const KANO_PEOPLE_VARIANTS = {
+  pedestrianWoman: 'hijabWomanA',
+  passengerWoman: 'hijabWomanA',
+  pedestrian: 'hausaMan',
+  passengerMan: 'hausaMan',
+};
+
 export class KanoTrafficDirector {
   constructor({ game, mobile = false } = {}) {
     if (!game?.s) {
@@ -212,7 +219,7 @@ export class KanoTrafficDirector {
     if (roll < 0.46) {
       type = 'keke';
       archetype = 'keke';
-    } else if (roll < 0.54) {
+    } else if (roll < 0.60) {
       type = 'motorcycle';
       archetype = 'okada';
     } else if (roll < 0.58) {
@@ -440,6 +447,12 @@ export class KanoGLBAnimationManager {
       }
 
       if (this.disposed) return null;
+      // Kano street people: alternate the plain model with the hijab woman / Hausa kaftan man when they are loaded.
+      const kanoVariant = KANO_PEOPLE_VARIANTS[key];
+      if (kanoVariant && this.cache?.has(kanoVariant)) {
+        this.__kanoPeopleTurn = (this.__kanoPeopleTurn || 0) + 1;
+        if (this.__kanoPeopleTurn % 2 === 0) key = kanoVariant;
+      }
       const template = this.cache?.get(key);
       if (!template) return null;
 
@@ -469,6 +482,15 @@ export class KanoGLBAnimationManager {
           ? object.material.map((material) => material?.clone() || material)
           : object.material.clone();
       });
+
+      if (key === 'hausaMan') {
+        const ROBES = [0xf4f1e6, 0xe9e2cf, 0x9fc3d8, 0xc9c4b8, 0xb89e78, 0x8fa89a, 0xffffff];
+        const robe = ROBES[Math.floor(Math.random() * ROBES.length)];
+        clone.traverse((o) => {
+          const c = o.isMesh && !Array.isArray(o.material) ? o.material?.color : null;
+          if (c && c.g > c.r * 1.08 && c.g > c.b * 1.0) c.setHex(robe);   // repaint the green kaftan only, not skin or cap
+        });
+      }
 
       return clone;
     };

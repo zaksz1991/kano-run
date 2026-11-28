@@ -67,7 +67,9 @@ const CATALOG = {
 
   motorcycle: [
     'vehicles/special/scooter.glb',
-    'vehicles/special/piaggio_scooter.glb',
+    'vehicles/cars/ktm-rc8.glb',
+    'vehicles/special/okada.glb',
+    'vehicles/cars/motorcycle.glb',
   ],
 
   police: [
@@ -139,6 +141,15 @@ const CATALOG = {
     'characters/passengers/hijab-muslim-woman.glb',
     'characters/passengers/hijab-muslim-woman-2.glb',
     'characters/passengers/women_in_hijab.glb',
+  ],
+
+  // Kano variants of the street people: a hijab woman (her own model) and a man in Hausa kaftan and cap.
+  hijabWomanA: [
+    'characters/passengers/female.glb',
+  ],
+
+  hausaMan: [
+    'characters/pedestrians/Man in Long Sleeves.glb',
   ],
 
   building: [
@@ -250,7 +261,7 @@ const MAX_TRIANGLES_BY_KEY = {};
 for (const k of [
   'keke', 'car', 'taxi', 'suv', 'truck', 'bus', 'motorcycle', 'police', 'karota', 'ambulance',
   'passenger', 'passengerWoman', 'passengerMan', 'passengerVIP', 'security', 'karotaOfficer',
-  'pedestrian', 'pedestrianWoman',
+  'pedestrian', 'pedestrianWoman', 'hijabWomanA', 'hausaMan',
 ]) MAX_TRIANGLES_BY_KEY[k] = PEOPLE_AND_VEHICLE_TRIANGLE_CAP;
 MAX_TRIANGLES_BY_KEY.truck = 14000; // the lorry model is about 13.3k triangles and appears rarely
 
@@ -273,6 +284,8 @@ const TARGET_HEIGHT = {
 
   passenger: 1.7,
   passengerWoman: 1.7,
+  hijabWomanA: 1.62,
+  hausaMan: 1.74,
   passengerMan: 1.75,
   passengerVIP: 1.8,
 
@@ -337,6 +350,10 @@ function paintedWallMap(map, toneIndex, tone) {
 
 const BUILDING_VARIANTS = {
   building: ['buildingFlatQ'],
+  passengerWoman: ['hijabWomanA'],
+  pedestrianWoman: ['hijabWomanA'],
+  pedestrian: ['hausaMan'],
+  passengerMan: ['hausaMan'],
   industrialBuilding: ['buildingFlatA', 'buildingFlatD', 'buildingFlatR'],
 };
 
@@ -348,6 +365,8 @@ const UPRIGHT_KEYS = new Set([
   'security',
   'pedestrian',
   'pedestrianWoman',
+  'hijabWomanA',
+  'hausaMan',
   'building',
   'buildingFlatQ',
   'industrialBuilding',
@@ -1565,7 +1584,7 @@ export class ModelManager {
             wrapper.userData.seatedDriverAttached = true;
           }
 
-          if (key === 'passengerWoman' || key === 'pedestrianWoman') {
+          if (key === 'hijabWomanA') {
             try { addHijab(wrapper); } catch (error) { console.warn('[Kano Life] Hijab not attached:', error); }
           }
 
@@ -1681,13 +1700,6 @@ export class ModelManager {
     if (!model) return null;
 
     const clone = model.clone(true);
-
-    // Kano has women in hijab and skirt and women in ordinary trousers: half of the cloned women lose the hijab set.
-    if ((key === 'passengerWoman' || key === 'pedestrianWoman') && Math.random() < 0.5) {
-      const strip = [];
-      clone.traverse((o) => { if (o.name === 'KANO_HIJAB' || o.name === 'KANO_SKIRT') strip.push(o); });
-      strip.forEach((o) => o.parent?.remove(o));
-    }
 
     clone.userData.sharedGeometry = true;
     clone.userData.modelManagerInstance = true;

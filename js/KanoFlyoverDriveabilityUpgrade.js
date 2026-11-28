@@ -364,7 +364,18 @@ function ensureApproachGroups(renderer) {
     flyover.userData ||= {};
     flyover.userData.kanoDriveableFlyover = true;
     flyover.userData.kanoDriveableDeckHeight = record.deckHeight;
-    record.group.visible = flyover.visible !== false;
+    // Until the real deck GLB is mounted, the built-in white boxes and ramps must not show: on phones the
+    // flyover model loads lazily and those boxes were the white flat slab sliding under the keke.
+    const holdBuiltIn = !record.glbSkinned;
+    if (holdBuiltIn) {
+      for (const holder of [flyover, record.group]) {
+        for (const child of holder?.children || []) {
+          if (child === record.wrapper || /SIGN|ROUNDABOUT|PARAPET_TRIM/i.test(String(child.name || ''))) continue;
+          child.visible = false;
+        }
+      }
+    }
+    record.group.visible = flyover.visible !== false && !holdBuiltIn;
   }
   AUDIT.flyoverSurfaceCount = renderer.kanoFlyoverApproachRecords.length;
 }

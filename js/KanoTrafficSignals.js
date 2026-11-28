@@ -12,8 +12,8 @@ import * as THREE from 'three';
 import { cycleOf, signalPhase as phaseOf } from './KanoTrafficSignalRules.mjs';
 
 const UNITS_PER_KM = 1008;
-const PERIOD_KM = 1.5;
-const OFFSET_KM = 0.4;
+const PERIOD_KM = 0.9;
+const OFFSET_KM = 0.35;
 const SHOW_KM = 0.28;
 const LINE_KM = 0.008;      // stop line sits 8 m before the junction centre
 const CROSS_KEYS = ['car', 'keke', 'taxi', 'motorcycle', 'truck', 'keke'];

@@ -299,19 +299,8 @@ export class Renderer3D {
     asphalt.position.z = -92;
     this.world.add(asphalt);
 
-    // Worn wheel tracks in each lane: gives the empty tarmac some structure and depth (long, uniform strips, so nothing to scroll).
-    {
-      const trackMat = new THREE.MeshBasicMaterial({ color: 0x1b1f23, transparent: true, opacity: 0.13, depthWrite: false });
-      for (const laneX of [-3, 0, 3]) {
-        for (const off of [-0.55, 0.55]) {
-          const track = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 250), trackMat);
-          track.rotation.x = -Math.PI / 2;
-          track.position.set(laneX + off, 0.012, -92);
-          track.renderOrder = 1;
-          this.world.add(track);
-        }
-      }
-    }
+    // Depth-safe layering: phone GPUs can have a 16-bit depth buffer, where coplanar layers 40 m+ away flicker as white/black bands.
+    asphaltMaterial.polygonOffset = true; asphaltMaterial.polygonOffsetFactor = -2; asphaltMaterial.polygonOffsetUnits = -2;
 
     this.loadOptionalTexture(
       '/assets/models/environment/ground/asphalt.jpg',
@@ -325,7 +314,7 @@ export class Renderer3D {
     );
 
     ground.rotation.x = -Math.PI / 2;
-    ground.position.set(0, -0.09, -92);
+    ground.position.set(0, -0.2, -92);
     this.world.add(ground);
 
     // Kano-style sandy shoulders. These sit above the broad ground plane but
@@ -4514,10 +4503,70 @@ export class Renderer3D {
     const rag = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.2), new THREE.MeshBasicMaterial({ color: 0xd9381e, side: THREE.DoubleSide }));
     rag.position.set(radius * 0.9 + 0.15, 0.82, -radius * 0.6);
     group.add(rag);
+    // Proper warning: a tall red triangle sign on a post just before the hole, and a taper of orange cones leading to it.
+    {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 1.7, 6), this.material(0x8a8d91));
+      post.position.set(radius * 1.55, 0.85, radius * 3.6);
+      group.add(post);
+      const tri = new THREE.Shape();
+      tri.moveTo(0, 0.62); tri.lineTo(-0.56, -0.34); tri.lineTo(0.56, -0.34); tri.lineTo(0, 0.62);
+      const outerTri = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: 0xd8261c, side: THREE.DoubleSide }));
+      const inner = new THREE.Shape();
+      inner.moveTo(0, 0.46); inner.lineTo(-0.4, -0.25); inner.lineTo(0.4, -0.25); inner.lineTo(0, 0.46);
+      const innerTri = new THREE.Mesh(new THREE.ShapeGeometry(inner), new THREE.MeshBasicMaterial({ color: 0xfff4d6, side: THREE.DoubleSide }));
+      innerTri.position.z = 0.004;
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.3), new THREE.MeshBasicMaterial({ color: 0x151515, side: THREE.DoubleSide }));
+      bar.position.set(0, 0.06, 0.008);
+      const dot = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.08), new THREE.MeshBasicMaterial({ color: 0x151515, side: THREE.DoubleSide }));
+      dot.position.set(0, -0.15, 0.008);
+      const signGroup = new THREE.Group();
+      signGroup.add(outerTri, innerTri, bar, dot);
+      signGroup.position.set(radius * 1.55, 1.95, radius * 3.6);
+      signGroup.scale.setScalar(1.35);
+      group.add(signGroup);
+      const coneMat = this.material(0xf36a14);
+      const bandMat = this.material(0xf4f1e8);
+      for (let c = 0; c < 4; c += 1) {
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.5, 8), coneMat);
+        const cz = radius * (1.7 + c * 0.9);
+        cone.position.set(radius * (1.1 - c * 0.22), 0.25, cz);
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.115, 0.09, 8), bandMat);
+        band.position.set(cone.position.x, 0.3, cz);
+        group.add(cone, band);
+      }
+    }
 
     void rim;
     group.userData.zoneType = 'pothole';
     group.userData.potholeWarning = outerRing;
+    return group;
+  }
+
+  // Big, unmistakable pothole warning: tall red triangle sign (about 2 m) on a post 7 m before the hole, plus a taper of cones.
+  makePotholeWarning(radius = 0.82) {
+    const group = new THREE.Group();
+    group.name = 'KANO_POTHOLE_WARNING';
+    const sx = radius * 1.8 + 0.5, sz = 7.5;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 2.3, 6), this.material(0x8a8d91));
+    post.position.set(sx, 1.15, sz);
+    group.add(post);
+    const mk = (pts, color) => { const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]); for (const q of pts.slice(1)) sh.lineTo(q[0], q[1]); sh.closePath(); return new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, fog: false })); };
+    const outer = mk([[0, 0.7], [-0.64, -0.4], [0.64, -0.4]], 0xd8261c);
+    const mid = mk([[0, 0.55], [-0.5, -0.31], [0.5, -0.31]], 0xfff4d6); mid.position.z = 0.004;
+    const bar = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.34), new THREE.MeshBasicMaterial({ color: 0x151515, side: THREE.DoubleSide, fog: false })); bar.position.set(0, 0.07, 0.008);
+    const dot = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), new THREE.MeshBasicMaterial({ color: 0x151515, side: THREE.DoubleSide, fog: false })); dot.position.set(0, -0.17, 0.008);
+    const sign = new THREE.Group(); sign.add(outer, mid, bar, dot);
+    sign.position.set(sx, 2.55, sz); sign.scale.setScalar(1.7);
+    group.add(sign);
+    const coneMat = this.material(0xf36a14), bandMat = this.material(0xf4f1e8);
+    for (let c = 0; c < 5; c += 1) {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.7, 8), coneMat);
+      const cz = radius * (1.6 + c * 1.35);
+      cone.position.set(radius * (1.15 - c * 0.2), 0.35, cz);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.12, 8), bandMat);
+      band.position.set(cone.position.x, 0.42, cz);
+      group.add(cone, band);
+    }
     return group;
   }
 
